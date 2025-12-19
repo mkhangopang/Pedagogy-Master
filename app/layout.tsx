@@ -1,24 +1,30 @@
+
 import React from 'react';
 import './globals.css';
 import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
 
-const jakarta = Plus_Jakarta_Sans({ subsets: ['latin'] });
+const jakarta = Plus_Jakarta_Sans({ 
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700'],
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
-  title: 'Pedagogy Master - Advanced Pedagogical Assistant',
-  description: 'Elevating education with Neural AI',
+  title: 'Pedagogy Master - AI Pedagogical Assistant',
+  description: 'Advanced curriculum analysis and educational tool generation powered by Gemini AI.',
 };
 
 export default function RootLayout({
   children,
 }: {
-  // Fixed: Added React import to provide React namespace for ReactNode
   children: React.ReactNode;
 }) {
   return (
     <html lang="en">
-      <body className={jakarta.className}>{children}</body>
+      <body className={`${jakarta.className} antialiased text-slate-900 bg-slate-50`}>
+        {children}
+      </body>
     </html>
   );
 }
