@@ -2,14 +2,13 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { SLO, NeuralBrain } from "../types";
 
-const apiKey = process.env.API_KEY as string;
-
 export const geminiService = {
   /**
    * Uploads a file directly to Gemini's File API.
    */
   async uploadFile(file: File): Promise<{ uri: string; mimeType: string }> {
-    const ai = new GoogleGenAI({ apiKey });
+    // ALWAYS create a new GoogleGenAI instance right before making an API call
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const uploadResult = await ai.files.upload(file, {
       mimeType: file.type,
       displayName: file.name,
@@ -20,8 +19,12 @@ export const geminiService = {
     };
   },
 
+  /**
+   * Generates SLO tags from a curriculum file using the File API URI.
+   */
   async generateSLOTagsFromFile(fileUri: string, mimeType: string, brain: NeuralBrain): Promise<SLO[]> {
-    const ai = new GoogleGenAI({ apiKey });
+    // ALWAYS create a new GoogleGenAI instance right before making an API call
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `
       Analyze the attached curriculum document and extract Student Learning Outcomes (SLOs).
       For each SLO, determine its Bloom's Taxonomy level, complexity (1-6), relevant keywords, and a suggested assessment.
@@ -59,6 +62,7 @@ export const geminiService = {
     });
 
     try {
+      // Use the .text property (not a method) as per the SDK guidelines
       return JSON.parse(response.text || "[]");
     } catch (e) {
       console.error("Failed to parse SLO tags", e);
@@ -75,10 +79,10 @@ export const geminiService = {
     history: { role: 'user' | 'assistant', content: string }[],
     brain: NeuralBrain
   ) {
-    const ai = new GoogleGenAI({ apiKey });
+    // ALWAYS create a new GoogleGenAI instance right before making an API call
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     // Convert application history to Gemini SDK format
-    // Gemini uses 'model' instead of 'assistant'
     const formattedHistory = history.map(h => ({
       role: h.role === 'user' ? 'user' : 'model',
       parts: [{ text: h.content }]
@@ -98,12 +102,14 @@ export const geminiService = {
       currentParts.push({ fileData: { fileUri: doc.fileUri, mimeType: doc.mimeType } });
     }
 
+    // sendMessageStream only accepts the message parameter
     const result = await chat.sendMessageStream({ 
       message: currentParts 
     });
 
     for await (const chunk of result) {
       const c = chunk as GenerateContentResponse;
+      // Use the .text property (not a method)
       yield c.text;
     }
   },
@@ -117,7 +123,8 @@ export const geminiService = {
     doc: { fileUri?: string; mimeType?: string },
     brain: NeuralBrain
   ) {
-    const ai = new GoogleGenAI({ apiKey });
+    // ALWAYS create a new GoogleGenAI instance right before making an API call
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const prompt = `
       Tool Type: ${toolType}
@@ -139,6 +146,7 @@ export const geminiService = {
 
     for await (const chunk of result) {
       const c = chunk as GenerateContentResponse;
+      // Use the .text property (not a method)
       yield c.text;
     }
   }
