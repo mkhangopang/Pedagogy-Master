@@ -78,7 +78,7 @@ export default function App() {
       setBrain({
         id: data.id,
         masterPrompt: data.master_prompt,
-        bloom_rules: data.bloom_rules, // Check field name mapping
+        bloomRules: data.bloom_rules, 
         version: data.version,
         isActive: data.is_active,
         updatedAt: data.updated_at
@@ -120,7 +120,7 @@ export default function App() {
         id: d.id,
         userId: d.user_id,
         name: d.name,
-        base64Data: d.base64_data, // Ensure field matches DB
+        base64Data: d.base64_data,
         mimeType: d.mime_type,
         status: d.status as 'processing' | 'completed' | 'failed',
         subject: d.subject,
@@ -132,11 +132,31 @@ export default function App() {
     }
   };
 
+  const handleToggleAdmin = () => {
+    if (!userProfile) return;
+    
+    let newRole: UserRole;
+    // Cycle roles: Teacher -> Enterprise Admin -> App Admin -> Teacher
+    if (userProfile.role === UserRole.TEACHER) {
+      newRole = UserRole.ENTERPRISE_ADMIN;
+    } else if (userProfile.role === UserRole.ENTERPRISE_ADMIN) {
+      newRole = UserRole.APP_ADMIN;
+    } else {
+      newRole = UserRole.TEACHER;
+    }
+
+    setUserProfile({ ...userProfile, role: newRole });
+    
+    // Redirect if they lose access to Brain view
+    if (newRole !== UserRole.APP_ADMIN && currentView === 'brain') {
+      setCurrentView('dashboard');
+    }
+  };
+
   const incrementQueries = async () => {
     if (!userProfile) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
-    // Update profile in DB if needed (async)
   };
 
   const saveChatMessage = async (msg: ChatMessage) => {
@@ -207,6 +227,7 @@ export default function App() {
         currentView={currentView} 
         onViewChange={setCurrentView} 
         userProfile={userProfile} 
+        onToggleAdmin={handleToggleAdmin}
       />
       <main className="flex-1 p-8 overflow-y-auto max-h-screen">
         <div className="max-w-6xl mx-auto">

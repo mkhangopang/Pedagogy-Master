@@ -9,7 +9,9 @@ import {
   LogOut,
   GraduationCap,
   UserCircle,
-  Zap
+  Shield,
+  ShieldAlert,
+  Building2
 } from 'lucide-react';
 import { UserRole, UserProfile } from '../types';
 import { supabase } from '../lib/supabase';
@@ -18,9 +20,10 @@ interface SidebarProps {
   currentView: string;
   onViewChange: (view: string) => void;
   userProfile: UserProfile;
+  onToggleAdmin: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, userProfile }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, userProfile, onToggleAdmin }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Curriculum Docs', icon: FileText },
@@ -38,10 +41,39 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, userProfil
 
   const usagePercent = (userProfile.queriesUsed / userProfile.queriesLimit) * 100;
 
+  // Helper to determine role-specific styling for the dev toggle
+  const getRoleDisplay = () => {
+    switch(userProfile.role) {
+      case UserRole.APP_ADMIN:
+        return {
+          icon: <Shield className="w-5 h-5 text-white" />,
+          color: 'bg-amber-500 shadow-amber-500/20',
+          label: 'System Admin',
+          badgeColor: 'text-amber-400'
+        };
+      case UserRole.ENTERPRISE_ADMIN:
+        return {
+          icon: <Building2 className="w-5 h-5 text-white" />,
+          color: 'bg-cyan-500 shadow-cyan-500/20',
+          label: 'Org Admin',
+          badgeColor: 'text-cyan-400'
+        };
+      default:
+        return {
+          icon: <UserCircle className="w-6 h-6 text-white" />,
+          color: 'bg-indigo-500 shadow-indigo-500/20',
+          label: 'Teacher',
+          badgeColor: 'text-indigo-200'
+        };
+    }
+  };
+
+  const roleInfo = getRoleDisplay();
+
   return (
-    <aside className="w-64 bg-indigo-950 text-white flex flex-col h-screen sticky top-0">
+    <aside className="w-64 bg-indigo-950 text-white flex flex-col h-screen sticky top-0 border-r border-indigo-900/50">
       <div className="p-6 flex items-center gap-3">
-        <div className="bg-emerald-500 p-2 rounded-xl">
+        <div className="bg-emerald-500 p-2 rounded-xl shadow-lg shadow-emerald-500/20">
           <GraduationCap className="w-6 h-6 text-white" />
         </div>
         <span className="text-xl font-bold tracking-tight">EduNexus AI</span>
@@ -55,7 +87,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, userProfil
             <button
               key={item.id}
               onClick={() => onViewChange(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 ${
                 isActive 
                   ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50' 
                   : 'text-indigo-200 hover:bg-indigo-900/50 hover:text-white'
@@ -86,21 +118,33 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, userProfil
         </div>
       </div>
 
-      <div className="p-4 border-t border-indigo-900 space-y-2">
-        <div className="px-4 py-3 flex items-center gap-3 bg-indigo-900/30 rounded-xl mb-2">
-          <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center">
-            <UserCircle className="w-6 h-6" />
+      <div className="p-4 border-t border-indigo-900/50 space-y-2">
+        <div 
+          onClick={onToggleAdmin}
+          className="px-4 py-3 flex items-center gap-3 bg-indigo-900/30 rounded-xl mb-2 cursor-pointer hover:bg-indigo-900/50 transition-all border border-indigo-800/30 group relative"
+          title="Dev Toggle: Click to cycle roles"
+        >
+          <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg ${roleInfo.color}`}>
+            {roleInfo.icon}
           </div>
-          <div className="overflow-hidden">
-            <p className="text-xs font-bold text-indigo-200 uppercase tracking-wider">{userProfile.plan} Plan</p>
-            <p className="text-sm font-medium text-white truncate">{userProfile.email}</p>
+          <div className="overflow-hidden flex-1">
+            <div className="flex items-center gap-1.5">
+              <p className={`text-[10px] font-bold uppercase tracking-wider transition-colors ${roleInfo.badgeColor}`}>
+                {userProfile.plan} • {roleInfo.label}
+              </p>
+            </div>
+            <p className="text-sm font-medium text-white truncate">{userProfile.email || 'Testing Mode'}</p>
+          </div>
+          <div className="absolute right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+             <ShieldAlert className="w-4 h-4 text-indigo-400" />
           </div>
         </div>
+
         <button 
           onClick={handleSignOut}
-          className="w-full flex items-center gap-3 px-4 py-3 text-indigo-300 hover:text-white hover:bg-rose-900/20 rounded-lg transition-colors"
+          className="w-full flex items-center gap-3 px-4 py-3 text-indigo-300 hover:text-white hover:bg-rose-900/20 rounded-lg transition-colors group"
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           <span className="font-medium">Sign Out</span>
         </button>
       </div>
