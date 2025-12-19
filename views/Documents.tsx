@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, Plus, ChevronLeft, Target, BrainCircuit, Lightbulb, BookOpen, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, FileText, Plus, ChevronLeft, Target, BrainCircuit, Lightbulb, BookOpen, Loader2, AlertCircle, Key } from 'lucide-react';
 import { Document, SLO, NeuralBrain } from '../types';
 import { geminiService } from '../services/geminiService';
 
@@ -21,6 +21,13 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
+
+  const handleSelectKey = async () => {
+    if (typeof window !== 'undefined' && (window as any).aistudio) {
+      await (window as any).aistudio.openSelectKey();
+      setError(null);
+    }
+  };
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -76,7 +83,11 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
       setIsUploading(false);
     } catch (err: any) {
       console.error(err);
-      setError(`Processing failed: ${err.message || "Unknown error"}`);
+      if (err.message === "API_KEY_MISSING" || err.message?.includes("API_KEY")) {
+        setError("AI Configuration Required: The Gemini API Key is missing. If you are in AI Studio, click 'Select Key' below. If on Vercel, ensure you've added the API_KEY env var and redeployed.");
+      } else {
+        setError(`Processing failed: ${err.message || "Unknown error"}`);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -198,9 +209,20 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
       </header>
 
       {error && (
-        <div className="bg-rose-50 border border-rose-100 text-rose-700 p-4 rounded-xl flex items-center gap-3">
-          <AlertCircle className="w-5 h-5" />
-          <p className="text-sm font-medium">{error}</p>
+        <div className="bg-rose-50 border border-rose-100 text-rose-700 p-6 rounded-2xl space-y-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-6 h-6 shrink-0 mt-0.5" />
+            <p className="text-sm font-medium">{error}</p>
+          </div>
+          {error.includes("AI Configuration") && typeof window !== 'undefined' && (window as any).aistudio && (
+            <button 
+              onClick={handleSelectKey}
+              className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-rose-700 transition-all"
+            >
+              <Key className="w-4 h-4" />
+              Select API Key
+            </button>
+          )}
         </div>
       )}
 

@@ -3,9 +3,9 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  // This maps the server-side API_KEY (from Vercel env vars) to the client bundle
   env: {
-    API_KEY: process.env.API_KEY,
+    // Explicitly mapping the Vercel secret to the client-side process.env
+    API_KEY: process.env.API_KEY || "",
   },
   async headers() {
     return [

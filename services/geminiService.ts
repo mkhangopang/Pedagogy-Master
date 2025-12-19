@@ -4,16 +4,39 @@ import { SLO, NeuralBrain } from "../types";
 
 /**
  * Pedagogy Master Gemini Service
- * Strictly adheres to Google GenAI SDK guidelines.
  */
 export const geminiService = {
+  /**
+   * Internal helper to initialize the AI client.
+   * Prioritizes process.env.API_KEY, but supports AI Studio key selection.
+   */
+  async getClient() {
+    // Check if key is in environment
+    let apiKey = process.env.API_KEY;
+
+    // Check if we are in AI Studio environment and need to trigger key selection
+    if (!apiKey && typeof window !== 'undefined' && (window as any).aistudio) {
+      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await (window as any).aistudio.openSelectKey();
+        // After opening, the key should be injected into process.env by the platform
+        apiKey = process.env.API_KEY;
+      }
+    }
+
+    if (!apiKey) {
+      throw new Error("API_KEY_MISSING");
+    }
+
+    return new GoogleGenAI({ apiKey });
+  },
+
   async generateSLOTagsFromBase64(
     base64Data: string, 
     mimeType: string, 
     brain: NeuralBrain
   ): Promise<SLO[]> {
-    // Initializing exactly as per guidelines
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await this.getClient();
     
     const prompt = `
       Analyze this educational document and extract Student Learning Outcomes (SLOs).
@@ -77,7 +100,7 @@ export const geminiService = {
     history: { role: 'user' | 'assistant', content: string }[],
     brain: NeuralBrain
   ) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await this.getClient();
     
     const parts: any[] = [
       { text: `System Instruction: ${brain.masterPrompt}` },
@@ -111,7 +134,7 @@ export const geminiService = {
     doc: { base64?: string; mimeType?: string },
     brain: NeuralBrain
   ) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = await this.getClient();
     
     const prompt = `
       Tool Type: ${toolType.toUpperCase()}
