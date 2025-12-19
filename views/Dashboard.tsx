@@ -1,4 +1,6 @@
 
+'use client';
+
 import React from 'react';
 import { FileText, MessageSquare, Zap, Target, TrendingUp, BarChart3 } from 'lucide-react';
 import { UserProfile, Document } from '../types';
