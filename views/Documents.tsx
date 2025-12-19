@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, Plus, ChevronLeft, Target, BrainCircuit, Lightbulb, BookOpen, Loader2, AlertCircle, Key } from 'lucide-react';
+import { Upload, FileText, Plus, ChevronLeft, Target, BrainCircuit, Lightbulb, BookOpen, Loader2, AlertCircle, Key, RefreshCw } from 'lucide-react';
 import { Document, SLO, NeuralBrain } from '../types';
 import { geminiService } from '../services/geminiService';
 
@@ -52,10 +52,11 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
     setIsProcessing(true);
     setError(null);
 
+    let newDocId = crypto.randomUUID();
+
     try {
       const base64 = await fileToBase64(file);
       
-      const newDocId = crypto.randomUUID();
       const newDoc: Document = {
         id: newDocId,
         userId: 'temp-user', 
@@ -83,10 +84,17 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
       setIsUploading(false);
     } catch (err: any) {
       console.error(err);
-      if (err.message === "API_KEY_MISSING" || err.message?.includes("API_KEY")) {
-        setError("AI Configuration Required: The Gemini API Key is missing. If you are in AI Studio, click 'Select Key' below. If on Vercel, ensure you've added the API_KEY env var and redeployed.");
+      const errorMsg = err.message || JSON.stringify(err);
+      
+      if (errorMsg.includes("RESOURCE_EXHAUSTED") || errorMsg.includes("429")) {
+        setError("Rate Limit Exceeded: You've sent too many requests to Gemini recently. Please wait about 60 seconds and try again, or switch to a paid API key for higher limits.");
+        onUpdateDocument(newDocId, { status: 'failed' });
+      } else if (errorMsg.includes("API_KEY_MISSING") || errorMsg.includes("API_KEY")) {
+        setError("AI Configuration Required: The Gemini API Key is missing. If you are in AI Studio, click 'Select Key' below.");
+        onUpdateDocument(newDocId, { status: 'failed' });
       } else {
         setError(`Processing failed: ${err.message || "Unknown error"}`);
+        onUpdateDocument(newDocId, { status: 'failed' });
       }
     } finally {
       setIsProcessing(false);
@@ -133,6 +141,12 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
                   <div className="p-20 text-center space-y-4">
                     <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto" />
                     <p className="text-slate-500 font-medium">Gemini is analyzing the curriculum using multimodal vision...</p>
+                  </div>
+                ) : selectedDoc.status === 'failed' ? (
+                   <div className="p-20 text-center space-y-4">
+                    <AlertCircle className="w-10 h-10 text-rose-500 mx-auto" />
+                    <p className="text-slate-800 font-bold">Analysis Failed</p>
+                    <p className="text-slate-500 max-w-xs mx-auto text-sm">The processing was interrupted. This is usually due to API rate limits. Please try uploading again in a minute.</p>
                   </div>
                 ) : selectedDoc.sloTags.length > 0 ? (
                   selectedDoc.sloTags.map((slo) => (
@@ -209,20 +223,31 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
       </header>
 
       {error && (
-        <div className="bg-rose-50 border border-rose-100 text-rose-700 p-6 rounded-2xl space-y-4">
+        <div className="bg-rose-50 border border-rose-100 text-rose-700 p-6 rounded-2xl space-y-4 animate-in slide-in-from-top-2">
           <div className="flex items-start gap-3">
             <AlertCircle className="w-6 h-6 shrink-0 mt-0.5" />
             <p className="text-sm font-medium">{error}</p>
           </div>
-          {error.includes("AI Configuration") && typeof window !== 'undefined' && (window as any).aistudio && (
-            <button 
-              onClick={handleSelectKey}
-              className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-rose-700 transition-all"
-            >
-              <Key className="w-4 h-4" />
-              Select API Key
-            </button>
-          )}
+          <div className="flex gap-2">
+            {error.includes("AI Configuration") && typeof window !== 'undefined' && (window as any).aistudio && (
+              <button 
+                onClick={handleSelectKey}
+                className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-xl text-sm font-bold shadow-md hover:bg-rose-700 transition-all"
+              >
+                <Key className="w-4 h-4" />
+                Select API Key
+              </button>
+            )}
+            {error.includes("Rate Limit") && (
+              <button 
+                onClick={() => setError(null)}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl text-sm font-bold shadow-md hover:bg-slate-900 transition-all"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Acknowledge & Retry Later
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -241,16 +266,19 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
             <div key={doc.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition-all group flex flex-col">
               <div className="p-6 flex-1">
                 <div className="flex items-start justify-between mb-4">
-                  <div className={`p-3 rounded-xl transition-colors ${doc.status === 'processing' ? 'bg-slate-100' : 'bg-indigo-50 group-hover:bg-indigo-600'}`}>
-                    {doc.status === 'processing' ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : <FileText className="w-6 h-6 text-indigo-600 group-hover:text-white" />}
+                  <div className={`p-3 rounded-xl transition-colors ${doc.status === 'processing' ? 'bg-slate-100' : doc.status === 'failed' ? 'bg-rose-50' : 'bg-indigo-50 group-hover:bg-indigo-600'}`}>
+                    {doc.status === 'processing' ? <Loader2 className="w-6 h-6 animate-spin text-slate-400" /> : doc.status === 'failed' ? <AlertCircle className="w-6 h-6 text-rose-500" /> : <FileText className="w-6 h-6 text-indigo-600 group-hover:text-white" />}
                   </div>
+                  {doc.status === 'failed' && <span className="text-[10px] font-bold text-rose-600 uppercase">Analysis Failed</span>}
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 truncate">{doc.name}</h3>
-                <p className="text-sm text-slate-500 mt-1">{doc.subject} • {doc.status}</p>
+                <p className="text-sm text-slate-500 mt-1">{doc.subject} • {doc.status.toUpperCase()}</p>
               </div>
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
                 <span className="text-xs text-slate-400">{new Date(doc.createdAt).toLocaleDateString()}</span>
-                <button onClick={() => setSelectedDocId(doc.id)} className="text-sm font-bold text-indigo-600">Open Analysis</button>
+                <button onClick={() => setSelectedDocId(doc.id)} className={`text-sm font-bold ${doc.status === 'failed' ? 'text-slate-400' : 'text-indigo-600'}`}>
+                  {doc.status === 'failed' ? 'Retry Required' : 'Open Analysis'}
+                </button>
               </div>
             </div>
           ))}

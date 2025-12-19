@@ -50,8 +50,9 @@ export const geminiService = {
       Output exactly in JSON format as an array of objects.
     `;
 
+    // Switching to Flash to avoid 429 Quota Exhausted errors common with Pro on free tier
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [
         {
           parts: [
@@ -154,8 +155,9 @@ export const geminiService = {
       });
     }
 
+    // Using Flash for streaming tools ensures faster "time to first token" and better quota management
     const result = await ai.models.generateContentStream({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: [{ parts }],
     });
 
