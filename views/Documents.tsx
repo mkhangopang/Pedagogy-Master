@@ -37,8 +37,9 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
       // 1. Upload directly to Gemini File API
       const uploadResult = await geminiService.uploadFile(file);
       
+      // Use crypto.randomUUID() for valid database UUID types
       const newDoc: Document = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         userId: 'session_user', // Placeholder, updated by parent
         name: file.name,
         geminiFileUri: uploadResult.uri,
