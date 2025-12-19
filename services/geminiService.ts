@@ -4,29 +4,16 @@ import { SLO, NeuralBrain } from "../types";
 
 /**
  * Pedagogy Master Gemini Service
- * Strictly adheres to Google GenAI SDK guidelines for Next.js 14.
+ * Strictly adheres to Google GenAI SDK guidelines.
  */
 export const geminiService = {
-  /**
-   * Helper to get a fresh AI instance with the provided API key.
-   */
-  getAI() {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      throw new Error("API_KEY environment variable is missing.");
-    }
-    return new GoogleGenAI({ apiKey });
-  },
-
-  /**
-   * Analyzes a document using multimodal inlineData.
-   */
   async generateSLOTagsFromBase64(
     base64Data: string, 
     mimeType: string, 
     brain: NeuralBrain
   ): Promise<SLO[]> {
-    const ai = this.getAI();
+    // Initializing exactly as per guidelines
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const prompt = `
       Analyze this educational document and extract Student Learning Outcomes (SLOs).
@@ -63,9 +50,9 @@ export const geminiService = {
             type: Type.OBJECT,
             properties: {
               id: { type: Type.STRING },
-              content: { type: Type.STRING, description: 'The learning objective text' },
-              bloomLevel: { type: Type.STRING, description: 'Bloom taxonomy level' },
-              cognitiveComplexity: { type: Type.NUMBER, description: '1-6 scale' },
+              content: { type: Type.STRING },
+              bloomLevel: { type: Type.STRING },
+              cognitiveComplexity: { type: Type.NUMBER },
               keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
               suggestedAssessment: { type: Type.STRING },
             },
@@ -90,10 +77,7 @@ export const geminiService = {
     history: { role: 'user' | 'assistant', content: string }[],
     brain: NeuralBrain
   ) {
-    const ai = this.getAI();
-    
-    // In Next.js App Router context, we use simple generation or chat.
-    // For streaming with context, we can use generateContentStream.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const parts: any[] = [
       { text: `System Instruction: ${brain.masterPrompt}` },
@@ -127,17 +111,13 @@ export const geminiService = {
     doc: { base64?: string; mimeType?: string },
     brain: NeuralBrain
   ) {
-    const ai = this.getAI();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const prompt = `
       Tool Type: ${toolType.toUpperCase()}
       User Request: ${userInput}
-      
-      Pedagogical Alignment Required:
-      ${brain.masterPrompt}
-      ${brain.bloomRules}
-      
-      Generate high-quality educational content based on the provided parameters and the attached reference document.
+      Pedagogical Alignment Required: ${brain.masterPrompt} ${brain.bloomRules}
+      Generate high-quality educational content based on the provided parameters.
     `;
 
     const parts: any[] = [{ text: prompt }];
