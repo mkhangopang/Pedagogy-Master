@@ -3,7 +3,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot, FileText, Check, AlertCircle, Zap, Clock } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain } from '../types';
 import { geminiService } from '../services/geminiService';
-import { supabase } from '../lib/supabase';
 
 interface ChatProps {
   brain: NeuralBrain;
@@ -21,38 +20,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
-
-  // Fetch history whenever selectedDocId changes
-  useEffect(() => {
-    const fetchHistory = async () => {
-      let query = supabase
-        .from('chat_messages')
-        .select('*')
-        .order('created_at', { ascending: true });
-      
-      // Filter by document if one is selected, otherwise show global/null-doc messages
-      if (selectedDocId) {
-        query = query.eq('document_id', selectedDocId);
-      } else {
-        query = query.is('document_id', null);
-      }
-
-      const { data } = await query;
-      
-      if (data) {
-        setMessages(data.map(m => ({
-          id: m.id,
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-          timestamp: m.created_at,
-          documentId: m.document_id
-        })));
-      } else {
-        setMessages([]);
-      }
-    };
-    fetchHistory();
-  }, [selectedDocId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -77,9 +44,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
     setInput('');
     setIsLoading(true);
 
-    // Save user message
-    await onSaveMessage(userMessage);
-
     const aiMessageId = crypto.randomUUID();
     const initialAiMessage: ChatMessage = {
       id: aiMessageId,
@@ -95,13 +59,12 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
       onQuery();
       let fullContent = '';
       
-      // Pass existing visible messages as history (excluding the current user message just sent)
       const chatHistory = messages.map(m => ({ role: m.role, content: m.content }));
 
       const stream = geminiService.chatWithDocumentStream(
         userMsgContent,
         {
-          fileUri: selectedDoc?.geminiFileUri,
+          base64: selectedDoc?.base64Data,
           mimeType: selectedDoc?.mimeType
         },
         chatHistory,
@@ -116,12 +79,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
           );
         }
       }
-
-      // Persist completed AI response
-      await onSaveMessage({
-        ...initialAiMessage,
-        content: fullContent
-      });
       
     } catch (err) {
       console.error(err);
@@ -129,10 +86,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
       setMessages(prev => 
         prev.map(m => m.id === aiMessageId ? { ...m, content: errorText } : m)
       );
-      await onSaveMessage({
-        ...initialAiMessage,
-        content: errorText
-      });
     } finally {
       setIsLoading(false);
     }
@@ -185,16 +138,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
               )}
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t border-slate-100">
-             <div className="bg-indigo-50 text-indigo-700 p-3 rounded-xl text-xs flex items-start gap-2 border border-indigo-100">
-               <Check className="w-4 h-4 shrink-0 mt-0.5 text-indigo-500" />
-               <p className="font-medium">
-                 {selectedDoc 
-                   ? `Analyzing: ${selectedDoc.name}` 
-                   : 'Mode: General Pedagogical Framework'}
-               </p>
-             </div>
-          </div>
         </div>
       </div>
 
@@ -222,7 +165,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
               <h4 className="font-bold text-slate-800">Start the conversation</h4>
               <p className="text-sm text-slate-500 mt-2">
                 {selectedDoc 
-                  ? `Ask specific questions about ${selectedDoc.name}. Gemini is ready to analyze its URI directly.` 
+                  ? `Ask specific questions about ${selectedDoc.name}. AI is ready to analyze its content.` 
                   : "How can I help you design your next lesson plan or assessment today?"}
               </p>
             </div>
@@ -270,9 +213,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, c
             >
               <Send className="w-5 h-5" />
             </button>
-          </div>
-          <div className="mt-2 text-[10px] text-center text-slate-400 font-medium">
-            AI can make mistakes. Check important pedagogical information.
           </div>
         </div>
       </div>

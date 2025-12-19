@@ -35,10 +35,8 @@ export interface Document {
   id: string;
   userId: string;
   name: string;
-  content?: string; // Content becomes optional as we use File API
-  geminiFileUri?: string;
+  base64Data?: string;
   mimeType?: string;
-  fileUrl?: string;
   status: 'processing' | 'completed' | 'failed';
   subject: string;
   gradeLevel: string;

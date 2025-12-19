@@ -1,4 +1,3 @@
-
-// This file is deprecated. Next.js uses next.config.js for configuration.
-// Emptying this file to prevent TypeScript build errors.
+// This file is legacy and not used by Next.js. 
+// It is emptied to prevent build errors related to missing Vite dependencies.
 export {};

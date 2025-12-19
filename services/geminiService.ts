@@ -4,50 +4,57 @@ import { SLO, NeuralBrain } from "../types";
 
 /**
  * Pedagogy Master Gemini Service
- * Adheres to strict @google/genai SDK guidelines.
+ * Strictly adheres to Google GenAI SDK guidelines for Next.js 14.
  */
 export const geminiService = {
   /**
-   * Helper to get a fresh AI instance
+   * Helper to get a fresh AI instance with the provided API key.
    */
   getAI() {
     const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      throw new Error("API_KEY is not defined in the environment.");
+      throw new Error("API_KEY environment variable is missing.");
     }
     return new GoogleGenAI({ apiKey });
   },
 
-  async uploadFile(file: File): Promise<{ uri: string; mimeType: string }> {
+  /**
+   * Analyzes a document using multimodal inlineData.
+   */
+  async generateSLOTagsFromBase64(
+    base64Data: string, 
+    mimeType: string, 
+    brain: NeuralBrain
+  ): Promise<SLO[]> {
     const ai = this.getAI();
-    const uploadResult = await ai.files.upload(file, {
-      mimeType: file.type,
-      displayName: file.name,
-    });
-    return {
-      uri: uploadResult.file.uri,
-      mimeType: uploadResult.file.mimeType,
-    };
-  },
-
-  async generateSLOTagsFromFile(fileUri: string, mimeType: string, brain: NeuralBrain): Promise<SLO[]> {
-    const ai = this.getAI();
+    
     const prompt = `
-      Analyze the curriculum document provided via File API and extract Student Learning Outcomes (SLOs).
-      Follow these rules: ${brain.bloomRules}
-      Instruction: ${brain.masterPrompt}
+      Analyze this educational document and extract Student Learning Outcomes (SLOs).
+      
+      Pedagogical Framework:
+      ${brain.masterPrompt}
+      
+      Bloom's Rules:
+      ${brain.bloomRules}
       
       Output exactly in JSON format as an array of objects.
     `;
 
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
-      contents: {
-        parts: [
-          { text: prompt },
-          { fileData: { fileUri, mimeType } }
-        ]
-      },
+      contents: [
+        {
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Data
+              }
+            }
+          ]
+        }
+      ],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -56,9 +63,9 @@ export const geminiService = {
             type: Type.OBJECT,
             properties: {
               id: { type: Type.STRING },
-              content: { type: Type.STRING },
-              bloomLevel: { type: Type.STRING },
-              cognitiveComplexity: { type: Type.NUMBER },
+              content: { type: Type.STRING, description: 'The learning objective text' },
+              bloomLevel: { type: Type.STRING, description: 'Bloom taxonomy level' },
+              cognitiveComplexity: { type: Type.NUMBER, description: '1-6 scale' },
               keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
               suggestedAssessment: { type: Type.STRING },
             },
@@ -69,39 +76,44 @@ export const geminiService = {
     });
 
     try {
-      return JSON.parse(response.text || "[]");
+      const text = response.text || "[]";
+      return JSON.parse(text);
     } catch (e) {
-      console.error("JSON parse failed for SLO extraction", e);
+      console.error("Failed to parse SLO JSON:", e);
       return [];
     }
   },
 
   async *chatWithDocumentStream(
     message: string, 
-    doc: { fileUri?: string; mimeType?: string }, 
+    doc: { base64?: string; mimeType?: string }, 
     history: { role: 'user' | 'assistant', content: string }[],
     brain: NeuralBrain
   ) {
     const ai = this.getAI();
-    const formattedHistory = history.map(h => ({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.content }]
-    }));
+    
+    // In Next.js App Router context, we use simple generation or chat.
+    // For streaming with context, we can use generateContentStream.
+    
+    const parts: any[] = [
+      { text: `System Instruction: ${brain.masterPrompt}` },
+      ...history.map(h => ({ text: `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}` })),
+      { text: `Current User Query: ${message}` }
+    ];
 
-    const chat = ai.chats.create({
-      model: 'gemini-3-flash-preview',
-      history: formattedHistory,
-      config: {
-        systemInstruction: brain.masterPrompt,
-      },
-    });
-
-    const currentParts: any[] = [{ text: message }];
-    if (doc.fileUri && doc.mimeType) {
-      currentParts.push({ fileData: { fileUri: doc.fileUri, mimeType: doc.mimeType } });
+    if (doc.base64 && doc.mimeType) {
+      parts.push({
+        inlineData: {
+          mimeType: doc.mimeType,
+          data: doc.base64
+        }
+      });
     }
 
-    const result = await chat.sendMessageStream({ message: currentParts });
+    const result = await ai.models.generateContentStream({
+      model: 'gemini-3-flash-preview',
+      contents: [{ parts }],
+    });
 
     for await (const chunk of result) {
       const c = chunk as GenerateContentResponse;
@@ -112,26 +124,36 @@ export const geminiService = {
   async *generatePedagogicalToolStream(
     toolType: string,
     userInput: string,
-    doc: { fileUri?: string; mimeType?: string },
+    doc: { base64?: string; mimeType?: string },
     brain: NeuralBrain
   ) {
     const ai = this.getAI();
+    
     const prompt = `
-      Tool Type: ${toolType}
+      Tool Type: ${toolType.toUpperCase()}
       User Request: ${userInput}
-      Master Instruction: ${brain.masterPrompt}
-      Rules: ${brain.bloomRules}
-      Use the provided document context to generate a high-quality ${toolType}.
+      
+      Pedagogical Alignment Required:
+      ${brain.masterPrompt}
+      ${brain.bloomRules}
+      
+      Generate high-quality educational content based on the provided parameters and the attached reference document.
     `;
 
     const parts: any[] = [{ text: prompt }];
-    if (doc.fileUri && doc.mimeType) {
-      parts.push({ fileData: { fileUri: doc.fileUri, mimeType: doc.mimeType } });
+    
+    if (doc.base64 && doc.mimeType) {
+      parts.push({
+        inlineData: {
+          mimeType: doc.mimeType,
+          data: doc.base64
+        }
+      });
     }
 
     const result = await ai.models.generateContentStream({
       model: "gemini-3-pro-preview",
-      contents: { parts },
+      contents: [{ parts }],
     });
 
     for await (const chunk of result) {

@@ -38,7 +38,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
         activeTool, 
         userInput, 
         {
-          fileUri: selectedDoc?.geminiFileUri,
+          base64: selectedDoc?.base64Data,
           mimeType: selectedDoc?.mimeType
         }, 
         brain
@@ -70,7 +70,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <header>
         <h1 className="text-3xl font-bold text-slate-900">GenAI Pedagogical Tools</h1>
-        <p className="text-slate-500 mt-1">Accelerate teaching workflow with direct Gemini File API integration.</p>
+        <p className="text-slate-500 mt-1">Accelerate teaching workflow with direct Multimodal AI context.</p>
       </header>
 
       {!canQuery && (
@@ -153,7 +153,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
                 className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                {isGenerating ? 'Analyzing File...' : 'Generate Content'}
+                {isGenerating ? 'Generating Content...' : 'Generate Content'}
               </button>
             </div>
           </div>
@@ -170,7 +170,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
                 )}
               </div>
               <div className="flex-1 p-8 overflow-y-auto whitespace-pre-wrap font-serif text-slate-800 leading-loose text-lg">
-                {result || (isGenerating ? 'Watch as Gemini analyzes the curriculum URI...' : 'Results will appear here.')}
+                {result || (isGenerating ? 'Watch as Gemini synthesizes your request...' : 'Results will appear here.')}
               </div>
             </div>
           </div>

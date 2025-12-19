@@ -22,6 +22,18 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        resolve(base64);
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -34,39 +46,34 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
     setError(null);
 
     try {
-      // 1. Upload directly to Gemini File API
-      const uploadResult = await geminiService.uploadFile(file);
+      const base64 = await fileToBase64(file);
       
-      // Use crypto.randomUUID() for valid database UUID types
+      const newDocId = crypto.randomUUID();
       const newDoc: Document = {
-        id: crypto.randomUUID(),
-        userId: 'session_user', // Placeholder, updated by parent
+        id: newDocId,
+        userId: 'temp-user', 
         name: file.name,
-        geminiFileUri: uploadResult.uri,
-        mimeType: uploadResult.mimeType,
+        base64Data: base64,
+        mimeType: file.type,
         status: 'processing',
-        subject: 'General Curriculum',
+        subject: 'Pending Analysis',
         gradeLevel: 'K-12',
         sloTags: [],
         createdAt: new Date().toISOString()
       };
 
       onAddDocument(newDoc);
-      setIsUploading(false);
       onQuery();
 
-      // 2. Extract SLOs using the file URI reference
-      const slos = await geminiService.generateSLOTagsFromFile(
-        uploadResult.uri, 
-        uploadResult.mimeType, 
-        brain
-      );
+      const slos = await geminiService.generateSLOTagsFromBase64(base64, file.type, brain);
 
-      onUpdateDocument(newDoc.id, { 
+      onUpdateDocument(newDocId, { 
         status: 'completed', 
         sloTags: slos,
-        subject: slos.length > 0 ? slos[0].keywords[0] || 'Curriculum' : 'General'
+        subject: slos.length > 0 ? slos[0].keywords[0] || 'General' : 'General'
       });
+      
+      setIsUploading(false);
     } catch (err: any) {
       console.error(err);
       setError(`Processing failed: ${err.message || "Unknown error"}`);
@@ -114,7 +121,7 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
                 {selectedDoc.status === 'processing' ? (
                   <div className="p-20 text-center space-y-4">
                     <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto" />
-                    <p className="text-slate-500 font-medium">Gemini is analyzing the curriculum structure directly via File API...</p>
+                    <p className="text-slate-500 font-medium">Gemini is analyzing the curriculum using multimodal vision...</p>
                   </div>
                 ) : selectedDoc.sloTags.length > 0 ? (
                   selectedDoc.sloTags.map((slo) => (
@@ -178,7 +185,7 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Curriculum Library</h1>
-          <p className="text-slate-500">Upload PDF/DOCX files directly for intelligent Gemini analysis.</p>
+          <p className="text-slate-500">Upload PDF/DOCX files directly for intelligent multimodal analysis.</p>
         </div>
         <button 
           onClick={() => setIsUploading(true)} 
@@ -203,7 +210,7 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
             <Upload className="w-8 h-8" />
           </div>
           <h2 className="text-xl font-bold text-slate-700">Empty Library</h2>
-          <p className="text-slate-500 max-w-sm mx-auto">Gemini File API will analyze your documents directly. No manual text extraction required.</p>
+          <p className="text-slate-500 max-w-sm mx-auto">Multimodal Gemini AI analyzes your pedagogical documents instantly.</p>
           <button onClick={() => setIsUploading(true)} disabled={!canQuery} className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold disabled:opacity-50">Upload Now</button>
         </div>
       ) : (
@@ -243,7 +250,7 @@ const Documents: React.FC<DocumentsProps> = ({ documents, onAddDocument, onUpdat
                 {isProcessing ? <Loader2 className="w-8 h-8 animate-spin text-indigo-500" /> : <Upload className="w-8 h-8 text-indigo-500" />}
               </div>
               <div className="text-center">
-                <p className="font-semibold text-slate-900">{isProcessing ? 'Gemini is processing file...' : 'Upload via Gemini File API'}</p>
+                <p className="font-semibold text-slate-900">{isProcessing ? 'Gemini is processing file...' : 'Upload for AI Analysis'}</p>
                 <p className="text-sm text-slate-500 mt-1">PDF, DOCX, or Text (Max 20MB)</p>
               </div>
               <input 
