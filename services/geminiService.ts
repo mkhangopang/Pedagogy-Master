@@ -4,22 +4,22 @@ import { SLO, NeuralBrain } from "../types";
 
 /**
  * Pedagogy Master Gemini Service
+ * Adheres strictly to Google GenAI SDK standards.
  */
 export const geminiService = {
   /**
    * Internal helper to initialize the AI client.
-   * Prioritizes process.env.API_KEY, but supports AI Studio key selection.
+   * Prioritizes process.env.API_KEY (mapped in next.config.js), 
+   * but supports AI Studio key selection fallback.
    */
   async getClient() {
-    // Check if key is in environment
     let apiKey = process.env.API_KEY;
 
-    // Check if we are in AI Studio environment and need to trigger key selection
+    // Fallback for AI Studio preview environment if environment variable is missing
     if (!apiKey && typeof window !== 'undefined' && (window as any).aistudio) {
       const hasKey = await (window as any).aistudio.hasSelectedApiKey();
       if (!hasKey) {
         await (window as any).aistudio.openSelectKey();
-        // After opening, the key should be injected into process.env by the platform
         apiKey = process.env.API_KEY;
       }
     }
@@ -124,7 +124,7 @@ export const geminiService = {
 
     for await (const chunk of result) {
       const c = chunk as GenerateContentResponse;
-      yield c.text;
+      if (c.text) yield c.text;
     }
   },
 
@@ -161,7 +161,7 @@ export const geminiService = {
 
     for await (const chunk of result) {
       const c = chunk as GenerateContentResponse;
-      yield c.text;
+      if (c.text) yield c.text;
     }
   }
 };
