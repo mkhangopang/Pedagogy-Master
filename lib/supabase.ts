@@ -4,13 +4,16 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// Log warnings instead of crashing to allow the UI to show setup instructions
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn(
-    "Supabase credentials missing. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in your environment variables."
-  );
+  if (typeof window !== 'undefined') {
+    console.warn(
+      "Supabase credentials missing. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in Vercel."
+    );
+  }
 }
 
 export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co', 
+  supabaseUrl || 'https://placeholder-project.supabase.co',
   supabaseAnonKey || 'placeholder-key'
 );

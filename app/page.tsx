@@ -14,6 +14,9 @@ import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document, ChatMes
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { Loader2 } from 'lucide-react';
 
+/**
+ * Main Application Component (Next.js 14 Client Component)
+ */
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -22,7 +25,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   const [brain, setBrain] = useState<NeuralBrain>({
-    id: typeof crypto !== 'undefined' ? crypto.randomUUID() : 'initial-id',
+    id: typeof crypto !== 'undefined' ? crypto.randomUUID() : 'initial-brain-id',
     masterPrompt: DEFAULT_MASTER_PROMPT,
     bloomRules: DEFAULT_BLOOM_RULES,
     version: 1,
@@ -31,14 +34,22 @@ export default function App() {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) {
-        fetchProfileAndDocs(session.user.id);
-        fetchBrain();
+    const initSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setSession(session);
+        if (session) {
+          fetchProfileAndDocs(session.user.id);
+          fetchBrain();
+        }
+      } catch (err) {
+        console.error("Session initialization failed:", err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    };
+
+    initSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -150,7 +161,7 @@ export default function App() {
       id: doc.id,
       user_id: session.user.id,
       name: doc.name,
-      content: doc.content,
+      content: doc.content || null,
       gemini_file_uri: doc.geminiFileUri,
       mime_type: doc.mimeType,
       status: doc.status,
