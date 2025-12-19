@@ -6,18 +6,14 @@ const apiKey = process.env.API_KEY as string;
 
 export const geminiService = {
   /**
-   * Uploads a file directly to Gemini's File API using the ai.files namespace.
-   * This adheres to the requirement for direct document processing via File API.
+   * Uploads a file directly to Gemini's File API.
    */
   async uploadFile(file: File): Promise<{ uri: string; mimeType: string }> {
     const ai = new GoogleGenAI({ apiKey });
-    
-    // Direct upload to Gemini File API using the ai.files.upload method
     const uploadResult = await ai.files.upload(file, {
       mimeType: file.type,
       displayName: file.name,
     });
-
     return {
       uri: uploadResult.file.uri,
       mimeType: uploadResult.file.mimeType,
@@ -34,7 +30,6 @@ export const geminiService = {
       Instruction: ${brain.masterPrompt}
     `;
 
-    // Using ai.models.generateContent as per strict SDK guidelines
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: {
@@ -72,7 +67,7 @@ export const geminiService = {
   },
 
   /**
-   * Streaming chat session utilizing the stored Gemini File URI.
+   * Enhanced streaming chat session utilizing history and document URI.
    */
   async *chatWithDocumentStream(
     message: string, 
@@ -82,22 +77,29 @@ export const geminiService = {
   ) {
     const ai = new GoogleGenAI({ apiKey });
     
-    // Construct parts: message + file reference if available
-    const parts: any[] = [{ text: message }];
-    if (doc.fileUri && doc.mimeType) {
-      parts.push({ fileData: { fileUri: doc.fileUri, mimeType: doc.mimeType } });
-    }
+    // Convert application history to Gemini SDK format
+    // Gemini uses 'model' instead of 'assistant'
+    const formattedHistory = history.map(h => ({
+      role: h.role === 'user' ? 'user' : 'model',
+      parts: [{ text: h.content }]
+    }));
 
     const chat = ai.chats.create({
       model: 'gemini-3-flash-preview',
+      history: formattedHistory,
       config: {
         systemInstruction: brain.masterPrompt,
       },
     });
 
-    // sendMessageStream accepts a string, a Part, or an array of Parts
+    // Construct the current message parts: text + optional file reference
+    const currentParts: any[] = [{ text: message }];
+    if (doc.fileUri && doc.mimeType) {
+      currentParts.push({ fileData: { fileUri: doc.fileUri, mimeType: doc.mimeType } });
+    }
+
     const result = await chat.sendMessageStream({ 
-      message: parts 
+      message: currentParts 
     });
 
     for await (const chunk of result) {
