@@ -95,10 +95,10 @@ export const geminiService = {
       },
     });
 
-    // sendMessageStream requires a message property containing the prompt
+    // sendMessageStream accepts a string, a Part, or an array of Parts
     const result = await chat.sendMessageStream({ 
-      message: { parts }
-    } as any);
+      message: parts 
+    });
 
     for await (const chunk of result) {
       const c = chunk as GenerateContentResponse;

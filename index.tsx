@@ -9,7 +9,7 @@ import Chat from './views/Chat';
 import Tools from './views/Tools';
 import BrainControl from './views/BrainControl';
 import Login from './views/Login';
-import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from './types';
+import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document, ChatMessage } from './types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from './constants';
 import { Loader2 } from 'lucide-react';
 
@@ -21,7 +21,7 @@ const App = () => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
   const [brain, setBrain] = useState<NeuralBrain>({
-    id: 'b1',
+    id: crypto.randomUUID(),
     masterPrompt: DEFAULT_MASTER_PROMPT,
     bloomRules: DEFAULT_BLOOM_RULES,
     version: 1,
@@ -32,14 +32,19 @@ const App = () => {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) fetchProfileAndDocs(session.user.id);
+      if (session) {
+        fetchProfileAndDocs(session.user.id);
+        fetchBrain();
+      }
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
-      if (session) fetchProfileAndDocs(session.user.id);
-      else {
+      if (session) {
+        fetchProfileAndDocs(session.user.id);
+        fetchBrain();
+      } else {
         setUserProfile(null);
         setDocuments([]);
       }
@@ -48,13 +53,42 @@ const App = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchProfileAndDocs = async (userId: string) => {
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).single();
+  const fetchBrain = async () => {
+    const { data } = await supabase
+      .from('neural_brain')
+      .select('*')
+      .eq('is_active', true)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
     
-    const initialProfile: UserProfile = profile || {
+    if (data) {
+      setBrain({
+        id: data.id,
+        masterPrompt: data.master_prompt,
+        bloomRules: data.bloom_rules,
+        version: data.version,
+        isActive: data.is_active,
+        updatedAt: data.updated_at
+      });
+    }
+  };
+
+  const fetchProfileAndDocs = async (userId: string) => {
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+    
+    const initialProfile: UserProfile = profile ? {
+      id: profile.id,
+      name: profile.name || 'Teacher',
+      email: profile.email || '',
+      role: profile.role as UserRole,
+      plan: profile.plan as SubscriptionPlan,
+      queriesUsed: profile.queries_used,
+      queriesLimit: profile.queries_limit
+    } : {
       id: userId,
-      name: session?.user?.email?.split('@')[0] || 'Teacher',
-      email: session?.user?.email || '',
+      name: 'Teacher',
+      email: '',
       role: UserRole.TEACHER,
       plan: SubscriptionPlan.FREE,
       queriesUsed: 0,
@@ -77,7 +111,7 @@ const App = () => {
         content: d.content,
         geminiFileUri: d.gemini_file_uri,
         mimeType: d.mime_type,
-        status: d.status,
+        status: d.status as 'processing' | 'completed' | 'failed',
         subject: d.subject,
         gradeLevel: d.grade_level,
         sloTags: d.slo_tags || [],
@@ -91,14 +125,25 @@ const App = () => {
     if (!userProfile) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
-    
-    // Update local Supabase if table exists
     await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
+  };
+
+  const saveChatMessage = async (msg: ChatMessage) => {
+    if (!session) return;
+    await supabase.from('chat_messages').insert([{
+      id: msg.id,
+      user_id: session.user.id,
+      document_id: msg.documentId || null,
+      role: msg.role,
+      content: msg.content,
+      created_at: msg.timestamp
+    }]);
   };
 
   const canQuery = userProfile ? userProfile.queriesUsed < userProfile.queriesLimit : false;
 
   const addDocument = async (doc: Document) => {
+    if (!session) return;
     setDocuments(prev => [doc, ...prev]);
     await supabase.from('documents').insert([{
       id: doc.id,
@@ -124,6 +169,16 @@ const App = () => {
     if (updates.geminiFileUri) dbUpdates.gemini_file_uri = updates.geminiFileUri;
     if (updates.mimeType) dbUpdates.mime_type = updates.mimeType;
     await supabase.from('documents').update(dbUpdates).eq('id', id);
+  };
+
+  const updateBrain = async (newBrain: NeuralBrain) => {
+    setBrain(newBrain);
+    await supabase.from('neural_brain').insert([{
+      master_prompt: newBrain.masterPrompt,
+      bloom_rules: newBrain.bloomRules,
+      version: newBrain.version,
+      is_active: true
+    }]);
   };
 
   if (loading) {
@@ -154,11 +209,17 @@ const App = () => {
           />
         );
       case 'chat':
-        return <Chat brain={brain} documents={documents} onQuery={incrementQueries} canQuery={canQuery} />;
+        return <Chat 
+          brain={brain} 
+          documents={documents} 
+          onQuery={incrementQueries} 
+          onSaveMessage={saveChatMessage}
+          canQuery={canQuery} 
+        />;
       case 'tools':
         return <Tools brain={brain} documents={documents} onQuery={incrementQueries} canQuery={canQuery} />;
       case 'brain':
-        return <BrainControl brain={brain} onUpdate={setBrain} />;
+        return <BrainControl brain={brain} onUpdate={updateBrain} />;
       default:
         return <Dashboard user={userProfile} documents={documents} />;
     }

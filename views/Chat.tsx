@@ -3,15 +3,17 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot, FileText, Check, AlertCircle, Zap } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain } from '../types';
 import { geminiService } from '../services/geminiService';
+import { supabase } from '../lib/supabase';
 
 interface ChatProps {
   brain: NeuralBrain;
   documents: Document[];
   onQuery: () => void;
+  onSaveMessage: (msg: ChatMessage) => Promise<void>;
   canQuery: boolean;
 }
 
-const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery }) => {
+const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, onSaveMessage, canQuery }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -19,6 +21,27 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
+
+  useEffect(() => {
+    // Fetch initial message history
+    const fetchHistory = async () => {
+      const { data } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .order('created_at', { ascending: true });
+      
+      if (data) {
+        setMessages(data.map(m => ({
+          id: m.id,
+          role: m.role as 'user' | 'assistant',
+          content: m.content,
+          timestamp: m.created_at,
+          documentId: m.document_id
+        })));
+      }
+    };
+    fetchHistory();
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -32,7 +55,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery }) => {
 
     const userMsgContent = input;
     const userMessage: ChatMessage = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       role: 'user',
       content: userMsgContent,
       timestamp: new Date().toISOString(),
@@ -43,12 +66,16 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery }) => {
     setInput('');
     setIsLoading(true);
 
-    const aiMessageId = (Date.now() + 1).toString();
+    // Persist user message immediately
+    await onSaveMessage(userMessage);
+
+    const aiMessageId = crypto.randomUUID();
     const initialAiMessage: ChatMessage = {
       id: aiMessageId,
       role: 'assistant',
       content: '',
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      documentId: selectedDocId || undefined
     };
     
     setMessages(prev => [...prev, initialAiMessage]);
@@ -75,11 +102,23 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery }) => {
           );
         }
       }
+
+      // Persist completed AI response
+      await onSaveMessage({
+        ...initialAiMessage,
+        content: fullContent
+      });
+      
     } catch (err) {
       console.error(err);
+      const errorText = "Error: The AI failed to respond. Please check your connection.";
       setMessages(prev => 
-        prev.map(m => m.id === aiMessageId ? { ...m, content: "Error: The AI failed to respond. Please check your connection." } : m)
+        prev.map(m => m.id === aiMessageId ? { ...m, content: errorText } : m)
       );
+      await onSaveMessage({
+        ...initialAiMessage,
+        content: errorText
+      });
     } finally {
       setIsLoading(false);
     }
@@ -152,7 +191,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery }) => {
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/30">
-          {messages.length === 0 && (
+          {messages.length === 0 && !isLoading && (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-sm mx-auto opacity-50">
               <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center mb-4 shadow-sm">
                 <Send className="w-8 h-8 text-indigo-400" />
