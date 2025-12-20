@@ -9,10 +9,11 @@ import Documents from '../views/Documents';
 import Chat from '../views/Chat';
 import Tools from '../views/Tools';
 import BrainControl from '../views/BrainControl';
+import Pricing from '../views/Pricing';
 import Login from '../views/Login';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document, ChatMessage } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS } from '../constants';
-import { Loader2, Menu, X } from 'lucide-react';
+import { Loader2, Menu } from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -20,8 +21,8 @@ export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile menu
-  const [isCollapsed, setIsCollapsed] = useState(false); // Desktop toggle
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
 
   const [brain, setBrain] = useState<NeuralBrain>({
     id: typeof crypto !== 'undefined' ? crypto.randomUUID() : 'initial-brain-id',
@@ -38,8 +39,8 @@ export default function App() {
         const { data: { session } } = await supabase.auth.getSession();
         setSession(session);
         if (session) {
-          fetchProfileAndDocs(session.user.id);
-          fetchBrain();
+          await fetchProfileAndDocs(session.user.id);
+          await fetchBrain();
         }
       } catch (err) {
         console.error("Session initialization failed:", err);
@@ -50,11 +51,11 @@ export default function App() {
 
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session) {
-        fetchProfileAndDocs(session.user.id);
-        fetchBrain();
+        await fetchProfileAndDocs(session.user.id);
+        await fetchBrain();
       } else {
         setUserProfile(null);
         setDocuments([]);
@@ -90,7 +91,7 @@ export default function App() {
     
     const initialProfile: UserProfile = profile ? {
       id: profile.id,
-      name: profile.name || 'Teacher',
+      name: profile.name || 'Educator',
       email: profile.email || '',
       role: profile.role as UserRole,
       plan: profile.plan as SubscriptionPlan,
@@ -98,7 +99,7 @@ export default function App() {
       queriesLimit: profile.queries_limit || 50
     } : {
       id: userId,
-      name: 'Teacher',
+      name: 'Educator',
       email: '',
       role: UserRole.TEACHER,
       plan: SubscriptionPlan.FREE,
@@ -108,6 +109,7 @@ export default function App() {
 
     setUserProfile(initialProfile);
 
+    // PERSISTENCE FIX: Map data properly and ensure we filter by userId
     const { data: docs } = await supabase
       .from('documents')
       .select('*')
@@ -148,22 +150,19 @@ export default function App() {
     await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
   };
 
-  const canQuery = userProfile ? userProfile.queriesUsed < userProfile.queriesLimit : false;
-
   const addDocument = async (doc: Document) => {
-    // Check local limit first
-    const maxDocs = ROLE_LIMITS[userProfile?.plan || SubscriptionPlan.FREE].docs;
+    if (!userProfile) return;
+    const maxDocs = ROLE_LIMITS[userProfile.plan].docs;
     if (documents.length >= maxDocs) {
-      alert(`Limit reached: ${userProfile?.plan} users can only upload ${maxDocs} documents.`);
+      alert(`Limit reached: ${userProfile.plan} plan supports max ${maxDocs} docs.`);
       return;
     }
 
     setDocuments(prev => [doc, ...prev]);
 
-    // Persist to Supabase
     await supabase.from('documents').insert([{
       id: doc.id,
-      user_id: userProfile?.id,
+      user_id: userProfile.id,
       name: doc.name,
       base64_data: doc.base64Data,
       mime_type: doc.mimeType,
@@ -175,86 +174,72 @@ export default function App() {
     }]);
   };
 
+  const deleteDocument = async (id: string) => {
+    if (userProfile?.plan === SubscriptionPlan.FREE) {
+      alert("Free plan users cannot delete documents. Upgrade to manage library.");
+      return;
+    }
+    setDocuments(prev => prev.filter(d => d.id !== id));
+    await supabase.from('documents').delete().eq('id', id);
+  };
+
   const updateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-    
-    // Map internal camelCase keys to Supabase snake_case keys for database update
     const dbUpdates: any = {};
     if (updates.status) dbUpdates.status = updates.status;
     if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
     if (updates.subject) dbUpdates.subject = updates.subject;
-    
     await supabase.from('documents').update(dbUpdates).eq('id', id);
   };
 
-  const updateBrain = async (newBrain: NeuralBrain) => {
-    setBrain(newBrain);
-    await supabase.from('neural_brain').update({
-      master_prompt: newBrain.masterPrompt,
-      bloom_rules: newBrain.bloomRules,
-      version: newBrain.version + 1,
-      updated_at: new Date().toISOString()
-    }).eq('id', newBrain.id);
+  const updatePlan = async (plan: SubscriptionPlan) => {
+    if (!userProfile) return;
+    const limit = plan === SubscriptionPlan.FREE ? 50 : plan === SubscriptionPlan.PRO ? 500 : 999999;
+    const updated = { ...userProfile, plan, queriesLimit: limit };
+    setUserProfile(updated);
+    await supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
+    setCurrentView('dashboard');
   };
-
-  if (loading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-10 h-10 animate-spin text-indigo-600" />
-      </div>
-    );
-  }
-
-  if (!session || !userProfile) {
-    return <Login onSession={setSession} />;
-  }
 
   const renderView = () => {
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard user={userProfile} documents={documents} />;
+        return <Dashboard user={userProfile!} documents={documents} />;
       case 'documents':
         return (
           <Documents 
             documents={documents} 
             onAddDocument={addDocument} 
             onUpdateDocument={updateDocument}
+            onDeleteDocument={deleteDocument}
             brain={brain}
             onQuery={incrementQueries}
-            canQuery={canQuery}
-            userPlan={userProfile.plan}
+            canQuery={userProfile!.queriesUsed < userProfile!.queriesLimit}
+            userPlan={userProfile!.plan}
           />
         );
       case 'chat':
-        return <Chat brain={brain} documents={documents} onQuery={incrementQueries} canQuery={canQuery} />;
+        return <Chat brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile!.queriesUsed < userProfile!.queriesLimit} />;
       case 'tools':
-        return <Tools brain={brain} documents={documents} onQuery={incrementQueries} canQuery={canQuery} />;
+        return <Tools brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile!.queriesUsed < userProfile!.queriesLimit} />;
       case 'brain':
-        return <BrainControl brain={brain} onUpdate={updateBrain} />;
+        return <BrainControl brain={brain} onUpdate={setBrain} />;
+      case 'pricing':
+        return <Pricing currentPlan={userProfile!.plan} onUpgrade={updatePlan} />;
       default:
-        return <Dashboard user={userProfile} documents={documents} />;
+        return <Dashboard user={userProfile!} documents={documents} />;
     }
   };
 
-  return (
-    <div className="flex min-h-screen bg-slate-50 overflow-hidden relative">
-      {/* Mobile Backdrop */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  if (!session || !userProfile) return <Login onSession={setSession} />;
 
-      {/* Sidebar Container */}
-      <div className={`
-        fixed inset-y-0 left-0 z-50 transition-all duration-300 lg:static
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        ${isCollapsed ? 'w-20' : 'w-64'}
-      `}>
+  return (
+    <div className="flex h-screen bg-slate-50 overflow-hidden">
+      <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
         <Sidebar 
           currentView={currentView} 
-          onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 
+          onViewChange={setCurrentView} 
           userProfile={userProfile} 
           onToggleAdmin={handleToggleAdmin}
           isCollapsed={isCollapsed}
@@ -262,22 +247,31 @@ export default function App() {
         />
       </div>
 
-      <main className="flex-1 flex flex-col min-w-0 max-h-screen overflow-hidden">
-        {/* Top Mobile Bar */}
-        <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
-            <Menu className="w-6 h-6" />
-          </button>
-          <span className="font-bold text-indigo-950">EduNexus AI</span>
-          <div className="w-10" />
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
-          <div className="max-w-6xl mx-auto pb-20">
-            {renderView()}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 z-50 lg:hidden" onClick={() => setIsSidebarOpen(false)}>
+          <div className="w-64 h-full bg-white" onClick={e => e.stopPropagation()}>
+            <Sidebar 
+              currentView={currentView} 
+              onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 
+              userProfile={userProfile} 
+              onToggleAdmin={handleToggleAdmin}
+              isCollapsed={false}
+              setIsCollapsed={() => {}}
+            />
           </div>
         </div>
-      </main>
+      )}
+
+      <div className="flex-1 flex flex-col min-w-0">
+        <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b">
+          <button onClick={() => setIsSidebarOpen(true)}><Menu /></button>
+          <span className="font-bold">EduNexus AI</span>
+          <div className="w-8" />
+        </header>
+        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+          <div className="max-w-6xl mx-auto">{renderView()}</div>
+        </main>
+      </div>
     </div>
   );
 }

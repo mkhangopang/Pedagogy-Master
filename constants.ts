@@ -1,20 +1,20 @@
 
 import { UserRole, SubscriptionPlan } from './types';
 
-export const APP_NAME = "Pedagogy Master";
+export const APP_NAME = "EduNexus AI";
 
 export const BLOOM_LEVELS = [
   "Remember", "Understand", "Apply", 
   "Analyze", "Evaluate", "Create"
 ];
 
-export const DEFAULT_MASTER_PROMPT = `You are an expert pedagogical AI assistant for Pedagogy Master.
+export const DEFAULT_MASTER_PROMPT = `You are an expert pedagogical AI assistant for EduNexus AI.
 Your primary role is to analyze curriculum documents and help educators create high-quality educational content aligned with Bloom's Taxonomy.
 Response Format:
+- Use markdown for structure
 - Be concise and actionable
-- Use educator-friendly language
-- Provide specific examples
-- Always cite Bloom's level when relevant`;
+- Cite Bloom's level when relevant
+- Keep tone professional and encouraging`;
 
 export const DEFAULT_BLOOM_RULES = `Bloom's Taxonomy Levels:
 1. Remember - Recall facts and basic concepts
@@ -25,7 +25,22 @@ export const DEFAULT_BLOOM_RULES = `Bloom's Taxonomy Levels:
 6. Create - Produce new or original work`;
 
 export const ROLE_LIMITS = {
-  [SubscriptionPlan.FREE]: { docs: 2, queries: 50 },
-  [SubscriptionPlan.PRO]: { docs: 50, queries: 500 },
-  [SubscriptionPlan.ENTERPRISE]: { docs: Infinity, queries: Infinity },
+  [SubscriptionPlan.FREE]: { 
+    docs: 2, 
+    queries: 50, 
+    price: "$0", 
+    features: ["2 Document limit", "Basic AI Tutor", "Remember/Understand levels", "No deletions allowed"] 
+  },
+  [SubscriptionPlan.PRO]: { 
+    docs: 50, 
+    queries: 500, 
+    price: "$29", 
+    features: ["50 Document limit", "Advanced AI Models", "Full Bloom's Suite", "Export to PDF/Docs", "Priority Support"] 
+  },
+  [SubscriptionPlan.ENTERPRISE]: { 
+    docs: Infinity, 
+    queries: Infinity, 
+    price: "$199", 
+    features: ["Unlimited Documents", "Custom Neural Brain", "LMS Integration", "Institutional Dashboard", "Dedicated Training"] 
+  },
 };
