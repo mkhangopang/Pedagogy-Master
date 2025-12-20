@@ -3,10 +3,15 @@ import { UserRole, SubscriptionPlan } from './types';
 
 export const APP_NAME = "Pedagogy Master";
 
-// IMPORTANT: Replace this with your actual email to gain Developer access
+/**
+ * DEVELOPER ACCESS INSTRUCTIONS:
+ * 1. Add your login email to the array below.
+ * 2. When you log in, the app will automatically grant you the APP_ADMIN role.
+ * 3. You will then see the "Neural Brain" tab in the sidebar.
+ */
 export const ADMIN_EMAILS = [
   'admin@edunexus.ai',
-  'your-email@example.com' // Add your actual login email here
+  'dev@example.com' // REPLACE THIS with your actual login email
 ];
 
 export const BLOOM_LEVELS = [

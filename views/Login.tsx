@@ -1,14 +1,16 @@
 
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { GraduationCap, Loader2, Mail, Lock, ArrowRight } from 'lucide-react';
+import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface LoginProps {
   onSession: (user: any) => void;
 }
 
+type AuthView = 'login' | 'signup' | 'forgot-password' | 'signup-success' | 'reset-sent';
+
 const Login: React.FC<LoginProps> = ({ onSession }) => {
-  const [isLogin, setIsLogin] = useState(true);
+  const [view, setView] = useState<AuthView>('login');
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -20,22 +22,89 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
     setError(null);
 
     try {
-      const { data, error: authError } = isLogin 
-        ? await supabase.auth.signInWithPassword({ email, password })
-        : await supabase.auth.signUp({ 
-            email, 
-            password,
-            options: { data: { role: 'teacher', plan: 'free' } }
-          });
-
-      if (authError) throw authError;
-      if (data.user) onSession(data.user);
+      if (view === 'login') {
+        const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        if (authError) throw authError;
+        if (data.user) onSession(data.user);
+      } else if (view === 'signup') {
+        const { data, error: authError } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: { 
+            data: { role: 'teacher', plan: 'free' },
+            emailRedirectTo: window.location.origin
+          }
+        });
+        if (authError) {
+          if (authError.message.includes('already registered')) {
+            throw new Error("An account with this email already exists. Try signing in.");
+          }
+          throw authError;
+        }
+        // If confirmation is required, user won't have a session immediately
+        if (data.user && !data.session) {
+          setView('signup-success');
+        } else if (data.user) {
+          onSession(data.user);
+        }
+      } else if (view === 'forgot-password') {
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+        if (resetError) throw resetError;
+        setView('reset-sent');
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  if (view === 'signup-success') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl text-center">
+          <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
+          <p className="text-slate-500 mb-8">
+            We've sent a confirmation link to <span className="font-semibold text-slate-800">{email}</span>. 
+            Please verify your email to access your workspace.
+          </p>
+          <button 
+            onClick={() => setView('login')}
+            className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all"
+          >
+            Return to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'reset-sent') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl text-center">
+          <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Mail className="w-12 h-12 text-indigo-500" />
+          </div>
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">Recovery link sent</h2>
+          <p className="text-slate-500 mb-8">
+            Check your inbox for instructions on how to reset your password.
+          </p>
+          <button 
+            onClick={() => setView('login')}
+            className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all"
+          >
+            Back to Sign In
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
@@ -48,8 +117,20 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
           <p className="text-slate-500 mt-2">Elevating education with Neural AI</p>
         </div>
 
-        <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
-          <h2 className="text-xl font-bold mb-6">{isLogin ? 'Sign In' : 'Create Account'}</h2>
+        <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold">
+              {view === 'login' ? 'Sign In' : view === 'signup' ? 'Create Account' : 'Reset Password'}
+            </h2>
+            {view !== 'login' && (
+              <button 
+                onClick={() => { setView('login'); setError(null); }}
+                className="text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"
+              >
+                <ArrowLeft size={14} /> Back
+              </button>
+            )}
+          </div>
           
           <form onSubmit={handleAuth} className="space-y-4">
             <div className="space-y-1">
@@ -67,23 +148,37 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-sm font-semibold text-slate-600 ml-1">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input 
-                  type="password" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  placeholder="••••••••"
-                  required
-                />
+            {view !== 'forgot-password' && (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between ml-1">
+                  <label className="text-sm font-semibold text-slate-600">Password</label>
+                  {view === 'login' && (
+                    <button 
+                      type="button"
+                      onClick={() => setView('forgot-password')}
+                      className="text-[11px] font-bold text-indigo-600 hover:underline"
+                    >
+                      Forgot?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <input 
+                    type="password" 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    placeholder="••••••••"
+                    required={view !== 'forgot-password'}
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {error && (
-              <div className="p-3 bg-rose-50 text-rose-600 text-xs font-medium rounded-lg">
+              <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-xl flex items-center gap-2">
+                <AlertCircle size={14} className="shrink-0" />
                 {error}
               </div>
             )}
@@ -95,21 +190,23 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
             >
               {loading ? <Loader2 className="animate-spin w-5 h-5" /> : (
                 <>
-                  {isLogin ? 'Enter Workspace' : 'Get Started'}
+                  {view === 'login' ? 'Enter Workspace' : view === 'signup' ? 'Get Started' : 'Send Recovery Link'}
                   <ArrowRight className="w-5 h-5" />
                 </>
               )}
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-            <button 
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-sm font-semibold text-indigo-600 hover:text-indigo-800"
-            >
-              {isLogin ? "Don't have an account? Join now" : "Already using Pedagogy Master? Sign In"}
-            </button>
-          </div>
+          {view === 'login' && (
+            <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+              <button 
+                onClick={() => { setView('signup'); setError(null); }}
+                className="text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+              >
+                Don't have an account? Join now
+              </button>
+            </div>
+          )}
         </div>
         
         <p className="mt-8 text-center text-xs text-slate-400">
