@@ -13,6 +13,7 @@ import Pricing from '../views/Pricing';
 import Login from '../views/Login';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS, APP_NAME, ADMIN_EMAILS } from '../constants';
+import { paymentService } from '../services/paymentService';
 import { Loader2, Menu } from 'lucide-react';
 
 export default function App() {
@@ -34,6 +35,8 @@ export default function App() {
   });
 
   useEffect(() => {
+    paymentService.init();
+    
     const initSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -89,10 +92,9 @@ export default function App() {
   const fetchProfileAndDocs = async (userId: string, email?: string) => {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     
-    // Determine role based on email whitelist
-    const isSystemAdmin = email && ADMIN_EMAILS.includes(email.toLowerCase());
-    const assignedRole = isSystemAdmin ? UserRole.APP_ADMIN : (profile?.role as UserRole || UserRole.TEACHER);
-
+    // Critical: Admin Whitelist Check
+    const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+    
     let activeProfile: UserProfile;
 
     if (!profile) {
@@ -100,10 +102,10 @@ export default function App() {
         id: userId,
         name: email?.split('@')[0] || 'Educator',
         email: email || '',
-        role: assignedRole,
+        role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
         plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
         queriesUsed: 0,
-        queriesLimit: isSystemAdmin ? 999999 : 50
+        queriesLimit: isSystemAdmin ? 999999 : 30
       };
 
       await supabase.from('profiles').insert([{
@@ -120,15 +122,19 @@ export default function App() {
         id: profile.id,
         name: profile.name || 'Educator',
         email: profile.email || '',
-        role: assignedRole, // Email check takes precedence for dev access
-        plan: profile.plan as SubscriptionPlan,
+        role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
+        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
         queriesUsed: profile.queries_used || 0,
-        queriesLimit: profile.queries_limit || 50
+        queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30)
       };
 
-      // Sync the role if it changed (e.g. user was added to ADMIN_EMAILS later)
-      if (profile.role !== assignedRole) {
-        await supabase.from('profiles').update({ role: assignedRole }).eq('id', userId);
+      // Always sync admin status if email matches whitelist
+      if (isSystemAdmin && (profile.role !== UserRole.APP_ADMIN || profile.plan !== SubscriptionPlan.ENTERPRISE)) {
+        await supabase.from('profiles').update({ 
+          role: UserRole.APP_ADMIN, 
+          plan: SubscriptionPlan.ENTERPRISE,
+          queries_limit: 999999 
+        }).eq('id', userId);
       }
     }
 
@@ -159,6 +165,8 @@ export default function App() {
 
   const incrementQueries = async () => {
     if (!userProfile) return;
+    if (userProfile.role === UserRole.APP_ADMIN) return; // Admin queries don't count towards limit
+    
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
     await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
@@ -168,7 +176,7 @@ export default function App() {
     if (!userProfile) return;
     const maxDocs = ROLE_LIMITS[userProfile.plan].docs;
     if (documents.length >= maxDocs && userProfile.role !== UserRole.APP_ADMIN) {
-      alert(`Limit reached: ${userProfile.plan} plan supports max ${maxDocs} docs.`);
+      alert(`Limit reached: Your current plan supports up to ${maxDocs} documents.`);
       return;
     }
 
@@ -189,9 +197,8 @@ export default function App() {
   };
 
   const deleteDocument = async (id: string) => {
-    // Admins can always delete
     if (userProfile?.plan === SubscriptionPlan.FREE && userProfile.role !== UserRole.APP_ADMIN) {
-      alert("Free plan users cannot delete documents. Upgrade to manage library.");
+      alert("Upgrade to Pro to manage and delete library assets.");
       return;
     }
     setDocuments(prev => prev.filter(d => d.id !== id));
@@ -209,7 +216,7 @@ export default function App() {
 
   const updatePlan = async (plan: SubscriptionPlan) => {
     if (!userProfile) return;
-    const limit = plan === SubscriptionPlan.FREE ? 50 : plan === SubscriptionPlan.PRO ? 500 : 999999;
+    const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
     const updated = { ...userProfile, plan, queriesLimit: limit };
     setUserProfile(updated);
     await supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
@@ -278,7 +285,7 @@ export default function App() {
 
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-slate-900/50 z-50 lg:hidden" onClick={() => setIsSidebarOpen(false)}>
-          <div className="w-64 h-full bg-white" onClick={e => e.stopPropagation()}>
+          <div className="w-64 h-full bg-white animate-in slide-in-from-left duration-300" onClick={e => e.stopPropagation()}>
             <Sidebar 
               currentView={currentView} 
               onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 

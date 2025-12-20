@@ -3,10 +3,10 @@ import { UserRole, SubscriptionPlan } from './types';
 
 export const APP_NAME = "Pedagogy Master";
 
-// IMPORTANT: Replace this with your actual email to gain Admin/Developer access
+// IMPORTANT: Replace this with your actual email to gain Developer access
 export const ADMIN_EMAILS = [
-  'your-email@example.com', 
-  // Add other developer emails here
+  'admin@edunexus.ai',
+  'your-email@example.com' // Add your actual login email here
 ];
 
 export const BLOOM_LEVELS = [
@@ -32,21 +32,21 @@ export const DEFAULT_BLOOM_RULES = `Bloom's Taxonomy Levels:
 
 export const ROLE_LIMITS = {
   [SubscriptionPlan.FREE]: { 
-    docs: 2, 
-    queries: 50, 
+    docs: 3, 
+    queries: 30, 
     price: "$0", 
-    features: ["2 Document limit", "Basic AI Tutor", "Remember/Understand levels", "No deletions allowed"] 
+    features: ["3 Document limit", "Standard AI Analysis", "Basic SLO Tagging", "Community Support"] 
   },
   [SubscriptionPlan.PRO]: { 
-    docs: 50, 
-    queries: 500, 
-    price: "$29", 
-    features: ["50 Document limit", "Advanced AI Models", "Full Bloom's Suite", "Export to PDF/Docs", "Priority Support"] 
+    docs: 100, 
+    queries: 1000, 
+    price: "$19", 
+    features: ["100 Document limit", "Advanced Gemini Pro Access", "Full Bloom's Suite", "Export to PDF/Docs", "Priority Support"] 
   },
   [SubscriptionPlan.ENTERPRISE]: { 
     docs: Infinity, 
     queries: Infinity, 
-    price: "$199", 
-    features: ["Unlimited Documents", "Custom Neural Brain", "LMS Integration", "Institutional Dashboard", "Dedicated Training"] 
+    price: "$99", 
+    features: ["Unlimited Documents", "Custom Neural Brain Instructions", "SSO & Institutional Dashboard", "Dedicated Training", "API Access"] 
   },
 };

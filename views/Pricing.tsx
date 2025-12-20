@@ -1,58 +1,33 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Check, Zap, Building2, UserCircle, Star, Loader2, ExternalLink } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
+import { paymentService } from '../services/paymentService';
 
 interface PricingProps {
   currentPlan: SubscriptionPlan;
   onUpgrade: (plan: SubscriptionPlan) => void;
 }
 
-declare global {
-  interface Window {
-    LemonSqueezy: any;
-  }
-}
-
 const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade }) => {
   const [loadingPlan, setLoadingPlan] = useState<SubscriptionPlan | null>(null);
 
-  useEffect(() => {
-    // Initialize Lemon Squeezy if script is loaded
-    if (window.LemonSqueezy) {
-      window.LemonSqueezy.Setup({
-        eventHandler: (event: any) => {
-          if (event.event === 'Checkout.Success') {
-            // In a real app, you'd wait for the webhook, 
-            // but we'll optimisticly upgrade the UI here.
-            console.log('Payment successful!');
-          }
-        }
-      });
-    }
-  }, []);
-
   const handleCheckout = async (plan: SubscriptionPlan) => {
+    if (plan === SubscriptionPlan.FREE) {
+      onUpgrade(plan);
+      return;
+    }
+
     setLoadingPlan(plan);
-
-    // ACTION: Replace these with your actual Lemon Squeezy Checkout URLs from your dashboard
-    const checkoutUrls: Record<string, string> = {
-      [SubscriptionPlan.PRO]: "https://pedagogymaster.lemonsqueezy.com/checkout/buy/pro-plan-id",
-      [SubscriptionPlan.ENTERPRISE]: "https://pedagogymaster.lemonsqueezy.com/checkout/buy/enterprise-plan-id"
-    };
-
-    const url = checkoutUrls[plan];
-
-    if (url && window.LemonSqueezy) {
-      window.LemonSqueezy.Url.Open(url);
+    try {
+      await paymentService.openCheckout(plan);
+    } catch (err) {
+      console.error("Checkout failed:", err);
+      // Fallback for demo
+      onUpgrade(plan);
+    } finally {
       setLoadingPlan(null);
-    } else {
-      // Fallback for development testing
-      setTimeout(() => {
-        onUpgrade(plan);
-        setLoadingPlan(null);
-      }, 1000);
     }
   };
 
@@ -85,7 +60,7 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade }) => {
         <p className="text-slate-500 mt-4 text-lg">Choose the tier that matches your instructional complexity.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto px-4 md:px-0">
         {tiers.map((tier) => {
           const limits = ROLE_LIMITS[tier.id];
           const isCurrent = currentPlan === tier.id;
@@ -138,7 +113,7 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade }) => {
                 }`}
               >
                 {isLoading ? <Loader2 className="animate-spin" size={18} /> : null}
-                {isCurrent ? 'Current Workspace' : (
+                {isCurrent ? 'Current Plan' : (
                   <>
                     Upgrade Now
                     <ExternalLink size={14} />
@@ -150,7 +125,7 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade }) => {
         })}
       </div>
 
-      <div className="mt-20 bg-indigo-900 rounded-[2.5rem] p-12 text-white flex flex-col md:flex-row items-center justify-between gap-10 shadow-2xl relative overflow-hidden">
+      <div className="mt-20 bg-indigo-900 rounded-[2.5rem] p-8 md:p-12 text-white flex flex-col md:flex-row items-center justify-between gap-10 shadow-2xl relative overflow-hidden mx-4 md:mx-0">
         <div className="absolute top-0 right-0 w-96 h-96 bg-indigo-500 rounded-full opacity-10 blur-[100px]" />
         <div className="max-w-md relative z-10 text-center md:text-left">
           <h2 className="text-3xl font-bold leading-tight">Institutional Scaling?</h2>
@@ -162,7 +137,7 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade }) => {
       </div>
       
       <p className="mt-8 text-center text-slate-400 text-xs font-medium uppercase tracking-widest">
-        Secure checkout powered by Lemon Squeezy Inc.
+        Secure international checkout via Lemon Squeezy. Contact us for local bank transfers in Pakistan.
       </p>
     </div>
   );
