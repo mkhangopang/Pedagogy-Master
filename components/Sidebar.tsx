@@ -10,7 +10,6 @@ import {
   GraduationCap,
   UserCircle,
   Shield,
-  ShieldAlert,
   Building2,
   ChevronLeft,
   ChevronRight,
@@ -25,7 +24,6 @@ interface SidebarProps {
   currentView: string;
   onViewChange: (view: string) => void;
   userProfile: UserProfile;
-  onToggleAdmin: () => void;
   isCollapsed: boolean;
   setIsCollapsed: (v: boolean) => void;
 }
@@ -34,7 +32,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   currentView, 
   onViewChange, 
   userProfile, 
-  onToggleAdmin,
   isCollapsed,
   setIsCollapsed
 }) => {
@@ -46,6 +43,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'pricing', label: 'Pricing Tiers', icon: CreditCard },
   ];
 
+  // Only show Neural Brain to App Admins (Developers)
   if (userProfile.role === UserRole.APP_ADMIN) {
     navItems.push({ id: 'brain', label: 'Neural Brain', icon: BrainCircuit });
   }
@@ -54,12 +52,10 @@ const Sidebar: React.FC<SidebarProps> = ({
     await supabase.auth.signOut();
   };
 
-  const usagePercent = (userProfile.queriesUsed / userProfile.queriesLimit) * 100;
-
   const getRoleDisplay = () => {
     switch(userProfile.role) {
       case UserRole.APP_ADMIN:
-        return { icon: <Shield size={18} />, color: 'bg-amber-500', label: 'System Admin' };
+        return { icon: <Shield size={18} />, color: 'bg-amber-500', label: 'Developer' };
       case UserRole.ENTERPRISE_ADMIN:
         return { icon: <Building2 size={18} />, color: 'bg-cyan-500', label: 'Org Admin' };
       default:
@@ -103,7 +99,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      {userProfile.plan === SubscriptionPlan.FREE && !isCollapsed && (
+      {userProfile.plan === SubscriptionPlan.FREE && !isCollapsed && userProfile.role !== UserRole.APP_ADMIN && (
         <div className="mx-4 mb-4 p-4 bg-indigo-900/40 rounded-2xl border border-indigo-800">
           <div className="flex items-center gap-2 mb-2 text-amber-400">
             <Zap size={14} />
@@ -120,8 +116,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <div className="p-4 border-t border-indigo-900/50">
         <div 
-          onClick={onToggleAdmin}
-          className={`flex items-center gap-3 p-3 bg-indigo-900/30 rounded-xl mb-2 cursor-pointer hover:bg-indigo-900/50 border border-transparent hover:border-indigo-800 ${isCollapsed ? 'justify-center' : ''}`}
+          className={`flex items-center gap-3 p-3 bg-indigo-900/30 rounded-xl mb-2 border border-indigo-800/20 ${isCollapsed ? 'justify-center' : ''}`}
         >
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${roleInfo.color}`}>{roleInfo.icon}</div>
           {!isCollapsed && (

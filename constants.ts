@@ -3,6 +3,12 @@ import { UserRole, SubscriptionPlan } from './types';
 
 export const APP_NAME = "Pedagogy Master";
 
+// IMPORTANT: Replace this with your actual email to gain Admin/Developer access
+export const ADMIN_EMAILS = [
+  'your-email@example.com', 
+  // Add other developer emails here
+];
+
 export const BLOOM_LEVELS = [
   "Remember", "Understand", "Apply", 
   "Analyze", "Evaluate", "Create"

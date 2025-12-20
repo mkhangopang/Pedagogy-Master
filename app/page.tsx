@@ -12,7 +12,7 @@ import BrainControl from '../views/BrainControl';
 import Pricing from '../views/Pricing';
 import Login from '../views/Login';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
-import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS, APP_NAME } from '../constants';
+import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { Loader2, Menu } from 'lucide-react';
 
 export default function App() {
@@ -89,18 +89,21 @@ export default function App() {
   const fetchProfileAndDocs = async (userId: string, email?: string) => {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     
+    // Determine role based on email whitelist
+    const isSystemAdmin = email && ADMIN_EMAILS.includes(email.toLowerCase());
+    const assignedRole = isSystemAdmin ? UserRole.APP_ADMIN : (profile?.role as UserRole || UserRole.TEACHER);
+
     let activeProfile: UserProfile;
 
     if (!profile) {
-      // Create profile record if it doesn't exist
       activeProfile = {
         id: userId,
         name: email?.split('@')[0] || 'Educator',
         email: email || '',
-        role: UserRole.TEACHER,
-        plan: SubscriptionPlan.FREE,
+        role: assignedRole,
+        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
         queriesUsed: 0,
-        queriesLimit: 50
+        queriesLimit: isSystemAdmin ? 999999 : 50
       };
 
       await supabase.from('profiles').insert([{
@@ -110,18 +113,23 @@ export default function App() {
         role: activeProfile.role,
         plan: activeProfile.plan,
         queries_used: 0,
-        queries_limit: 50
+        queries_limit: activeProfile.queriesLimit
       }]);
     } else {
       activeProfile = {
         id: profile.id,
         name: profile.name || 'Educator',
         email: profile.email || '',
-        role: profile.role as UserRole,
+        role: assignedRole, // Email check takes precedence for dev access
         plan: profile.plan as SubscriptionPlan,
         queriesUsed: profile.queries_used || 0,
         queriesLimit: profile.queries_limit || 50
       };
+
+      // Sync the role if it changed (e.g. user was added to ADMIN_EMAILS later)
+      if (profile.role !== assignedRole) {
+        await supabase.from('profiles').update({ role: assignedRole }).eq('id', userId);
+      }
     }
 
     setUserProfile(activeProfile);
@@ -149,16 +157,6 @@ export default function App() {
     }
   };
 
-  const handleToggleAdmin = () => {
-    if (!userProfile) return;
-    let newRole: UserRole;
-    if (userProfile.role === UserRole.TEACHER) newRole = UserRole.ENTERPRISE_ADMIN;
-    else if (userProfile.role === UserRole.ENTERPRISE_ADMIN) newRole = UserRole.APP_ADMIN;
-    else newRole = UserRole.TEACHER;
-    setUserProfile({ ...userProfile, role: newRole });
-    if (newRole !== UserRole.APP_ADMIN && currentView === 'brain') setCurrentView('dashboard');
-  };
-
   const incrementQueries = async () => {
     if (!userProfile) return;
     const newCount = userProfile.queriesUsed + 1;
@@ -169,7 +167,7 @@ export default function App() {
   const addDocument = async (doc: Document) => {
     if (!userProfile) return;
     const maxDocs = ROLE_LIMITS[userProfile.plan].docs;
-    if (documents.length >= maxDocs) {
+    if (documents.length >= maxDocs && userProfile.role !== UserRole.APP_ADMIN) {
       alert(`Limit reached: ${userProfile.plan} plan supports max ${maxDocs} docs.`);
       return;
     }
@@ -191,7 +189,8 @@ export default function App() {
   };
 
   const deleteDocument = async (id: string) => {
-    if (userProfile?.plan === SubscriptionPlan.FREE) {
+    // Admins can always delete
+    if (userProfile?.plan === SubscriptionPlan.FREE && userProfile.role !== UserRole.APP_ADMIN) {
       alert("Free plan users cannot delete documents. Upgrade to manage library.");
       return;
     }
@@ -231,16 +230,30 @@ export default function App() {
             onDeleteDocument={deleteDocument}
             brain={brain}
             onQuery={incrementQueries}
-            canQuery={userProfile.queriesUsed < userProfile.queriesLimit}
+            canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN}
             userPlan={userProfile.plan}
           />
         );
       case 'chat':
-        return <Chat brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit} />;
+        return (
+          <Chat 
+            brain={brain} 
+            documents={documents} 
+            onQuery={incrementQueries} 
+            canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} 
+          />
+        );
       case 'tools':
-        return <Tools brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit} />;
+        return (
+          <Tools 
+            brain={brain} 
+            documents={documents} 
+            onQuery={incrementQueries} 
+            canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} 
+          />
+        );
       case 'brain':
-        return <BrainControl brain={brain} onUpdate={setBrain} />;
+        return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} />;
       case 'pricing':
         return <Pricing currentPlan={userProfile.plan} onUpgrade={updatePlan} />;
       default:
@@ -258,7 +271,6 @@ export default function App() {
           currentView={currentView} 
           onViewChange={setCurrentView} 
           userProfile={userProfile} 
-          onToggleAdmin={handleToggleAdmin}
           isCollapsed={isCollapsed}
           setIsCollapsed={setIsCollapsed}
         />
@@ -271,7 +283,6 @@ export default function App() {
               currentView={currentView} 
               onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 
               userProfile={userProfile} 
-              onToggleAdmin={handleToggleAdmin}
               isCollapsed={false}
               setIsCollapsed={() => {}}
             />
