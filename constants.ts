@@ -1,14 +1,14 @@
 
 import { UserRole, SubscriptionPlan } from './types';
 
-export const APP_NAME = "EduNexus AI";
+export const APP_NAME = "Pedagogy Master";
 
 export const BLOOM_LEVELS = [
   "Remember", "Understand", "Apply", 
   "Analyze", "Evaluate", "Create"
 ];
 
-export const DEFAULT_MASTER_PROMPT = `You are an expert pedagogical AI assistant for EduNexus AI.
+export const DEFAULT_MASTER_PROMPT = `You are an expert pedagogical AI assistant for Pedagogy Master.
 Your primary role is to analyze curriculum documents and help educators create high-quality educational content aligned with Bloom's Taxonomy.
 Response Format:
 - Use markdown for structure

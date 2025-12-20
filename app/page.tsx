@@ -12,7 +12,7 @@ import BrainControl from '../views/BrainControl';
 import Pricing from '../views/Pricing';
 import Login from '../views/Login';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document, ChatMessage } from '../types';
-import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS } from '../constants';
+import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS, APP_NAME } from '../constants';
 import { Loader2, Menu } from 'lucide-react';
 
 export default function App() {
@@ -109,7 +109,6 @@ export default function App() {
 
     setUserProfile(initialProfile);
 
-    // PERSISTENCE FIX: Map data properly and ensure we filter by userId
     const { data: docs } = await supabase
       .from('documents')
       .select('*')
@@ -231,7 +230,7 @@ export default function App() {
     }
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center"><Loader2 className="animate-spin" /></div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-indigo-600" /></div>;
   if (!session || !userProfile) return <Login onSession={setSession} />;
 
   return (
@@ -263,10 +262,12 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b">
-          <button onClick={() => setIsSidebarOpen(true)}><Menu /></button>
-          <span className="font-bold">EduNexus AI</span>
-          <div className="w-8" />
+        <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b shadow-sm">
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
+            <Menu size={24} />
+          </button>
+          <span className="font-bold text-indigo-950 tracking-tight">{APP_NAME}</span>
+          <div className="w-10" />
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-6xl mx-auto">{renderView()}</div>

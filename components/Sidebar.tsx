@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { UserRole, UserProfile, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
+import { APP_NAME } from '../constants';
 
 interface SidebarProps {
   currentView: string;
@@ -79,7 +80,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
       <div className={`p-6 flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
         <div className="bg-emerald-500 p-2 rounded-xl shrink-0"><GraduationCap size={24} /></div>
-        {!isCollapsed && <span className="text-xl font-bold truncate">EduNexus AI</span>}
+        {!isCollapsed && <span className="text-xl font-bold truncate tracking-tight">{APP_NAME}</span>}
       </div>
 
       <nav className="flex-1 px-4 mt-2 space-y-1 overflow-y-auto">
@@ -110,9 +111,9 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <button 
             onClick={() => onViewChange('pricing')}
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-bold rounded-lg transition-colors"
+            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-bold rounded-lg transition-colors shadow-lg shadow-indigo-900"
           >
-            Unlock Library
+            Unlock Full Access
           </button>
         </div>
       )}
