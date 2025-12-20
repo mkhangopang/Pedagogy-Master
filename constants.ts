@@ -25,7 +25,7 @@ export const DEFAULT_BLOOM_RULES = `Bloom's Taxonomy Levels:
 6. Create - Produce new or original work`;
 
 export const ROLE_LIMITS = {
-  [SubscriptionPlan.FREE]: { docs: 5, queries: 50 },
+  [SubscriptionPlan.FREE]: { docs: 2, queries: 50 },
   [SubscriptionPlan.PRO]: { docs: 50, queries: 500 },
   [SubscriptionPlan.ENTERPRISE]: { docs: Infinity, queries: Infinity },
 };

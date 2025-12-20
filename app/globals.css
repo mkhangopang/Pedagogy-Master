@@ -12,6 +12,22 @@
 body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-start-rgb));
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
 }
 
 .glass-panel {
@@ -27,4 +43,9 @@ body {
 
 .animate-slide-in {
   animation: slideInRight 0.3s ease-out forwards;
+}
+
+/* Responsive fixes */
+@media (max-width: 640px) {
+  h1 { @apply text-2xl; }
 }
