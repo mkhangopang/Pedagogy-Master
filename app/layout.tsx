@@ -3,6 +3,7 @@ import React from 'react';
 import './globals.css';
 import type { Metadata } from 'next';
 import { Plus_Jakarta_Sans } from 'next/font/google';
+import Script from 'next/script';
 
 const jakarta = Plus_Jakarta_Sans({ 
   subsets: ['latin'],
@@ -22,6 +23,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <Script 
+          src="https://app.lemonsqueezy.com/js/lemon.js" 
+          strategy="afterInteractive"
+        />
+      </head>
       <body className={`${jakarta.className} antialiased text-slate-900 bg-slate-50`}>
         {children}
       </body>

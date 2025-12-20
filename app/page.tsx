@@ -11,7 +11,7 @@ import Tools from '../views/Tools';
 import BrainControl from '../views/BrainControl';
 import Pricing from '../views/Pricing';
 import Login from '../views/Login';
-import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document, ChatMessage } from '../types';
+import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS, APP_NAME } from '../constants';
 import { Loader2, Menu } from 'lucide-react';
 
@@ -39,7 +39,7 @@ export default function App() {
         const { data: { session } } = await supabase.auth.getSession();
         setSession(session);
         if (session) {
-          await fetchProfileAndDocs(session.user.id);
+          await fetchProfileAndDocs(session.user.id, session.user.email);
           await fetchBrain();
         }
       } catch (err) {
@@ -54,7 +54,7 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       if (session) {
-        await fetchProfileAndDocs(session.user.id);
+        await fetchProfileAndDocs(session.user.id, session.user.email);
         await fetchBrain();
       } else {
         setUserProfile(null);
@@ -86,28 +86,45 @@ export default function App() {
     }
   };
 
-  const fetchProfileAndDocs = async (userId: string) => {
+  const fetchProfileAndDocs = async (userId: string, email?: string) => {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     
-    const initialProfile: UserProfile = profile ? {
-      id: profile.id,
-      name: profile.name || 'Educator',
-      email: profile.email || '',
-      role: profile.role as UserRole,
-      plan: profile.plan as SubscriptionPlan,
-      queriesUsed: profile.queries_used || 0,
-      queriesLimit: profile.queries_limit || 50
-    } : {
-      id: userId,
-      name: 'Educator',
-      email: '',
-      role: UserRole.TEACHER,
-      plan: SubscriptionPlan.FREE,
-      queriesUsed: 0,
-      queriesLimit: 50
-    };
+    let activeProfile: UserProfile;
 
-    setUserProfile(initialProfile);
+    if (!profile) {
+      // Create profile record if it doesn't exist
+      activeProfile = {
+        id: userId,
+        name: email?.split('@')[0] || 'Educator',
+        email: email || '',
+        role: UserRole.TEACHER,
+        plan: SubscriptionPlan.FREE,
+        queriesUsed: 0,
+        queriesLimit: 50
+      };
+
+      await supabase.from('profiles').insert([{
+        id: userId,
+        name: activeProfile.name,
+        email: activeProfile.email,
+        role: activeProfile.role,
+        plan: activeProfile.plan,
+        queries_used: 0,
+        queries_limit: 50
+      }]);
+    } else {
+      activeProfile = {
+        id: profile.id,
+        name: profile.name || 'Educator',
+        email: profile.email || '',
+        role: profile.role as UserRole,
+        plan: profile.plan as SubscriptionPlan,
+        queriesUsed: profile.queries_used || 0,
+        queriesLimit: profile.queries_limit || 50
+      };
+    }
+
+    setUserProfile(activeProfile);
 
     const { data: docs } = await supabase
       .from('documents')
@@ -201,9 +218,10 @@ export default function App() {
   };
 
   const renderView = () => {
+    if (!userProfile) return null;
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard user={userProfile!} documents={documents} />;
+        return <Dashboard user={userProfile} documents={documents} />;
       case 'documents':
         return (
           <Documents 
@@ -213,20 +231,20 @@ export default function App() {
             onDeleteDocument={deleteDocument}
             brain={brain}
             onQuery={incrementQueries}
-            canQuery={userProfile!.queriesUsed < userProfile!.queriesLimit}
-            userPlan={userProfile!.plan}
+            canQuery={userProfile.queriesUsed < userProfile.queriesLimit}
+            userPlan={userProfile.plan}
           />
         );
       case 'chat':
-        return <Chat brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile!.queriesUsed < userProfile!.queriesLimit} />;
+        return <Chat brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit} />;
       case 'tools':
-        return <Tools brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile!.queriesUsed < userProfile!.queriesLimit} />;
+        return <Tools brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit} />;
       case 'brain':
         return <BrainControl brain={brain} onUpdate={setBrain} />;
       case 'pricing':
-        return <Pricing currentPlan={userProfile!.plan} onUpgrade={updatePlan} />;
+        return <Pricing currentPlan={userProfile.plan} onUpgrade={updatePlan} />;
       default:
-        return <Dashboard user={userProfile!} documents={documents} />;
+        return <Dashboard user={userProfile} documents={documents} />;
     }
   };
 
