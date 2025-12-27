@@ -18,8 +18,31 @@ export interface UserProfile {
   plan: SubscriptionPlan;
   queriesUsed: number;
   queriesLimit: number;
-  organizationId?: string;
   name: string;
+  // Adaptive Learning Fields
+  gradeLevel?: string;
+  subjectArea?: string;
+  teachingStyle?: 'concise' | 'balanced' | 'comprehensive';
+  pedagogicalApproach?: 'inquiry-based' | 'direct-instruction' | 'flipped-classroom';
+  // Behavioral Stats
+  generationCount: number;
+  successRate: number;
+  editPatterns: {
+    avgLengthChange: number;
+    examplesCount: number;
+    structureModifications: number;
+  };
+}
+
+export interface OutputArtifact {
+  id: string;
+  userId: string;
+  contentType: string;
+  content: string;
+  metadata: any;
+  status: 'generated' | 'accepted' | 'edited' | 'exported' | 'abandoned';
+  editDepth: number;
+  createdAt: string;
 }
 
 export interface SLO {
@@ -59,10 +82,4 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   documentId?: string;
-}
-
-export interface ToolGenerationRequest {
-  toolType: 'lesson-plan' | 'assessment' | 'rubric' | 'slo-tagger';
-  context: string;
-  documentContent?: string;
 }

@@ -1,72 +1,41 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { SLO, NeuralBrain } from "../types";
+import { SLO, NeuralBrain, UserProfile } from "../types";
+import { adaptiveService } from "./adaptiveService";
 
-/**
- * Pedagogy Master Gemini Service
- * Adheres strictly to Google GenAI SDK standards.
- */
 export const geminiService = {
-  /**
-   * Internal helper to initialize the AI client.
-   * Prioritizes process.env.API_KEY (mapped in next.config.js), 
-   * but supports AI Studio key selection fallback.
-   */
-  async getClient() {
-    let apiKey = process.env.API_KEY;
-
-    // Fallback for AI Studio preview environment if environment variable is missing
-    if (!apiKey && typeof window !== 'undefined' && (window as any).aistudio) {
-      const hasKey = await (window as any).aistudio.hasSelectedApiKey();
-      if (!hasKey) {
-        await (window as any).aistudio.openSelectKey();
-        apiKey = process.env.API_KEY;
-      }
-    }
-
-    if (!apiKey) {
-      throw new Error("API_KEY_MISSING");
-    }
-
+  getClient() {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) throw new Error("API_KEY_MISSING");
     return new GoogleGenAI({ apiKey });
   },
 
   async generateSLOTagsFromBase64(
     base64Data: string, 
     mimeType: string, 
-    brain: NeuralBrain
+    brain: NeuralBrain,
+    user?: UserProfile
   ): Promise<SLO[]> {
-    const ai = await this.getClient();
+    const ai = this.getClient();
+    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'slo-tagger') : "";
     
-    const prompt = `
-      Analyze this educational document and extract Student Learning Outcomes (SLOs).
-      
-      Pedagogical Framework:
+    const systemInstruction = `
       ${brain.masterPrompt}
-      
-      Bloom's Rules:
+      ${adaptiveContext}
+      Bloom's Taxonomy Levels:
       ${brain.bloomRules}
-      
-      Output exactly in JSON format as an array of objects.
     `;
 
-    // Switching to Flash to avoid 429 Quota Exhausted errors common with Pro on free tier
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Data
-              }
-            }
-          ]
-        }
-      ],
+      contents: {
+        parts: [
+          { text: "Analyze this educational document and extract Student Learning Outcomes (SLOs) based on Bloom's levels. Output exactly in JSON format." },
+          { inlineData: { mimeType, data: base64Data } }
+        ]
+      },
       config: {
+        systemInstruction,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.ARRAY,
@@ -87,10 +56,8 @@ export const geminiService = {
     });
 
     try {
-      const text = response.text || "[]";
-      return JSON.parse(text);
+      return JSON.parse(response.text || "[]");
     } catch (e) {
-      console.error("Failed to parse SLO JSON:", e);
       return [];
     }
   },
@@ -99,28 +66,37 @@ export const geminiService = {
     message: string, 
     doc: { base64?: string; mimeType?: string }, 
     history: { role: 'user' | 'assistant', content: string }[],
-    brain: NeuralBrain
+    brain: NeuralBrain,
+    user?: UserProfile
   ) {
-    const ai = await this.getClient();
+    const ai = this.getClient();
+    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     
-    const parts: any[] = [
-      { text: `System Instruction: ${brain.masterPrompt}` },
-      ...history.map(h => ({ text: `${h.role === 'user' ? 'User' : 'Assistant'}: ${h.content}` })),
-      { text: `Current User Query: ${message}` }
-    ];
+    const systemInstruction = `
+      ${brain.masterPrompt}
+      ${adaptiveContext}
+    `;
 
-    if (doc.base64 && doc.mimeType) {
-      parts.push({
-        inlineData: {
-          mimeType: doc.mimeType,
-          data: doc.base64
-        }
-      });
-    }
+    const contents: any[] = [
+      ...history.map(h => ({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: h.content }]
+      })),
+      {
+        role: 'user',
+        parts: [
+          ...(doc.base64 && doc.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
+          { text: message }
+        ]
+      }
+    ];
 
     const result = await ai.models.generateContentStream({
       model: 'gemini-3-flash-preview',
-      contents: [{ parts }],
+      contents,
+      config: {
+        systemInstruction,
+      },
     });
 
     for await (const chunk of result) {
@@ -133,32 +109,36 @@ export const geminiService = {
     toolType: string,
     userInput: string,
     doc: { base64?: string; mimeType?: string },
-    brain: NeuralBrain
+    brain: NeuralBrain,
+    user?: UserProfile
   ) {
-    const ai = await this.getClient();
+    const ai = this.getClient();
+    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
     
+    const systemInstruction = `
+      ${brain.masterPrompt}
+      ${adaptiveContext}
+      Bloom's Framework:
+      ${brain.bloomRules}
+    `;
+
     const prompt = `
       Tool Type: ${toolType.toUpperCase()}
       User Request: ${userInput}
-      Pedagogical Alignment Required: ${brain.masterPrompt} ${brain.bloomRules}
-      Generate high-quality educational content based on the provided parameters.
+      Generate high-quality educational content.
     `;
 
-    const parts: any[] = [{ text: prompt }];
-    
-    if (doc.base64 && doc.mimeType) {
-      parts.push({
-        inlineData: {
-          mimeType: doc.mimeType,
-          data: doc.base64
-        }
-      });
-    }
+    const parts: any[] = [
+      ...(doc.base64 && doc.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
+      { text: prompt }
+    ];
 
-    // Using Flash for streaming tools ensures faster "time to first token" and better quota management
     const result = await ai.models.generateContentStream({
       model: "gemini-3-flash-preview",
-      contents: [{ parts }],
+      contents: { parts },
+      config: {
+        systemInstruction,
+      },
     });
 
     for await (const chunk of result) {

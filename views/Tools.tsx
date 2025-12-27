@@ -1,23 +1,26 @@
 
 import React, { useState } from 'react';
-import { Sparkles, ClipboardCheck, BookOpen, Layers, ArrowRight, Loader2, Copy, Check, AlertCircle } from 'lucide-react';
+import { Sparkles, ClipboardCheck, BookOpen, Layers, ArrowRight, Loader2, Copy, Check, AlertCircle, User } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
-import { NeuralBrain, Document } from '../types';
+import { adaptiveService } from '../services/adaptiveService';
+import { NeuralBrain, Document, UserProfile } from '../types';
 
 interface ToolsProps {
   brain: NeuralBrain;
   documents: Document[];
   onQuery: () => void;
   canQuery: boolean;
+  user: UserProfile;
 }
 
-const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) => {
+const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user }) => {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [userInput, setUserInput] = useState('');
   const [result, setResult] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
 
@@ -41,7 +44,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
           base64: selectedDoc?.base64Data,
           mimeType: selectedDoc?.mimeType
         }, 
-        brain
+        brain,
+        user
       );
 
       onQuery();
@@ -52,6 +56,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
           setResult(fullContent);
         }
       }
+
+      // Record Artifact for Adaptive Learning
+      const artifactId = await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool, docId: selectedDocId });
+      setCurrentArtifactId(artifactId);
+
     } catch (err) {
       console.error(err);
       setResult("Error generating content. Please try again.");
@@ -60,17 +69,30 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
     }
   };
 
-  const copyToClipboard = () => {
+  const copyToClipboard = async () => {
     navigator.clipboard.writeText(result);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    
+    // Success Signal: Copy counts as "Export" for adaptive learning
+    if (currentArtifactId) {
+      await adaptiveService.captureEvent(user.id, currentArtifactId, 'export');
+    }
   };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <header>
-        <h1 className="text-3xl font-bold text-slate-900">GenAI Pedagogical Tools</h1>
-        <p className="text-slate-500 mt-1">Accelerate teaching workflow with direct Multimodal AI context.</p>
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900">GenAI Pedagogical Tools</h1>
+          <p className="text-slate-500 mt-1">Accelerate teaching workflow with Adaptive Intelligence.</p>
+        </div>
+        {user.successRate > 0 && (
+          <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-2xl border border-emerald-100 flex items-center gap-2 text-xs font-bold">
+            <Sparkles size={14} />
+            AI Precision: {Math.round(user.successRate * 100)}%
+          </div>
+        )}
       </header>
 
       {!canQuery && (
@@ -109,7 +131,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
         <div className="flex flex-col lg:flex-row gap-8">
           <div className="lg:w-1/3 space-y-6">
             <button 
-              onClick={() => { setActiveTool(null); setResult(''); setUserInput(''); setSelectedDocId(null); }}
+              onClick={() => { setActiveTool(null); setResult(''); setUserInput(''); setSelectedDocId(null); setCurrentArtifactId(null); }}
               className="text-sm font-semibold text-indigo-600 flex items-center gap-2 hover:underline"
             >
               ← Back to Tools
@@ -161,16 +183,16 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery }) =>
           <div className="flex-1 flex flex-col min-h-[600px]">
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex-1 flex flex-col overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <span className="text-sm font-bold text-slate-400 tracking-widest">PEDAGOGICAL OUTPUT</span>
+                <span className="text-sm font-bold text-slate-400 tracking-widest uppercase">Adaptive Pedagogical Output</span>
                 {result && (
-                  <button onClick={copyToClipboard} className="text-xs font-bold text-indigo-600 flex items-center gap-2">
-                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                  <button onClick={copyToClipboard} className="text-xs font-bold text-indigo-600 flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-indigo-50 transition-colors">
+                    {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                     {copied ? 'Copied' : 'Copy'}
                   </button>
                 )}
               </div>
               <div className="flex-1 p-8 overflow-y-auto whitespace-pre-wrap font-serif text-slate-800 leading-loose text-lg">
-                {result || (isGenerating ? 'Watch as Gemini synthesizes your request...' : 'Results will appear here.')}
+                {result || (isGenerating ? 'Gemini is synthesizing with your behavioral profile...' : 'Results will appear here based on your preferences.')}
               </div>
             </div>
           </div>

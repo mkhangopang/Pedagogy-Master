@@ -81,7 +81,7 @@ export default function App() {
       setBrain({
         id: data.id,
         masterPrompt: data.master_prompt,
-        bloomRules: data.bloom_rules, 
+        bloom_rules: data.bloom_rules, 
         version: data.version,
         isActive: data.is_active,
         updatedAt: data.updated_at
@@ -91,8 +91,6 @@ export default function App() {
 
   const fetchProfileAndDocs = async (userId: string, email?: string) => {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    
-    // Critical: Admin Whitelist Check
     const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
     
     let activeProfile: UserProfile;
@@ -105,7 +103,10 @@ export default function App() {
         role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
         plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
         queriesUsed: 0,
-        queriesLimit: isSystemAdmin ? 999999 : 30
+        queriesLimit: isSystemAdmin ? 999999 : 30,
+        generationCount: 0,
+        successRate: 0,
+        editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
       };
 
       await supabase.from('profiles').insert([{
@@ -125,29 +126,22 @@ export default function App() {
         role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
         plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
         queriesUsed: profile.queries_used || 0,
-        queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30)
+        queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
+        gradeLevel: profile.grade_level,
+        subjectArea: profile.subject_area,
+        teachingStyle: profile.teaching_style,
+        pedagogicalApproach: profile.pedagogical_approach,
+        generationCount: profile.generation_count || 0,
+        successRate: profile.success_rate || 0,
+        editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
       };
-
-      // Always sync admin status if email matches whitelist
-      if (isSystemAdmin && (profile.role !== UserRole.APP_ADMIN || profile.plan !== SubscriptionPlan.ENTERPRISE)) {
-        await supabase.from('profiles').update({ 
-          role: UserRole.APP_ADMIN, 
-          plan: SubscriptionPlan.ENTERPRISE,
-          queries_limit: 999999 
-        }).eq('id', userId);
-      }
     }
 
     setUserProfile(activeProfile);
 
-    const { data: docs } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    
+    const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     if (docs) {
-      const mappedDocs: Document[] = docs.map(d => ({
+      setDocuments(docs.map(d => ({
         id: d.id,
         userId: d.user_id,
         name: d.name,
@@ -158,83 +152,46 @@ export default function App() {
         gradeLevel: d.grade_level,
         sloTags: d.slo_tags || [],
         createdAt: d.created_at
-      }));
-      setDocuments(mappedDocs);
+      })));
     }
   };
 
   const incrementQueries = async () => {
     if (!userProfile) return;
-    if (userProfile.role === UserRole.APP_ADMIN) return; // Admin queries don't count towards limit
-    
+    if (userProfile.role === UserRole.APP_ADMIN) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
     await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
-  };
-
-  const addDocument = async (doc: Document) => {
-    if (!userProfile) return;
-    const maxDocs = ROLE_LIMITS[userProfile.plan].docs;
-    if (documents.length >= maxDocs && userProfile.role !== UserRole.APP_ADMIN) {
-      alert(`Limit reached: Your current plan supports up to ${maxDocs} documents.`);
-      return;
-    }
-
-    setDocuments(prev => [doc, ...prev]);
-
-    await supabase.from('documents').insert([{
-      id: doc.id,
-      user_id: userProfile.id,
-      name: doc.name,
-      base64_data: doc.base64Data,
-      mime_type: doc.mimeType,
-      status: doc.status,
-      subject: doc.subject,
-      grade_level: doc.gradeLevel,
-      slo_tags: doc.sloTags,
-      created_at: doc.createdAt
-    }]);
-  };
-
-  const deleteDocument = async (id: string) => {
-    if (userProfile?.plan === SubscriptionPlan.FREE && userProfile.role !== UserRole.APP_ADMIN) {
-      alert("Upgrade to Pro to manage and delete library assets.");
-      return;
-    }
-    setDocuments(prev => prev.filter(d => d.id !== id));
-    await supabase.from('documents').delete().eq('id', id);
-  };
-
-  const updateDocument = async (id: string, updates: Partial<Document>) => {
-    setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-    const dbUpdates: any = {};
-    if (updates.status) dbUpdates.status = updates.status;
-    if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
-    if (updates.subject) dbUpdates.subject = updates.subject;
-    await supabase.from('documents').update(dbUpdates).eq('id', id);
-  };
-
-  const updatePlan = async (plan: SubscriptionPlan) => {
-    if (!userProfile) return;
-    const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
-    const updated = { ...userProfile, plan, queriesLimit: limit };
-    setUserProfile(updated);
-    await supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
-    setCurrentView('dashboard');
   };
 
   const renderView = () => {
     if (!userProfile) return null;
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard user={userProfile} documents={documents} />;
+        return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
       case 'documents':
         return (
           <Documents 
             documents={documents} 
-            onAddDocument={addDocument} 
-            onUpdateDocument={updateDocument}
-            onDeleteDocument={deleteDocument}
+            onAddDocument={async (doc) => {
+              setDocuments(prev => [doc, ...prev]);
+              await supabase.from('documents').insert([{
+                id: doc.id, user_id: userProfile.id, name: doc.name, base64_data: doc.base64Data,
+                mime_type: doc.mimeType, status: doc.status, subject: doc.subject,
+                grade_level: doc.gradeLevel, slo_tags: doc.sloTags, created_at: doc.createdAt
+              }]);
+            }} 
+            onUpdateDocument={async (id, updates) => {
+              setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
+              const dbUpdates: any = {};
+              if (updates.status) dbUpdates.status = updates.status;
+              if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
+              await supabase.from('documents').update(dbUpdates).eq('id', id);
+            }}
+            onDeleteDocument={async (id) => {
+              setDocuments(prev => prev.filter(d => d.id !== id));
+              await supabase.from('documents').delete().eq('id', id);
+            }}
             brain={brain}
             onQuery={incrementQueries}
             canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN}
@@ -242,29 +199,20 @@ export default function App() {
           />
         );
       case 'chat':
-        return (
-          <Chat 
-            brain={brain} 
-            documents={documents} 
-            onQuery={incrementQueries} 
-            canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} 
-          />
-        );
+        return <Chat user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
       case 'tools':
-        return (
-          <Tools 
-            brain={brain} 
-            documents={documents} 
-            onQuery={incrementQueries} 
-            canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} 
-          />
-        );
+        return <Tools user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
       case 'brain':
-        return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} />;
+        return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
       case 'pricing':
-        return <Pricing currentPlan={userProfile.plan} onUpgrade={updatePlan} />;
+        return <Pricing currentPlan={userProfile.plan} onUpgrade={(plan) => {
+          const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
+          setUserProfile({ ...userProfile, plan, queriesLimit: limit });
+          supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
+          setCurrentView('dashboard');
+        }} />;
       default:
-        return <Dashboard user={userProfile} documents={documents} />;
+        return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
     }
   };
 
@@ -274,34 +222,12 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
-        <Sidebar 
-          currentView={currentView} 
-          onViewChange={setCurrentView} 
-          userProfile={userProfile} 
-          isCollapsed={isCollapsed}
-          setIsCollapsed={setIsCollapsed}
-        />
+        <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
       </div>
-
-      {isSidebarOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 z-50 lg:hidden" onClick={() => setIsSidebarOpen(false)}>
-          <div className="w-64 h-full bg-white animate-in slide-in-from-left duration-300" onClick={e => e.stopPropagation()}>
-            <Sidebar 
-              currentView={currentView} 
-              onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 
-              userProfile={userProfile} 
-              isCollapsed={false}
-              setIsCollapsed={() => {}}
-            />
-          </div>
-        </div>
-      )}
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b shadow-sm">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
-            <Menu size={24} />
-          </button>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
           <span className="font-bold text-indigo-950 tracking-tight">{APP_NAME}</span>
           <div className="w-10" />
         </header>
