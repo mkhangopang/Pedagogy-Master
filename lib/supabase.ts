@@ -4,14 +4,16 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
 
-const isConfigured = 
+export const isSupabaseConfigured = 
   process.env.NEXT_PUBLIC_SUPABASE_URL && 
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  process.env.NEXT_PUBLIC_SUPABASE_URL !== 'https://placeholder.supabase.co' &&
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== 'placeholder';
 
-if (!isConfigured && typeof window !== 'undefined') {
-  console.warn("Supabase is not configured. Redirecting to configuration check.");
+if (!isSupabaseConfigured && typeof window !== 'undefined') {
+  console.warn("Pedagogy Master: Supabase is NOT configured. Data will NOT persist between refreshes.");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export const checkSupabaseConfig = () => !!isConfigured;
+export const checkSupabaseConfig = () => isSupabaseConfigured;

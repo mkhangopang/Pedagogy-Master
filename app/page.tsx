@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Documents from '../views/Documents';
@@ -14,7 +14,7 @@ import Login from '../views/Login';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu } from 'lucide-react';
+import { Loader2, Menu, DatabaseZap, AlertCircle } from 'lucide-react';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -39,10 +39,10 @@ export default function App() {
     
     const initSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        if (session) {
-          await fetchProfileAndDocs(session.user.id, session.user.email);
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        setSession(currentSession);
+        if (currentSession) {
+          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
           await fetchBrain();
         }
       } catch (err) {
@@ -54,10 +54,10 @@ export default function App() {
 
     initSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session) {
-        await fetchProfileAndDocs(session.user.id, session.user.email);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+      setSession(currentSession);
+      if (currentSession) {
+        await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
         await fetchBrain();
       } else {
         setUserProfile(null);
@@ -69,7 +69,7 @@ export default function App() {
   }, []);
 
   const fetchBrain = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('neural_brain')
       .select('*')
       .eq('is_active', true)
@@ -77,22 +77,26 @@ export default function App() {
       .limit(1)
       .maybeSingle();
     
+    if (error) console.error("Error fetching brain:", error);
+    
     if (data) {
       setBrain({
         id: data.id,
         masterPrompt: data.master_prompt,
-        bloom_rules: data.bloom_rules, 
+        bloomRules: data.bloom_rules, 
         version: data.version,
         isActive: data.is_active,
         updatedAt: data.updated_at
-      } as any);
+      });
     }
   };
 
   const fetchProfileAndDocs = async (userId: string, email?: string) => {
-    const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+    const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     
+    if (profileError) console.error("Error fetching profile:", profileError);
+    
+    const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
     let activeProfile: UserProfile;
 
     if (!profile) {
@@ -109,15 +113,18 @@ export default function App() {
         editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
       };
 
-      await supabase.from('profiles').insert([{
-        id: userId,
-        name: activeProfile.name,
-        email: activeProfile.email,
-        role: activeProfile.role,
-        plan: activeProfile.plan,
-        queries_used: 0,
-        queries_limit: activeProfile.queriesLimit
-      }]);
+      if (isSupabaseConfigured) {
+        const { error: insertError } = await supabase.from('profiles').insert([{
+          id: userId,
+          name: activeProfile.name,
+          email: activeProfile.email,
+          role: activeProfile.role,
+          plan: activeProfile.plan,
+          queries_used: 0,
+          queries_limit: activeProfile.queriesLimit
+        }]);
+        if (insertError) console.error("Profile creation failed:", insertError);
+      }
     } else {
       activeProfile = {
         id: profile.id,
@@ -139,7 +146,10 @@ export default function App() {
 
     setUserProfile(activeProfile);
 
-    const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    const { data: docs, error: docsError } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+    
+    if (docsError) console.error("Error fetching documents:", docsError);
+    
     if (docs) {
       setDocuments(docs.map(d => ({
         id: d.id,
@@ -161,7 +171,10 @@ export default function App() {
     if (userProfile.role === UserRole.APP_ADMIN) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
-    await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
+    if (isSupabaseConfigured) {
+      const { error } = await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
+      if (error) console.error("Failed to update query count:", error);
+    }
   };
 
   const renderView = () => {
@@ -175,22 +188,41 @@ export default function App() {
             documents={documents} 
             onAddDocument={async (doc) => {
               setDocuments(prev => [doc, ...prev]);
-              await supabase.from('documents').insert([{
-                id: doc.id, user_id: userProfile.id, name: doc.name, base64_data: doc.base64Data,
-                mime_type: doc.mimeType, status: doc.status, subject: doc.subject,
-                grade_level: doc.gradeLevel, slo_tags: doc.sloTags, created_at: doc.createdAt
-              }]);
+              if (isSupabaseConfigured) {
+                const { error } = await supabase.from('documents').insert([{
+                  id: doc.id, 
+                  user_id: userProfile.id, 
+                  name: doc.name, 
+                  base64_data: doc.base64Data,
+                  mime_type: doc.mimeType, 
+                  status: doc.status, 
+                  subject: doc.subject,
+                  grade_level: doc.gradeLevel, 
+                  slo_tags: doc.sloTags, 
+                  created_at: doc.createdAt
+                }]);
+                if (error) {
+                  console.error("Document Save Failed:", error);
+                  alert("Warning: Could not save document to database. It will disappear if you refresh.");
+                }
+              }
             }} 
             onUpdateDocument={async (id, updates) => {
               setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-              const dbUpdates: any = {};
-              if (updates.status) dbUpdates.status = updates.status;
-              if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
-              await supabase.from('documents').update(dbUpdates).eq('id', id);
+              if (isSupabaseConfigured) {
+                const dbUpdates: any = {};
+                if (updates.status) dbUpdates.status = updates.status;
+                if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
+                const { error } = await supabase.from('documents').update(dbUpdates).eq('id', id);
+                if (error) console.error("Document update failed:", error);
+              }
             }}
             onDeleteDocument={async (id) => {
               setDocuments(prev => prev.filter(d => d.id !== id));
-              await supabase.from('documents').delete().eq('id', id);
+              if (isSupabaseConfigured) {
+                const { error } = await supabase.from('documents').delete().eq('id', id);
+                if (error) console.error("Document deletion failed:", error);
+              }
             }}
             brain={brain}
             onQuery={incrementQueries}
@@ -208,7 +240,9 @@ export default function App() {
         return <Pricing currentPlan={userProfile.plan} onUpgrade={(plan) => {
           const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
           setUserProfile({ ...userProfile, plan, queriesLimit: limit });
-          supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
+          if (isSupabaseConfigured) {
+            supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
+          }
           setCurrentView('dashboard');
         }} />;
       default:
@@ -231,6 +265,15 @@ export default function App() {
           <span className="font-bold text-indigo-950 tracking-tight">{APP_NAME}</span>
           <div className="w-10" />
         </header>
+
+        {/* Persistence Warning Bar */}
+        {!isSupabaseConfigured && (
+          <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 flex items-center justify-center gap-2 text-amber-800 text-xs font-bold">
+            <AlertCircle size={14} />
+            DEMO MODE: Supabase is not configured. Documents will be erased on page refresh.
+          </div>
+        )}
+
         <main className="flex-1 overflow-y-auto p-4 md:p-8">
           <div className="max-w-6xl mx-auto">{renderView()}</div>
         </main>
