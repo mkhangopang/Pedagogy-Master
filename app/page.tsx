@@ -25,6 +25,9 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  // If we have a session, we assume Supabase is configured correctly
+  const isActuallyConnected = isSupabaseConfigured || !!session;
+
   const [brain, setBrain] = useState<NeuralBrain>({
     id: typeof crypto !== 'undefined' ? crypto.randomUUID() : 'initial-brain-id',
     masterPrompt: DEFAULT_MASTER_PROMPT,
@@ -69,6 +72,7 @@ export default function App() {
   }, []);
 
   const fetchBrain = async () => {
+    if (!isActuallyConnected) return;
     const { data, error } = await supabase
       .from('neural_brain')
       .select('*')
@@ -113,7 +117,7 @@ export default function App() {
         editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
       };
 
-      if (isSupabaseConfigured) {
+      if (isActuallyConnected) {
         const { error: insertError } = await supabase.from('profiles').insert([{
           id: userId,
           name: activeProfile.name,
@@ -171,7 +175,7 @@ export default function App() {
     if (userProfile.role === UserRole.APP_ADMIN) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
-    if (isSupabaseConfigured) {
+    if (isActuallyConnected) {
       const { error } = await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
       if (error) console.error("Failed to update query count:", error);
     }
@@ -188,7 +192,7 @@ export default function App() {
             documents={documents} 
             onAddDocument={async (doc) => {
               setDocuments(prev => [doc, ...prev]);
-              if (isSupabaseConfigured) {
+              if (isActuallyConnected) {
                 const { error } = await supabase.from('documents').insert([{
                   id: doc.id, 
                   user_id: userProfile.id, 
@@ -203,13 +207,13 @@ export default function App() {
                 }]);
                 if (error) {
                   console.error("Document Save Failed:", error);
-                  alert("Warning: Could not save document to database. It will disappear if you refresh.");
+                  alert("Warning: Could not save document to database.");
                 }
               }
             }} 
             onUpdateDocument={async (id, updates) => {
               setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-              if (isSupabaseConfigured) {
+              if (isActuallyConnected) {
                 const dbUpdates: any = {};
                 if (updates.status) dbUpdates.status = updates.status;
                 if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
@@ -219,7 +223,7 @@ export default function App() {
             }}
             onDeleteDocument={async (id) => {
               setDocuments(prev => prev.filter(d => d.id !== id));
-              if (isSupabaseConfigured) {
+              if (isActuallyConnected) {
                 const { error } = await supabase.from('documents').delete().eq('id', id);
                 if (error) console.error("Document deletion failed:", error);
               }
@@ -240,7 +244,7 @@ export default function App() {
         return <Pricing currentPlan={userProfile.plan} onUpgrade={(plan) => {
           const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
           setUserProfile({ ...userProfile, plan, queriesLimit: limit });
-          if (isSupabaseConfigured) {
+          if (isActuallyConnected) {
             supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
           }
           setCurrentView('dashboard');
@@ -255,22 +259,52 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
+      {/* Mobile Sidebar Drawer Overlay */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-[100] lg:hidden">
+          <div 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
+            onClick={() => setIsSidebarOpen(false)} 
+          />
+          <div className="fixed inset-y-0 left-0 w-72 bg-indigo-950 shadow-2xl animate-in slide-in-from-left duration-300">
+            <Sidebar 
+              currentView={currentView} 
+              onViewChange={(view) => {
+                setCurrentView(view);
+                setIsSidebarOpen(false);
+              }} 
+              userProfile={userProfile} 
+              isCollapsed={false} 
+              setIsCollapsed={() => {}} 
+              onClose={() => setIsSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Desktop Sidebar */}
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
         <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b shadow-sm">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"><Menu size={24} /></button>
-          <span className="font-bold text-indigo-950 tracking-tight">{APP_NAME}</span>
+          <button 
+            onClick={() => setIsSidebarOpen(true)} 
+            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            aria-label="Open menu"
+          >
+            <Menu size={24} />
+          </button>
+          <span className="font-bold text-indigo-950 tracking-tight text-lg">{APP_NAME}</span>
           <div className="w-10" />
         </header>
 
-        {/* Persistence Warning Bar */}
-        {!isSupabaseConfigured && (
+        {/* Only show warning if NOT connected AND no session exists */}
+        {!isActuallyConnected && (
           <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 flex items-center justify-center gap-2 text-amber-800 text-xs font-bold">
             <AlertCircle size={14} />
-            DEMO MODE: Supabase is not configured. Documents will be erased on page refresh.
+            DEMO MODE: Supabase environment variables are missing. Documents will not persist.
           </div>
         )}
 

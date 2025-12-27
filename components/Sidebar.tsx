@@ -14,7 +14,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CreditCard,
-  Zap
+  Zap,
+  X
 } from 'lucide-react';
 import { UserRole, UserProfile, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
@@ -26,6 +27,7 @@ interface SidebarProps {
   userProfile: UserProfile;
   isCollapsed: boolean;
   setIsCollapsed: (v: boolean) => void;
+  onClose?: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -33,7 +35,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onViewChange, 
   userProfile, 
   isCollapsed,
-  setIsCollapsed
+  setIsCollapsed,
+  onClose
 }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -66,29 +69,48 @@ const Sidebar: React.FC<SidebarProps> = ({
   const roleInfo = getRoleDisplay();
 
   return (
-    <aside className={`h-screen bg-indigo-950 text-white flex flex-col transition-all duration-300 relative ${isCollapsed ? 'w-20' : 'w-64'}`}>
-      <button 
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-16 w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center border-2 border-indigo-950 hover:bg-indigo-500 z-50 hidden lg:flex"
-      >
-        {isCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
-      </button>
+    <aside className={`h-screen bg-indigo-950 text-white flex flex-col transition-all duration-300 relative ${isCollapsed ? 'w-20' : 'w-full'}`}>
+      {/* Desktop Collapse Toggle */}
+      {!onClose && (
+        <button 
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="absolute -right-3 top-16 w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center border-2 border-indigo-950 hover:bg-indigo-500 z-50 hidden lg:flex"
+        >
+          {isCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+        </button>
+      )}
+
+      {/* Mobile Close Button */}
+      {onClose && (
+        <button 
+          onClick={onClose}
+          className="absolute right-4 top-6 p-2 text-indigo-300 hover:text-white transition-colors lg:hidden focus:outline-none"
+          aria-label="Close menu"
+        >
+          <X size={24} />
+        </button>
+      )}
 
       <div className={`p-6 flex items-center ${isCollapsed ? 'justify-center' : 'gap-3'}`}>
-        <div className="bg-emerald-500 p-2 rounded-xl shrink-0"><GraduationCap size={24} /></div>
+        <div className="bg-emerald-500 p-2 rounded-xl shrink-0 shadow-lg shadow-emerald-500/20">
+          <GraduationCap size={24} />
+        </div>
         {!isCollapsed && <span className="text-xl font-bold truncate tracking-tight">{APP_NAME}</span>}
       </div>
 
-      <nav className="flex-1 px-4 mt-2 space-y-1 overflow-y-auto">
+      <nav className="flex-1 px-4 mt-2 space-y-1 overflow-y-auto custom-scrollbar">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentView === item.id;
           return (
             <button
               key={item.id}
-              onClick={() => onViewChange(item.id)}
+              onClick={() => {
+                onViewChange(item.id);
+                if (onClose) onClose();
+              }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                isActive ? 'bg-indigo-600 shadow-lg' : 'text-indigo-200 hover:bg-indigo-900/50 hover:text-white'
+                isActive ? 'bg-indigo-600 shadow-lg text-white' : 'text-indigo-200 hover:bg-indigo-900/50 hover:text-white'
               } ${isCollapsed ? 'justify-center' : ''}`}
               title={isCollapsed ? item.label : ''}
             >
@@ -106,7 +128,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             <span className="text-[10px] font-bold uppercase tracking-widest">Upgrade to Pro</span>
           </div>
           <button 
-            onClick={() => onViewChange('pricing')}
+            onClick={() => {
+              onViewChange('pricing');
+              if (onClose) onClose();
+            }}
             className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-bold rounded-lg transition-colors shadow-lg shadow-indigo-900"
           >
             Unlock Full Access
@@ -118,15 +143,15 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div 
           className={`flex items-center gap-3 p-3 bg-indigo-900/30 rounded-xl mb-2 border border-indigo-800/20 ${isCollapsed ? 'justify-center' : ''}`}
         >
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${roleInfo.color}`}>{roleInfo.icon}</div>
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${roleInfo.color} shadow-sm`}>{roleInfo.icon}</div>
           {!isCollapsed && (
             <div className="overflow-hidden">
               <p className="text-[10px] font-bold uppercase tracking-tighter text-indigo-300">{userProfile.plan} • {roleInfo.label}</p>
-              <p className="text-xs font-medium truncate">{userProfile.email}</p>
+              <p className="text-xs font-medium truncate opacity-90">{userProfile.email}</p>
             </div>
           )}
         </div>
-        <button onClick={handleSignOut} className={`w-full flex items-center gap-3 px-4 py-3 text-indigo-300 hover:text-white ${isCollapsed ? 'justify-center' : ''}`}>
+        <button onClick={handleSignOut} className={`w-full flex items-center gap-3 px-4 py-3 text-indigo-300 hover:text-white rounded-lg transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
           <LogOut size={18} />
           {!isCollapsed && <span className="text-sm font-medium">Sign Out</span>}
         </button>

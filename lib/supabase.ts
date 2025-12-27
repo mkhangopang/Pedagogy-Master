@@ -1,17 +1,18 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+// Support both NEXT_PUBLIC and standard environment variable names
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || 'https://placeholder.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'placeholder';
 
+// A more robust check: is it NOT the placeholder and does it look like a real URL?
 export const isSupabaseConfigured = 
-  process.env.NEXT_PUBLIC_SUPABASE_URL && 
-  process.env.NEXT_PUBLIC_SUPABASE_URL !== 'https://placeholder.supabase.co' &&
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY !== 'placeholder';
+  supabaseUrl !== 'https://placeholder.supabase.co' && 
+  supabaseUrl.includes('supabase.co') &&
+  supabaseAnonKey !== 'placeholder';
 
 if (!isSupabaseConfigured && typeof window !== 'undefined') {
-  console.warn("Pedagogy Master: Supabase is NOT configured. Data will NOT persist between refreshes.");
+  console.warn("Pedagogy Master: Environment variables NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY are missing.");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
