@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -126,6 +125,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
               <button 
                 onClick={() => { setView('login'); setError(null); }}
                 className="text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1"
+                type="button"
               >
                 <ArrowLeft size={14} /> Back
               </button>
@@ -170,7 +170,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                     placeholder="••••••••"
-                    required={view !== 'forgot-password'}
+                    required
                   />
                 </div>
               </div>
@@ -202,6 +202,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
               <button 
                 onClick={() => { setView('signup'); setError(null); }}
                 className="text-sm font-semibold text-indigo-600 hover:text-indigo-800"
+                type="button"
               >
                 Don't have an account? Join now
               </button>
