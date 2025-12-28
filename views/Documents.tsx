@@ -3,7 +3,8 @@ import React, { useState, useRef } from 'react';
 import { 
   Upload, FileText, Plus, ChevronLeft, Target, 
   Loader2, AlertCircle, Trash2, Lock, 
-  CheckCircle2, ShieldAlert, X, Zap
+  CheckCircle2, ShieldAlert, X, Zap, 
+  FileCode, FileType, Check
 } from 'lucide-react';
 import { Document, SLO, NeuralBrain, SubscriptionPlan } from '../types';
 import { geminiService } from '../services/geminiService';
@@ -21,6 +22,8 @@ interface DocumentsProps {
   userPlan: SubscriptionPlan;
 }
 
+type UploadStage = 'idle' | 'reading' | 'uploading' | 'analyzing' | 'finalizing';
+
 const Documents: React.FC<DocumentsProps> = ({ 
   documents, 
   onAddDocument, 
@@ -32,6 +35,8 @@ const Documents: React.FC<DocumentsProps> = ({
   userPlan
 }) => {
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
@@ -58,6 +63,12 @@ const Documents: React.FC<DocumentsProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Check file size (limit to 15MB for stability)
+    if (file.size > 15 * 1024 * 1024) {
+      setError("File is too large. Please upload a document smaller than 15MB.");
+      return;
+    }
+
     if (limitReached) {
       setShowLimitModal(true);
       return;
@@ -69,17 +80,26 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     setIsUploading(true);
+    setUploadStage('reading');
+    setUploadProgress(10);
     setError(null);
 
     try {
       const base64 = await fileToBase64(file);
-      // Attempt storage upload but fall back to base64 if bucket isn't ready
+      setUploadProgress(30);
+      setUploadStage('uploading');
+
+      // Attempt storage upload
       let storageUrl = null;
       try {
         storageUrl = await uploadFile(file);
+        setUploadProgress(50);
       } catch (sErr) {
-        console.warn("Storage bucket not configured, using database only.");
+        console.warn("Storage bucket not configured or failed, using database only.");
       }
+
+      setUploadStage('analyzing');
+      setUploadProgress(65);
 
       const newDoc: Document = {
         id: crypto.randomUUID(),
@@ -94,17 +114,40 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
+      // Add placeholder doc immediately
       onAddDocument(newDoc);
       setSelectedDocId(newDoc.id);
 
+      // Perform AI Analysis
       const slos = await geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain);
+      
+      setUploadStage('finalizing');
+      setUploadProgress(90);
+
       onUpdateDocument(newDoc.id, { sloTags: slos, status: 'completed' });
       onQuery();
 
+      setUploadProgress(100);
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadStage('idle');
+      }, 500);
+
     } catch (err) {
-      setError("Failed to analyze document. Ensure it is a valid PDF or text file.");
-    } finally {
+      console.error("Upload error:", err);
+      setError("Failed to analyze document. The AI service may be temporarily busy or the file format is unsupported.");
       setIsUploading(false);
+      setUploadStage('idle');
+    }
+  };
+
+  const getStageMessage = () => {
+    switch(uploadStage) {
+      case 'reading': return 'Reading file contents...';
+      case 'uploading': return 'Storing in Neural Library...';
+      case 'analyzing': return 'Gemini is extracting SLOs...';
+      case 'finalizing': return 'Applying pedagogical filters...';
+      default: return 'Processing...';
     }
   };
 
@@ -129,6 +172,42 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
       )}
 
+      {/* Uploading Overlay */}
+      {isUploading && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-indigo-950/40 backdrop-blur-md">
+          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-indigo-100 text-center space-y-6 animate-in zoom-in duration-300">
+            <div className="relative w-24 h-24 mx-auto">
+              <div className="absolute inset-0 rounded-full border-4 border-indigo-50" />
+              <div 
+                className="absolute inset-0 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" 
+                style={{ animationDuration: '1.5s' }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center text-indigo-600">
+                <Upload size={32} />
+              </div>
+            </div>
+            
+            <div>
+              <h3 className="text-xl font-bold text-slate-900">{getStageMessage()}</h3>
+              <p className="text-slate-500 text-sm mt-1">Please keep this window open while the AI works.</p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                <div 
+                  className="h-full bg-indigo-600 transition-all duration-500 ease-out"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                <span>{uploadStage}</span>
+                <span>{uploadProgress}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Curriculum Library</h1>
@@ -138,7 +217,13 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
         
         <div className="flex items-center gap-3">
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.txt,.doc,.docx" />
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileUpload} 
+            className="hidden" 
+            accept=".pdf,.txt,.doc,.docx,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+          />
           <button 
             onClick={() => limitReached ? setShowLimitModal(true) : fileInputRef.current?.click()}
             disabled={isUploading}
@@ -154,7 +239,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
       {error && (
         <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-center gap-3 text-rose-800 animate-in slide-in-from-top-2">
-          <AlertCircle className="w-5 h-5 text-rose-600" />
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
           <p className="text-sm font-medium">{error}</p>
           <button onClick={() => setError(null)} className="ml-auto p-1 hover:bg-rose-100 rounded-lg"><X size={16}/></button>
         </div>
@@ -242,12 +327,13 @@ const Documents: React.FC<DocumentsProps> = ({
             <div key={doc.id} onClick={() => setSelectedDocId(doc.id)} className="bg-white rounded-2xl border border-slate-200 p-6 hover:shadow-xl hover:border-indigo-400 transition-all cursor-pointer group">
               <div className="flex items-start justify-between mb-4">
                 <div className="p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                  <FileText size={24} />
+                  {doc.mimeType?.includes('pdf') ? <FileText size={24} /> : doc.mimeType?.includes('word') ? <FileType size={24} /> : <FileCode size={24} />}
                 </div>
                 {isFree && <span className="text-slate-200" title="Management restricted"><Lock size={12}/></span>}
+                {doc.status === 'completed' && <Check size={16} className="text-emerald-500" />}
               </div>
               <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 truncate">{doc.name}</h3>
-              <p className="text-xs text-slate-400 font-bold mt-1">{doc.subject} • {new Date(doc.createdAt).toLocaleDateString()}</p>
+              <p className="text-xs text-slate-400 font-bold mt-1">{doc.subject || 'General'} • {new Date(doc.createdAt).toLocaleDateString()}</p>
             </div>
           ))}
           {documents.length === 0 && (
