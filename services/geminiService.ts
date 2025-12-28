@@ -25,9 +25,9 @@ export const geminiService = {
       ${brain.bloomRules}
     `;
 
-    // Use Pro for better initial document extraction
+    // Switched to Flash for extraction for better speed/performance during uploads
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-preview",
+      model: "gemini-3-flash-preview",
       contents: {
         parts: [
           { text: "Analyze this educational document and extract Student Learning Outcomes (SLOs) based on Bloom's levels. Output exactly in JSON format." },
@@ -56,7 +56,8 @@ export const geminiService = {
     });
 
     try {
-      return JSON.parse(response.text || "[]");
+      const text = response.text || "[]";
+      return JSON.parse(text);
     } catch (e) {
       console.error("JSON Parse Error in SLO generation:", e);
       return [];
