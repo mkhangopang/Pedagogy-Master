@@ -16,16 +16,32 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * Note: Create a bucket named 'documents' in Supabase dashboard first.
  */
 export const uploadFile = async (file: File, bucket: string = 'documents') => {
-  if (!isSupabaseConfigured) return null;
+  if (!isSupabaseConfigured) {
+    console.warn("Supabase not configured, skipping storage upload.");
+    return null;
+  }
+  
   const fileExt = file.name.split('.').pop();
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
   const filePath = fileName;
 
-  const { data, error } = await supabase.storage.from(bucket).upload(filePath, file);
-  if (error) throw error;
-  
-  const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
-  return publicUrl;
+  try {
+    const { data, error } = await supabase.storage.from(bucket).upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false
+    });
+    
+    if (error) {
+      console.error("Supabase Storage Error:", error.message);
+      throw error;
+    }
+    
+    const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
+    return publicUrl;
+  } catch (err) {
+    console.error("Storage Service Failure:", err);
+    throw err;
+  }
 };
 
 export const deleteFile = async (path: string, bucket: string = 'documents') => {

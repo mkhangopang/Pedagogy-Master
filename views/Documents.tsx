@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { 
   Upload, FileText, Plus, ChevronLeft, Target, 
@@ -21,7 +22,7 @@ interface DocumentsProps {
   userPlan: SubscriptionPlan;
 }
 
-type UploadStage = 'idle' | 'reading' | 'uploading' | 'analyzing' | 'finalizing';
+type UploadStage = 'idle' | 'reading' | 'adding' | 'storing' | 'analyzing' | 'finalizing';
 
 const Documents: React.FC<DocumentsProps> = ({ 
   documents, 
@@ -87,18 +88,7 @@ const Documents: React.FC<DocumentsProps> = ({
     try {
       const base64 = await fileToBase64(file);
       setUploadProgress(30);
-      setUploadStage('uploading');
-
-      // Attempt storage upload
-      try {
-        await uploadFile(file);
-        setUploadProgress(50);
-      } catch (sErr) {
-        console.warn("Storage upload failed, relying on database base64.");
-      }
-
-      setUploadStage('analyzing');
-      setUploadProgress(65);
+      setUploadStage('adding');
 
       const newDoc: Document = {
         id: docId,
@@ -107,41 +97,59 @@ const Documents: React.FC<DocumentsProps> = ({
         base64Data: base64,
         mimeType: file.type || 'application/pdf',
         status: 'processing',
-        subject: 'Analyzing...',
+        subject: 'Initializing...',
         gradeLevel: 'Auto-detecting',
         sloTags: [],
         createdAt: new Date().toISOString()
       };
 
+      // CRITICAL: Add to local state immediately so user sees progress
       onAddDocument(newDoc);
       setSelectedDocId(docId);
+      
+      setUploadProgress(40);
+      setUploadStage('storing');
 
-      // AI Analysis
+      // Attempt storage upload with a timeout so it doesn't hang at 30/40%
+      const storagePromise = uploadFile(file).catch(err => {
+        console.warn("Background storage upload failed:", err);
+        return null;
+      });
+
+      // We don't strictly wait for storage to finish before starting AI analysis
+      // but we wait a max of 2 seconds for it.
+      await Promise.race([
+        storagePromise,
+        new Promise(resolve => setTimeout(resolve, 2000))
+      ]);
+
+      setUploadProgress(55);
+      setUploadStage('analyzing');
+
+      // AI Analysis - This is the long part
       const slos = await geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain);
       
+      setUploadProgress(85);
       setUploadStage('finalizing');
-      setUploadProgress(90);
 
       onUpdateDocument(docId, { 
         sloTags: slos, 
         status: slos.length > 0 ? 'completed' : 'failed',
         subject: slos.length > 0 ? 'General Education' : 'Analysis Failed'
       });
+      
       onQuery();
-
       setUploadProgress(100);
+
       setTimeout(() => {
         setIsUploading(false);
         setUploadStage('idle');
       }, 500);
 
     } catch (err) {
-      console.error("Upload error:", err);
-      setError("AI analysis timed out or failed. You can try re-uploading the file.");
-      
-      // Update the document to failed status if it was already added
+      console.error("Upload process error:", err);
+      setError("Document processing failed. Please try a smaller file or refresh.");
       onUpdateDocument(docId, { status: 'failed' });
-      
       setIsUploading(false);
       setUploadStage('idle');
     }
@@ -149,10 +157,11 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStageMessage = () => {
     switch(uploadStage) {
-      case 'reading': return 'Reading file...';
-      case 'uploading': return 'Saving to Library...';
-      case 'analyzing': return 'Neural Engine extraction (this may take a minute)...';
-      case 'finalizing': return 'Mapping pedagogical data...';
+      case 'reading': return 'Reading document structure...';
+      case 'adding': return 'Registering in Neural Library...';
+      case 'storing': return 'Securing file in cloud storage...';
+      case 'analyzing': return 'Gemini is extracting learning outcomes...';
+      case 'finalizing': return 'Mapping pedagogical metadata...';
       default: return 'Processing...';
     }
   };
@@ -168,7 +177,7 @@ const Documents: React.FC<DocumentsProps> = ({
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">Document Limit Reached</h3>
             <p className="text-slate-500 text-sm mb-8">
-              Free users can store up to 2 documents. Upgrade to Pro for unlimited storage and advanced features.
+              Free users can store up to 2 documents. Upgrade to Pro for unlimited storage and deletions.
             </p>
             <div className="space-y-3">
               <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200">Upgrade to Pro</button>
@@ -195,7 +204,7 @@ const Documents: React.FC<DocumentsProps> = ({
             
             <div>
               <h3 className="text-xl font-bold text-slate-900">{getStageMessage()}</h3>
-              <p className="text-slate-500 text-sm mt-1">Our AI is meticulously analyzing your content.</p>
+              <p className="text-slate-500 text-sm mt-1">This takes 10-30 seconds depending on file length.</p>
             </div>
 
             <div className="space-y-2">
