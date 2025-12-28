@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { 
   Upload, FileText, Plus, ChevronLeft, Target, 
@@ -263,7 +262,11 @@ const Documents: React.FC<DocumentsProps> = ({
                 <div className="p-3 rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all">
                   <FileText size={24} />
                 </div>
-                {isFree && <Lock size={12} className="text-slate-200" title="Delete disabled" />}
+                {isFree && (
+                  <span className="text-slate-200" title="Delete disabled">
+                    <Lock size={12} />
+                  </span>
+                )}
               </div>
               <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 truncate">{doc.name}</h3>
               <p className="text-xs text-slate-400 font-bold mt-1">{doc.subject} • {new Date(doc.createdAt).toLocaleDateString()}</p>

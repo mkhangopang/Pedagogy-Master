@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { SLO, NeuralBrain, UserProfile, SubscriptionPlan } from "../types";
 import { adaptiveService } from "./adaptiveService";
@@ -26,8 +25,9 @@ export const geminiService = {
       ${brain.bloomRules}
     `;
 
+    // Use Pro for better initial document extraction
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3-pro-preview",
       contents: {
         parts: [
           { text: "Analyze this educational document and extract Student Learning Outcomes (SLOs) based on Bloom's levels. Output exactly in JSON format." },
@@ -58,6 +58,7 @@ export const geminiService = {
     try {
       return JSON.parse(response.text || "[]");
     } catch (e) {
+      console.error("JSON Parse Error in SLO generation:", e);
       return [];
     }
   },
@@ -81,7 +82,9 @@ export const geminiService = {
     const systemInstruction = `
       ${brain.masterPrompt}
       ${adaptiveContext}
-      Use the provided document as the primary source of truth. If information is missing and user has search access, grounding is enabled.
+      Use the provided document as the primary source of truth (RAG). 
+      Identify specific sections and curriculum standards mentioned in the file.
+      If information is missing and user has search access, grounding is enabled.
     `;
 
     const contents: any[] = [
@@ -98,8 +101,9 @@ export const geminiService = {
       }
     ];
 
+    // Use Pro for high-quality conversational RAG
     const result = await ai.models.generateContentStream({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents,
       config: {
         systemInstruction,
@@ -141,6 +145,7 @@ export const geminiService = {
       { text: prompt }
     ];
 
+    // Flash is great for quick tool generation
     const result = await ai.models.generateContentStream({
       model: "gemini-3-flash-preview",
       contents: { parts },
