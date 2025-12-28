@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { SLO, NeuralBrain, UserProfile } from "../types";
+import { SLO, NeuralBrain, UserProfile, SubscriptionPlan } from "../types";
 import { adaptiveService } from "./adaptiveService";
 
 export const geminiService = {
@@ -72,9 +72,16 @@ export const geminiService = {
     const ai = this.getClient();
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     
+    // RAG ENHANCEMENT: For Enterprise/Pro, we enable web grounding
+    const tools: any[] = [];
+    if (user?.plan !== SubscriptionPlan.FREE) {
+      tools.push({ googleSearch: {} });
+    }
+
     const systemInstruction = `
       ${brain.masterPrompt}
       ${adaptiveContext}
+      Use the provided document as the primary source of truth. If information is missing and user has search access, grounding is enabled.
     `;
 
     const contents: any[] = [
@@ -96,6 +103,7 @@ export const geminiService = {
       contents,
       config: {
         systemInstruction,
+        tools: tools.length > 0 ? tools : undefined
       },
     });
 
@@ -125,7 +133,7 @@ export const geminiService = {
     const prompt = `
       Tool Type: ${toolType.toUpperCase()}
       User Request: ${userInput}
-      Generate high-quality educational content.
+      Generate high-quality educational content. Ensure pedagogical rigor.
     `;
 
     const parts: any[] = [

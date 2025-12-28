@@ -40,7 +40,6 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
           }
           throw authError;
         }
-        // If confirmation is required, user won't have a session immediately
         if (data.user && !data.session) {
           setView('signup-success');
         } else if (data.user) {

@@ -1,20 +1,21 @@
-
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
-import Documents from '../views/Documents';
-import Chat from '../views/Chat';
-import Tools from '../views/Tools';
-import BrainControl from '../views/BrainControl';
-import Pricing from '../views/Pricing';
 import Login from '../views/Login';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
-import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, ROLE_LIMITS, APP_NAME, ADMIN_EMAILS } from '../constants';
+import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, DatabaseZap, AlertCircle } from 'lucide-react';
+import { Loader2, Menu, AlertCircle } from 'lucide-react';
+
+// Lazy load heavy view components for better performance
+const Documents = lazy(() => import('../views/Documents'));
+const Chat = lazy(() => import('../views/Chat'));
+const Tools = lazy(() => import('../views/Tools'));
+const BrainControl = lazy(() => import('../views/BrainControl'));
+const Pricing = lazy(() => import('../views/Pricing'));
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -73,100 +74,101 @@ export default function App() {
 
   const fetchBrain = async () => {
     if (!isActuallyConnected) return;
-    const { data, error } = await supabase
-      .from('neural_brain')
-      .select('*')
-      .eq('is_active', true)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    
-    if (error) console.error("Error fetching brain:", error);
-    
-    if (data) {
-      setBrain({
-        id: data.id,
-        masterPrompt: data.master_prompt,
-        bloomRules: data.bloom_rules, 
-        version: data.version,
-        isActive: data.is_active,
-        updatedAt: data.updated_at
-      });
+    try {
+      const { data, error } = await supabase
+        .from('neural_brain')
+        .select('*')
+        .eq('is_active', true)
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (data) {
+        setBrain({
+          id: data.id,
+          masterPrompt: data.master_prompt,
+          bloomRules: data.bloom_rules, 
+          version: data.version,
+          isActive: data.is_active,
+          updatedAt: data.updated_at
+        });
+      }
+    } catch (e) {
+      console.warn("Could not fetch brain data, using defaults.");
     }
   };
 
   const fetchProfileAndDocs = async (userId: string, email?: string) => {
-    const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    
-    if (profileError) console.error("Error fetching profile:", profileError);
-    
-    const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
-    let activeProfile: UserProfile;
+    try {
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      
+      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+      let activeProfile: UserProfile;
 
-    if (!profile) {
-      activeProfile = {
-        id: userId,
-        name: email?.split('@')[0] || 'Educator',
-        email: email || '',
-        role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
-        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
-        queriesUsed: 0,
-        queriesLimit: isSystemAdmin ? 999999 : 30,
-        generationCount: 0,
-        successRate: 0,
-        editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-      };
-
-      if (isActuallyConnected) {
-        const { error: insertError } = await supabase.from('profiles').insert([{
+      if (!profile) {
+        activeProfile = {
           id: userId,
-          name: activeProfile.name,
-          email: activeProfile.email,
-          role: activeProfile.role,
-          plan: activeProfile.plan,
-          queries_used: 0,
-          queries_limit: activeProfile.queriesLimit
-        }]);
-        if (insertError) console.error("Profile creation failed:", insertError);
+          name: email?.split('@')[0] || 'Educator',
+          email: email || '',
+          role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
+          queriesUsed: 0,
+          queriesLimit: isSystemAdmin ? 999999 : 30,
+          generationCount: 0,
+          successRate: 0,
+          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        };
+
+        if (isActuallyConnected) {
+          await supabase.from('profiles').insert([{
+            id: userId,
+            name: activeProfile.name,
+            email: activeProfile.email,
+            role: activeProfile.role,
+            plan: activeProfile.plan,
+            queries_used: 0,
+            queries_limit: activeProfile.queriesLimit
+          }]);
+        }
+      } else {
+        activeProfile = {
+          id: profile.id,
+          name: profile.name || 'Educator',
+          email: profile.email || '',
+          role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
+          queriesUsed: profile.queries_used || 0,
+          queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
+          gradeLevel: profile.grade_level,
+          subjectArea: profile.subject_area,
+          teachingStyle: profile.teaching_style,
+          pedagogicalApproach: profile.pedagogical_approach,
+          generationCount: profile.generation_count || 0,
+          successRate: profile.success_rate || 0,
+          editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        };
       }
-    } else {
-      activeProfile = {
-        id: profile.id,
-        name: profile.name || 'Educator',
-        email: profile.email || '',
-        role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
-        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
-        queriesUsed: profile.queries_used || 0,
-        queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
-        gradeLevel: profile.grade_level,
-        subjectArea: profile.subject_area,
-        teachingStyle: profile.teaching_style,
-        pedagogicalApproach: profile.pedagogical_approach,
-        generationCount: profile.generation_count || 0,
-        successRate: profile.success_rate || 0,
-        editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-      };
-    }
 
-    setUserProfile(activeProfile);
+      setUserProfile(activeProfile);
 
-    const { data: docs, error: docsError } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-    
-    if (docsError) console.error("Error fetching documents:", docsError);
-    
-    if (docs) {
-      setDocuments(docs.map(d => ({
-        id: d.id,
-        userId: d.user_id,
-        name: d.name,
-        base64Data: d.base64_data,
-        mimeType: d.mime_type,
-        status: d.status as any,
-        subject: d.subject,
-        gradeLevel: d.grade_level,
-        sloTags: d.slo_tags || [],
-        createdAt: d.created_at
-      })));
+      const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      
+      if (docs) {
+        setDocuments(docs.map(d => ({
+          id: d.id,
+          userId: d.user_id,
+          name: d.name,
+          base64Data: d.base64_data,
+          mimeType: d.mime_type,
+          status: d.status as any,
+          subject: d.subject,
+          gradeLevel: d.grade_level,
+          sloTags: d.slo_tags || [],
+          createdAt: d.created_at
+        })));
+      }
+    } catch (e) {
+      console.error("Profile/Docs load error:", e);
     }
   };
 
@@ -176,82 +178,82 @@ export default function App() {
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
     if (isActuallyConnected) {
-      const { error } = await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
-      if (error) console.error("Failed to update query count:", error);
+      await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
     }
   };
 
   const renderView = () => {
     if (!userProfile) return null;
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
-      case 'documents':
-        return (
-          <Documents 
-            documents={documents} 
-            onAddDocument={async (doc) => {
-              setDocuments(prev => [doc, ...prev]);
-              if (isActuallyConnected) {
-                const { error } = await supabase.from('documents').insert([{
-                  id: doc.id, 
-                  user_id: userProfile.id, 
-                  name: doc.name, 
-                  base64_data: doc.base64Data,
-                  mime_type: doc.mimeType, 
-                  status: doc.status, 
-                  subject: doc.subject,
-                  grade_level: doc.gradeLevel, 
-                  slo_tags: doc.sloTags, 
-                  created_at: doc.createdAt
-                }]);
-                if (error) {
-                  console.error("Document Save Failed:", error);
-                  alert("Warning: Could not save document to database.");
+    
+    return (
+      <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
+        {(() => {
+          switch (currentView) {
+            case 'dashboard':
+              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
+            case 'documents':
+              return (
+                <Documents 
+                  documents={documents} 
+                  onAddDocument={async (doc) => {
+                    setDocuments(prev => [doc, ...prev]);
+                    if (isActuallyConnected) {
+                      await supabase.from('documents').insert([{
+                        id: doc.id, 
+                        user_id: userProfile.id, 
+                        name: doc.name, 
+                        base64_data: doc.base64Data,
+                        mime_type: doc.mimeType, 
+                        status: doc.status, 
+                        subject: doc.subject,
+                        grade_level: doc.gradeLevel, 
+                        slo_tags: doc.sloTags, 
+                        created_at: doc.createdAt
+                      }]);
+                    }
+                  }} 
+                  onUpdateDocument={async (id, updates) => {
+                    setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
+                    if (isActuallyConnected) {
+                      const dbUpdates: any = {};
+                      if (updates.status) dbUpdates.status = updates.status;
+                      if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
+                      await supabase.from('documents').update(dbUpdates).eq('id', id);
+                    }
+                  }}
+                  onDeleteDocument={async (id) => {
+                    setDocuments(prev => prev.filter(d => d.id !== id));
+                    if (isActuallyConnected) {
+                      await supabase.from('documents').delete().eq('id', id);
+                    }
+                  }}
+                  brain={brain}
+                  onQuery={incrementQueries}
+                  canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN}
+                  userPlan={userProfile.plan}
+                />
+              );
+            case 'chat':
+              return <Chat user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
+            case 'tools':
+              return <Tools user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
+            case 'brain':
+              return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
+            case 'pricing':
+              return <Pricing currentPlan={userProfile.plan} onUpgrade={(plan) => {
+                const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
+                setUserProfile({ ...userProfile, plan, queriesLimit: limit });
+                if (isActuallyConnected) {
+                  supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
                 }
-              }
-            }} 
-            onUpdateDocument={async (id, updates) => {
-              setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-              if (isActuallyConnected) {
-                const dbUpdates: any = {};
-                if (updates.status) dbUpdates.status = updates.status;
-                if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
-                const { error } = await supabase.from('documents').update(dbUpdates).eq('id', id);
-                if (error) console.error("Document update failed:", error);
-              }
-            }}
-            onDeleteDocument={async (id) => {
-              setDocuments(prev => prev.filter(d => d.id !== id));
-              if (isActuallyConnected) {
-                const { error } = await supabase.from('documents').delete().eq('id', id);
-                if (error) console.error("Document deletion failed:", error);
-              }
-            }}
-            brain={brain}
-            onQuery={incrementQueries}
-            canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN}
-            userPlan={userProfile.plan}
-          />
-        );
-      case 'chat':
-        return <Chat user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
-      case 'tools':
-        return <Tools user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
-      case 'brain':
-        return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
-      case 'pricing':
-        return <Pricing currentPlan={userProfile.plan} onUpgrade={(plan) => {
-          const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
-          setUserProfile({ ...userProfile, plan, queriesLimit: limit });
-          if (isActuallyConnected) {
-            supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
+                setCurrentView('dashboard');
+              }} />;
+            default:
+              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
           }
-          setCurrentView('dashboard');
-        }} />;
-      default:
-        return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
-    }
+        })()}
+      </Suspense>
+    );
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-indigo-600" /></div>;
@@ -259,7 +261,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Mobile Sidebar Drawer Overlay */}
       {isSidebarOpen && (
         <div className="fixed inset-0 z-[100] lg:hidden">
           <div 
@@ -282,7 +283,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Desktop Sidebar */}
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
         <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
       </div>
@@ -300,11 +300,10 @@ export default function App() {
           <div className="w-10" />
         </header>
 
-        {/* Only show warning if NOT connected AND no session exists */}
         {!isActuallyConnected && (
           <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 flex items-center justify-center gap-2 text-amber-800 text-xs font-bold">
             <AlertCircle size={14} />
-            DEMO MODE: Supabase environment variables are missing. Documents will not persist.
+            DEMO MODE: Database connectivity issue detected. Documents will not persist.
           </div>
         )}
 
