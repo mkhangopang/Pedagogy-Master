@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import { 
   Upload, FileText, Plus, ChevronLeft, Target, 
@@ -22,7 +21,7 @@ interface DocumentsProps {
   userPlan: SubscriptionPlan;
 }
 
-type UploadStage = 'idle' | 'reading' | 'adding' | 'storing' | 'analyzing' | 'finalizing';
+type UploadStage = 'idle' | 'reading' | 'registering' | 'storing' | 'analyzing' | 'finalizing';
 
 const Documents: React.FC<DocumentsProps> = ({ 
   documents, 
@@ -64,7 +63,7 @@ const Documents: React.FC<DocumentsProps> = ({
     if (!file) return;
 
     if (file.size > 15 * 1024 * 1024) {
-      setError("File is too large. Please upload a document smaller than 15MB.");
+      setError("File is too large. Max 15MB.");
       return;
     }
 
@@ -74,7 +73,7 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     if (!canQuery) {
-      setError("Daily AI query limit reached.");
+      setError("Daily quota limit reached.");
       return;
     }
 
@@ -86,10 +85,12 @@ const Documents: React.FC<DocumentsProps> = ({
     const docId = crypto.randomUUID();
 
     try {
+      // 1. Reading file content
       const base64 = await fileToBase64(file);
       setUploadProgress(30);
-      setUploadStage('adding');
+      setUploadStage('registering');
 
+      // 2. Immediate local registration to avoid perceived "hang"
       const newDoc: Document = {
         id: docId,
         userId: '', 
@@ -103,39 +104,37 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // CRITICAL: Add to local state immediately so user sees progress
       onAddDocument(newDoc);
       setSelectedDocId(docId);
       
-      setUploadProgress(40);
+      // Moving to 45% immediately to show registration success
+      setUploadProgress(45);
       setUploadStage('storing');
 
-      // Attempt storage upload with a timeout so it doesn't hang at 30/40%
+      // 3. Storage bucket upload (Race with timeout to prevent hang)
       const storagePromise = uploadFile(file).catch(err => {
-        console.warn("Background storage upload failed:", err);
+        console.warn("Bucket upload skipped or failed.", err);
         return null;
       });
 
-      // We don't strictly wait for storage to finish before starting AI analysis
-      // but we wait a max of 2 seconds for it.
       await Promise.race([
         storagePromise,
-        new Promise(resolve => setTimeout(resolve, 2000))
+        new Promise(resolve => setTimeout(resolve, 4000))
       ]);
 
-      setUploadProgress(55);
+      setUploadProgress(60);
       setUploadStage('analyzing');
 
-      // AI Analysis - This is the long part
+      // 4. AI Analysis
       const slos = await geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain);
       
-      setUploadProgress(85);
+      setUploadProgress(90);
       setUploadStage('finalizing');
 
       onUpdateDocument(docId, { 
         sloTags: slos, 
         status: slos.length > 0 ? 'completed' : 'failed',
-        subject: slos.length > 0 ? 'General Education' : 'Analysis Failed'
+        subject: slos.length > 0 ? 'Curriculum Analyzed' : 'Extraction Error'
       });
       
       onQuery();
@@ -147,8 +146,8 @@ const Documents: React.FC<DocumentsProps> = ({
       }, 500);
 
     } catch (err) {
-      console.error("Upload process error:", err);
-      setError("Document processing failed. Please try a smaller file or refresh.");
+      console.error("Upload process failure:", err);
+      setError("Document analysis failed. You might want to try a smaller PDF.");
       onUpdateDocument(docId, { status: 'failed' });
       setIsUploading(false);
       setUploadStage('idle');
@@ -157,11 +156,11 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStageMessage = () => {
     switch(uploadStage) {
-      case 'reading': return 'Reading document structure...';
-      case 'adding': return 'Registering in Neural Library...';
-      case 'storing': return 'Securing file in cloud storage...';
-      case 'analyzing': return 'Gemini is extracting learning outcomes...';
-      case 'finalizing': return 'Mapping pedagogical metadata...';
+      case 'reading': return 'Decoding document content...';
+      case 'registering': return 'Allocating Neural Memory...';
+      case 'storing': return 'Securing to Supabase Storage...';
+      case 'analyzing': return 'Gemini Intelligence is reading...';
+      case 'finalizing': return 'Generating Bloom\'s mappings...';
       default: return 'Processing...';
     }
   };
@@ -175,9 +174,9 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <ShieldAlert className="w-8 h-8 text-amber-500" />
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Document Limit Reached</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Workspace Limit</h3>
             <p className="text-slate-500 text-sm mb-8">
-              Free users can store up to 2 documents. Upgrade to Pro for unlimited storage and deletions.
+              Free users can store 2 documents. Pro users enjoy unlimited storage and automated curriculum mapping.
             </p>
             <div className="space-y-3">
               <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200">Upgrade to Pro</button>
@@ -204,7 +203,7 @@ const Documents: React.FC<DocumentsProps> = ({
             
             <div>
               <h3 className="text-xl font-bold text-slate-900">{getStageMessage()}</h3>
-              <p className="text-slate-500 text-sm mt-1">This takes 10-30 seconds depending on file length.</p>
+              <p className="text-slate-500 text-sm mt-1">This typically takes 5-15 seconds.</p>
             </div>
 
             <div className="space-y-2">
@@ -295,7 +294,7 @@ const Documents: React.FC<DocumentsProps> = ({
                   </button>
                   {isFree && (
                     <div className="absolute bottom-full right-0 mb-2 w-48 hidden group-hover:block bg-slate-900 text-white text-[10px] p-2 rounded-lg shadow-xl z-20">
-                      Delete is disabled for Free users. Upgrade to manage your library.
+                      Delete is restricted on Free accounts.
                     </div>
                   )}
                 </div>
@@ -303,15 +302,15 @@ const Documents: React.FC<DocumentsProps> = ({
 
               <div className="pt-4 border-t border-slate-100 space-y-4">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">Bloom's Mapping</span>
+                  <span className="text-slate-500">Bloom's Items</span>
                   <span className={`font-bold ${selectedDoc.status === 'failed' ? 'text-rose-500' : 'text-slate-900'}`}>
-                    {selectedDoc.status === 'failed' ? 'Error' : `${selectedDoc.sloTags?.length || 0} Points`}
+                    {selectedDoc.status === 'failed' ? 'Error' : `${selectedDoc.sloTags?.length || 0} Identified`}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">Tier Status</span>
+                  <span className="text-slate-500">Sync Status</span>
                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${isFree ? 'bg-slate-100 text-slate-400' : 'bg-indigo-100 text-indigo-600'}`}>
-                    {userPlan}
+                    {userPlan} Active
                   </span>
                 </div>
               </div>
@@ -325,7 +324,7 @@ const Documents: React.FC<DocumentsProps> = ({
                   }}
                   className="w-full flex items-center justify-center gap-2 py-2.5 bg-rose-50 text-rose-600 text-xs font-bold rounded-xl border border-rose-100 hover:bg-rose-100 transition-colors"
                 >
-                  <RefreshCw size={14} /> Retry Analysis
+                  <RefreshCw size={14} /> Retry Extraction
                 </button>
               )}
             </div>
@@ -354,7 +353,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 <div className="col-span-full py-12 text-center bg-rose-50 rounded-2xl border-2 border-dashed border-rose-200">
                   <AlertCircle className="w-8 h-8 text-rose-300 mx-auto mb-3" />
                   <p className="text-rose-600 text-sm font-bold uppercase tracking-tight">AI Extraction Failed</p>
-                  <p className="text-rose-500 text-xs mt-1">This can happen with complex formats. Try a simpler PDF or text file.</p>
+                  <p className="text-rose-400 text-xs mt-1">Please ensure the document contains clear learning objectives.</p>
                 </div>
               )}
             </div>
@@ -369,7 +368,7 @@ const Documents: React.FC<DocumentsProps> = ({
                   {doc.mimeType?.includes('pdf') ? <FileText size={24} /> : doc.mimeType?.includes('word') ? <FileType size={24} /> : <FileCode size={24} />}
                 </div>
                 <div className="flex items-center gap-2">
-                  {isFree && <span className="text-slate-200" title="Management restricted"><Lock size={12}/></span>}
+                  {isFree && <span className="text-slate-200" title="Restricted"><Lock size={12}/></span>}
                   {doc.status === 'completed' && <Check size={16} className="text-emerald-500" />}
                   {doc.status === 'processing' && <Loader2 size={16} className="text-indigo-400 animate-spin" />}
                   {doc.status === 'failed' && <AlertCircle size={16} className="text-rose-500" />}
@@ -377,7 +376,7 @@ const Documents: React.FC<DocumentsProps> = ({
               </div>
               <h3 className={`text-lg font-bold truncate ${doc.status === 'failed' ? 'text-rose-900' : 'text-slate-900 group-hover:text-indigo-600'}`}>{doc.name}</h3>
               <p className="text-xs text-slate-400 font-bold mt-1">
-                {doc.status === 'failed' ? 'Failed' : doc.subject || 'General'} • {new Date(doc.createdAt).toLocaleDateString()}
+                {doc.status === 'failed' ? 'Failed' : doc.subject || 'Processing...'} • {new Date(doc.createdAt).toLocaleDateString()}
               </p>
             </div>
           ))}
@@ -385,7 +384,7 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="col-span-full py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center px-4">
               <Upload className="w-12 h-12 text-slate-300 mb-4" />
               <h3 className="text-xl font-bold text-slate-900">Your Library is Empty</h3>
-              <p className="text-slate-500 mb-6 max-w-xs">Upload your curriculum or syllabus to begin the AI pedagogical analysis.</p>
+              <p className="text-slate-500 mb-6 max-w-xs">Upload your syllabus to begin pedagogical analysis.</p>
               <button onClick={() => fileInputRef.current?.click()} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:shadow-indigo-300 transition-all">Upload Now</button>
             </div>
           )}

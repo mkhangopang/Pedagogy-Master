@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy } from 'react';
@@ -10,7 +11,6 @@ import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } fr
 import { paymentService } from '../services/paymentService';
 import { Loader2, Menu, AlertCircle } from 'lucide-react';
 
-// Lazy load heavy view components for better performance
 const Documents = lazy(() => import('../views/Documents'));
 const Chat = lazy(() => import('../views/Chat'));
 const Tools = lazy(() => import('../views/Tools'));
@@ -26,7 +26,6 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // If we have a session, we assume Supabase is configured correctly
   const isActuallyConnected = isSupabaseConfigured || !!session;
 
   const [brain, setBrain] = useState<NeuralBrain>({
@@ -101,7 +100,6 @@ export default function App() {
   const fetchProfileAndDocs = async (userId: string, email?: string) => {
     try {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-      
       const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
       let activeProfile: UserProfile;
 
@@ -198,33 +196,53 @@ export default function App() {
                   onAddDocument={async (doc) => {
                     setDocuments(prev => [doc, ...prev]);
                     if (isActuallyConnected) {
-                      await supabase.from('documents').insert([{
-                        id: doc.id, 
-                        user_id: userProfile.id, 
-                        name: doc.name, 
-                        base64_data: doc.base64Data,
-                        mime_type: doc.mimeType, 
-                        status: doc.status, 
-                        subject: doc.subject,
-                        grade_level: doc.gradeLevel, 
-                        slo_tags: doc.sloTags, 
-                        created_at: doc.createdAt
-                      }]);
+                      try {
+                        // OPTIMIZATION: Do not save large base64 strings to the primary database table
+                        // unless it is small enough. For files > 1MB, we rely on the Storage Bucket URL.
+                        const isLarge = (doc.base64Data?.length || 0) > 500000; // ~0.5MB
+                        
+                        const { error } = await supabase.from('documents').insert([{
+                          id: doc.id, 
+                          user_id: userProfile.id, 
+                          name: doc.name, 
+                          base64_data: isLarge ? null : doc.base64Data, // Only save base64 if it's small
+                          mime_type: doc.mimeType, 
+                          status: doc.status, 
+                          subject: doc.subject,
+                          grade_level: doc.gradeLevel, 
+                          slo_tags: doc.sloTags, 
+                          created_at: doc.createdAt
+                        }]);
+                        if (error) throw error;
+                      } catch (err) {
+                        console.error("Database insert failed:", err);
+                      }
                     }
                   }} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
                     if (isActuallyConnected) {
-                      const dbUpdates: any = {};
-                      if (updates.status) dbUpdates.status = updates.status;
-                      if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
-                      await supabase.from('documents').update(dbUpdates).eq('id', id);
+                      try {
+                        const dbUpdates: any = {};
+                        if (updates.status) dbUpdates.status = updates.status;
+                        if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
+                        if (updates.subject) dbUpdates.subject = updates.subject;
+                        const { error } = await supabase.from('documents').update(dbUpdates).eq('id', id);
+                        if (error) throw error;
+                      } catch (err) {
+                        console.error("Database update failed:", err);
+                      }
                     }
                   }}
                   onDeleteDocument={async (id) => {
                     setDocuments(prev => prev.filter(d => d.id !== id));
                     if (isActuallyConnected) {
-                      await supabase.from('documents').delete().eq('id', id);
+                      try {
+                        const { error } = await supabase.from('documents').delete().eq('id', id);
+                        if (error) throw error;
+                      } catch (err) {
+                        console.error("Database delete failed:", err);
+                      }
                     }
                   }}
                   brain={brain}
