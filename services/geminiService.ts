@@ -1,13 +1,14 @@
+
 import { SLO, NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 
 /**
  * GOOGLE GENERATIVE AI SERVICE
- * Bridge for communicating with the server-side AI processing engine.
+ * High-performance bridge for pedagogical AI synthesis.
  */
 export const geminiService = {
   /**
-   * Triggers high-speed structural analysis for learning outcome extraction.
+   * Triggers structural analysis for learning outcome extraction via Google Generative AI.
    */
   async generateSLOTagsFromBase64(
     base64Data: string, 
@@ -30,7 +31,7 @@ export const geminiService = {
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err.error || 'Server-side extraction failed.');
+      throw new Error(err.error || 'The Google Generative AI engine could not complete the extraction.');
     }
 
     const data = await response.json();
@@ -38,7 +39,7 @@ export const geminiService = {
   },
 
   /**
-   * Connects to the server-side streaming engine for pedagogical conversation.
+   * Proxies a multimodal streaming chat request to the Google Generative AI backend.
    */
   async *chatWithDocumentStream(
     message: string, 
@@ -63,7 +64,7 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      yield "Engine Update: The generative AI model is temporarily unavailable.";
+      yield "Google Generative AI Alert: The engine is currently under high load. Please try again in a few moments.";
       return;
     }
 
@@ -80,7 +81,7 @@ export const geminiService = {
   },
 
   /**
-   * Connects to the server-side streaming engine for teaching material synthesis.
+   * Proxies a multimodal tool generation request to the Google Generative AI backend.
    */
   async *generatePedagogicalToolStream(
     toolType: string,
@@ -105,7 +106,7 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      yield "Engine Update: Tool synthesis interrupted. Please check document context.";
+      yield "Google Generative AI Alert: Synthesis interrupted. Please reduce document complexity.";
       return;
     }
 

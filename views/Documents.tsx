@@ -46,6 +46,9 @@ const Documents: React.FC<DocumentsProps> = ({
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
+  // Maximum size for reliable JSON transport to AI model
+  const MAX_FILE_SIZE_MB = 4;
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -62,8 +65,10 @@ const Documents: React.FC<DocumentsProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      setError("File is too large for the Free Tier (Max 15MB).");
+    // Reliability Check: JSON payloads have limits. 4MB is the safe threshold.
+    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      setError(`File exceeds the ${MAX_FILE_SIZE_MB}MB processing limit for Google Generative AI.`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
@@ -73,7 +78,7 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     if (!canQuery) {
-      setError("Daily processing quota limit reached.");
+      setError("AI analysis quota reached for today.");
       return;
     }
 
@@ -93,7 +98,7 @@ const Documents: React.FC<DocumentsProps> = ({
         base64Data: base64,
         mimeType: file.type || 'application/pdf',
         status: 'processing',
-        subject: 'Processing...',
+        subject: 'Analyzing Structure...',
         gradeLevel: 'Auto-detecting',
         sloTags: [],
         createdAt: new Date().toISOString()
@@ -102,13 +107,15 @@ const Documents: React.FC<DocumentsProps> = ({
       onAddDocument(newDoc);
       setSelectedDocId(docId);
       
-      // We still backup to storage if possible, but the primary task is AI Analysis
       setUploadStage('analyzing');
       
-      // Parallel: Storing and Direct AI Extraction
+      // Call Google Generative AI for direct structural analysis
       const [uploadResult, slos] = await Promise.all([
         uploadFile(file).catch(() => null),
-        geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain).catch(() => [] as SLO[])
+        geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain).catch((err) => {
+          console.error("AI Analysis Error:", err);
+          return [] as SLO[];
+        })
       ]);
 
       const filePath = uploadResult?.path;
@@ -117,7 +124,7 @@ const Documents: React.FC<DocumentsProps> = ({
         filePath,
         sloTags: slos, 
         status: slos.length > 0 ? 'completed' : 'failed',
-        subject: slos.length > 0 ? 'Analysis Complete' : 'Direct Read Failed'
+        subject: slos.length > 0 ? 'Analysis Success' : 'Model Recognition Error'
       });
       
       onQuery();
@@ -129,8 +136,8 @@ const Documents: React.FC<DocumentsProps> = ({
       }, 1000);
 
     } catch (err) {
-      console.error("Direct processing failure:", err);
-      setError("Gemini was unable to read this file. Please ensure it's a standard document or image.");
+      console.error("Document processing failure:", err);
+      setError("The AI was unable to read this file. Ensure it is a valid document or image.");
       onUpdateDocument(docId, { status: 'failed' });
       setIsUploading(false);
       setUploadStage('idle');
@@ -139,7 +146,6 @@ const Documents: React.FC<DocumentsProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      {/* Limit Modal */}
       {showLimitModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border border-slate-100">
@@ -148,7 +154,7 @@ const Documents: React.FC<DocumentsProps> = ({
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">Workspace Full</h3>
             <p className="text-slate-500 text-sm mb-8">
-              You've used your 2 free document slots. Upgrade to Pro for unlimited AI document processing.
+              You've used your free slots. Upgrade to Pro for unlimited Google Generative AI document processing.
             </p>
             <div className="space-y-3">
               <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg">Upgrade Now</button>
@@ -158,7 +164,6 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
       )}
 
-      {/* Uploading Overlay */}
       {isUploading && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/20 backdrop-blur-md">
           <div className="bg-white rounded-3xl p-10 max-w-sm w-full shadow-2xl border border-indigo-50 text-center space-y-6 animate-in zoom-in duration-300">
@@ -172,14 +177,16 @@ const Documents: React.FC<DocumentsProps> = ({
             
             <div>
               <h3 className="text-xl font-bold text-slate-900 capitalize">
-                {uploadStage === 'reading' ? 'Initializing File' : 'Gemini 3 is Reading...'}
+                {uploadStage === 'reading' ? 'Processing Payload' : 'AI Analysis Active'}
               </h3>
-              <p className="text-slate-500 text-sm mt-1">Directly processing curriculum data.</p>
+              <p className="text-slate-500 text-sm mt-1">
+                {uploadStage === 'reading' ? 'Preparing document bytes...' : 'Google Generative AI is reading your file...'}
+              </p>
             </div>
 
             <div className="pt-2">
               <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                <div className={`h-full bg-indigo-600 transition-all duration-1000 ${uploadStage === 'analyzing' ? 'w-3/4' : 'w-1/4'}`} />
+                <div className={`h-full bg-indigo-600 transition-all duration-[2000ms] ${uploadStage === 'analyzing' ? 'w-3/4' : 'w-1/4'}`} />
               </div>
             </div>
           </div>
@@ -190,7 +197,7 @@ const Documents: React.FC<DocumentsProps> = ({
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Curriculum Library</h1>
           <p className="text-slate-500 mt-1">
-            {isFree ? `Using ${documents.length}/${docLimit} document slots (Direct AI Read active).` : 'Enterprise Scale Active.'}
+            {isFree ? `Using ${documents.length}/${docLimit} document slots.` : 'Enterprise Scale Active.'}
           </p>
         </div>
         
@@ -245,14 +252,14 @@ const Documents: React.FC<DocumentsProps> = ({
 
               <div className="pt-6 border-t border-slate-100 space-y-4">
                 <div className="flex justify-between items-center text-sm font-medium">
+                  <span className="text-slate-400">Processing Engine</span>
+                  <span className="text-slate-900 font-bold">Google Generative AI</span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-medium">
                   <span className="text-slate-400">Extracted SLOs</span>
                   <span className={`px-3 py-1 rounded-full text-xs font-bold ${selectedDoc.status === 'failed' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
                     {selectedDoc.sloTags?.length || 0}
                   </span>
-                </div>
-                <div className="flex justify-between items-center text-sm font-medium">
-                  <span className="text-slate-400">Processing Engine</span>
-                  <span className="text-slate-900">Gemini 3 Flash</span>
                 </div>
               </div>
               
@@ -272,7 +279,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 Learning Outcomes
               </h2>
               <div className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-bold uppercase tracking-widest">
-                Direct AI Read Active
+                AI Structural Analysis
               </div>
             </div>
             
@@ -289,15 +296,15 @@ const Documents: React.FC<DocumentsProps> = ({
               {selectedDoc.sloTags.length === 0 && selectedDoc.status !== 'failed' && (
                 <div className="col-span-full py-16 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
                   <Loader2 className="w-8 h-8 animate-spin text-indigo-300 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Gemini is Processing...</p>
+                  <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Google Generative AI is Synthesizing...</p>
                 </div>
               )}
 
               {selectedDoc.status === 'failed' && (
                 <div className="col-span-full py-16 text-center bg-rose-50 rounded-3xl border border-rose-100">
                   <AlertCircle className="w-8 h-8 text-rose-300 mx-auto mb-3" />
-                  <p className="text-rose-900 font-bold">Extraction Incomplete</p>
-                  <p className="text-rose-500 text-xs mt-1">This document type may not be supported for direct reading.</p>
+                  <p className="text-rose-900 font-bold">Extraction Failed</p>
+                  <p className="text-rose-500 text-xs mt-1">The file may be corrupted or too complex for the current model.</p>
                 </div>
               )}
             </div>
@@ -324,7 +331,7 @@ const Documents: React.FC<DocumentsProps> = ({
               </div>
               <h3 className="text-lg font-bold truncate text-slate-900 group-hover:text-indigo-600 transition-colors">{doc.name}</h3>
               <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-2">
-                {doc.status === 'failed' ? 'Sync Error' : doc.subject}
+                {doc.status === 'failed' ? 'Processing Error' : doc.subject}
               </p>
             </div>
           ))}
@@ -336,7 +343,7 @@ const Documents: React.FC<DocumentsProps> = ({
               </div>
               <h3 className="text-2xl font-bold text-slate-900">Upload Curriculum</h3>
               <p className="text-slate-500 mt-2 mb-8 max-w-sm">
-                Drop your syllabus or lesson plans. Gemini 3 will directly analyze the pedagogical structure.
+                Drop your syllabus or lesson plans. Google Generative AI will directly analyze the structure.
               </p>
               <button 
                 onClick={() => fileInputRef.current?.click()} 

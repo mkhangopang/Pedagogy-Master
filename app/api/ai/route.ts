@@ -1,37 +1,37 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
 /**
  * GOOGLE GENERATIVE AI - UNIFIED NEURAL ENGINE
- * This server-side route handles all pedagogical intelligence tasks using
- * the latest Google GenAI SDK and Gemini 3 models.
+ * Handles pedagogical intelligence tasks with high performance.
  */
 export async function POST(req: NextRequest) {
   try {
     const { task, message, doc, history, brain, toolType, userInput, adaptiveContext } = await req.json();
     
-    // Initialize the official Google GenAI instance
-    // Note: process.env.API_KEY must be configured in your environment variables
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Initialize Google Generative AI with the server-side API key
+    const googleGenerativeAi = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     /**
      * TASK: EXTRACT STUDENT LEARNING OUTCOMES (SLOs)
-     * Direct multimodal analysis of document structure using Gemini 3 Flash.
+     * optimized for gemini-3-flash-preview for high-speed analysis.
      */
     if (task === 'extract-slos') {
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        OBJECTIVE: Analyze the educational document and extract high-precision SLOs.
-        TAXONOMY: ${brain.bloomRules}
-        FORMAT: Return a JSON array of objects.
+        OBJECTIVE: Identify all Student Learning Outcomes (SLOs) in the provided document.
+        Bloom's Taxonomy Level: ${brain.bloomRules}
+        FORMAT: Return ONLY a valid JSON array. Do not include markdown formatting or conversational text.
       `;
 
-      const result = await ai.models.generateContent({
+      // Use Flash for speed in structural analysis
+      const result = await googleGenerativeAi.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: {
           parts: [
-            { text: "Read the attached document and identify all learning outcomes. Map them to Bloom's taxonomy." },
+            { text: "Extract learning objectives from this file and map them to Bloom's Taxonomy levels." },
             { inlineData: { mimeType: doc.mimeType, data: doc.base64 } }
           ]
         },
@@ -56,20 +56,18 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Extract generated JSON string from the .text property
       return NextResponse.json({ text: result.text });
     }
 
     /**
      * TASK: PEDAGOGICAL CHAT (STREAMING)
-     * Deep reasoning and adaptive conversation using Gemini 3 Pro.
+     * Employs Gemini 3 Pro for complex pedagogical reasoning.
      */
     if (task === 'chat') {
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        You are the Pedagogy Master AI. The user has provided a document for contextual reference. 
-        Refer to it natively to provide high-level educational strategy and support.
+        You are the Pedagogy Master AI. Use the provided document to inform your educational guidance.
       `;
 
       const contents = [
@@ -86,7 +84,7 @@ export async function POST(req: NextRequest) {
         }
       ];
 
-      const streamResponse = await ai.models.generateContentStream({
+      const streamResponse = await googleGenerativeAi.models.generateContentStream({
         model: 'gemini-3-pro-preview',
         contents,
         config: { systemInstruction },
@@ -95,13 +93,18 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
-          for await (const chunk of streamResponse) {
-            const c = chunk as GenerateContentResponse;
-            if (c.text) {
-              controller.enqueue(encoder.encode(c.text));
+          try {
+            for await (const chunk of streamResponse) {
+              const c = chunk as GenerateContentResponse;
+              if (c.text) {
+                controller.enqueue(encoder.encode(c.text));
+              }
             }
+          } catch (e) {
+            console.error("Streaming Error:", e);
+          } finally {
+            controller.close();
           }
-          controller.close();
         },
       });
 
@@ -110,22 +113,20 @@ export async function POST(req: NextRequest) {
 
     /**
      * TASK: TOOL GENERATION (STREAMING)
-     * Synthesizing teaching materials based on document context.
      */
     if (task === 'generate-tool') {
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        OBJECTIVE: Synthesize a professional educational ${toolType}.
-        CONTEXT: Use the provided document as the primary source of truth.
+        Synthesize a professional educational ${toolType}.
       `;
 
       const parts: any[] = [
         ...(doc?.base64 && doc?.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
-        { text: `Draft a comprehensive ${toolType} for classroom use. Requirements: ${userInput}` }
+        { text: `Create a comprehensive ${toolType}. User requirements: ${userInput}` }
       ];
 
-      const streamResponse = await ai.models.generateContentStream({
+      const streamResponse = await googleGenerativeAi.models.generateContentStream({
         model: "gemini-3-flash-preview",
         contents: { parts },
         config: { systemInstruction },
@@ -134,25 +135,28 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
-          for await (const chunk of streamResponse) {
-            const c = chunk as GenerateContentResponse;
-            if (c.text) {
-              controller.enqueue(encoder.encode(c.text));
+          try {
+            for await (const chunk of streamResponse) {
+              const c = chunk as GenerateContentResponse;
+              if (c.text) {
+                controller.enqueue(encoder.encode(c.text));
+              }
             }
+          } finally {
+            controller.close();
           }
-          controller.close();
         },
       });
 
       return new Response(stream);
     }
 
-    return NextResponse.json({ error: 'Unrecognized pedagogical task' }, { status: 400 });
+    return NextResponse.json({ error: 'Unsupported pedagogical task' }, { status: 400 });
 
   } catch (error: any) {
     console.error('Google Generative AI Engine Error:', error);
     return NextResponse.json({ 
-      error: error.message || 'The AI engine encountered an unexpected error.' 
+      error: error.message || 'The Google Generative AI engine encountered a critical error.' 
     }, { status: 500 });
   }
 }
