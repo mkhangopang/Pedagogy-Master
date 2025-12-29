@@ -20,22 +20,17 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
   const checkHealth = async () => {
     setIsChecking(true);
-    // Explicitly check for tables mentioned in RLS errors
     const tables = [
       'profiles', 
       'documents', 
       'neural_brain', 
       'output_artifacts', 
-      'feedback_events',
-      'master_prompt',
-      'organizations',
-      'usage_logs'
+      'feedback_events'
     ];
     const status = await Promise.all(tables.map(async (table) => {
       try {
-        const { error } = await supabase.from(table).select('count', { count: 'exact', head: true }).limit(1);
-        // Table exists if no error OR if error is just about RLS/Permissions (code 42P01 is "missing table")
-        const exists = !error || (error.code !== '42P01' && error.code !== 'PGRST204');
+        const { error } = await supabase.from(table).select('id').limit(1);
+        const exists = !error || (error.code !== '42P01');
         return { table, exists };
       } catch (e) {
         return { table, exists: false };
@@ -69,54 +64,35 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - ULTIMATE SECURITY PATCH v7
--- Fixes: Search Path, Leaked Passwords (SQL part), and RLS Errors
+  const sqlSchema = `-- Pedagogy Master - ULTIMATE SECURITY PATCH v8
+-- FIXES: Persistent Data Erasure and RLS Errors
 
--- 1. SECURE FUNCTION SEARCH PATH (Fixes function_search_path_mutable)
+-- 1. ENABLE RLS FOR CORE TABLES
+ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
+
+-- 2. CREATE ACCESS POLICIES (Users can only see/edit their own data)
 DO $$ 
 BEGIN
-  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'handle_new_user') THEN
-    ALTER FUNCTION public.handle_new_user() SET search_path = public;
-  END IF;
-END $$;
-
--- 2. ENABLE RLS & SECURE LEGACY TABLES (Fixes rls_disabled_in_public)
--- This secures master_prompt, organizations, and usage_logs if they exist
-DO $$ 
-DECLARE
-    t text;
-BEGIN
-    FOR t IN SELECT unnest(ARRAY['master_prompt', 'organizations', 'usage_logs', 'profiles', 'documents', 'neural_brain', 'output_artifacts', 'feedback_events'])
-    LOOP
-        IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = t) THEN
-            EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
-            -- Standard "Deny All" policy for legacy tables to satisfy linter
-            IF t IN ('master_prompt', 'organizations', 'usage_logs') THEN
-                EXECUTE format('DROP POLICY IF EXISTS "Linter Security Policy" ON public.%I', t);
-                EXECUTE format('CREATE POLICY "Linter Security Policy" ON public.%I FOR ALL USING (false)', t);
-            END IF;
-        END IF;
-    END LOOP;
-END $$;
-
--- 3. CORE APP POLICIES (Ensure access for logged-in users)
-DO $$ 
-BEGIN
-    -- Profiles
+    -- Profiles Policy
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'Users access own profile') THEN
         CREATE POLICY "Users access own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
     END IF;
     
-    -- Documents
+    -- Documents Policy (CRITICAL: Fixes the "erased on refresh" issue by allowing selects)
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'documents' AND policyname = 'Users access own docs') THEN
         CREATE POLICY "Users access own docs" ON public.documents FOR ALL USING (auth.uid() = user_id);
     END IF;
 
-    -- Neural Brain
+    -- Neural Brain Policy (Publicly readable)
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'neural_brain' AND policyname = 'Public read active brain') THEN
         CREATE POLICY "Public read active brain" ON public.neural_brain FOR SELECT USING (is_active = true);
     END IF;
-END $$;`;
+END $$;
+
+-- 3. FIX SEARCH PATH WARNINGS
+ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -162,7 +138,7 @@ END $$;`;
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Database Table Health</h3>
             <button onClick={checkHealth} disabled={isChecking} className="text-xs font-bold text-indigo-600 flex items-center gap-1.5 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors">
               <RefreshCw size={14} className={isChecking ? 'animate-spin' : ''} />
-              Check Sync Status
+              Check Status
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -194,46 +170,17 @@ END $$;`;
               <ShieldCheck size={28} />
               <h2 className="text-xl font-bold">Linter Remediation Guide</h2>
             </div>
-            
-            <div className="grid gap-6">
-              <div className="p-6 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-4">
-                <div className="p-2 bg-amber-100 text-amber-600 rounded-xl mt-1 shadow-sm"><Lock size={20}/></div>
-                <div>
-                  <h3 className="font-bold text-amber-900">1. Enable Leaked Password Protection</h3>
-                  <p className="text-sm text-amber-700 mt-1 mb-4 leading-relaxed">Fixes <code className="bg-amber-200 px-1 rounded">auth_leaked_password_protection</code> warning in Supabase dashboard.</p>
-                  <ol className="text-xs text-amber-800 space-y-2 list-decimal ml-4 font-medium">
-                    <li>Open your <strong>Supabase Project Dashboard</strong>.</li>
-                    <li>Navigate to <strong>Authentication &gt; Providers</strong>.</li>
-                    <li>Expand the <strong>Email</strong> provider configuration.</li>
-                    <li>Locate <strong>"Prevent use of leaked passwords"</strong> and toggle it <strong>ON</strong>.</li>
-                    <li>Click <strong>Save</strong>.</li>
-                  </ol>
-                </div>
-              </div>
-
-              <div className="p-6 bg-rose-50 rounded-2xl border border-rose-100 flex items-start gap-4">
-                <div className="p-2 bg-rose-100 text-rose-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
-                <div>
-                  <h3 className="font-bold text-rose-900">2. Fix Role Mutable Search Path</h3>
-                  <p className="text-sm text-rose-700 mt-1 mb-4 leading-relaxed">Fixes <code className="bg-rose-200 px-1 rounded">function_search_path_mutable</code> warning for <code className="bg-rose-200 px-1 rounded">handle_new_user</code>.</p>
-                  <p className="text-xs text-rose-800 mb-3 font-medium">Run this exact SQL in your Supabase SQL Editor:</p>
-                  <pre className="bg-rose-950 text-rose-200 p-3 rounded-lg text-[10px] font-mono shadow-inner">ALTER FUNCTION public.handle_new_user() SET search_path = public;</pre>
-                </div>
-              </div>
-
-              <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-start gap-4">
-                <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl mt-1 shadow-sm"><Database size={20}/></div>
-                <div>
-                  <h3 className="font-bold text-indigo-900">3. Finalize Row Level Security (RLS)</h3>
-                  <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">Fixes <code className="bg-indigo-200 px-1 rounded">rls_disabled_in_public</code> errors for flagged tables.</p>
-                  <p className="text-xs text-indigo-800 mb-3 font-medium">Copy the full SQL from the <strong>Infrastructure</strong> tab and run it. It covers:</p>
-                  <ul className="text-xs text-indigo-800 space-y-1 list-disc ml-4">
-                    <li>master_prompt</li>
-                    <li>organizations</li>
-                    <li>usage_logs</li>
-                    <li>All core application tables</li>
-                  </ul>
-                </div>
+            <div className="p-6 bg-rose-50 rounded-2xl border border-rose-100 flex items-start gap-4">
+              <div className="p-2 bg-rose-100 text-rose-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
+              <div>
+                <h3 className="font-bold text-rose-900 tracking-tight">Fixing the "Refresh Erasure" Issue</h3>
+                <p className="text-sm text-rose-700 mt-1 mb-4 leading-relaxed">If documents disappear on refresh, your RLS is likely blocking the `SELECT` operation or the `INSERT` never finished.</p>
+                <ol className="text-xs text-rose-800 space-y-2 list-decimal ml-4 font-medium">
+                  <li>Copy the <strong>SQL Patch</strong> from the Infrastructure tab.</li>
+                  <li>Go to your <strong>Supabase Dashboard > SQL Editor</strong>.</li>
+                  <li>Paste and click <strong>Run</strong>.</li>
+                  <li>Refresh this application and try a test upload.</li>
+                </ol>
               </div>
             </div>
           </div>

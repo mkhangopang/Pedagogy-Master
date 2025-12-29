@@ -25,7 +25,7 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ status: 'checking', message: 'Checking systems...' });
+  const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ status: 'checking', message: 'Verifying systems...' });
 
   const isActuallyConnected = healthStatus.status === 'connected';
 
@@ -51,14 +51,16 @@ export default function App() {
       try {
         const isConnected = await checkDb();
         const { data: { session: currentSession } } = await supabase.auth.getSession();
-        setSession(currentSession);
         
         if (currentSession) {
+          setSession(currentSession);
           await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
           await fetchBrain(isConnected);
+        } else {
+          setSession(null);
         }
       } catch (err) {
-        console.error("Initialization error:", err);
+        console.error("Critical Session Init Error:", err);
       } finally {
         setLoading(false);
       }
@@ -67,12 +69,13 @@ export default function App() {
     initSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-      setSession(currentSession);
       if (currentSession) {
+        setSession(currentSession);
         const isConnected = await checkDb();
         await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
         await fetchBrain(isConnected);
       } else {
+        setSession(null);
         setUserProfile(null);
         setDocuments([]);
       }
@@ -103,7 +106,7 @@ export default function App() {
         });
       }
     } catch (e) {
-      console.warn("Brain fetch skipped.");
+      console.warn("Database error while fetching brain logic.");
     }
   };
 
@@ -156,7 +159,10 @@ export default function App() {
           };
         }
         
-        const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        // Fetch real documents from DB
+        const { data: docs, error: docError } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        if (docError) throw docError;
+        
         if (docs) {
           setDocuments(docs.map(d => ({
             id: d.id,
@@ -172,7 +178,7 @@ export default function App() {
           })));
         }
       } else {
-        // Mock profile for demo mode
+        // Fallback profile if disconnected
         activeProfile = {
           id: userId,
           name: email?.split('@')[0] || 'Educator',
@@ -187,8 +193,9 @@ export default function App() {
         };
       }
       setUserProfile(activeProfile);
-    } catch (e) {
-      console.error("Profile load error:", e);
+    } catch (e: any) {
+      console.error("Profile/Doc Fetch Failure:", e.message);
+      setHealthStatus({ status: 'error', message: 'Failed to sync documents with cloud.' });
     }
   };
 
@@ -215,7 +222,7 @@ export default function App() {
                 <Documents 
                   documents={documents} 
                   onAddDocument={async (doc) => {
-                    setDocuments(prev => [doc, ...prev]);
+                    // PERSISTENCE GUARD: Try to save to DB first
                     if (isActuallyConnected) {
                       const { error } = await supabase.from('documents').insert([{
                         id: doc.id, 
@@ -229,8 +236,14 @@ export default function App() {
                         slo_tags: doc.sloTags, 
                         created_at: doc.createdAt
                       }]);
-                      if (error) console.error("Persistence failed:", error.message);
+                      
+                      if (error) {
+                        alert("Persistence Error: Your document could not be saved to the cloud. " + error.message);
+                        return;
+                      }
                     }
+                    // Only update local state if persistence succeeded (or in demo mode)
+                    setDocuments(prev => [doc, ...prev]);
                   }} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
@@ -305,11 +318,11 @@ export default function App() {
         </header>
 
         {healthStatus.status !== 'connected' && (
-          <div className="bg-amber-100 border-b border-amber-200 px-4 py-3 flex items-center justify-center gap-3 text-amber-900 text-[11px] font-bold">
+          <div className="bg-rose-100 border-b border-rose-200 px-4 py-3 flex items-center justify-center gap-3 text-rose-900 text-[11px] font-bold">
             <AlertCircle size={14} className="shrink-0" />
-            <span className="uppercase tracking-tight">Warning: {healthStatus.message}</span>
-            <button onClick={checkDb} className="bg-amber-200 hover:bg-amber-300 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
-              <RefreshCw size={10} /> Retry
+            <span className="uppercase tracking-tight">Sync Warning: {healthStatus.message}</span>
+            <button onClick={checkDb} className="bg-rose-200 hover:bg-rose-300 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
+              <RefreshCw size={10} /> Re-verify Cloud
             </button>
           </div>
         )}

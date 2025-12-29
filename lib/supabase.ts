@@ -10,13 +10,12 @@ export const isSupabaseConfigured =
   supabaseAnonKey !== '' &&
   supabaseAnonKey !== 'placeholder';
 
-// Provide a safe fallback to prevent crashes if env vars are missing
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co', 
   supabaseAnonKey || 'placeholder'
 );
 
-export type ConnectionStatus = 'disconnected' | 'configured' | 'connected' | 'error';
+export type ConnectionStatus = 'disconnected' | 'configured' | 'connected' | 'error' | 'rls_locked';
 
 /**
  * Performs a deep health check of the database connection and schema
@@ -27,24 +26,40 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
   }
 
   try {
-    // Check if the profiles table is accessible (standard check)
-    const { error: profileError } = await supabase.from('profiles').select('count', { count: 'exact', head: true }).limit(1);
+    // 1. Check Auth Connectivity
+    const { data: authData, error: authError } = await supabase.auth.getSession();
+    if (authError) return { status: 'error', message: `Auth Error: ${authError.message}` };
+
+    // 2. Check Tables Existence & RLS
+    const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Table "profiles" does not exist. Run the SQL patch.' };
-      if (profileError.code === 'PGRST301') return { status: 'error', message: 'Invalid API Key / Permissions.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run the V8 SQL Patch.' };
+      if (profileError.code === 'PGRST301') return { status: 'rls_locked', message: 'API Key permissions blocked by RLS.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
-    // Check if the documents table is accessible
-    const { error: docError } = await supabase.from('documents').select('count', { count: 'exact', head: true }).limit(1);
+    // 3. Check Documents Table specifically
+    const { error: docError } = await supabase.from('documents').select('id').limit(1);
     if (docError && docError.code === '42P01') {
-      return { status: 'error', message: 'Table "documents" is missing. Persistence is disabled.' };
+      return { status: 'error', message: 'Table "documents" missing. Run SQL in Supabase Editor.' };
     }
 
-    return { status: 'connected', message: 'All systems operational.' };
+    return { status: 'connected', message: 'Full cloud sync active.' };
   } catch (err) {
-    return { status: 'error', message: 'Network failure or Supabase downtime.' };
+    return { status: 'error', message: 'Network failure or Supabase unreachable.' };
+  }
+};
+
+/**
+ * Verifies if the current user can actually write to the database
+ */
+export const verifyPersistence = async (userId: string): Promise<boolean> => {
+  try {
+    const { error } = await supabase.from('profiles').update({ updated_at: new Date().toISOString() }).eq('id', userId);
+    return !error;
+  } catch {
+    return false;
   }
 };
 

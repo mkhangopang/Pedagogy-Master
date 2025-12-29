@@ -5,7 +5,7 @@ import { adaptiveService } from "./adaptiveService";
 
 export const geminiService = {
   /**
-   * Generates SLO tags. Uses 'gemini-3-flash-preview' for high speed.
+   * Generates SLO tags. Uses 'gemini-3-flash-preview' for maximum speed.
    */
   async generateSLOTagsFromBase64(
     base64Data: string, 
@@ -19,50 +19,50 @@ export const geminiService = {
     const systemInstruction = `
       ${brain.masterPrompt}
       ${adaptiveContext}
-      Bloom's Taxonomy Levels:
-      ${brain.bloomRules}
+      Task: Analyze the educational document and extract high-precision SLOs.
+      Bloom's Taxonomy Levels: ${brain.bloomRules}
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: {
-        parts: [
-          { text: "Analyze the provided educational document. Extract Student Learning Outcomes (SLOs) mapped to Bloom's taxonomy. Output exactly as a JSON array." },
-          { inlineData: { mimeType, data: base64Data } }
-        ]
-      },
-      config: {
-        systemInstruction,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.STRING },
-              content: { type: Type.STRING },
-              bloomLevel: { type: Type.STRING },
-              cognitiveComplexity: { type: Type.NUMBER },
-              keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-              suggestedAssessment: { type: Type.STRING },
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: {
+          parts: [
+            { text: "Extract Student Learning Outcomes (SLOs) mapped to Bloom's taxonomy. Return ONLY a valid JSON array." },
+            { inlineData: { mimeType, data: base64Data } }
+          ]
+        },
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                content: { type: Type.STRING },
+                bloomLevel: { type: Type.STRING },
+                cognitiveComplexity: { type: Type.NUMBER },
+                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+                suggestedAssessment: { type: Type.STRING },
+              },
+              required: ["id", "content", "bloomLevel", "cognitiveComplexity", "keywords", "suggestedAssessment"],
             },
-            required: ["id", "content", "bloomLevel", "cognitiveComplexity", "keywords", "suggestedAssessment"],
           },
         },
-      },
-    });
+      });
 
-    try {
-      const text = response.text || "[]";
-      return JSON.parse(text);
+      const text = response.text;
+      return text ? JSON.parse(text) : [];
     } catch (e) {
-      console.error("Failed to parse Gemini SLO response:", e);
-      return [];
+      console.error("Gemini SLO Extraction Error:", e);
+      throw new Error("Gemini was unable to parse this document structure.");
     }
   },
 
   /**
-   * Chat stream. Uses 'gemini-3-pro-preview' for higher reasoning capability.
+   * Chat stream. Uses 'gemini-3-pro-preview' for complex pedagogical reasoning.
    */
   async *chatWithDocumentStream(
     message: string, 
@@ -82,8 +82,7 @@ export const geminiService = {
     const systemInstruction = `
       ${brain.masterPrompt}
       ${adaptiveContext}
-      The following is a conversation between a teacher and an AI Pedagogical Assistant.
-      Source Material is provided in the documents part.
+      You are the Pedagogy Master AI. Use the provided document as context for your educational recommendations.
     `;
 
     const contents: any[] = [
@@ -100,23 +99,28 @@ export const geminiService = {
       }
     ];
 
-    const result = await ai.models.generateContentStream({
-      model: 'gemini-3-pro-preview',
-      contents,
-      config: {
-        systemInstruction,
-        tools: tools.length > 0 ? tools : undefined
-      },
-    });
+    try {
+      const result = await ai.models.generateContentStream({
+        model: 'gemini-3-pro-preview',
+        contents,
+        config: {
+          systemInstruction,
+          tools: tools.length > 0 ? tools : undefined
+        },
+      });
 
-    for await (const chunk of result) {
-      const c = chunk as GenerateContentResponse;
-      if (c.text) yield c.text;
+      for await (const chunk of result) {
+        const c = chunk as GenerateContentResponse;
+        if (c.text) yield c.text;
+      }
+    } catch (e) {
+      console.error("Gemini Chat Stream Error:", e);
+      yield "Engine Error: Unable to fetch pedagogical response.";
     }
   },
 
   /**
-   * Pedagogical Tool stream. Uses 'gemini-3-flash-preview' for speed.
+   * Pedagogical Tool stream. Uses 'gemini-3-flash-preview' for fast asset generation.
    */
   async *generatePedagogicalToolStream(
     toolType: string,
@@ -132,23 +136,28 @@ export const geminiService = {
       ${brain.masterPrompt}
       ${adaptiveContext}
       Bloom's Framework: ${brain.bloomRules}
-      Generate a professional educational ${toolType}.
+      Task: Generate a high-quality educational ${toolType}.
     `;
 
     const parts: any[] = [
       ...(doc.base64 && doc.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
-      { text: `Task: Create ${toolType}. Input details: ${userInput}` }
+      { text: `Drafting: ${toolType}. Specific Details: ${userInput}` }
     ];
 
-    const result = await ai.models.generateContentStream({
-      model: "gemini-3-flash-preview",
-      contents: { parts },
-      config: { systemInstruction },
-    });
+    try {
+      const result = await ai.models.generateContentStream({
+        model: "gemini-3-flash-preview",
+        contents: { parts },
+        config: { systemInstruction },
+      });
 
-    for await (const chunk of result) {
-      const c = chunk as GenerateContentResponse;
-      if (c.text) yield c.text;
+      for await (const chunk of result) {
+        const c = chunk as GenerateContentResponse;
+        if (c.text) yield c.text;
+      }
+    } catch (e) {
+      console.error("Gemini Tool Generation Error:", e);
+      yield "Error generating pedagogical artifact.";
     }
   }
 };
