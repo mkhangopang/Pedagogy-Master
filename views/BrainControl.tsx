@@ -190,7 +190,7 @@ END $$;`;
                   <h3 className="font-bold text-slate-900">Leaked Password Protection</h3>
                   <p className="text-sm text-slate-500 mt-1 mb-3">Fixes the "auth_leaked_password_protection" warning.</p>
                   <ol className="text-xs text-slate-600 space-y-1 list-decimal ml-4">
-                    <li>Go to <strong>Authentication > Providers</strong> in Supabase Dashboard.</li>
+                    <li>Go to <strong>Authentication &gt; Providers</strong> in Supabase Dashboard.</li>
                     <li>Expand <strong>Email</strong>.</li>
                     <li>Toggle <strong>"Prevent use of leaked passwords"</strong> to ON.</li>
                     <li>Click Save.</li>
