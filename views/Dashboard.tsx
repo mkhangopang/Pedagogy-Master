@@ -5,11 +5,12 @@ import React, { useState } from 'react';
 import { 
   FileText, MessageSquare, Zap, Target, TrendingUp, 
   BarChart3, Brain, Sparkles, Save, CheckCircle, 
-  ShieldCheck, Users, Activity, GraduationCap
+  ShieldCheck, Users, Activity, GraduationCap,
+  Database, AlertCircle
 } from 'lucide-react';
 import { UserProfile, Document, UserRole } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface DashboardProps {
   user: UserProfile;
@@ -69,13 +70,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Educator Workspace</h1>
           <p className="text-slate-500 mt-1">Hello, {displayName}. Your personalized pedagogical layer is active.</p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 rounded-xl border border-emerald-100 shadow-sm w-fit">
-          <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          <span className="text-sm font-bold text-emerald-700">Live Production Mode</span>
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm w-fit ${isSupabaseConfigured ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
+          {isSupabaseConfigured ? <Database className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          <span className="text-sm font-bold">
+            {isSupabaseConfigured ? 'Database: Active' : 'Database: Local Mode'}
+          </span>
         </div>
       </header>
 
-      {/* Enterprise Analytics Block (PITCH FEATURE) */}
       {isEnterprise && (
         <section className="bg-white border border-indigo-100 rounded-[2rem] p-8 shadow-xl shadow-indigo-500/5">
           <div className="flex items-center justify-between mb-8">
@@ -86,7 +88,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
                 <p className="text-slate-500 text-sm">Aggregated pedagogical alignment across your organization.</p>
               </div>
             </div>
-            <button className="text-xs font-bold text-indigo-600 bg-indigo-50 px-4 py-2 rounded-xl hover:bg-indigo-100 transition-all uppercase tracking-widest">Generate District Report</button>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -120,8 +121,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
             <div className="bg-indigo-900 text-white p-6 rounded-2xl relative overflow-hidden">
               <div className="relative z-10">
                 <h3 className="font-bold mb-2">Institutional RAG</h3>
-                <p className="text-xs text-indigo-200 leading-relaxed mb-4">Sharing curriculum insights across departments to prevent teaching silos.</p>
-                <button className="text-[10px] font-bold uppercase tracking-widest bg-white/10 hover:bg-white/20 py-2 px-4 rounded-lg w-full border border-white/20 transition-all">Configure Knowledge Sharing</button>
+                <p className="text-xs text-indigo-200 leading-relaxed mb-4">Departmental insights prevents teaching silos.</p>
               </div>
               <GraduationCap className="absolute -bottom-4 -right-4 w-24 h-24 opacity-10 rotate-12" />
             </div>
@@ -129,7 +129,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
         </section>
       )}
 
-      {/* Adaptive Configuration (Layer 1) */}
       <section className="bg-indigo-950 text-white rounded-3xl p-8 relative overflow-hidden shadow-2xl">
         <div className="absolute top-0 right-0 p-8 opacity-10"><Brain size={120} /></div>
         <div className="relative z-10 flex flex-col lg:flex-row gap-8">
@@ -139,18 +138,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
               AI Adaptive Profile
             </h2>
             <p className="text-indigo-200 text-sm leading-relaxed">
-              Gemini learns your pedagogical style. Update these core settings to recalibrate the neural engine.
+              Gemini learns your pedagogical style. Updates recalibrate the neural engine.
             </p>
           </div>
           
           <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Target Grade Level</label>
-              <select 
-                value={profileForm.gradeLevel}
-                onChange={e => setProfileForm({...profileForm, gradeLevel: e.target.value})}
-                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              >
+              <select value={profileForm.gradeLevel} onChange={e => setProfileForm({...profileForm, gradeLevel: e.target.value})} className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none">
                 <option>Elementary</option>
                 <option>Middle School</option>
                 <option>High School</option>
@@ -159,45 +154,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Default Subject Area</label>
-              <input 
-                value={profileForm.subjectArea}
-                onChange={e => setProfileForm({...profileForm, subjectArea: e.target.value})}
-                placeholder="e.g. STEM, AP Biology"
-                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">AI Response Verbosity</label>
-              <select 
-                value={profileForm.teachingStyle}
-                onChange={e => setProfileForm({...profileForm, teachingStyle: e.target.value as any})}
-                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              >
-                <option value="concise">Concise (Bullet Points)</option>
-                <option value="balanced">Balanced (Prose + Points)</option>
-                <option value="comprehensive">Comprehensive (Full Context)</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Primary Pedagogy</label>
-              <select 
-                value={profileForm.pedagogicalApproach}
-                onChange={e => setProfileForm({...profileForm, pedagogicalApproach: e.target.value as any})}
-                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
-              >
-                <option value="direct-instruction">Direct Instruction</option>
-                <option value="inquiry-based">Inquiry-Based Learning</option>
-                <option value="flipped-classroom">Flipped Classroom</option>
-              </select>
+              <input value={profileForm.subjectArea} onChange={e => setProfileForm({...profileForm, subjectArea: e.target.value})} placeholder="e.g. STEM" className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none" />
             </div>
           </div>
 
           <div className="flex items-end">
-            <button 
-              onClick={handleSaveProfile}
-              disabled={isSaving}
-              className="w-full lg:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl shadow-indigo-900"
-            >
+            <button onClick={handleSaveProfile} disabled={isSaving} className="w-full lg:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl">
               {isSaving ? <Activity className="animate-spin" size={18}/> : (showSaved ? <CheckCircle size={18}/> : <Save size={18}/>)}
               {showSaved ? 'Updated' : 'Save Profile'}
             </button>
@@ -208,29 +170,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Library Size" value={documents.length.toString()} icon={<FileText className="w-6 h-6 text-indigo-600" />} trend="Docs Uploaded" color="indigo" />
         <StatCard title="AI Quota" value={`${user.queriesUsed}/${user.queriesLimit}`} icon={<Zap className="w-6 h-6 text-emerald-600" />} trend={`${Math.round(usagePercentage)}% utilized`} color="emerald" />
-        <StatCard title="SLO Points" value={totalSLOs.toString()} icon={<Target className="w-6 h-6 text-amber-600" />} trend="Knowledge items mapped" color="amber" />
+        <StatCard title="SLO Points" value={totalSLOs.toString()} icon={<Target className="w-6 h-6 text-amber-600" />} trend="Items mapped" color="amber" />
         <StatCard title="Session Plan" value={user.plan.toUpperCase()} icon={<ShieldCheck className="w-6 h-6 text-purple-600" />} trend="Active Subscription" color="purple" />
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-        <h2 className="text-lg font-bold text-slate-900 mb-6 flex items-center gap-2"><TrendingUp className="text-indigo-600"/> Engagement Analytics</h2>
-        <div className="h-64 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={activityData}>
-              <defs>
-                <linearGradient id="colorQueries" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
-                  <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
-              <YAxis hide />
-              <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
-              <Area type="monotone" dataKey="queries" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorQueries)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
       </div>
     </div>
   );

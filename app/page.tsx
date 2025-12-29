@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, checkConnection } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -25,8 +25,10 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [dbActive, setDbActive] = useState(false);
 
-  const isActuallyConnected = isSupabaseConfigured || !!session;
+  // Persistence only if config is correct AND we have verified reachable DB
+  const isActuallyConnected = isSupabaseConfigured && dbActive;
 
   const [brain, setBrain] = useState<NeuralBrain>({
     id: typeof crypto !== 'undefined' ? crypto.randomUUID() : 'initial-brain-id',
@@ -42,8 +44,12 @@ export default function App() {
     
     const initSession = async () => {
       try {
+        const isConnected = await checkConnection();
+        setDbActive(isConnected);
+
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
+        
         if (currentSession) {
           await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
           await fetchBrain();
@@ -60,6 +66,8 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
       setSession(currentSession);
       if (currentSession) {
+        const isConnected = await checkConnection();
+        setDbActive(isConnected);
         await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
         await fetchBrain();
       } else {
@@ -74,7 +82,7 @@ export default function App() {
   const fetchBrain = async () => {
     if (!isActuallyConnected) return;
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('neural_brain')
         .select('*')
         .eq('is_active', true)
@@ -149,21 +157,22 @@ export default function App() {
 
       setUserProfile(activeProfile);
 
-      const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-      
-      if (docs) {
-        setDocuments(docs.map(d => ({
-          id: d.id,
-          userId: d.user_id,
-          name: d.name,
-          base64Data: d.base64_data,
-          mimeType: d.mime_type,
-          status: d.status as any,
-          subject: d.subject,
-          gradeLevel: d.grade_level,
-          sloTags: d.slo_tags || [],
-          createdAt: d.created_at
-        })));
+      if (isActuallyConnected) {
+        const { data: docs, error: docError } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        if (!docError && docs) {
+          setDocuments(docs.map(d => ({
+            id: d.id,
+            userId: d.user_id,
+            name: d.name,
+            base64Data: d.base64_data,
+            mimeType: d.mime_type,
+            status: d.status as any,
+            subject: d.subject,
+            gradeLevel: d.grade_level,
+            sloTags: d.slo_tags || [],
+            createdAt: d.created_at
+          })));
+        }
       }
     } catch (e) {
       console.error("Profile/Docs load error:", e);
@@ -196,53 +205,35 @@ export default function App() {
                   onAddDocument={async (doc) => {
                     setDocuments(prev => [doc, ...prev]);
                     if (isActuallyConnected) {
-                      try {
-                        // OPTIMIZATION: Do not save large base64 strings to the primary database table
-                        // unless it is small enough. For files > 1MB, we rely on the Storage Bucket URL.
-                        const isLarge = (doc.base64Data?.length || 0) > 500000; // ~0.5MB
-                        
-                        const { error } = await supabase.from('documents').insert([{
-                          id: doc.id, 
-                          user_id: userProfile.id, 
-                          name: doc.name, 
-                          base64_data: isLarge ? null : doc.base64Data, // Only save base64 if it's small
-                          mime_type: doc.mimeType, 
-                          status: doc.status, 
-                          subject: doc.subject,
-                          grade_level: doc.gradeLevel, 
-                          slo_tags: doc.sloTags, 
-                          created_at: doc.createdAt
-                        }]);
-                        if (error) throw error;
-                      } catch (err) {
-                        console.error("Database insert failed:", err);
-                      }
+                      const isLarge = (doc.base64Data?.length || 0) > 500000;
+                      await supabase.from('documents').insert([{
+                        id: doc.id, 
+                        user_id: userProfile.id, 
+                        name: doc.name, 
+                        base64_data: isLarge ? null : doc.base64Data, 
+                        mime_type: doc.mimeType, 
+                        status: doc.status, 
+                        subject: doc.subject,
+                        grade_level: doc.gradeLevel, 
+                        slo_tags: doc.sloTags, 
+                        created_at: doc.createdAt
+                      }]);
                     }
                   }} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
                     if (isActuallyConnected) {
-                      try {
-                        const dbUpdates: any = {};
-                        if (updates.status) dbUpdates.status = updates.status;
-                        if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
-                        if (updates.subject) dbUpdates.subject = updates.subject;
-                        const { error } = await supabase.from('documents').update(dbUpdates).eq('id', id);
-                        if (error) throw error;
-                      } catch (err) {
-                        console.error("Database update failed:", err);
-                      }
+                      const dbUpdates: any = {};
+                      if (updates.status) dbUpdates.status = updates.status;
+                      if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
+                      if (updates.subject) dbUpdates.subject = updates.subject;
+                      await supabase.from('documents').update(dbUpdates).eq('id', id);
                     }
                   }}
                   onDeleteDocument={async (id) => {
                     setDocuments(prev => prev.filter(d => d.id !== id));
                     if (isActuallyConnected) {
-                      try {
-                        const { error } = await supabase.from('documents').delete().eq('id', id);
-                        if (error) throw error;
-                      } catch (err) {
-                        console.error("Database delete failed:", err);
-                      }
+                      await supabase.from('documents').delete().eq('id', id);
                     }
                   }}
                   brain={brain}
@@ -281,22 +272,9 @@ export default function App() {
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       {isSidebarOpen && (
         <div className="fixed inset-0 z-[100] lg:hidden">
-          <div 
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
-            onClick={() => setIsSidebarOpen(false)} 
-          />
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />
           <div className="fixed inset-y-0 left-0 w-72 bg-indigo-950 shadow-2xl animate-in slide-in-from-left duration-300">
-            <Sidebar 
-              currentView={currentView} 
-              onViewChange={(view) => {
-                setCurrentView(view);
-                setIsSidebarOpen(false);
-              }} 
-              userProfile={userProfile} 
-              isCollapsed={false} 
-              setIsCollapsed={() => {}} 
-              onClose={() => setIsSidebarOpen(false)}
-            />
+            <Sidebar currentView={currentView} onViewChange={(view) => { setCurrentView(view); setIsSidebarOpen(false); }} userProfile={userProfile} isCollapsed={false} setIsCollapsed={() => {}} onClose={() => setIsSidebarOpen(false)} />
           </div>
         </div>
       )}
@@ -307,11 +285,7 @@ export default function App() {
 
       <div className="flex-1 flex flex-col min-w-0">
         <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b shadow-sm">
-          <button 
-            onClick={() => setIsSidebarOpen(true)} 
-            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            aria-label="Open menu"
-          >
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <Menu size={24} />
           </button>
           <span className="font-bold text-indigo-950 tracking-tight text-lg">{APP_NAME}</span>
@@ -321,7 +295,7 @@ export default function App() {
         {!isActuallyConnected && (
           <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 flex items-center justify-center gap-2 text-amber-800 text-xs font-bold">
             <AlertCircle size={14} />
-            DEMO MODE: Database connectivity issue detected. Documents will not persist.
+            DEMO MODE: {isSupabaseConfigured ? 'Database unreachable' : 'Missing Supabase Keys'}. Documents won't persist.
           </div>
         )}
 

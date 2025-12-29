@@ -1,21 +1,16 @@
+
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { SLO, NeuralBrain, UserProfile, SubscriptionPlan } from "../types";
 import { adaptiveService } from "./adaptiveService";
 
 export const geminiService = {
-  getClient() {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("API_KEY_MISSING");
-    return new GoogleGenAI({ apiKey });
-  },
-
   async generateSLOTagsFromBase64(
     base64Data: string, 
     mimeType: string, 
     brain: NeuralBrain,
     user?: UserProfile
   ): Promise<SLO[]> {
-    const ai = this.getClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'slo-tagger') : "";
     
     const systemInstruction = `
@@ -25,7 +20,6 @@ export const geminiService = {
       ${brain.bloomRules}
     `;
 
-    // Switched to Flash for extraction for better speed/performance during uploads
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: {
@@ -71,10 +65,9 @@ export const geminiService = {
     brain: NeuralBrain,
     user?: UserProfile
   ) {
-    const ai = this.getClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     
-    // RAG ENHANCEMENT: For Enterprise/Pro, we enable web grounding
     const tools: any[] = [];
     if (user?.plan !== SubscriptionPlan.FREE) {
       tools.push({ googleSearch: {} });
@@ -83,9 +76,7 @@ export const geminiService = {
     const systemInstruction = `
       ${brain.masterPrompt}
       ${adaptiveContext}
-      Use the provided document as the primary source of truth (RAG). 
-      Identify specific sections and curriculum standards mentioned in the file.
-      If information is missing and user has search access, grounding is enabled.
+      Use the provided document as the primary source of truth.
     `;
 
     const contents: any[] = [
@@ -102,7 +93,6 @@ export const geminiService = {
       }
     ];
 
-    // Use Pro for high-quality conversational RAG
     const result = await ai.models.generateContentStream({
       model: 'gemini-3-pro-preview',
       contents,
@@ -125,34 +115,24 @@ export const geminiService = {
     brain: NeuralBrain,
     user?: UserProfile
   ) {
-    const ai = this.getClient();
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
     
     const systemInstruction = `
       ${brain.masterPrompt}
       ${adaptiveContext}
-      Bloom's Framework:
-      ${brain.bloomRules}
-    `;
-
-    const prompt = `
-      Tool Type: ${toolType.toUpperCase()}
-      User Request: ${userInput}
-      Generate high-quality educational content. Ensure pedagogical rigor.
+      Bloom's Framework: ${brain.bloomRules}
     `;
 
     const parts: any[] = [
       ...(doc.base64 && doc.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
-      { text: prompt }
+      { text: `Generate a ${toolType}: ${userInput}` }
     ];
 
-    // Flash is great for quick tool generation
     const result = await ai.models.generateContentStream({
       model: "gemini-3-flash-preview",
       contents: { parts },
-      config: {
-        systemInstruction,
-      },
+      config: { systemInstruction },
     });
 
     for await (const chunk of result) {
