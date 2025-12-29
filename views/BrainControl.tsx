@@ -165,8 +165,8 @@ ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
 
       {activeTab === 'security' && (
         <div className="space-y-6 max-w-4xl">
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 space-y-6 shadow-sm">
-            <div className="flex items-center gap-3 text-indigo-600">
+          <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
+            <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
               <h2 className="text-xl font-bold">Linter Remediation Guide</h2>
             </div>
@@ -177,7 +177,7 @@ ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
                 <p className="text-sm text-rose-700 mt-1 mb-4 leading-relaxed">If documents disappear on refresh, your RLS is likely blocking the `SELECT` operation or the `INSERT` never finished.</p>
                 <ol className="text-xs text-rose-800 space-y-2 list-decimal ml-4 font-medium">
                   <li>Copy the <strong>SQL Patch</strong> from the Infrastructure tab.</li>
-                  <li>Go to your <strong>Supabase Dashboard > SQL Editor</strong>.</li>
+                  <li>Go to your <strong>Supabase Dashboard &gt; SQL Editor</strong>.</li>
                   <li>Paste and click <strong>Run</strong>.</li>
                   <li>Refresh this application and try a test upload.</li>
                 </ol>
