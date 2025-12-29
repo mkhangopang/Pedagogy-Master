@@ -59,6 +59,7 @@ export interface Document {
   userId: string;
   name: string;
   base64Data?: string;
+  filePath?: string;
   mimeType?: string;
   status: 'processing' | 'completed' | 'failed';
   subject: string;

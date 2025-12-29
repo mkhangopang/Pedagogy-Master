@@ -64,15 +64,18 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - ULTIMATE SECURITY PATCH v8
--- FIXES: Persistent Data Erasure and RLS Errors
+  const sqlSchema = `-- Pedagogy Master - ULTIMATE SECURITY PATCH v9
+-- FIXES: Persistent Data Erasure, RLS Errors, and Missing File Paths
 
--- 1. ENABLE RLS FOR CORE TABLES
+-- 1. ADD MISSING COLUMNS
+ALTER TABLE IF EXISTS public.documents ADD COLUMN IF NOT EXISTS file_path TEXT;
+
+-- 2. ENABLE RLS FOR CORE TABLES
 ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
 
--- 2. CREATE ACCESS POLICIES (Users can only see/edit their own data)
+-- 3. CREATE ACCESS POLICIES
 DO $$ 
 BEGIN
     -- Profiles Policy
@@ -80,18 +83,18 @@ BEGIN
         CREATE POLICY "Users access own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
     END IF;
     
-    -- Documents Policy (CRITICAL: Fixes the "erased on refresh" issue by allowing selects)
+    -- Documents Policy
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'documents' AND policyname = 'Users access own docs') THEN
         CREATE POLICY "Users access own docs" ON public.documents FOR ALL USING (auth.uid() = user_id);
     END IF;
 
-    -- Neural Brain Policy (Publicly readable)
+    -- Neural Brain Policy
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'neural_brain' AND policyname = 'Public read active brain') THEN
         CREATE POLICY "Public read active brain" ON public.neural_brain FOR SELECT USING (is_active = true);
     END IF;
 END $$;
 
--- 3. FIX SEARCH PATH WARNINGS
+-- 4. FIX SEARCH PATH WARNINGS
 ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
 
   return (
@@ -177,7 +180,7 @@ ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
                 <p className="text-sm text-rose-700 mt-1 mb-4 leading-relaxed">If documents disappear on refresh, your RLS is likely blocking the `SELECT` operation or the `INSERT` never finished.</p>
                 <ol className="text-xs text-rose-800 space-y-2 list-decimal ml-4 font-medium">
                   <li>Copy the <strong>SQL Patch</strong> from the Infrastructure tab.</li>
-                  <li>Go to your <strong>Supabase Dashboard &gt; SQL Editor</strong>.</li>
+                  <li>Go to your <strong>Supabase Dashboard {' > '} SQL Editor</strong>.</li>
                   <li>Paste and click <strong>Run</strong>.</li>
                   <li>Refresh this application and try a test upload.</li>
                 </ol>

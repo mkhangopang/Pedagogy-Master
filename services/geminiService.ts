@@ -1,11 +1,13 @@
-
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
-import { SLO, NeuralBrain, UserProfile, SubscriptionPlan } from "../types";
+import { SLO, NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 
+/**
+ * GOOGLE GENERATIVE AI SERVICE
+ * Bridge for communicating with the server-side AI processing engine.
+ */
 export const geminiService = {
   /**
-   * Generates SLO tags. Uses 'gemini-3-flash-preview' for maximum speed.
+   * Triggers high-speed structural analysis for learning outcome extraction.
    */
   async generateSLOTagsFromBase64(
     base64Data: string, 
@@ -13,56 +15,30 @@ export const geminiService = {
     brain: NeuralBrain,
     user?: UserProfile
   ): Promise<SLO[]> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'slo-tagger') : "";
-    
-    const systemInstruction = `
-      ${brain.masterPrompt}
-      ${adaptiveContext}
-      Task: Analyze the educational document and extract high-precision SLOs.
-      Bloom's Taxonomy Levels: ${brain.bloomRules}
-    `;
+    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'extraction') : "";
 
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: {
-          parts: [
-            { text: "Extract Student Learning Outcomes (SLOs) mapped to Bloom's taxonomy. Return ONLY a valid JSON array." },
-            { inlineData: { mimeType, data: base64Data } }
-          ]
-        },
-        config: {
-          systemInstruction,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                content: { type: Type.STRING },
-                bloomLevel: { type: Type.STRING },
-                cognitiveComplexity: { type: Type.NUMBER },
-                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-                suggestedAssessment: { type: Type.STRING },
-              },
-              required: ["id", "content", "bloomLevel", "cognitiveComplexity", "keywords", "suggestedAssessment"],
-            },
-          },
-        },
-      });
+    const response = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'extract-slos',
+        doc: { base64: base64Data, mimeType },
+        brain,
+        adaptiveContext
+      })
+    });
 
-      const text = response.text;
-      return text ? JSON.parse(text) : [];
-    } catch (e) {
-      console.error("Gemini SLO Extraction Error:", e);
-      throw new Error("Gemini was unable to parse this document structure.");
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Server-side extraction failed.');
     }
+
+    const data = await response.json();
+    return data.text ? JSON.parse(data.text) : [];
   },
 
   /**
-   * Chat stream. Uses 'gemini-3-pro-preview' for complex pedagogical reasoning.
+   * Connects to the server-side streaming engine for pedagogical conversation.
    */
   async *chatWithDocumentStream(
     message: string, 
@@ -71,56 +47,40 @@ export const geminiService = {
     brain: NeuralBrain,
     user?: UserProfile
   ) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
-    
-    const tools: any[] = [];
-    if (user?.plan !== SubscriptionPlan.FREE) {
-      tools.push({ googleSearch: {} });
+
+    const response = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'chat',
+        message,
+        doc,
+        history,
+        brain,
+        adaptiveContext
+      })
+    });
+
+    if (!response.ok) {
+      yield "Engine Update: The generative AI model is temporarily unavailable.";
+      return;
     }
 
-    const systemInstruction = `
-      ${brain.masterPrompt}
-      ${adaptiveContext}
-      You are the Pedagogy Master AI. Use the provided document as context for your educational recommendations.
-    `;
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
 
-    const contents: any[] = [
-      ...history.map(h => ({
-        role: h.role === 'user' ? 'user' : 'model',
-        parts: [{ text: h.content }]
-      })),
-      {
-        role: 'user',
-        parts: [
-          ...(doc.base64 && doc.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
-          { text: message }
-        ]
-      }
-    ];
+    if (!reader) return;
 
-    try {
-      const result = await ai.models.generateContentStream({
-        model: 'gemini-3-pro-preview',
-        contents,
-        config: {
-          systemInstruction,
-          tools: tools.length > 0 ? tools : undefined
-        },
-      });
-
-      for await (const chunk of result) {
-        const c = chunk as GenerateContentResponse;
-        if (c.text) yield c.text;
-      }
-    } catch (e) {
-      console.error("Gemini Chat Stream Error:", e);
-      yield "Engine Error: Unable to fetch pedagogical response.";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      yield decoder.decode(value, { stream: true });
     }
   },
 
   /**
-   * Pedagogical Tool stream. Uses 'gemini-3-flash-preview' for fast asset generation.
+   * Connects to the server-side streaming engine for teaching material synthesis.
    */
   async *generatePedagogicalToolStream(
     toolType: string,
@@ -129,35 +89,35 @@ export const geminiService = {
     brain: NeuralBrain,
     user?: UserProfile
   ) {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
-    
-    const systemInstruction = `
-      ${brain.masterPrompt}
-      ${adaptiveContext}
-      Bloom's Framework: ${brain.bloomRules}
-      Task: Generate a high-quality educational ${toolType}.
-    `;
 
-    const parts: any[] = [
-      ...(doc.base64 && doc.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
-      { text: `Drafting: ${toolType}. Specific Details: ${userInput}` }
-    ];
+    const response = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task: 'generate-tool',
+        toolType,
+        userInput,
+        doc,
+        brain,
+        adaptiveContext
+      })
+    });
 
-    try {
-      const result = await ai.models.generateContentStream({
-        model: "gemini-3-flash-preview",
-        contents: { parts },
-        config: { systemInstruction },
-      });
+    if (!response.ok) {
+      yield "Engine Update: Tool synthesis interrupted. Please check document context.";
+      return;
+    }
 
-      for await (const chunk of result) {
-        const c = chunk as GenerateContentResponse;
-        if (c.text) yield c.text;
-      }
-    } catch (e) {
-      console.error("Gemini Tool Generation Error:", e);
-      yield "Error generating pedagogical artifact.";
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+
+    if (!reader) return;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      yield decoder.decode(value, { stream: true });
     }
   }
 };

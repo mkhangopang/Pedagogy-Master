@@ -63,7 +63,7 @@ export const verifyPersistence = async (userId: string): Promise<boolean> => {
   }
 };
 
-export const uploadFile = async (file: File, bucket: string = 'documents') => {
+export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string } | null> => {
   if (!isSupabaseConfigured) return null;
   
   const fileExt = file.name.split('.').pop();
@@ -78,7 +78,7 @@ export const uploadFile = async (file: File, bucket: string = 'documents') => {
     if (error) throw error;
     
     const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
-    return publicUrl;
+    return { publicUrl, path: data.path };
   } catch (err) {
     console.error("Storage upload failed:", err);
     return null;

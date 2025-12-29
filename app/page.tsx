@@ -169,6 +169,7 @@ export default function App() {
             userId: d.user_id,
             name: d.name,
             base64Data: d.base64_data,
+            filePath: d.file_path,
             mimeType: d.mime_type,
             status: d.status as any,
             subject: d.subject,
@@ -222,13 +223,14 @@ export default function App() {
                 <Documents 
                   documents={documents} 
                   onAddDocument={async (doc) => {
-                    // PERSISTENCE GUARD: Try to save to DB first
+                    // PERSISTENCE GUARD
                     if (isActuallyConnected) {
                       const { error } = await supabase.from('documents').insert([{
                         id: doc.id, 
                         user_id: userProfile.id, 
                         name: doc.name, 
                         base64_data: (doc.base64Data?.length || 0) < 500000 ? doc.base64Data : null, 
+                        file_path: doc.filePath,
                         mime_type: doc.mimeType, 
                         status: doc.status, 
                         subject: doc.subject,
@@ -242,7 +244,6 @@ export default function App() {
                         return;
                       }
                     }
-                    // Only update local state if persistence succeeded (or in demo mode)
                     setDocuments(prev => [doc, ...prev]);
                   }} 
                   onUpdateDocument={async (id, updates) => {
@@ -252,6 +253,7 @@ export default function App() {
                       if (updates.status) dbUpdates.status = updates.status;
                       if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
                       if (updates.subject) dbUpdates.subject = updates.subject;
+                      if (updates.filePath) dbUpdates.file_path = updates.filePath;
                       await supabase.from('documents').update(dbUpdates).eq('id', id);
                     }
                   }}

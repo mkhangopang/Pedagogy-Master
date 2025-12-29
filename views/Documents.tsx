@@ -1,9 +1,10 @@
+
 import React, { useState, useRef } from 'react';
 import { 
   Upload, FileText, Plus, ChevronLeft, Target, 
   Loader2, AlertCircle, Trash2, Lock, 
   CheckCircle2, ShieldAlert, X, Zap, 
-  FileCode, FileType, Check, RefreshCw
+  FileCode, FileType, Check, RefreshCw, Sparkles
 } from 'lucide-react';
 import { Document, SLO, NeuralBrain, SubscriptionPlan } from '../types';
 import { geminiService } from '../services/geminiService';
@@ -21,7 +22,7 @@ interface DocumentsProps {
   userPlan: SubscriptionPlan;
 }
 
-type UploadStage = 'idle' | 'reading' | 'registering' | 'storing' | 'analyzing' | 'finalizing';
+type UploadStage = 'idle' | 'reading' | 'analyzing' | 'complete';
 
 const Documents: React.FC<DocumentsProps> = ({ 
   documents, 
@@ -35,7 +36,6 @@ const Documents: React.FC<DocumentsProps> = ({
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showLimitModal, setShowLimitModal] = useState(false);
@@ -63,7 +63,7 @@ const Documents: React.FC<DocumentsProps> = ({
     if (!file) return;
 
     if (file.size > 15 * 1024 * 1024) {
-      setError("File is too large. Max 15MB.");
+      setError("File is too large for the Free Tier (Max 15MB).");
       return;
     }
 
@@ -73,24 +73,19 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     if (!canQuery) {
-      setError("Daily quota limit reached.");
+      setError("Daily processing quota limit reached.");
       return;
     }
 
     setIsUploading(true);
     setUploadStage('reading');
-    setUploadProgress(10);
     setError(null);
 
     const docId = crypto.randomUUID();
 
     try {
-      // 1. Reading file content
       const base64 = await fileToBase64(file);
-      setUploadProgress(30);
-      setUploadStage('registering');
-
-      // 2. Immediate local registration to avoid perceived "hang"
+      
       const newDoc: Document = {
         id: docId,
         userId: '', 
@@ -98,7 +93,7 @@ const Documents: React.FC<DocumentsProps> = ({
         base64Data: base64,
         mimeType: file.type || 'application/pdf',
         status: 'processing',
-        subject: 'Initializing...',
+        subject: 'Processing...',
         gradeLevel: 'Auto-detecting',
         sloTags: [],
         createdAt: new Date().toISOString()
@@ -107,80 +102,57 @@ const Documents: React.FC<DocumentsProps> = ({
       onAddDocument(newDoc);
       setSelectedDocId(docId);
       
-      // Moving to 45% immediately to show registration success
-      setUploadProgress(45);
-      setUploadStage('storing');
-
-      // 3. Storage bucket upload (Race with timeout to prevent hang)
-      const storagePromise = uploadFile(file).catch(err => {
-        console.warn("Bucket upload skipped or failed.", err);
-        return null;
-      });
-
-      await Promise.race([
-        storagePromise,
-        new Promise(resolve => setTimeout(resolve, 4000))
+      // We still backup to storage if possible, but the primary task is AI Analysis
+      setUploadStage('analyzing');
+      
+      // Parallel: Storing and Direct AI Extraction
+      const [uploadResult, slos] = await Promise.all([
+        uploadFile(file).catch(() => null),
+        geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain).catch(() => [] as SLO[])
       ]);
 
-      setUploadProgress(60);
-      setUploadStage('analyzing');
-
-      // 4. AI Analysis
-      const slos = await geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain);
-      
-      setUploadProgress(90);
-      setUploadStage('finalizing');
+      const filePath = uploadResult?.path;
 
       onUpdateDocument(docId, { 
+        filePath,
         sloTags: slos, 
         status: slos.length > 0 ? 'completed' : 'failed',
-        subject: slos.length > 0 ? 'Curriculum Analyzed' : 'Extraction Error'
+        subject: slos.length > 0 ? 'Analysis Complete' : 'Direct Read Failed'
       });
       
       onQuery();
-      setUploadProgress(100);
+      setUploadStage('complete');
 
       setTimeout(() => {
         setIsUploading(false);
         setUploadStage('idle');
-      }, 500);
+      }, 1000);
 
     } catch (err) {
-      console.error("Upload process failure:", err);
-      setError("Document analysis failed. You might want to try a smaller PDF.");
+      console.error("Direct processing failure:", err);
+      setError("Gemini was unable to read this file. Please ensure it's a standard document or image.");
       onUpdateDocument(docId, { status: 'failed' });
       setIsUploading(false);
       setUploadStage('idle');
     }
   };
 
-  const getStageMessage = () => {
-    switch(uploadStage) {
-      case 'reading': return 'Decoding document content...';
-      case 'registering': return 'Allocating Neural Memory...';
-      case 'storing': return 'Securing to Supabase Storage...';
-      case 'analyzing': return 'Gemini Intelligence is reading...';
-      case 'finalizing': return 'Generating Bloom\'s mappings...';
-      default: return 'Processing...';
-    }
-  };
-
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
+    <div className="space-y-6 animate-in fade-in duration-500 pb-20">
       {/* Limit Modal */}
       {showLimitModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border border-slate-100">
             <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <ShieldAlert className="w-8 h-8 text-amber-500" />
             </div>
-            <h3 className="text-xl font-bold text-slate-900 mb-2">Workspace Limit</h3>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Workspace Full</h3>
             <p className="text-slate-500 text-sm mb-8">
-              Free users can store 2 documents. Pro users enjoy unlimited storage and automated curriculum mapping.
+              You've used your 2 free document slots. Upgrade to Pro for unlimited AI document processing.
             </p>
             <div className="space-y-3">
-              <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200">Upgrade to Pro</button>
-              <button onClick={() => setShowLimitModal(false)} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Maybe Later</button>
+              <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg">Upgrade Now</button>
+              <button onClick={() => setShowLimitModal(false)} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold">Close</button>
             </div>
           </div>
         </div>
@@ -188,34 +160,26 @@ const Documents: React.FC<DocumentsProps> = ({
 
       {/* Uploading Overlay */}
       {isUploading && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-indigo-950/40 backdrop-blur-md">
-          <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-indigo-100 text-center space-y-6 animate-in zoom-in duration-300">
-            <div className="relative w-24 h-24 mx-auto">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/20 backdrop-blur-md">
+          <div className="bg-white rounded-3xl p-10 max-w-sm w-full shadow-2xl border border-indigo-50 text-center space-y-6 animate-in zoom-in duration-300">
+            <div className="relative w-20 h-20 mx-auto">
               <div className="absolute inset-0 rounded-full border-4 border-indigo-50" />
-              <div 
-                className="absolute inset-0 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" 
-                style={{ animationDuration: '1s' }}
-              />
+              <div className="absolute inset-0 rounded-full border-4 border-indigo-600 border-t-transparent animate-spin" />
               <div className="absolute inset-0 flex items-center justify-center text-indigo-600">
-                <Upload size={32} />
+                <Sparkles size={32} className="animate-pulse" />
               </div>
             </div>
             
             <div>
-              <h3 className="text-xl font-bold text-slate-900">{getStageMessage()}</h3>
-              <p className="text-slate-500 text-sm mt-1">This typically takes 5-15 seconds.</p>
+              <h3 className="text-xl font-bold text-slate-900 capitalize">
+                {uploadStage === 'reading' ? 'Initializing File' : 'Gemini 3 is Reading...'}
+              </h3>
+              <p className="text-slate-500 text-sm mt-1">Directly processing curriculum data.</p>
             </div>
 
-            <div className="space-y-2">
-              <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                <div 
-                  className="h-full bg-indigo-600 transition-all duration-700 ease-out"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-              <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                <span>Phase: {uploadStage}</span>
-                <span>{uploadProgress}%</span>
+            <div className="pt-2">
+              <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                <div className={`h-full bg-indigo-600 transition-all duration-1000 ${uploadStage === 'analyzing' ? 'w-3/4' : 'w-1/4'}`} />
               </div>
             </div>
           </div>
@@ -226,7 +190,7 @@ const Documents: React.FC<DocumentsProps> = ({
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Curriculum Library</h1>
           <p className="text-slate-500 mt-1">
-            {isFree ? `Using ${documents.length}/${docLimit} document slots.` : 'Unlimited Enterprise Storage Active.'}
+            {isFree ? `Using ${documents.length}/${docLimit} document slots (Direct AI Read active).` : 'Enterprise Scale Active.'}
           </p>
         </div>
         
@@ -236,23 +200,23 @@ const Documents: React.FC<DocumentsProps> = ({
             ref={fileInputRef} 
             onChange={handleFileUpload} 
             className="hidden" 
-            accept=".pdf,.txt,.doc,.docx,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" 
+            accept=".pdf,.txt,.doc,.docx,image/*" 
           />
           <button 
             onClick={() => limitReached ? setShowLimitModal(true) : fileInputRef.current?.click()}
             disabled={isUploading}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold shadow-lg transition-all ${
-              limitReached ? 'bg-amber-100 text-amber-700' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'
+            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold shadow-lg transition-all ${
+              limitReached ? 'bg-slate-100 text-slate-400' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95'
             }`}
           >
-            {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : (limitReached ? <Lock size={18}/> : <Plus className="w-5 h-5" />)}
-            {limitReached ? 'Unlock More' : 'Upload Syllabus'}
+            {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+            Analyze Document
           </button>
         </div>
       </header>
 
       {error && (
-        <div className="bg-rose-50 border border-rose-200 p-4 rounded-2xl flex items-center gap-3 text-rose-800 animate-in slide-in-from-top-2">
+        <div className="bg-rose-50 border border-rose-100 p-4 rounded-2xl flex items-center gap-3 text-rose-800 animate-in slide-in-from-top-2">
           <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
           <p className="text-sm font-medium">{error}</p>
           <button onClick={() => setError(null)} className="ml-auto p-1 hover:bg-rose-100 rounded-lg"><X size={16}/></button>
@@ -263,97 +227,77 @@ const Documents: React.FC<DocumentsProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-6">
             <button onClick={() => setSelectedDocId(null)} className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:translate-x-[-4px] transition-transform">
-              <ChevronLeft size={18} /> Back to Library
+              <ChevronLeft size={18} /> Library Grid
             </button>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-6">
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8 space-y-6">
               <div className="flex items-start justify-between gap-4">
-                <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600 shrink-0">
-                  <FileText size={24} />
+                <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 shrink-0">
+                  <FileText size={28} />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h2 className="font-bold text-slate-900 truncate">{selectedDoc.name}</h2>
-                  <p className="text-xs text-slate-500 mt-0.5 capitalize">
-                    {selectedDoc.status === 'failed' ? 'Analysis Failed' : selectedDoc.status} • {selectedDoc.subject}
+                <div className="flex-1 min-w-0 pt-1">
+                  <h2 className="font-bold text-slate-900 truncate text-lg">{selectedDoc.name}</h2>
+                  <p className="text-xs text-slate-500 mt-0.5 uppercase font-bold tracking-widest">
+                    {selectedDoc.status === 'failed' ? 'Read Error' : 'Analyzed'}
                   </p>
-                </div>
-                
-                <div className="relative group">
-                  <button 
-                    onClick={() => {
-                      if (isFree) {
-                        setShowLimitModal(true);
-                      } else {
-                        onDeleteDocument(selectedDoc.id);
-                        setSelectedDocId(null);
-                      }
-                    }}
-                    className={`p-2 rounded-lg transition-all ${isFree ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-rose-500 hover:bg-rose-50'}`}
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                  {isFree && (
-                    <div className="absolute bottom-full right-0 mb-2 w-48 hidden group-hover:block bg-slate-900 text-white text-[10px] p-2 rounded-lg shadow-xl z-20">
-                      Delete is restricted on Free accounts.
-                    </div>
-                  )}
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-slate-100 space-y-4">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">Bloom's Items</span>
-                  <span className={`font-bold ${selectedDoc.status === 'failed' ? 'text-rose-500' : 'text-slate-900'}`}>
-                    {selectedDoc.status === 'failed' ? 'Error' : `${selectedDoc.sloTags?.length || 0} Identified`}
+              <div className="pt-6 border-t border-slate-100 space-y-4">
+                <div className="flex justify-between items-center text-sm font-medium">
+                  <span className="text-slate-400">Extracted SLOs</span>
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold ${selectedDoc.status === 'failed' ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                    {selectedDoc.sloTags?.length || 0}
                   </span>
                 </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-slate-500">Sync Status</span>
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${isFree ? 'bg-slate-100 text-slate-400' : 'bg-indigo-100 text-indigo-600'}`}>
-                    {userPlan} Active
-                  </span>
+                <div className="flex justify-between items-center text-sm font-medium">
+                  <span className="text-slate-400">Processing Engine</span>
+                  <span className="text-slate-900">Gemini 3 Flash</span>
                 </div>
               </div>
               
-              {selectedDoc.status === 'failed' && (
-                <button 
-                  onClick={() => {
-                    onDeleteDocument(selectedDoc.id);
-                    setSelectedDocId(null);
-                    fileInputRef.current?.click();
-                  }}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-rose-50 text-rose-600 text-xs font-bold rounded-xl border border-rose-100 hover:bg-rose-100 transition-colors"
-                >
-                  <RefreshCw size={14} /> Retry Extraction
-                </button>
-              )}
+              <button 
+                onClick={() => onDeleteDocument(selectedDoc.id)}
+                className="w-full flex items-center justify-center gap-2 py-3 text-rose-500 text-xs font-bold rounded-xl border border-transparent hover:bg-rose-50 transition-colors mt-4"
+              >
+                <Trash2 size={16} /> Permanently Remove
+              </button>
             </div>
           </div>
 
-          <div className="lg:col-span-2 space-y-4">
-            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Target className="w-6 h-6 text-indigo-600" /> Learning Outcomes
-            </h2>
+          <div className="lg:col-span-2 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <Target className="w-6 h-6 text-indigo-600" /> 
+                Learning Outcomes
+              </h2>
+              <div className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-bold uppercase tracking-widest">
+                Direct AI Read Active
+              </div>
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {selectedDoc.sloTags.map((slo) => (
-                <div key={slo.id} className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-indigo-300 transition-all">
-                  <span className="px-2 py-1 rounded-md bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase mb-3 inline-block">
+                <div key={slo.id} className="bg-white border border-slate-200 rounded-3xl p-6 hover:border-indigo-300 transition-all shadow-sm hover:shadow-md">
+                  <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase mb-4 inline-block">
                     {slo.bloomLevel}
                   </span>
-                  <p className="text-slate-800 text-sm font-medium leading-relaxed">{slo.content}</p>
+                  <p className="text-slate-800 text-sm font-semibold leading-relaxed">{slo.content}</p>
                 </div>
               ))}
+              
               {selectedDoc.sloTags.length === 0 && selectedDoc.status !== 'failed' && (
-                <div className="col-span-full py-12 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
-                  <Loader2 className="w-8 h-8 animate-spin text-slate-300 mx-auto mb-3" />
-                  <p className="text-slate-400 text-sm font-medium">Extracting pedagogical metadata...</p>
+                <div className="col-span-full py-16 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-300 mx-auto mb-3" />
+                  <p className="text-slate-400 text-sm font-bold uppercase tracking-widest">Gemini is Processing...</p>
                 </div>
               )}
+
               {selectedDoc.status === 'failed' && (
-                <div className="col-span-full py-12 text-center bg-rose-50 rounded-2xl border-2 border-dashed border-rose-200">
+                <div className="col-span-full py-16 text-center bg-rose-50 rounded-3xl border border-rose-100">
                   <AlertCircle className="w-8 h-8 text-rose-300 mx-auto mb-3" />
-                  <p className="text-rose-600 text-sm font-bold uppercase tracking-tight">AI Extraction Failed</p>
-                  <p className="text-rose-400 text-xs mt-1">Please ensure the document contains clear learning objectives.</p>
+                  <p className="text-rose-900 font-bold">Extraction Incomplete</p>
+                  <p className="text-rose-500 text-xs mt-1">This document type may not be supported for direct reading.</p>
                 </div>
               )}
             </div>
@@ -362,30 +306,44 @@ const Documents: React.FC<DocumentsProps> = ({
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {documents.map((doc) => (
-            <div key={doc.id} onClick={() => setSelectedDocId(doc.id)} className={`bg-white rounded-2xl border p-6 transition-all cursor-pointer group shadow-sm hover:shadow-xl ${doc.status === 'failed' ? 'border-rose-100 hover:border-rose-300' : 'border-slate-200 hover:border-indigo-400'}`}>
-              <div className="flex items-start justify-between mb-4">
-                <div className={`p-3 rounded-xl transition-all ${doc.status === 'failed' ? 'bg-rose-50 text-rose-400' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>
-                  {doc.mimeType?.includes('pdf') ? <FileText size={24} /> : doc.mimeType?.includes('word') ? <FileType size={24} /> : <FileCode size={24} />}
+            <div 
+              key={doc.id} 
+              onClick={() => setSelectedDocId(doc.id)} 
+              className={`bg-white rounded-3xl border p-6 transition-all cursor-pointer group shadow-sm hover:shadow-xl hover:translate-y-[-4px] ${
+                doc.status === 'failed' ? 'border-rose-100 hover:border-rose-300' : 'border-slate-100 hover:border-indigo-400'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-6">
+                <div className={`p-4 rounded-2xl transition-all ${
+                  doc.status === 'failed' ? 'bg-rose-50 text-rose-400' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'
+                }`}>
+                  <FileText size={24} />
                 </div>
-                <div className="flex items-center gap-2">
-                  {isFree && <span className="text-slate-200" title="Restricted"><Lock size={12}/></span>}
-                  {doc.status === 'completed' && <Check size={16} className="text-emerald-500" />}
-                  {doc.status === 'processing' && <Loader2 size={16} className="text-indigo-400 animate-spin" />}
-                  {doc.status === 'failed' && <AlertCircle size={16} className="text-rose-500" />}
-                </div>
+                {doc.status === 'completed' && <CheckCircle2 size={20} className="text-emerald-500" />}
+                {doc.status === 'processing' && <Loader2 size={20} className="text-indigo-400 animate-spin" />}
               </div>
-              <h3 className={`text-lg font-bold truncate ${doc.status === 'failed' ? 'text-rose-900' : 'text-slate-900 group-hover:text-indigo-600'}`}>{doc.name}</h3>
-              <p className="text-xs text-slate-400 font-bold mt-1">
-                {doc.status === 'failed' ? 'Failed' : doc.subject || 'Processing...'} • {new Date(doc.createdAt).toLocaleDateString()}
+              <h3 className="text-lg font-bold truncate text-slate-900 group-hover:text-indigo-600 transition-colors">{doc.name}</h3>
+              <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest mt-2">
+                {doc.status === 'failed' ? 'Sync Error' : doc.subject}
               </p>
             </div>
           ))}
+          
           {documents.length === 0 && (
-            <div className="col-span-full py-20 bg-white rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center px-4">
-              <Upload className="w-12 h-12 text-slate-300 mb-4" />
-              <h3 className="text-xl font-bold text-slate-900">Your Library is Empty</h3>
-              <p className="text-slate-500 mb-6 max-w-xs">Upload your syllabus to begin pedagogical analysis.</p>
-              <button onClick={() => fileInputRef.current?.click()} className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:shadow-indigo-300 transition-all">Upload Now</button>
+            <div className="col-span-full py-24 bg-white rounded-[3rem] border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-center px-4">
+              <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-6 text-slate-300">
+                <Upload size={40} />
+              </div>
+              <h3 className="text-2xl font-bold text-slate-900">Upload Curriculum</h3>
+              <p className="text-slate-500 mt-2 mb-8 max-w-sm">
+                Drop your syllabus or lesson plans. Gemini 3 will directly analyze the pedagogical structure.
+              </p>
+              <button 
+                onClick={() => fileInputRef.current?.click()} 
+                className="px-8 py-3.5 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
+              >
+                Select Files
+              </button>
             </div>
           )}
         </div>
