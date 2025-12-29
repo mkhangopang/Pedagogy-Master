@@ -4,6 +4,9 @@ import { SLO, NeuralBrain, UserProfile, SubscriptionPlan } from "../types";
 import { adaptiveService } from "./adaptiveService";
 
 export const geminiService = {
+  /**
+   * Generates SLO tags. Uses 'gemini-3-flash-preview' for high speed.
+   */
   async generateSLOTagsFromBase64(
     base64Data: string, 
     mimeType: string, 
@@ -24,7 +27,7 @@ export const geminiService = {
       model: "gemini-3-flash-preview",
       contents: {
         parts: [
-          { text: "Analyze this educational document and extract Student Learning Outcomes (SLOs) based on Bloom's levels. Output exactly in JSON format." },
+          { text: "Analyze the provided educational document. Extract Student Learning Outcomes (SLOs) mapped to Bloom's taxonomy. Output exactly as a JSON array." },
           { inlineData: { mimeType, data: base64Data } }
         ]
       },
@@ -53,11 +56,14 @@ export const geminiService = {
       const text = response.text || "[]";
       return JSON.parse(text);
     } catch (e) {
-      console.error("JSON Parse Error in SLO generation:", e);
+      console.error("Failed to parse Gemini SLO response:", e);
       return [];
     }
   },
 
+  /**
+   * Chat stream. Uses 'gemini-3-pro-preview' for higher reasoning capability.
+   */
   async *chatWithDocumentStream(
     message: string, 
     doc: { base64?: string; mimeType?: string }, 
@@ -76,7 +82,8 @@ export const geminiService = {
     const systemInstruction = `
       ${brain.masterPrompt}
       ${adaptiveContext}
-      Use the provided document as the primary source of truth.
+      The following is a conversation between a teacher and an AI Pedagogical Assistant.
+      Source Material is provided in the documents part.
     `;
 
     const contents: any[] = [
@@ -108,6 +115,9 @@ export const geminiService = {
     }
   },
 
+  /**
+   * Pedagogical Tool stream. Uses 'gemini-3-flash-preview' for speed.
+   */
   async *generatePedagogicalToolStream(
     toolType: string,
     userInput: string,
@@ -122,11 +132,12 @@ export const geminiService = {
       ${brain.masterPrompt}
       ${adaptiveContext}
       Bloom's Framework: ${brain.bloomRules}
+      Generate a professional educational ${toolType}.
     `;
 
     const parts: any[] = [
       ...(doc.base64 && doc.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
-      { text: `Generate a ${toolType}: ${userInput}` }
+      { text: `Task: Create ${toolType}. Input details: ${userInput}` }
     ];
 
     const result = await ai.models.generateContentStream({

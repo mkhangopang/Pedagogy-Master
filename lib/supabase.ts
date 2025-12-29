@@ -10,33 +10,46 @@ export const isSupabaseConfigured =
   supabaseAnonKey !== '' &&
   supabaseAnonKey !== 'placeholder';
 
+// Provide a safe fallback to prevent crashes if env vars are missing
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co', 
   supabaseAnonKey || 'placeholder'
 );
 
+export type ConnectionStatus = 'disconnected' | 'configured' | 'connected' | 'error';
+
 /**
- * Checks if the database is actually reachable by querying the profiles table
+ * Performs a deep health check of the database connection and schema
  */
-export const checkConnection = async (): Promise<boolean> => {
-  if (!isSupabaseConfigured) return false;
+export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; message: string }> => {
+  if (!isSupabaseConfigured) {
+    return { status: 'disconnected', message: 'Environment variables are missing.' };
+  }
+
   try {
-    const { error } = await supabase.from('profiles').select('count', { count: 'exact', head: true }).limit(1);
-    if (error) {
-      console.error("Supabase Connection Check Failed:", error.message);
-      return false;
+    // Check if the profiles table is accessible (standard check)
+    const { error: profileError } = await supabase.from('profiles').select('count', { count: 'exact', head: true }).limit(1);
+    
+    if (profileError) {
+      if (profileError.code === '42P01') return { status: 'error', message: 'Table "profiles" does not exist. Run the SQL patch.' };
+      if (profileError.code === 'PGRST301') return { status: 'error', message: 'Invalid API Key / Permissions.' };
+      return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
-    return true;
+
+    // Check if the documents table is accessible
+    const { error: docError } = await supabase.from('documents').select('count', { count: 'exact', head: true }).limit(1);
+    if (docError && docError.code === '42P01') {
+      return { status: 'error', message: 'Table "documents" is missing. Persistence is disabled.' };
+    }
+
+    return { status: 'connected', message: 'All systems operational.' };
   } catch (err) {
-    return false;
+    return { status: 'error', message: 'Network failure or Supabase downtime.' };
   }
 };
 
 export const uploadFile = async (file: File, bucket: string = 'documents') => {
-  if (!isSupabaseConfigured) {
-    console.warn("Supabase not configured, skipping storage upload.");
-    return null;
-  }
+  if (!isSupabaseConfigured) return null;
   
   const fileExt = file.name.split('.').pop();
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
@@ -52,7 +65,7 @@ export const uploadFile = async (file: File, bucket: string = 'documents') => {
     const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
     return publicUrl;
   } catch (err) {
-    console.error("Storage Service Failure:", err);
-    throw err;
+    console.error("Storage upload failed:", err);
+    return null;
   }
 };

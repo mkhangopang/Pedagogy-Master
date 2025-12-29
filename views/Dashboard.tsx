@@ -6,21 +6,24 @@ import {
   FileText, MessageSquare, Zap, Target, TrendingUp, 
   BarChart3, Brain, Sparkles, Save, CheckCircle, 
   ShieldCheck, Users, Activity, GraduationCap,
-  Database, AlertCircle
+  Database, AlertCircle, RefreshCw, Server
 } from 'lucide-react';
 import { UserProfile, Document, UserRole } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 
 interface DashboardProps {
   user: UserProfile;
   documents: Document[];
   onProfileUpdate: (profile: UserProfile) => void;
+  health: { status: string, message: string };
+  onCheckHealth: () => Promise<boolean>;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate, health, onCheckHealth }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
+  const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
   const [profileForm, setProfileForm] = useState({
     gradeLevel: user.gradeLevel || 'High School',
     subjectArea: user.subjectArea || 'Science',
@@ -50,12 +53,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
     setIsSaving(false);
   };
 
-  const activityData = [
-    { name: 'Mon', queries: 4 }, { name: 'Tue', queries: 7 },
-    { name: 'Wed', queries: 5 }, { name: 'Thu', queries: 8 },
-    { name: 'Fri', queries: 12 }, { name: 'Sat', queries: 6 },
-    { name: 'Sun', queries: 9 },
-  ];
+  const handleRefreshHealth = async () => {
+    setIsRefreshingHealth(true);
+    await onCheckHealth();
+    setIsRefreshingHealth(false);
+  };
 
   const bloomData = [
     { level: 'Remember', count: 12 }, { level: 'Understand', count: 19 },
@@ -63,19 +65,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
     { level: 'Evaluate', count: 5 }, { level: 'Create', count: 3 },
   ];
 
+  const isConnected = health.status === 'connected';
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Educator Workspace</h1>
-          <p className="text-slate-500 mt-1">Hello, {displayName}. Your personalized pedagogical layer is active.</p>
+          <p className="text-slate-500 mt-1">Welcome back, {displayName}. Your pedagogical brain is online.</p>
         </div>
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm w-fit ${isSupabaseConfigured ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-amber-50 border-amber-100 text-amber-700'}`}>
-          {isSupabaseConfigured ? <Database className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-          <span className="text-sm font-bold">
-            {isSupabaseConfigured ? 'Database: Active' : 'Database: Local Mode'}
-          </span>
-        </div>
+        <button 
+          onClick={handleRefreshHealth}
+          disabled={isRefreshingHealth}
+          className={`flex items-center gap-3 px-4 py-2.5 rounded-2xl border shadow-sm transition-all group ${
+            isConnected 
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100' 
+              : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
+          }`}
+        >
+          {isRefreshingHealth ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Server className="w-4 h-4" />}
+          <div className="text-left">
+            <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">System Health</p>
+            <p className="text-xs font-bold">{isConnected ? 'Verified Connection' : 'Diagnostic Error'}</p>
+          </div>
+        </button>
       </header>
 
       {isEnterprise && (
@@ -84,7 +97,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
             <div className="flex items-center gap-3">
               <div className="p-3 bg-indigo-600 text-white rounded-2xl"><Activity size={24}/></div>
               <div>
-                <h2 className="text-xl font-bold text-slate-900">Institutional Health Dashboard</h2>
+                <h2 className="text-xl font-bold text-slate-900">Institutional Health</h2>
                 <p className="text-slate-500 text-sm">Aggregated pedagogical alignment across your organization.</p>
               </div>
             </div>
@@ -159,7 +172,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
           </div>
 
           <div className="flex items-end">
-            <button onClick={handleSaveProfile} disabled={isSaving} className="w-full lg:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl">
+            <button onClick={handleSaveProfile} disabled={isSaving || !isConnected} className="w-full lg:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl disabled:opacity-50">
               {isSaving ? <Activity className="animate-spin" size={18}/> : (showSaved ? <CheckCircle size={18}/> : <Save size={18}/>)}
               {showSaved ? 'Updated' : 'Save Profile'}
             </button>
@@ -173,6 +186,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate 
         <StatCard title="SLO Points" value={totalSLOs.toString()} icon={<Target className="w-6 h-6 text-amber-600" />} trend="Items mapped" color="amber" />
         <StatCard title="Session Plan" value={user.plan.toUpperCase()} icon={<ShieldCheck className="w-6 h-6 text-purple-600" />} trend="Active Subscription" color="purple" />
       </div>
+
+      {!isConnected && (
+        <div className="p-6 bg-rose-50 border border-rose-100 rounded-3xl flex items-center gap-4 text-rose-800 animate-pulse">
+          <AlertCircle size={24} className="text-rose-600" />
+          <div>
+            <h3 className="font-bold text-sm">Critical Connectivity Error</h3>
+            <p className="text-xs opacity-75">Persistence is disabled. Your workspace documents will be erased on refresh until SQL tables are corrected.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

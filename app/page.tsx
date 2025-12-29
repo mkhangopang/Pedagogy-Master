@@ -2,14 +2,14 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { supabase, isSupabaseConfigured, checkConnection } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseHealth } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, AlertCircle } from 'lucide-react';
+import { Loader2, Menu, AlertCircle, RefreshCw } from 'lucide-react';
 
 const Documents = lazy(() => import('../views/Documents'));
 const Chat = lazy(() => import('../views/Chat'));
@@ -25,10 +25,9 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [dbActive, setDbActive] = useState(false);
+  const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ status: 'checking', message: 'Checking systems...' });
 
-  // Persistence only if config is correct AND we have verified reachable DB
-  const isActuallyConnected = isSupabaseConfigured && dbActive;
+  const isActuallyConnected = healthStatus.status === 'connected';
 
   const [brain, setBrain] = useState<NeuralBrain>({
     id: typeof crypto !== 'undefined' ? crypto.randomUUID() : 'initial-brain-id',
@@ -39,23 +38,27 @@ export default function App() {
     updatedAt: new Date().toISOString()
   });
 
+  const checkDb = async () => {
+    const health = await getSupabaseHealth();
+    setHealthStatus(health);
+    return health.status === 'connected';
+  };
+
   useEffect(() => {
     paymentService.init();
     
     const initSession = async () => {
       try {
-        const isConnected = await checkConnection();
-        setDbActive(isConnected);
-
+        const isConnected = await checkDb();
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         setSession(currentSession);
         
         if (currentSession) {
-          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-          await fetchBrain();
+          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
+          await fetchBrain(isConnected);
         }
       } catch (err) {
-        console.error("Session initialization failed:", err);
+        console.error("Initialization error:", err);
       } finally {
         setLoading(false);
       }
@@ -66,10 +69,9 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
       setSession(currentSession);
       if (currentSession) {
-        const isConnected = await checkConnection();
-        setDbActive(isConnected);
-        await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-        await fetchBrain();
+        const isConnected = await checkDb();
+        await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
+        await fetchBrain(isConnected);
       } else {
         setUserProfile(null);
         setDocuments([]);
@@ -79,8 +81,8 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchBrain = async () => {
-    if (!isActuallyConnected) return;
+  const fetchBrain = async (connected: boolean) => {
+    if (!connected) return;
     try {
       const { data } = await supabase
         .from('neural_brain')
@@ -101,31 +103,31 @@ export default function App() {
         });
       }
     } catch (e) {
-      console.warn("Could not fetch brain data, using defaults.");
+      console.warn("Brain fetch skipped.");
     }
   };
 
-  const fetchProfileAndDocs = async (userId: string, email?: string) => {
+  const fetchProfileAndDocs = async (userId: string, email: string | undefined, connected: boolean) => {
     try {
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
       let activeProfile: UserProfile;
+      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
 
-      if (!profile) {
-        activeProfile = {
-          id: userId,
-          name: email?.split('@')[0] || 'Educator',
-          email: email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
-          queriesUsed: 0,
-          queriesLimit: isSystemAdmin ? 999999 : 30,
-          generationCount: 0,
-          successRate: 0,
-          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-        };
-
-        if (isActuallyConnected) {
+      if (connected) {
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+        
+        if (!profile) {
+          activeProfile = {
+            id: userId,
+            name: email?.split('@')[0] || 'Educator',
+            email: email || '',
+            role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
+            plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
+            queriesUsed: 0,
+            queriesLimit: isSystemAdmin ? 999999 : 30,
+            generationCount: 0,
+            successRate: 0,
+            editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+          };
           await supabase.from('profiles').insert([{
             id: userId,
             name: activeProfile.name,
@@ -135,31 +137,27 @@ export default function App() {
             queries_used: 0,
             queries_limit: activeProfile.queriesLimit
           }]);
+        } else {
+          activeProfile = {
+            id: profile.id,
+            name: profile.name || 'Educator',
+            email: profile.email || '',
+            role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
+            plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
+            queriesUsed: profile.queries_used || 0,
+            queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
+            gradeLevel: profile.grade_level,
+            subjectArea: profile.subject_area,
+            teachingStyle: profile.teaching_style,
+            pedagogicalApproach: profile.pedagogical_approach,
+            generationCount: profile.generation_count || 0,
+            successRate: profile.success_rate || 0,
+            editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+          };
         }
-      } else {
-        activeProfile = {
-          id: profile.id,
-          name: profile.name || 'Educator',
-          email: profile.email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
-          queriesUsed: profile.queries_used || 0,
-          queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
-          gradeLevel: profile.grade_level,
-          subjectArea: profile.subject_area,
-          teachingStyle: profile.teaching_style,
-          pedagogicalApproach: profile.pedagogical_approach,
-          generationCount: profile.generation_count || 0,
-          successRate: profile.success_rate || 0,
-          editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-        };
-      }
-
-      setUserProfile(activeProfile);
-
-      if (isActuallyConnected) {
-        const { data: docs, error: docError } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-        if (!docError && docs) {
+        
+        const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        if (docs) {
           setDocuments(docs.map(d => ({
             id: d.id,
             userId: d.user_id,
@@ -173,15 +171,29 @@ export default function App() {
             createdAt: d.created_at
           })));
         }
+      } else {
+        // Mock profile for demo mode
+        activeProfile = {
+          id: userId,
+          name: email?.split('@')[0] || 'Educator',
+          email: email || '',
+          role: UserRole.TEACHER,
+          plan: SubscriptionPlan.FREE,
+          queriesUsed: 0,
+          queriesLimit: 30,
+          generationCount: 0,
+          successRate: 0,
+          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        };
       }
+      setUserProfile(activeProfile);
     } catch (e) {
-      console.error("Profile/Docs load error:", e);
+      console.error("Profile load error:", e);
     }
   };
 
   const incrementQueries = async () => {
     if (!userProfile) return;
-    if (userProfile.role === UserRole.APP_ADMIN) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile({ ...userProfile, queriesUsed: newCount });
     if (isActuallyConnected) {
@@ -197,7 +209,7 @@ export default function App() {
         {(() => {
           switch (currentView) {
             case 'dashboard':
-              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
+              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             case 'documents':
               return (
                 <Documents 
@@ -205,12 +217,11 @@ export default function App() {
                   onAddDocument={async (doc) => {
                     setDocuments(prev => [doc, ...prev]);
                     if (isActuallyConnected) {
-                      const isLarge = (doc.base64Data?.length || 0) > 500000;
-                      await supabase.from('documents').insert([{
+                      const { error } = await supabase.from('documents').insert([{
                         id: doc.id, 
                         user_id: userProfile.id, 
                         name: doc.name, 
-                        base64_data: isLarge ? null : doc.base64Data, 
+                        base64_data: (doc.base64Data?.length || 0) < 500000 ? doc.base64Data : null, 
                         mime_type: doc.mimeType, 
                         status: doc.status, 
                         subject: doc.subject,
@@ -218,6 +229,7 @@ export default function App() {
                         slo_tags: doc.sloTags, 
                         created_at: doc.createdAt
                       }]);
+                      if (error) console.error("Persistence failed:", error.message);
                     }
                   }} 
                   onUpdateDocument={async (id, updates) => {
@@ -247,10 +259,10 @@ export default function App() {
             case 'tools':
               return <Tools user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
             case 'brain':
-              return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
+              return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             case 'pricing':
               return <Pricing currentPlan={userProfile.plan} onUpgrade={(plan) => {
-                const limit = plan === SubscriptionPlan.FREE ? 30 : plan === SubscriptionPlan.PRO ? 1000 : 999999;
+                const limit = plan === SubscriptionPlan.FREE ? 30 : 1000;
                 setUserProfile({ ...userProfile, plan, queriesLimit: limit });
                 if (isActuallyConnected) {
                   supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
@@ -258,7 +270,7 @@ export default function App() {
                 setCurrentView('dashboard');
               }} />;
             default:
-              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} />;
+              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
           }
         })()}
       </Suspense>
@@ -292,10 +304,13 @@ export default function App() {
           <div className="w-10" />
         </header>
 
-        {!isActuallyConnected && (
-          <div className="bg-amber-100 border-b border-amber-200 px-4 py-2 flex items-center justify-center gap-2 text-amber-800 text-xs font-bold">
-            <AlertCircle size={14} />
-            DEMO MODE: {isSupabaseConfigured ? 'Database unreachable' : 'Missing Supabase Keys'}. Documents won't persist.
+        {healthStatus.status !== 'connected' && (
+          <div className="bg-amber-100 border-b border-amber-200 px-4 py-3 flex items-center justify-center gap-3 text-amber-900 text-[11px] font-bold">
+            <AlertCircle size={14} className="shrink-0" />
+            <span className="uppercase tracking-tight">Warning: {healthStatus.message}</span>
+            <button onClick={checkDb} className="bg-amber-200 hover:bg-amber-300 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
+              <RefreshCw size={10} /> Retry
+            </button>
           </div>
         )}
 
