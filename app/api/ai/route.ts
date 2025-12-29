@@ -1,37 +1,36 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
 /**
  * GOOGLE GENERATIVE AI - UNIFIED NEURAL ENGINE
- * Handles pedagogical intelligence tasks with high performance.
+ * This route serves as the central intelligence hub for Pedagogy Master,
+ * utilizing the latest Gemini 3 models for native multimodal document reasoning.
  */
 export async function POST(req: NextRequest) {
   try {
     const { task, message, doc, history, brain, toolType, userInput, adaptiveContext } = await req.json();
     
-    // Initialize Google Generative AI with the server-side API key
+    // Initialize the Google Generative AI SDK using the server-side API key
     const googleGenerativeAi = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     /**
-     * TASK: EXTRACT STUDENT LEARNING OUTCOMES (SLOs)
-     * optimized for gemini-3-flash-preview for high-speed analysis.
+     * TASK: STUDENT LEARNING OUTCOME (SLO) EXTRACTION
+     * Uses Gemini 3 Flash for high-speed structural analysis of documents.
      */
     if (task === 'extract-slos') {
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        OBJECTIVE: Identify all Student Learning Outcomes (SLOs) in the provided document.
-        Bloom's Taxonomy Level: ${brain.bloomRules}
-        FORMAT: Return ONLY a valid JSON array. Do not include markdown formatting or conversational text.
+        CORE TASK: Analyze the provided curriculum document and extract precise Student Learning Outcomes (SLOs).
+        TAXONOMY RULES: ${brain.bloomRules}
+        OUTPUT REQUIREMENT: Return a valid JSON array of SLO objects only.
       `;
 
-      // Use Flash for speed in structural analysis
-      const result = await googleGenerativeAi.models.generateContent({
+      const response = await googleGenerativeAi.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: {
           parts: [
-            { text: "Extract learning objectives from this file and map them to Bloom's Taxonomy levels." },
+            { text: "Read this document carefully and map out all learning objectives according to Bloom's taxonomy." },
             { inlineData: { mimeType: doc.mimeType, data: doc.base64 } }
           ]
         },
@@ -56,18 +55,19 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      return NextResponse.json({ text: result.text });
+      return NextResponse.json({ text: response.text });
     }
 
     /**
-     * TASK: PEDAGOGICAL CHAT (STREAMING)
-     * Employs Gemini 3 Pro for complex pedagogical reasoning.
+     * TASK: PEDAGOGICAL ADAPTIVE CHAT (STREAMING)
+     * Uses Gemini 3 Pro for deep reasoning and educational strategy.
      */
     if (task === 'chat') {
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        You are the Pedagogy Master AI. Use the provided document to inform your educational guidance.
+        You are the Pedagogy Master AI. The user has provided a document for context. 
+        Refer to its content natively to provide expert pedagogical advice.
       `;
 
       const contents = [
@@ -100,8 +100,6 @@ export async function POST(req: NextRequest) {
                 controller.enqueue(encoder.encode(c.text));
               }
             }
-          } catch (e) {
-            console.error("Streaming Error:", e);
           } finally {
             controller.close();
           }
@@ -112,18 +110,19 @@ export async function POST(req: NextRequest) {
     }
 
     /**
-     * TASK: TOOL GENERATION (STREAMING)
+     * TASK: EDUCATIONAL TOOL SYNTHESIS (STREAMING)
      */
     if (task === 'generate-tool') {
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        Synthesize a professional educational ${toolType}.
+        TASK: Synthesize a professional ${toolType}.
+        SOURCE MATERIAL: Use the provided document as the primary pedagogical source.
       `;
 
       const parts: any[] = [
         ...(doc?.base64 && doc?.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
-        { text: `Create a comprehensive ${toolType}. User requirements: ${userInput}` }
+        { text: `Draft a high-quality ${toolType}. Specific requirements: ${userInput}` }
       ];
 
       const streamResponse = await googleGenerativeAi.models.generateContentStream({
@@ -151,10 +150,10 @@ export async function POST(req: NextRequest) {
       return new Response(stream);
     }
 
-    return NextResponse.json({ error: 'Unsupported pedagogical task' }, { status: 400 });
+    return NextResponse.json({ error: 'Unrecognized pedagogical task' }, { status: 400 });
 
   } catch (error: any) {
-    console.error('Google Generative AI Engine Error:', error);
+    console.error('Google Generative AI Critical Error:', error);
     return NextResponse.json({ 
       error: error.message || 'The Google Generative AI engine encountered a critical error.' 
     }, { status: 500 });

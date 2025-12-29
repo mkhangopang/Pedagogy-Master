@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, XCircle, ShieldCheck, Lock, ShieldAlert } from 'lucide-react';
 import { NeuralBrain } from '../types';
@@ -25,7 +24,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       'documents', 
       'neural_brain', 
       'output_artifacts', 
-      'feedback_events'
+      'feedback_events',
+      'master_prompt',
+      'organizations',
+      'usage_logs'
     ];
     const status = await Promise.all(tables.map(async (table) => {
       try {
@@ -64,38 +66,46 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - ULTIMATE SECURITY PATCH v9
--- FIXES: Persistent Data Erasure, RLS Errors, and Missing File Paths
+  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE SECURITY PATCH v10
+-- FIXES: RLS Linter Errors (master_prompt, organizations, usage_logs)
 
--- 1. ADD MISSING COLUMNS
-ALTER TABLE IF EXISTS public.documents ADD COLUMN IF NOT EXISTS file_path TEXT;
-
--- 2. ENABLE RLS FOR CORE TABLES
+-- 1. ENABLE ROW LEVEL SECURITY (RLS) ON ALL CORE TABLES
 ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.output_artifacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.feedback_events ENABLE ROW LEVEL SECURITY;
 
--- 3. CREATE ACCESS POLICIES
+-- FIXING LINTER IDENTIFIED TABLES
+ALTER TABLE IF EXISTS public.master_prompt ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.usage_logs ENABLE ROW LEVEL SECURITY;
+
+-- 2. CREATE ACCESS POLICIES FOR NEWLY SECURED TABLES
 DO $$ 
 BEGIN
-    -- Profiles Policy
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'profiles' AND policyname = 'Users access own profile') THEN
-        CREATE POLICY "Users access own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
-    END IF;
-    
-    -- Documents Policy
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'documents' AND policyname = 'Users access own docs') THEN
-        CREATE POLICY "Users access own docs" ON public.documents FOR ALL USING (auth.uid() = user_id);
+    -- master_prompt Policy: Public read for active, Admin only for write
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'master_prompt' AND policyname = 'Public read active prompt') THEN
+        CREATE POLICY "Public read active prompt" ON public.master_prompt FOR SELECT USING (true);
     END IF;
 
-    -- Neural Brain Policy
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'neural_brain' AND policyname = 'Public read active brain') THEN
-        CREATE POLICY "Public read active brain" ON public.neural_brain FOR SELECT USING (is_active = true);
+    -- organizations Policy: Users see their own organization data
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'organizations' AND policyname = 'Users see own org') THEN
+        CREATE POLICY "Users see own org" ON public.organizations FOR SELECT USING (auth.uid() IN (
+            SELECT user_id FROM public.profiles WHERE org_id = organizations.id
+        ));
+    END IF;
+
+    -- usage_logs Policy: Users see their own usage metrics
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'usage_logs' AND policyname = 'Users see own usage') THEN
+        CREATE POLICY "Users see own usage" ON public.usage_logs FOR SELECT USING (auth.uid() = user_id);
     END IF;
 END $$;
 
--- 4. FIX SEARCH PATH WARNINGS
-ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
+-- 3. STORAGE PERMISSIONS FOR "documents" BUCKET
+-- Run this to ensure AI can read/write multimodal files
+-- INSERT INTO storage.buckets (id, name, public) VALUES ('documents', 'documents', false) ON CONFLICT DO NOTHING;
+`;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -158,7 +168,7 @@ ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Security & RLS Patch SQL</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Security & RLS Patch SQL (v10)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -173,16 +183,16 @@ ALTER FUNCTION public.handle_new_user() SET search_path = public;`;
               <ShieldCheck size={28} />
               <h2 className="text-xl font-bold">Linter Remediation Guide</h2>
             </div>
-            <div className="p-6 bg-rose-50 rounded-2xl border border-rose-100 flex items-start gap-4">
-              <div className="p-2 bg-rose-100 text-rose-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
+            <div className="p-6 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-4">
+              <div className="p-2 bg-amber-100 text-amber-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
-                <h3 className="font-bold text-rose-900 tracking-tight">Fixing the "Refresh Erasure" Issue</h3>
-                <p className="text-sm text-rose-700 mt-1 mb-4 leading-relaxed">If documents disappear on refresh, your RLS is likely blocking the `SELECT` operation or the `INSERT` never finished.</p>
-                <ol className="text-xs text-rose-800 space-y-2 list-decimal ml-4 font-medium">
-                  <li>Copy the <strong>SQL Patch</strong> from the Infrastructure tab.</li>
-                  <li>Go to your <strong>Supabase Dashboard {' > '} SQL Editor</strong>.</li>
-                  <li>Paste and click <strong>Run</strong>.</li>
-                  <li>Refresh this application and try a test upload.</li>
+                <h3 className="font-bold text-amber-900 tracking-tight">Resolving RLS Errors</h3>
+                <p className="text-sm text-amber-700 mt-1 mb-4 leading-relaxed">The Supabase linter has detected public tables without RLS enabled. This is a critical security risk.</p>
+                <ol className="text-xs text-amber-800 space-y-2 list-decimal ml-4 font-medium">
+                  <li>Copy the <strong>SQL Patch (v10)</strong> from the Infrastructure tab.</li>
+                  <li>Paste into the <strong>SQL Editor</strong> in Supabase.</li>
+                  <li>This will secure <code>master_prompt</code>, <code>organizations</code>, and <code>usage_logs</code>.</li>
+                  <li>Verify the bucket name for uploads is exactly <code>documents</code>.</li>
                 </ol>
               </div>
             </div>
