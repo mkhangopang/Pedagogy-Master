@@ -73,13 +73,15 @@ const Documents: React.FC<DocumentsProps> = ({
     let interval: any;
     if (isUploading) {
       if (uploadStage === 'uploading') {
-        // Smoothly progress to 90% while the stream is active
+        // Step 1: 0% to 90% is the raw storage upload
         interval = setInterval(() => {
           setProgress(prev => (prev < 90 ? prev + 0.5 : prev));
         }, 1000);
       } else if (uploadStage === 'persisting') {
-        setProgress(95);
+        // Step 2: 90% to 95% is the database record creation
+        setProgress(93);
       } else if (uploadStage === 'complete') {
+        // Step 3: Done
         setProgress(100);
       } else if (uploadStage === 'error') {
         setProgress(0);
@@ -128,17 +130,17 @@ const Documents: React.FC<DocumentsProps> = ({
     const docId = crypto.randomUUID();
 
     try {
-      // Step 1: Upload directly using native browser streams (No Base64 to save RAM)
+      // Step 1: Storage Upload (The part that reaches 90%)
       const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
 
+      // Step 2: DB Persistence (If this hangs, RLS v39 patch is needed)
       setUploadStage('persisting');
       
       const newDoc: Document = {
         id: docId,
         userId: '', 
         name: file.name,
-        // We skip base64Data here; the server will fetch from filePath when needed
         filePath: filePath,
         mimeType: file.type || 'application/octet-stream',
         status: 'completed',
@@ -148,7 +150,9 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
+      // Call to parent to save in Supabase table 'documents'
       await onAddDocument(newDoc);
+      
       setSelectedDocId(docId);
       setUploadStage('complete');
 
@@ -163,9 +167,9 @@ const Documents: React.FC<DocumentsProps> = ({
       
       setDetailedError({ 
         type: 'network', 
-        title: 'Sync Interrupted', 
-        message: err.message || 'The server rejected the file stream.',
-        fix: 'Refresh and try again. Ensure SQL Patch v38 is active.'
+        title: 'System Stall', 
+        message: err.message || 'The database failed to record the document metadata.',
+        fix: 'Run SQL Patch v39 in Brain Control to fix RLS Deadlocks.'
       });
       
       setTimeout(() => setIsUploading(false), 5000);
@@ -176,8 +180,8 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStatusText = () => {
     switch (uploadStage) {
-      case 'uploading': return 'Streaming to Cloud';
-      case 'persisting': return 'Saving Record';
+      case 'uploading': return 'Uploading File';
+      case 'persisting': return 'Syncing Metadata';
       case 'complete': return 'Material Online';
       case 'error': return 'Sync Interrupted';
       default: return 'Standby...';
@@ -207,7 +211,9 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="space-y-2">
               <h3 className="text-2xl font-black text-slate-900">{getStatusText()}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
-                {uploadStage === 'uploading' ? 'Transmitting high-fidelity curriculum data...' : 'Finalizing secure persistence...'}
+                {uploadStage === 'uploading' 
+                  ? 'Transmitting document to secure cloud...' 
+                  : 'Verifying database permissions (Patch v39)...'}
               </p>
             </div>
           </div>
