@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy } from 'react';
@@ -140,11 +141,9 @@ export default function App() {
             queries_limit: activeProfile.queriesLimit
           }]);
         } else {
-          // FORCE ADMIN ROLE PERSISTENCE: If email is in ADMIN_EMAILS, force the role even if DB says otherwise
           const forcedRole = isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole);
           const forcedPlan = isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan);
 
-          // If the database is out of sync with the hardcoded admin list, correct it immediately
           if (isSystemAdmin && profile.role !== UserRole.APP_ADMIN) {
              await supabase.from('profiles').update({ role: UserRole.APP_ADMIN, plan: SubscriptionPlan.ENTERPRISE }).eq('id', userId);
           }
@@ -230,23 +229,27 @@ export default function App() {
                   documents={documents} 
                   onAddDocument={async (doc) => {
                     if (isActuallyConnected) {
-                      const { error } = await supabase.from('documents').insert([{
-                        id: doc.id, 
-                        user_id: userProfile.id, 
-                        name: doc.name, 
-                        base64_data: (doc.base64Data?.length || 0) < 500000 ? doc.base64Data : null, 
-                        file_path: doc.filePath,
-                        mime_type: doc.mimeType, 
-                        status: doc.status, 
-                        subject: doc.subject,
-                        grade_level: doc.gradeLevel, 
-                        slo_tags: doc.sloTags, 
-                        created_at: doc.createdAt
-                      }]);
-                      
-                      if (error) {
-                        alert("Persistence Error: Your document could not be saved to the cloud. " + error.message);
-                        return;
+                      // v42 Resilience: Wrap DB insert in a promise that can be raced for timeouts
+                      const insertTask = async () => {
+                        const { error } = await supabase.from('documents').insert([{
+                          id: doc.id, 
+                          user_id: userProfile.id, 
+                          name: doc.name, 
+                          file_path: doc.filePath,
+                          mime_type: doc.mimeType, 
+                          status: doc.status, 
+                          subject: doc.subject,
+                          grade_level: doc.gradeLevel, 
+                          slo_tags: doc.sloTags, 
+                          created_at: doc.createdAt
+                        }]);
+                        if (error) throw error;
+                      };
+
+                      try {
+                        await insertTask();
+                      } catch (error: any) {
+                        throw new Error(error.message || 'DATABASE_STALL');
                       }
                     }
                     setDocuments(prev => [doc, ...prev]);

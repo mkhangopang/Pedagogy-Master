@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle, Trash2, Lock, 
   CheckCircle2, ShieldAlert, X, Zap, 
   FileType, Check, RefreshCw, Sparkles,
-  Database, WifiOff
+  Database, WifiOff, RotateCcw
 } from 'lucide-react';
 import { Document, NeuralBrain, SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -26,7 +26,7 @@ interface DocumentsProps {
 type UploadStage = 'idle' | 'uploading' | 'persisting' | 'complete' | 'error';
 
 interface DetailedError {
-  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage' | 'policy';
+  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage' | 'policy' | 'timeout';
   title: string;
   message: string;
   fix?: string;
@@ -41,6 +41,7 @@ const getErrorIcon = (type: DetailedError['type']) => {
     case 'quota': return <Zap size={24} />;
     case 'storage': return <Database size={24} />;
     case 'policy': return <ShieldAlert size={24} />;
+    case 'timeout': return <RotateCcw size={24} />;
     default: return <AlertCircle size={24} />;
   }
 };
@@ -56,7 +57,7 @@ const Documents: React.FC<DocumentsProps> = ({
   const [progress, setProgress] = useState(0);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [detailedError, setDetailedError] = useState<DetailedError | null>(null);
-  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [pendingSync, setPendingSync] = useState<{name: string, path: string, type: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
@@ -71,13 +72,11 @@ const Documents: React.FC<DocumentsProps> = ({
       if (uploadStage === 'uploading') {
         interval = setInterval(() => {
           setProgress(prev => (prev < 90 ? prev + 0.5 : prev));
-        }, 1000);
+        }, 800);
       } else if (uploadStage === 'persisting') {
-        setProgress(93);
+        setProgress(95);
       } else if (uploadStage === 'complete') {
         setProgress(100);
-      } else if (uploadStage === 'error') {
-        setProgress(0);
       }
     } else {
       setProgress(0);
@@ -85,55 +84,107 @@ const Documents: React.FC<DocumentsProps> = ({
     return () => clearInterval(interval);
   }, [isUploading, uploadStage]);
 
+  /**
+   * RECOVERY: Attempt to save metadata for an already uploaded file
+   */
+  const resumeSync = async () => {
+    if (!pendingSync) return;
+    
+    setIsUploading(true);
+    setUploadStage('persisting');
+    setDetailedError(null);
+
+    try {
+      const docId = crypto.randomUUID();
+      const newDoc: Document = {
+        id: docId,
+        userId: '', 
+        name: pendingSync.name,
+        filePath: pendingSync.path,
+        mimeType: pendingSync.type,
+        status: 'completed',
+        subject: 'Metadata Restored',
+        gradeLevel: 'Auto',
+        sloTags: [],
+        createdAt: new Date().toISOString()
+      };
+
+      // Set a 10s race to detect RLS hang
+      await Promise.race([
+        onAddDocument(newDoc),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 10000))
+      ]);
+
+      setPendingSync(null);
+      setSelectedDocId(docId);
+      setUploadStage('complete');
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadStage('idle');
+      }, 1000);
+    } catch (err: any) {
+      handleSyncError(err);
+    }
+  };
+
+  const handleSyncError = (err: any) => {
+    console.error("Sync Logic Error:", err);
+    setUploadStage('error');
+    setIsUploading(false);
+
+    if (err.message === 'METADATA_TIMEOUT') {
+      setDetailedError({ 
+        type: 'timeout', 
+        title: 'Metadata Sync Stall (90%)', 
+        message: 'The file is safely in cloud storage, but the database is hanging due to RLS conflicts.',
+        fix: 'Run SQL Patch v42 in Brain Control, then click "Resume Sync" below.'
+      });
+    } else {
+      setDetailedError({ 
+        type: 'policy', 
+        title: 'Sync Interrupted', 
+        message: err.message || 'The database rejected the document registration.',
+        fix: 'Apply SQL Patch v42 to fix policy deadlocks.'
+      });
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setDetailedError(null);
-
     if (!isSupportedFileType(file.type)) {
-      setDetailedError({
-        type: 'format',
-        title: 'Unsupported Format',
-        message: `File type "${file.type}" is not supported.`,
-        fix: 'Use PDF, DOCX, or plain text.'
-      });
-      return;
-    }
-
-    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-      setDetailedError({
-        type: 'generic',
-        title: 'File Too Large',
-        message: `Maximum allowed size is ${MAX_FILE_SIZE_MB}MB.`,
-        fix: 'Compress the document or split it.'
-      });
+      setDetailedError({ type: 'format', title: 'Format Error', message: 'Unsupported file type.' });
       return;
     }
 
     if (limitReached) {
-      setShowLimitModal(true);
+      setDetailedError({ type: 'quota', title: 'Storage Limit', message: 'You have reached your document limit.' });
       return;
     }
 
     setIsUploading(true);
     setUploadStage('uploading');
-    const docId = crypto.randomUUID();
 
     try {
       // Step 1: Storage Upload
       const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
 
-      // Step 2: DB Metadata Registration (The 90% hang point)
+      // Store in memory in case the next step (DB Sync) hangs
+      setPendingSync({ name: file.name, path: filePath, type: file.type });
+
+      // Step 2: DB Metadata Sync (Stage 90%)
       setUploadStage('persisting');
       
+      const docId = crypto.randomUUID();
       const newDoc: Document = {
         id: docId,
         userId: '', 
         name: file.name,
         filePath: filePath,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: file.type,
         status: 'completed',
         subject: 'Cloud Sync Active',
         gradeLevel: 'Auto',
@@ -141,8 +192,13 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      await onAddDocument(newDoc);
+      // Await with Timeout
+      await Promise.race([
+        onAddDocument(newDoc),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 10000))
+      ]);
       
+      setPendingSync(null);
       setSelectedDocId(docId);
       setUploadStage('complete');
 
@@ -152,27 +208,7 @@ const Documents: React.FC<DocumentsProps> = ({
       }, 1500);
 
     } catch (err: any) {
-      console.error("Critical Upload Error:", err);
-      setUploadStage('error');
-      
-      // Handle the "Multiple Permissive Policies" hang explicitly
-      if (err.message?.includes('RLS') || err.message?.includes('policy') || !err.message) {
-        setDetailedError({ 
-          type: 'policy', 
-          title: 'System Deadlock (v41 Required)', 
-          message: 'The database hang at 90% is caused by lingering versioned policies (v37/v40) identified in your linter report.',
-          fix: 'Apply SQL Patch v41 in Brain Control to purge legacy ghosts.'
-        });
-      } else {
-        setDetailedError({ 
-          type: 'network', 
-          title: 'Upload Interrupted', 
-          message: err.message || 'The database failed to record the document metadata.',
-          fix: 'Check your internet connection and try again.'
-        });
-      }
-      
-      setTimeout(() => setIsUploading(false), 8000);
+      handleSyncError(err);
     } finally {
        if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -180,7 +216,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStatusText = () => {
     switch (uploadStage) {
-      case 'uploading': return 'Transmitting File';
+      case 'uploading': return 'Streaming to Cloud';
       case 'persisting': return 'Syncing Metadata';
       case 'complete': return 'Material Online';
       case 'error': return 'Sync Failed';
@@ -212,8 +248,8 @@ const Documents: React.FC<DocumentsProps> = ({
               <h3 className="text-2xl font-black text-slate-900">{getStatusText()}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
                 {uploadStage === 'uploading' 
-                  ? 'Streaming high-fidelity curriculum data...' 
-                  : 'Resolving database permissions (Stage 90%)...'}
+                  ? 'Transmitting curriculum data to storage...' 
+                  : 'Registering metadata in database (Timeout: 10s)...'}
               </p>
             </div>
           </div>
@@ -232,7 +268,7 @@ const Documents: React.FC<DocumentsProps> = ({
         <div className="flex items-center gap-4">
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.txt,.doc,.docx" />
           <button 
-            onClick={() => limitReached ? setShowLimitModal(true) : fileInputRef.current?.click()}
+            onClick={() => limitReached ? setDetailedError({type:'quota', title:'Limit Reached', message:'Delete docs to upload more.'}) : fileInputRef.current?.click()}
             disabled={isUploading}
             className={`flex items-center gap-3 px-8 py-4 rounded-[1.5rem] font-bold shadow-xl transition-all ${
               limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-600/20'
@@ -245,15 +281,28 @@ const Documents: React.FC<DocumentsProps> = ({
       </header>
 
       {detailedError && (
-        <div className={`border-2 p-6 rounded-[2rem] flex items-start gap-5 animate-in slide-in-from-top-4 ${detailedError.type === 'policy' ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-100'}`}>
-          <div className={`p-3 rounded-2xl shrink-0 ${detailedError.type === 'policy' ? 'bg-indigo-100 text-indigo-600' : 'bg-rose-100 text-rose-600'}`}>
+        <div className={`border-2 p-6 rounded-[2.5rem] flex items-start gap-5 animate-in slide-in-from-top-4 ${detailedError.type === 'timeout' ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-100'}`}>
+          <div className={`p-4 rounded-2xl shrink-0 ${detailedError.type === 'timeout' ? 'bg-amber-100 text-amber-600' : 'bg-rose-100 text-rose-600'}`}>
             {getErrorIcon(detailedError.type)}
           </div>
           <div className="flex-1">
-            <h4 className={`font-bold ${detailedError.type === 'policy' ? 'text-indigo-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
-            <p className={`text-sm mt-1 leading-relaxed ${detailedError.type === 'policy' ? 'text-indigo-700' : 'text-rose-700'}`}>{detailedError.message}</p>
+            <h4 className={`text-lg font-bold ${detailedError.type === 'timeout' ? 'text-amber-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
+            <p className={`text-sm mt-1 leading-relaxed ${detailedError.type === 'timeout' ? 'text-amber-700' : 'text-rose-700'}`}>{detailedError.message}</p>
+            
+            {pendingSync && (
+              <div className="mt-6 flex items-center gap-3">
+                <button 
+                  onClick={resumeSync}
+                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg"
+                >
+                  <RotateCcw size={16} /> Resume Metadata Sync
+                </button>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">File: {pendingSync.name}</p>
+              </div>
+            )}
+
             {detailedError.fix && (
-              <p className={`text-xs font-black uppercase mt-3 tracking-widest flex items-center gap-1 ${detailedError.type === 'policy' ? 'text-indigo-500' : 'text-rose-400'}`}>
+              <p className={`text-xs font-black uppercase mt-4 tracking-widest flex items-center gap-1 ${detailedError.type === 'timeout' ? 'text-amber-600' : 'text-rose-400'}`}>
                 <Check size={12}/> {detailedError.fix}
               </p>
             )}
