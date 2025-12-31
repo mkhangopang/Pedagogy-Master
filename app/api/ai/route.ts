@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
@@ -18,7 +17,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gemini API Key is not configured in the server environment.' }, { status: 500 });
     }
 
-    const googleGenerativeAi = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey });
 
     /**
      * TASK: STUDENT LEARNING OUTCOME (SLO) EXTRACTION
@@ -33,7 +32,7 @@ export async function POST(req: NextRequest) {
         OUTPUT REQUIREMENT: Return a valid JSON array of SLO objects only.
       `;
 
-      const response = await googleGenerativeAi.models.generateContent({
+      const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: {
           parts: [
@@ -91,7 +90,7 @@ export async function POST(req: NextRequest) {
         }
       ];
 
-      const streamResponse = await googleGenerativeAi.models.generateContentStream({
+      const streamResponse = await ai.models.generateContentStream({
         model: 'gemini-3-pro-preview',
         contents,
         config: { systemInstruction },
@@ -132,7 +131,7 @@ export async function POST(req: NextRequest) {
         { text: `Draft a high-quality ${toolType}. Specific requirements: ${userInput}` }
       ];
 
-      const streamResponse = await googleGenerativeAi.models.generateContentStream({
+      const streamResponse = await ai.models.generateContentStream({
         model: "gemini-3-flash-preview",
         contents: { parts },
         config: { systemInstruction },
