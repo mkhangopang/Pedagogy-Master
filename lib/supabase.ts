@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -34,7 +33,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run the V8 SQL Patch.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run the V31 SQL Patch.' };
       if (profileError.code === 'PGRST301') return { status: 'rls_locked', message: 'API Key permissions blocked by RLS.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
@@ -63,24 +62,42 @@ export const verifyPersistence = async (userId: string): Promise<boolean> => {
   }
 };
 
-export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string } | null> => {
-  if (!isSupabaseConfigured) return null;
+/**
+ * Uploads a file to Supabase storage.
+ * Throws errors if the bucket is missing or the upload fails.
+ */
+export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string }> => {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase project is not configured in environment variables.');
+  }
   
   const fileExt = file.name.split('.').pop();
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
-  try {
-    const { data, error } = await supabase.storage.from(bucket).upload(fileName, file, {
-      cacheControl: '3600',
-      upsert: false
-    });
-    
-    if (error) throw error;
-    
-    const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
-    return { publicUrl, path: data.path };
-  } catch (err) {
-    console.error("Storage upload failed:", err);
-    return null;
+  // Step 1: Connectivity/Bucket Check
+  const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+  if (bucketError) {
+    throw new Error(`Cloud Storage connection failed: ${bucketError.message}`);
   }
+
+  const targetBucket = buckets?.find(b => b.name === bucket);
+  if (!targetBucket) {
+    throw new Error(`Storage bucket "${bucket}" does not exist. Create it in the Supabase Dashboard -> Storage.`);
+  }
+
+  // Step 2: Perform Upload
+  const { data, error } = await supabase.storage.from(bucket).upload(fileName, file, {
+    cacheControl: '3600',
+    upsert: false
+  });
+  
+  if (error) {
+    if (error.message.includes('New rows violated row level security')) {
+      throw new Error('Storage RLS Policy Violation: You do not have permission to upload to this bucket.');
+    }
+    throw error;
+  }
+  
+  const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
+  return { publicUrl, path: data.path };
 };

@@ -10,7 +10,7 @@ import { Document, SLO, NeuralBrain, SubscriptionPlan } from '../types';
 import { geminiService } from '../services/geminiService';
 import { ROLE_LIMITS } from '../constants';
 import { uploadFile } from '../lib/supabase';
-import { isSupportedFileType, SUPPORTED_MIME_TYPES } from '../lib/gemini-file';
+import { isSupportedFileType } from '../lib/gemini-file';
 
 interface DocumentsProps {
   documents: Document[];
@@ -63,17 +63,21 @@ const Documents: React.FC<DocumentsProps> = ({
       if (uploadStage === 'reading') {
         setProgress(10);
       } else if (uploadStage === 'uploading') {
+        // Increment visually up to 40% while waiting for storage
         interval = setInterval(() => {
-          setProgress(prev => (prev < 40 ? prev + 5 : prev));
+          setProgress(prev => (prev < 40 ? prev + 2 : prev));
         }, 300);
       } else if (uploadStage === 'persisting') {
         setProgress(50);
       } else if (uploadStage === 'analyzing') {
+        // Increment visually up to 90% while waiting for AI
         interval = setInterval(() => {
-          setProgress(prev => (prev < 90 ? prev + 2 : prev));
+          setProgress(prev => (prev < 90 ? prev + 1 : prev));
         }, 500);
       } else if (uploadStage === 'complete') {
         setProgress(100);
+      } else if (uploadStage === 'error') {
+        setProgress(0);
       }
     } else {
       setProgress(0);
@@ -99,13 +103,13 @@ const Documents: React.FC<DocumentsProps> = ({
 
     setDetailedError(null);
 
-    // 0. Initial Validation
+    // Basic Validation
     if (!isSupportedFileType(file.type)) {
       setDetailedError({
         type: 'format',
         title: 'Unsupported Format',
-        message: `The file type "${file.type || 'unknown'}" cannot be processed for pedagogical mapping.`,
-        fix: 'Please upload PDF, Word (DOCX), or plain text files.'
+        message: `The file type "${file.type || 'unknown'}" is not supported.`,
+        fix: 'Please upload PDF, Word, or Text files.'
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
@@ -115,8 +119,8 @@ const Documents: React.FC<DocumentsProps> = ({
       setDetailedError({
         type: 'generic',
         title: 'File Too Large',
-        message: `This file exceeds the ${MAX_FILE_SIZE_MB}MB limit for single document analysis.`,
-        fix: 'Try splitting the document into smaller chapters or reducing image resolution.'
+        message: `Maximum allowed size is ${MAX_FILE_SIZE_MB}MB.`,
+        fix: 'Split the document or compress images.'
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
@@ -127,35 +131,24 @@ const Documents: React.FC<DocumentsProps> = ({
       return;
     }
 
-    if (!canQuery) {
-      setDetailedError({
-        type: 'quota',
-        title: 'Quota Exceeded',
-        message: 'Your current subscription plan has reached its AI analysis limit for this billing period.',
-        fix: 'Upgrade to Pro for 1,000+ monthly analysis queries.'
-      });
-      return;
-    }
-
     setIsUploading(true);
     const docId = crypto.randomUUID();
 
     try {
       // Stage 1: Local Reading
       setUploadStage('reading');
-      const base64 = await fileToBase64(file).catch(() => {
-        throw { type: 'generic', title: 'Read Failure', message: 'The browser could not read the local file bytes.' };
-      });
+      const base64 = await fileToBase64(file);
       
       // Stage 2: Cloud Storage Upload (Upload First strategy)
       setUploadStage('uploading');
-      const uploadResult = await uploadFile(file).catch(() => {
-        throw { type: 'network', title: 'Network Interruption', message: 'Failed to secure your document to the cloud storage bucket.', fix: 'Check your internet connection and try again.' };
+      const uploadResult = await uploadFile(file).catch((err: Error) => {
+        throw { 
+          type: 'storage', 
+          title: 'Cloud Storage Error', 
+          message: err.message, 
+          fix: 'Ensure the "documents" bucket exists and RLS is configured.' 
+        };
       });
-
-      if (!uploadResult) {
-        throw { type: 'storage', title: 'Upload Failed', message: 'The storage engine rejected the document.', fix: 'Verify you have storage permissions in Supabase.' };
-      }
 
       const filePath = uploadResult.path;
 
@@ -165,7 +158,7 @@ const Documents: React.FC<DocumentsProps> = ({
         id: docId,
         userId: '', 
         name: file.name,
-        base64Data: base64, // Keep in memory for AI task
+        base64Data: base64, 
         filePath: filePath,
         mimeType: file.type || 'application/octet-stream',
         status: 'processing',
@@ -181,18 +174,19 @@ const Documents: React.FC<DocumentsProps> = ({
       // Stage 4: AI Analysis
       setUploadStage('analyzing');
       const slos = await geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain).catch((err: any) => {
-        if (err.message?.includes('401')) throw { type: 'auth', title: 'Session Expired', message: 'Your security token has expired.', fix: 'Please sign out and sign back in to refresh your credentials.' };
-        if (err.message?.includes('503') || err.message?.toLowerCase().includes('overloaded')) {
-          throw { type: 'ai', title: 'Engine Overloaded', message: 'The Gemini AI engine is currently under high load and cannot process this file.', fix: 'Wait 30 seconds and try again.' };
-        }
-        throw { type: 'ai', title: 'Reasoning Error', message: 'Gemini was unable to extract pedagogical logic from this specific file content.', fix: 'Ensure the document contains clear learning objectives or structured text.' };
+        throw { 
+          type: 'ai', 
+          title: 'Neural Analysis Failed', 
+          message: err.message || 'The AI engine could not process the contents.', 
+          fix: 'Retry analysis later.' 
+        };
       });
 
       // Stage 5: Final Update
       await onUpdateDocument(docId, { 
         sloTags: slos, 
         status: slos.length > 0 ? 'completed' : 'failed',
-        subject: slos.length > 0 ? 'Pedagogically Analyzed' : 'Low Relevance Detected'
+        subject: slos.length > 0 ? 'Pedagogically Analyzed' : 'Analysis Incomplete'
       });
       
       onQuery();
@@ -204,30 +198,40 @@ const Documents: React.FC<DocumentsProps> = ({
       }, 1000);
 
     } catch (err: any) {
-      console.error("Diagnostic Processing failure:", err);
+      console.error("Critical Upload Error:", err);
       setUploadStage('error');
-      setDetailedError(err.type ? err : { type: 'generic', title: 'System Error', message: err.message || 'An unexpected error occurred during processing.' });
       
-      // If the document was already added to the DB, update it to failed
+      const formattedError: DetailedError = err.type ? err : { 
+        type: 'generic', 
+        title: 'Unexpected Failure', 
+        message: err.message || 'A system-level error occurred during processing.' 
+      };
+      
+      setDetailedError(formattedError);
+      
+      // If persisted in DB, mark as failed
       if (uploadStage !== 'reading' && uploadStage !== 'uploading') {
-        onUpdateDocument(docId, { status: 'failed', subject: 'Analysis Error' });
+        onUpdateDocument(docId, { status: 'failed', subject: 'Error' });
       }
       
+      // Safety reset after error
       setTimeout(() => {
         setIsUploading(false);
-      }, 2000);
+      }, 500);
+    } finally {
+       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
   const getStatusText = () => {
     switch (uploadStage) {
-      case 'reading': return 'Reading Document Bytes...';
-      case 'uploading': return 'Securing to Cloud Storage...';
-      case 'persisting': return 'Registering Workspace Entry...';
-      case 'analyzing': return 'Gemini AI Neural Extraction...';
-      case 'complete': return 'Ready for Instruction!';
-      case 'error': return 'Processing Interrupted';
-      default: return 'Starting Workspace Sync...';
+      case 'reading': return 'Reading Bytes...';
+      case 'uploading': return 'Cloud Handshake...';
+      case 'persisting': return 'Syncing Workspace...';
+      case 'analyzing': return 'Gemini Thinking...';
+      case 'complete': return 'Success!';
+      case 'error': return 'Interrupted';
+      default: return 'Initializing...';
     }
   };
 
@@ -243,6 +247,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      {/* Limit Modal */}
       {showLimitModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl text-center border border-slate-100 animate-in zoom-in duration-200">
@@ -251,16 +256,17 @@ const Documents: React.FC<DocumentsProps> = ({
             </div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">Slot Limit Reached</h3>
             <p className="text-slate-500 text-sm mb-8 leading-relaxed">
-              You've utilized all available document slots on your current plan. Upgrade to expand your curriculum library.
+              Upgrade to expand your curriculum library and unlock more document analysis slots.
             </p>
             <div className="space-y-3">
-              <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all">View Pro Plans</button>
+              <button className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all">View Pro Plans</button>
               <button onClick={() => setShowLimitModal(false)} className="w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold hover:bg-slate-200 transition-colors">Dismiss</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Progress Overlay */}
       {isUploading && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md">
           <div className="bg-white rounded-[2.5rem] p-10 max-w-md w-full shadow-2xl border border-white/20 text-center space-y-8 animate-in zoom-in duration-300">
@@ -285,30 +291,27 @@ const Documents: React.FC<DocumentsProps> = ({
                 {getStatusText()}
               </h3>
               <p className="text-slate-500 text-sm leading-relaxed max-w-[240px] mx-auto">
-                {uploadStage === 'analyzing' 
-                  ? 'Gemini is mapping curriculum patterns and identifying Bloom\'s levels.' 
-                  : 'Preparing your pedagogical data for neural processing.'}
+                {uploadStage === 'uploading' 
+                  ? 'Establishing connection to Supabase storage buckets...' 
+                  : uploadStage === 'analyzing'
+                  ? 'Gemini is extracting learning patterns and BLOOM levels.'
+                  : 'Preparing pedagogical assets.'}
               </p>
             </div>
 
-            {uploadStage === 'error' ? (
+            {uploadStage === 'error' && (
               <button 
                 onClick={() => setIsUploading(false)}
                 className="px-6 py-2 bg-rose-500 text-white rounded-xl text-sm font-bold shadow-lg"
               >
                 Close Diagnosis
               </button>
-            ) : (
-              <div className="flex justify-center gap-1">
-                {[1, 2, 3].map((dot) => (
-                  <div key={dot} className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce" style={{ animationDelay: `${dot * 0.2}s` }} />
-                ))}
-              </div>
             )}
           </div>
         </div>
       )}
 
+      {/* Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Curriculum Library</h1>
@@ -339,6 +342,7 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
       </header>
 
+      {/* Error Banner */}
       {detailedError && (
         <div className="bg-rose-50 border-2 border-rose-100 p-6 rounded-[2rem] flex items-start gap-5 text-rose-800 animate-in slide-in-from-top-4 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-4 opacity-5">
@@ -360,6 +364,7 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
       )}
 
+      {/* Content Rendering (Grid or Detail) */}
       {selectedDoc ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1 space-y-6">
@@ -446,7 +451,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 <div className="col-span-full py-24 text-center bg-rose-50 rounded-[3rem] border border-rose-100">
                   <AlertCircle className="w-12 h-12 text-rose-200 mx-auto mb-4" />
                   <h3 className="text-rose-900 font-bold text-xl">Analysis Interrupted</h3>
-                  <p className="text-rose-600 text-sm mt-2 max-w-sm mx-auto font-medium">This document type or content structure exceeded the engine's single-pass window or reasoning capacity.</p>
+                  <p className="text-rose-600 text-sm mt-2 max-w-sm mx-auto font-medium">This document could not be analyzed. Check the file content and try again.</p>
                   <button onClick={() => onDeleteDocument(selectedDoc.id)} className="mt-8 px-8 py-3 bg-white text-rose-600 font-bold rounded-2xl shadow-sm border border-rose-200 hover:bg-rose-50 transition-all">Remove Entry</button>
                 </div>
               )}
@@ -476,43 +481,31 @@ const Documents: React.FC<DocumentsProps> = ({
               <h3 className="text-xl font-bold truncate text-slate-900 group-hover:text-indigo-600 transition-colors tracking-tight">{doc.name}</h3>
               <div className="flex items-center gap-3 mt-3">
                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
-                  {doc.status === 'failed' ? 'Processing Error' : doc.status === 'processing' ? 'In Queue' : doc.subject}
+                  {doc.status === 'failed' ? 'Error' : doc.status === 'processing' ? 'Processing' : doc.subject}
                 </p>
                 <div className="w-1 h-1 bg-slate-200 rounded-full" />
                 <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">
                   {doc.sloTags?.length || 0} SLOs
                 </p>
               </div>
-              
-              <div className="absolute -bottom-1 -right-1 w-12 h-12 bg-indigo-50 rounded-tl-[2rem] opacity-0 group-hover:opacity-100 transition-all duration-500 flex items-center justify-center translate-y-4 group-hover:translate-y-0">
-                 <ChevronLeft className="rotate-180 text-indigo-600" size={20} />
-              </div>
             </div>
           ))}
           
           {documents.length === 0 && (
             <div className="col-span-full py-32 bg-white rounded-[4rem] border-4 border-dashed border-slate-100 flex flex-col items-center justify-center text-center px-8 shadow-inner relative overflow-hidden">
-              <div className="absolute -top-24 -left-24 w-64 h-64 bg-indigo-50 rounded-full opacity-50 blur-3xl" />
-              <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-emerald-50 rounded-full opacity-50 blur-3xl" />
-              
-              <div className="w-24 h-24 bg-slate-50 rounded-[2rem] flex items-center justify-center mb-8 text-indigo-200 relative group-hover:scale-110 transition-transform duration-700">
+              <div className="w-24 h-24 bg-slate-50 rounded-[2rem] flex items-center justify-center mb-8 text-indigo-200">
                 <Upload size={48} className="animate-pulse" />
               </div>
               <h3 className="text-3xl font-black text-slate-900 tracking-tight">Your Library is Empty</h3>
               <p className="text-slate-500 mt-3 mb-10 max-w-md text-lg font-medium leading-relaxed">
-                Empower your workspace by uploading syllabi, lesson plans, or assessments. Gemini AI will automatically map the instructional structure.
+                Upload your syllabus or lesson plans. Gemini AI will automatically extract pedagogical data.
               </p>
               <button 
                 onClick={() => fileInputRef.current?.click()} 
                 className="px-10 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all text-lg"
               >
-                Select Curriculum Files
+                Select Files
               </button>
-              <div className="mt-8 flex items-center gap-4 text-slate-400 text-xs font-bold uppercase tracking-widest">
-                <span className="flex items-center gap-1.5"><FileType size={14}/> PDF</span>
-                <span className="flex items-center gap-1.5"><FileCode size={14}/> DOCX</span>
-                <span className="flex items-center gap-1.5"><Zap size={14}/> TXT</span>
-              </div>
             </div>
           )}
         </div>
