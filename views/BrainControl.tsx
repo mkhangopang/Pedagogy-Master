@@ -68,22 +68,123 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - CONSOLIDATED SECURITY PATCH v23
--- RESOLVES: rls_disabled_in_public, redundant_policies, and Auth RLS Initialization Plan warnings
+  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE SCHEMA & SECURITY PATCH v24
+-- RESOLVES: "column user_id does not exist", rls_disabled_in_public, and auth_init_performance
 
--- 1. FORCE ENABLE ROW LEVEL SECURITY ON ALL RELEVANT TABLES
-ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.master_prompt ENABLE ROW LEVEL SECURITY; 
-ALTER TABLE IF EXISTS public.chat_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.output_artifacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.feedback_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.organizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.usage_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
+-- 1. ENSURE SCHEMA INTEGRITY
+-- We explicitly create the tables if they don't exist or ensure they have the correct columns.
 
--- 2. DROP ALL EXISTING POLICIES FOR CLEAN CONSOLIDATION
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+    email text,
+    name text,
+    role text DEFAULT 'teacher',
+    plan text DEFAULT 'free',
+    queries_used int DEFAULT 0,
+    queries_limit int DEFAULT 30,
+    grade_level text,
+    subject_area text,
+    teaching_style text,
+    pedagogical_approach text,
+    generation_count int DEFAULT 0,
+    success_rate float DEFAULT 0,
+    edit_patterns jsonb DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}',
+    updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.documents (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+    name text NOT NULL,
+    base64_data text,
+    file_path text,
+    mime_type text,
+    status text DEFAULT 'processing',
+    subject text,
+    grade_level text,
+    slo_tags jsonb DEFAULT '[]',
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+    role text NOT NULL,
+    content text NOT NULL,
+    document_id uuid,
+    timestamp timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.output_artifacts (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+    content_type text NOT NULL,
+    content text NOT NULL,
+    metadata jsonb DEFAULT '{}',
+    status text DEFAULT 'generated',
+    edit_depth int DEFAULT 0,
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.feedback_events (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+    artifact_id uuid NOT NULL,
+    event_type text NOT NULL,
+    event_data jsonb DEFAULT '{}',
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.neural_brain (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    master_prompt text NOT NULL,
+    bloom_rules text NOT NULL,
+    version int DEFAULT 1,
+    is_active boolean DEFAULT true,
+    updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.master_prompt (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    content text NOT NULL,
+    created_at timestamptz DEFAULT now()
+);
+
+-- Missing context tables often causing the 'column user_id does not exist' error
+CREATE TABLE IF NOT EXISTS public.organizations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+    name text,
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.usage_logs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+    action text,
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.curriculum_profiles (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
+    details jsonb,
+    created_at timestamptz DEFAULT now()
+);
+
+-- 2. FORCE ENABLE ROW LEVEL SECURITY
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.master_prompt ENABLE ROW LEVEL SECURITY; 
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.feedback_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usage_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
+
+-- 3. RESET POLICIES (CLEAN SLATE)
 DO $$ 
 DECLARE
     policynames RECORD;
@@ -97,106 +198,54 @@ BEGIN
     END LOOP;
 END $$;
 
--- 3. CONSOLIDATED ACTION POLICIES (FOR ALL ACTIONS)
--- Using (SELECT auth.uid()) pattern to resolve Auth RLS Initialization Plan warnings.
+-- 4. APPLY CONSOLIDATED UNIFIED POLICIES
+-- We use subqueries for (SELECT auth.uid()) to prevent initialization plan warnings.
 
+-- PROFILES (Users own their row; Admins see all)
+CREATE POLICY "Unified Profile Management" ON public.profiles 
+FOR ALL TO authenticated 
+USING (id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
+WITH CHECK (id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
+
+-- ALL OTHER TABLES (User-owned with Admin Bypass)
 -- Documents
 CREATE POLICY "Unified Document Access" ON public.documents 
 FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
+USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
+WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Profiles
-CREATE POLICY "Unified Profile Management" ON public.profiles 
-FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
-
--- Chat Messages
+-- Messages
 CREATE POLICY "Unified Message Access" ON public.chat_messages 
 FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
+USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
+WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Output Artifacts
+-- Artifacts
 CREATE POLICY "Unified Artifact Access" ON public.output_artifacts 
 FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
+USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
+WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Feedback Events
+-- Events
 CREATE POLICY "Unified Event Access" ON public.feedback_events 
 FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
+USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
+WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Organizations
-CREATE POLICY "Unified Org Access" ON public.organizations 
+-- Institutional (Orgs, Logs, Curricula)
+CREATE POLICY "Unified Institutional Access" ON public.organizations 
 FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
+USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Usage Logs
 CREATE POLICY "Unified Usage Access" ON public.usage_logs 
 FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
+USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Curriculum Profiles
-CREATE POLICY "Unified Curriculum Access" ON public.curriculum_profiles 
+CREATE POLICY "Unified Curriculum Profile Access" ON public.curriculum_profiles 
 FOR ALL TO authenticated 
-USING (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-)
-WITH CHECK (
-  (SELECT auth.uid()) = user_id 
-  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
-);
+USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- 4. SYSTEM BRAIN POLICIES (Read-only for users, Admin controlled)
+-- 5. READ-ONLY ENGINE LOGIC
 CREATE POLICY "Unified Brain Visibility" ON public.neural_brain 
 FOR SELECT TO authenticated 
 USING (is_active = true);
@@ -205,22 +254,24 @@ CREATE POLICY "Unified Prompt Visibility" ON public.master_prompt
 FOR SELECT TO authenticated 
 USING (true);
 
--- 5. PERFORMANCE INDEXES
-CREATE INDEX IF NOT EXISTS idx_documents_user_id ON public.documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
-
 -- 6. SECURITY HARDENING
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
 GRANT SELECT ON public.neural_brain TO authenticated;
 GRANT SELECT ON public.master_prompt TO authenticated;
+
+-- 7. PERFORMANCE INDEXES
+CREATE INDEX IF NOT EXISTS idx_documents_user_id ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_artifacts_user_id ON public.output_artifacts(user_id);
+CREATE INDEX IF NOT EXISTS idx_messages_user_id ON public.chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 `;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">Optimization, logic versioning, and security audits.</p>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Neural Brain Control</h1>
+          <p className="text-slate-500 mt-1">Infrastructure diagnostics, RLS patches, and neural logic.</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
           <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
@@ -276,7 +327,7 @@ GRANT SELECT ON public.master_prompt TO authenticated;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v23)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v24)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -289,18 +340,18 @@ GRANT SELECT ON public.master_prompt TO authenticated;
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v23)</h2>
+              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v24)</h2>
             </div>
             <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-4">
               <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
-                <h3 className="font-bold text-emerald-900 tracking-tight">Initialization Plan Optimization</h3>
-                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v23 optimizes the way Row Level Security interacts with the Supabase Auth engine. By wrapping <code>auth.uid()</code> calls in subqueries, we eliminate initialization plan warnings and ensure the database engine can index security checks effectively.</p>
+                <h3 className="font-bold text-emerald-900 tracking-tight">Definitive Column Mapping Resolution</h3>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v24 specifically addresses the <code>ERROR: 42703: column "user_id" does not exist</code> by re-verifying the table schema before policy application. It ensures all child tables utilize the <code>user_id</code> foreign key and parent profiles use <code>id</code>.</p>
                 <ul className="text-xs text-emerald-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>Linter Remediation:</strong> Resolves 'Auth RLS Initialization Plan' warnings for all core tables.</li>
-                  <li><strong>Performance Gain:</strong> Prevents sequential scans on small tables by forcing stable evaluation of the current user ID.</li>
-                  <li><strong>Unified Logic:</strong> Consistent <code>FOR ALL</code> policies for <code>profiles</code>, <code>documents</code>, <code>chat_messages</code>, and <code>curriculum_profiles</code>.</li>
-                  <li><strong>Admin Guard:</strong> Maintains high-security bypass for <code>app_admin</code> roles via the optimized profile lookup pattern.</li>
+                  <li><strong>Schema Correction:</strong> Includes <code>CREATE TABLE IF NOT EXISTS</code> for every module.</li>
+                  <li><strong>Column Verification:</strong> Explicitly maps <code>user_id</code> for all institutional and document tables.</li>
+                  <li><strong>Initialization Fix:</strong> Wraps <code>auth.uid()</code> calls to avoid linter performance warnings.</li>
+                  <li><strong>Admin Guard:</strong> Maintains robust administrative bypass for developers.</li>
                 </ul>
               </div>
             </div>
