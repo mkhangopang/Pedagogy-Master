@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
@@ -10,8 +11,14 @@ export async function POST(req: NextRequest) {
   try {
     const { task, message, doc, history, brain, toolType, userInput, adaptiveContext } = await req.json();
     
-    // Initialize the Google Generative AI SDK using the server-side API key
-    const googleGenerativeAi = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Strictly use API_KEY from environment
+    const apiKey = process.env.API_KEY;
+    
+    if (!apiKey) {
+      return NextResponse.json({ error: 'Gemini API Key is not configured in the server environment.' }, { status: 500 });
+    }
+
+    const googleGenerativeAi = new GoogleGenAI({ apiKey });
 
     /**
      * TASK: STUDENT LEARNING OUTCOME (SLO) EXTRACTION
