@@ -68,121 +68,100 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE SCHEMA & SECURITY PATCH v24
+  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE SCHEMA & SECURITY PATCH v25
 -- RESOLVES: "column user_id does not exist", rls_disabled_in_public, and auth_init_performance
 
--- 1. ENSURE SCHEMA INTEGRITY
--- We explicitly create the tables if they don't exist or ensure they have the correct columns.
+-- 1. ENSURE SCHEMA INTEGRITY & RECOVERY
+-- We use a DO block to add missing columns to existing tables, preventing the "column does not exist" error.
 
-CREATE TABLE IF NOT EXISTS public.profiles (
-    id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
-    email text,
-    name text,
-    role text DEFAULT 'teacher',
-    plan text DEFAULT 'free',
-    queries_used int DEFAULT 0,
-    queries_limit int DEFAULT 30,
-    grade_level text,
-    subject_area text,
-    teaching_style text,
-    pedagogical_approach text,
-    generation_count int DEFAULT 0,
-    success_rate float DEFAULT 0,
-    edit_patterns jsonb DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}',
-    updated_at timestamptz DEFAULT now()
-);
+DO $$ 
+BEGIN
+    -- profiles uses 'id' as primary key (references auth.users)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='id') THEN
+        CREATE TABLE IF NOT EXISTS public.profiles (id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY);
+    END IF;
+    
+    -- Add metadata/role columns if missing
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='role') THEN
+        ALTER TABLE public.profiles ADD COLUMN role text DEFAULT 'teacher';
+    END IF;
 
-CREATE TABLE IF NOT EXISTS public.documents (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
-    name text NOT NULL,
-    base64_data text,
-    file_path text,
-    mime_type text,
-    status text DEFAULT 'processing',
-    subject text,
-    grade_level text,
-    slo_tags jsonb DEFAULT '[]',
-    created_at timestamptz DEFAULT now()
-);
+    -- Ensure 'user_id' exists on all relevant tables
+    -- Table: documents
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='user_id') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='documents') THEN
+            ALTER TABLE public.documents ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+        ELSE
+            CREATE TABLE public.documents (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL);
+        END IF;
+    END IF;
 
-CREATE TABLE IF NOT EXISTS public.chat_messages (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
-    role text NOT NULL,
-    content text NOT NULL,
-    document_id uuid,
-    timestamp timestamptz DEFAULT now()
-);
+    -- Table: chat_messages
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='chat_messages' AND column_name='user_id') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='chat_messages') THEN
+            ALTER TABLE public.chat_messages ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+        ELSE
+            CREATE TABLE public.chat_messages (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL);
+        END IF;
+    END IF;
 
-CREATE TABLE IF NOT EXISTS public.output_artifacts (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
-    content_type text NOT NULL,
-    content text NOT NULL,
-    metadata jsonb DEFAULT '{}',
-    status text DEFAULT 'generated',
-    edit_depth int DEFAULT 0,
-    created_at timestamptz DEFAULT now()
-);
+    -- Table: output_artifacts
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='output_artifacts' AND column_name='user_id') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='output_artifacts') THEN
+            ALTER TABLE public.output_artifacts ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+        ELSE
+            CREATE TABLE public.output_artifacts (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL);
+        END IF;
+    END IF;
 
-CREATE TABLE IF NOT EXISTS public.feedback_events (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
-    artifact_id uuid NOT NULL,
-    event_type text NOT NULL,
-    event_data jsonb DEFAULT '{}',
-    created_at timestamptz DEFAULT now()
-);
+    -- Table: feedback_events
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='feedback_events' AND column_name='user_id') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='feedback_events') THEN
+            ALTER TABLE public.feedback_events ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+        ELSE
+            CREATE TABLE public.feedback_events (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL, artifact_id uuid NOT NULL, event_type text NOT NULL);
+        END IF;
+    END IF;
 
-CREATE TABLE IF NOT EXISTS public.neural_brain (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    master_prompt text NOT NULL,
-    bloom_rules text NOT NULL,
-    version int DEFAULT 1,
-    is_active boolean DEFAULT true,
-    updated_at timestamptz DEFAULT now()
-);
+    -- Table: organizations
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='user_id') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='organizations') THEN
+            ALTER TABLE public.organizations ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+        ELSE
+            CREATE TABLE public.organizations (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL);
+        END IF;
+    END IF;
 
-CREATE TABLE IF NOT EXISTS public.master_prompt (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    content text NOT NULL,
-    created_at timestamptz DEFAULT now()
-);
+    -- Table: usage_logs
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='usage_logs' AND column_name='user_id') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='usage_logs') THEN
+            ALTER TABLE public.usage_logs ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+        ELSE
+            CREATE TABLE public.usage_logs (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL);
+        END IF;
+    END IF;
 
--- Missing context tables often causing the 'column user_id does not exist' error
-CREATE TABLE IF NOT EXISTS public.organizations (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
-    name text,
-    created_at timestamptz DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.usage_logs (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
-    action text,
-    created_at timestamptz DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.curriculum_profiles (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL,
-    details jsonb,
-    created_at timestamptz DEFAULT now()
-);
+    -- Table: curriculum_profiles
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='curriculum_profiles' AND column_name='user_id') THEN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='curriculum_profiles') THEN
+            ALTER TABLE public.curriculum_profiles ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+        ELSE
+            CREATE TABLE public.curriculum_profiles (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid REFERENCES auth.users ON DELETE CASCADE NOT NULL);
+        END IF;
+    END IF;
+END $$;
 
 -- 2. FORCE ENABLE ROW LEVEL SECURITY
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.master_prompt ENABLE ROW LEVEL SECURITY; 
-ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.feedback_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.usage_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.master_prompt ENABLE ROW LEVEL SECURITY; 
+ALTER TABLE IF EXISTS public.chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.output_artifacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.feedback_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.usage_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
 
 -- 3. RESET POLICIES (CLEAN SLATE)
 DO $$ 
@@ -207,33 +186,32 @@ FOR ALL TO authenticated
 USING (id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
 WITH CHECK (id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- ALL OTHER TABLES (User-owned with Admin Bypass)
--- Documents
+-- DOCUMENTS
 CREATE POLICY "Unified Document Access" ON public.documents 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
 WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Messages
+-- MESSAGES
 CREATE POLICY "Unified Message Access" ON public.chat_messages 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
 WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Artifacts
+-- ARTIFACTS
 CREATE POLICY "Unified Artifact Access" ON public.output_artifacts 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
 WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Events
+-- FEEDBACK EVENTS
 CREATE POLICY "Unified Event Access" ON public.feedback_events 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin')
 WITH CHECK (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
--- Institutional (Orgs, Logs, Curricula)
-CREATE POLICY "Unified Institutional Access" ON public.organizations 
+-- INSTITUTIONAL TABLES
+CREATE POLICY "Unified Org Access" ON public.organizations 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin');
 
@@ -327,7 +305,7 @@ CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v24)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v25)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -340,18 +318,18 @@ CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v24)</h2>
+              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v25)</h2>
             </div>
             <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-4">
               <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
                 <h3 className="font-bold text-emerald-900 tracking-tight">Definitive Column Mapping Resolution</h3>
-                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v24 specifically addresses the <code>ERROR: 42703: column "user_id" does not exist</code> by re-verifying the table schema before policy application. It ensures all child tables utilize the <code>user_id</code> foreign key and parent profiles use <code>id</code>.</p>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v25 includes a "DO" block for robust schema self-healing. It automatically detects and adds the <code>user_id</code> column to existing tables if it was missed during initial creation. This specifically solves the <code>ERROR: 42703: column "user_id" does not exist</code> error.</p>
                 <ul className="text-xs text-emerald-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>Schema Correction:</strong> Includes <code>CREATE TABLE IF NOT EXISTS</code> for every module.</li>
-                  <li><strong>Column Verification:</strong> Explicitly maps <code>user_id</code> for all institutional and document tables.</li>
-                  <li><strong>Initialization Fix:</strong> Wraps <code>auth.uid()</code> calls to avoid linter performance warnings.</li>
-                  <li><strong>Admin Guard:</strong> Maintains robust administrative bypass for developers.</li>
+                  <li><strong>Self-Healing Schema:</strong> Verifies column existence before applying RLS policies.</li>
+                  <li><strong>Explicit Mapping:</strong> Correctly identifies <code>id</code> for Profiles and <code>user_id</code> for all other data points.</li>
+                  <li><strong>Initialization Fix:</strong> Maintains the <code>(SELECT auth.uid())</code> pattern to resolve linter warnings.</li>
+                  <li><strong>Zero-Conflict Deployment:</strong> Cleanly drops and recreates all policies to avoid legacy overlaps.</li>
                 </ul>
               </div>
             </div>
