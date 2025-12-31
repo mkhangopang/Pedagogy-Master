@@ -32,7 +32,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v36.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v38.' };
       if (profileError.code === 'PGRST301') return { status: 'rls_locked', message: 'API Key permissions blocked by RLS.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
@@ -57,7 +57,7 @@ export const verifyPersistence = async (userId: string): Promise<boolean> => {
 
 /**
  * Uploads a file to Supabase storage.
- * Uses ArrayBuffer to bypass metadata hangs and ensures correct content type.
+ * Updated: Passes the File object directly to use native stream handling.
  */
 export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string }> => {
   if (!isSupabaseConfigured) {
@@ -67,30 +67,25 @@ export const uploadFile = async (file: File, bucket: string = 'documents'): Prom
   const fileExt = file.name.split('.').pop();
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
-  // Stable binary conversion
-  const arrayBuffer = await file.arrayBuffer();
-
+  // Using the File object directly is safer for memory and timeouts
   const { data, error } = await supabase.storage
     .from(bucket)
-    .upload(fileName, arrayBuffer, {
+    .upload(fileName, file, {
       cacheControl: '3600',
       upsert: false,
       contentType: file.type || 'application/octet-stream'
     });
   
   if (error) {
-    console.error("Storage Critical Error:", error);
+    console.error("Storage Logic Error:", error);
     if (error.message.includes('row level security')) {
-      throw new Error('Access Denied: Row Level Security is blocking the upload. Apply Patch v36.');
+      throw new Error('Access Denied: RLS is blocking the transfer. Apply SQL Patch v38.');
     }
-    if (error.message.includes('bucket not found')) {
-      throw new Error(`The storage bucket "${bucket}" was not found.`);
-    }
-    throw new Error(`Upload Failed: ${error.message}`);
+    throw new Error(`Cloud Rejection: ${error.message}`);
   }
   
   if (!data?.path) {
-    throw new Error('Transfer succeeded but persistence path is missing.');
+    throw new Error('Transfer succeeded but path registration failed.');
   }
 
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);

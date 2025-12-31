@@ -1,10 +1,11 @@
+
 import { SLO, NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 import { supabase } from "../lib/supabase";
 
 /**
  * GOOGLE GENERATIVE AI SERVICE
- * High-performance bridge for pedagogical AI synthesis.
+ * High-performance server-based bridge for pedagogical AI synthesis.
  */
 export const geminiService = {
   /**
@@ -16,7 +17,7 @@ export const geminiService = {
   },
 
   /**
-   * Triggers structural analysis for learning outcome extraction via Google Generative AI.
+   * Triggers structural analysis for learning outcome extraction.
    */
   async generateSLOTagsFromBase64(
     base64Data: string, 
@@ -43,7 +44,7 @@ export const geminiService = {
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err.error || 'The Google Generative AI engine could not complete the extraction.');
+      throw new Error(err.error || 'The AI engine could not complete the extraction.');
     }
 
     const data = await response.json();
@@ -51,11 +52,12 @@ export const geminiService = {
   },
 
   /**
-   * Proxies a multimodal streaming chat request to the Google Generative AI backend.
+   * Proxies a multimodal streaming chat request.
+   * Prefer using filePath to avoid large payload timeouts.
    */
   async *chatWithDocumentStream(
     message: string, 
-    doc: { base64?: string; mimeType?: string }, 
+    doc: { base64?: string; mimeType?: string; filePath?: string }, 
     history: { role: 'user' | 'assistant', content: string }[],
     brain: NeuralBrain,
     user?: UserProfile
@@ -72,7 +74,12 @@ export const geminiService = {
       body: JSON.stringify({
         task: 'chat',
         message,
-        doc,
+        doc: { 
+          // Only send base64 if filePath is missing
+          base64: doc.filePath ? undefined : doc.base64, 
+          mimeType: doc.mimeType,
+          filePath: doc.filePath 
+        },
         history,
         brain,
         adaptiveContext
@@ -80,7 +87,7 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      yield "Google Generative AI Alert: The engine is currently under high load or authentication failed. Please try again.";
+      yield "AI Alert: Synthesis interrupted. The server might be processing a large document. Please wait a moment.";
       return;
     }
 
@@ -97,12 +104,12 @@ export const geminiService = {
   },
 
   /**
-   * Proxies a multimodal tool generation request to the Google Generative AI backend.
+   * Proxies a tool generation request.
    */
   async *generatePedagogicalToolStream(
     toolType: string,
     userInput: string,
-    doc: { base64?: string; mimeType?: string },
+    doc: { base64?: string; mimeType?: string; filePath?: string },
     brain: NeuralBrain,
     user?: UserProfile
   ) {
@@ -119,14 +126,18 @@ export const geminiService = {
         task: 'generate-tool',
         toolType,
         userInput,
-        doc,
+        doc: { 
+          base64: doc.filePath ? undefined : doc.base64, 
+          mimeType: doc.mimeType,
+          filePath: doc.filePath 
+        },
         brain,
         adaptiveContext
       })
     });
 
     if (!response.ok) {
-      yield "Google Generative AI Alert: Synthesis interrupted. Please check your account status.";
+      yield "AI Alert: Synthesis interrupted. Please verify the document is still in your library.";
       return;
     }
 

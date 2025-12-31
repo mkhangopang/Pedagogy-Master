@@ -1,11 +1,21 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { supabase } from '../../../lib/supabase';
 
+// Helper to encode ArrayBuffer to base64 without relying on Node.js Buffer global
+function encodeBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 /**
- * GOOGLE GENERATIVE AI - UNIFIED NEURAL ENGINE
- * This route serves as the central intelligence hub for Pedagogy Master,
- * utilizing the latest Gemini 3 models for native multimodal document reasoning.
+ * GOOGLE GENERATIVE AI - UNIFIED NEURAL ENGINE (v38.1)
+ * This is 100% server-based logic to protect API keys and handle large files.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -23,34 +33,55 @@ export async function POST(req: NextRequest) {
 
     const { task, message, doc, history, brain, toolType, userInput, adaptiveContext } = await req.json();
     
-    // Strictly use API_KEY from environment
     const apiKey = process.env.API_KEY;
-    
     if (!apiKey) {
-      return NextResponse.json({ error: 'Gemini API Key is not configured in the server environment.' }, { status: 500 });
+      return NextResponse.json({ error: 'Server environment is missing AI credentials.' }, { status: 500 });
     }
 
     const ai = new GoogleGenAI({ apiKey });
 
+    // HELPER: Resolve document content (by fetching from Supabase Storage on the server)
+    const getDocPart = async () => {
+      if (doc?.filePath) {
+        // FETCHING ON SERVER: This ensures the AI has access even if the client is slow
+        const { data, error } = await supabase.storage.from('documents').download(doc.filePath);
+        if (error || !data) {
+          console.error("Storage Fetch Error:", error);
+          return null;
+        }
+        
+        const buffer = await data.arrayBuffer();
+        const base64 = encodeBase64(buffer);
+        return { inlineData: { mimeType: doc.mimeType, data: base64 } };
+      }
+      // Fallback for small files sent directly
+      if (doc?.base64) {
+        return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
+      }
+      return null;
+    };
+
     /**
      * TASK: STUDENT LEARNING OUTCOME (SLO) EXTRACTION
-     * Uses Gemini 3 Flash for high-speed structural analysis of documents.
      */
     if (task === 'extract-slos') {
+      const docPart = await getDocPart();
+      if (!docPart) return NextResponse.json({ error: 'Document source inaccessible on the server.' }, { status: 400 });
+
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        CORE TASK: Analyze the provided curriculum document and extract precise Student Learning Outcomes (SLOs).
-        TAXONOMY RULES: ${brain.bloomRules}
-        OUTPUT REQUIREMENT: Return a valid JSON array of SLO objects only.
+        CORE TASK: Analyze the provided document natively. Extract Student Learning Outcomes (SLOs).
+        TAXONOMY: ${brain.bloomRules}
+        OUTPUT: JSON array of SLO objects.
       `;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: {
           parts: [
-            { text: "Read this document carefully and map out all learning objectives according to Bloom's taxonomy." },
-            { inlineData: { mimeType: doc.mimeType, data: doc.base64 } }
+            { text: "Map out the learning objectives for this document." },
+            docPart
           ]
         },
         config: {
@@ -79,13 +110,13 @@ export async function POST(req: NextRequest) {
 
     /**
      * TASK: PEDAGOGICAL ADAPTIVE CHAT (STREAMING)
-     * Uses Gemini 3 Pro for deep reasoning and educational strategy.
      */
     if (task === 'chat') {
+      const docPart = await getDocPart();
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
-        You are the Pedagogy Master AI. The user has provided a document for context. 
+        You are the Pedagogy Master AI. The user has provided a document context. 
         Refer to its content natively to provide expert pedagogical advice.
       `;
 
@@ -97,7 +128,7 @@ export async function POST(req: NextRequest) {
         {
           role: 'user',
           parts: [
-            ...(doc?.base64 && doc?.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
+            ...(docPart ? [docPart] : []),
             { text: message }
           ]
         }
@@ -115,10 +146,10 @@ export async function POST(req: NextRequest) {
           try {
             for await (const chunk of streamResponse) {
               const c = chunk as GenerateContentResponse;
-              if (c.text) {
-                controller.enqueue(encoder.encode(c.text));
-              }
+              if (c.text) controller.enqueue(encoder.encode(c.text));
             }
+          } catch (e) {
+            console.error("Stream break:", e);
           } finally {
             controller.close();
           }
@@ -132,6 +163,7 @@ export async function POST(req: NextRequest) {
      * TASK: EDUCATIONAL TOOL SYNTHESIS (STREAMING)
      */
     if (task === 'generate-tool') {
+      const docPart = await getDocPart();
       const systemInstruction = `
         ${brain.masterPrompt}
         ${adaptiveContext || ''}
@@ -140,7 +172,7 @@ export async function POST(req: NextRequest) {
       `;
 
       const parts: any[] = [
-        ...(doc?.base64 && doc?.mimeType ? [{ inlineData: { mimeType: doc.mimeType, data: doc.base64 } }] : []),
+        ...(docPart ? [docPart] : []),
         { text: `Draft a high-quality ${toolType}. Specific requirements: ${userInput}` }
       ];
 
@@ -156,10 +188,10 @@ export async function POST(req: NextRequest) {
           try {
             for await (const chunk of streamResponse) {
               const c = chunk as GenerateContentResponse;
-              if (c.text) {
-                controller.enqueue(encoder.encode(c.text));
-              }
+              if (c.text) controller.enqueue(encoder.encode(c.text));
             }
+          } catch (e) {
+             console.error("Tool stream break:", e);
           } finally {
             controller.close();
           }

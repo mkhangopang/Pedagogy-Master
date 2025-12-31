@@ -35,7 +35,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
 
-    // FEEDBACK: Copy is a strong success signal (Export/Accept)
     if (currentArtifactId) {
       await adaptiveService.captureEvent(user.id, currentArtifactId, 'accept');
     }
@@ -46,7 +45,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     const userMsg = messages[index - 1];
     if (userMsg.role !== 'user') return;
     
-    // FEEDBACK: Regeneration is a failure signal for the previous output
     if (currentArtifactId) {
       await adaptiveService.captureEvent(user.id, currentArtifactId, 'abandon', { reason: 'regeneration' });
     }
@@ -97,7 +95,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         msgContent,
         {
           base64: selectedDoc?.base64Data,
-          mimeType: selectedDoc?.mimeType
+          mimeType: selectedDoc?.mimeType,
+          filePath: selectedDoc?.filePath
         },
         chatHistory,
         brain,
@@ -113,7 +112,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         }
       }
 
-      // RECORD ARTIFACT: Store the generated response for behavioral analysis
       const artifactId = await adaptiveService.captureGeneration(
         user.id, 
         'chat-response', 
@@ -124,7 +122,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       
     } catch (err) {
       console.error(err);
-      const errorText = "The AI engine encountered an error. Please check your connectivity or API key.";
+      const errorText = "The AI engine encountered an error. This can happen with very large documents. Please try a shorter query.";
       setMessages(prev => 
         prev.map(m => m.id === aiMessageId ? { ...m, content: errorText } : m)
       );
@@ -221,7 +219,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                         {m.content || (isLoading && idx === messages.length - 1 ? (
                           <div className="flex items-center gap-2 text-indigo-400">
                             <Loader2 size={16} className="animate-spin" />
-                            <span className="text-sm italic">Engine thinking...</span>
+                            <span className="text-sm italic">Synthesizing...</span>
                           </div>
                         ) : "")}
                       </div>
@@ -233,14 +231,14 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                             className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
                           >
                             {copiedId === m.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                            {copiedId === m.id ? 'Saved to Clipboard' : 'Copy Output'}
+                            {copiedId === m.id ? 'Saved' : 'Copy'}
                           </button>
                           <button 
                             onClick={() => handleRegenerate(idx)} 
                             className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
                           >
                             <RefreshCcw size={14} />
-                            Regenerate
+                            Retry
                           </button>
                         </div>
                       )}
@@ -257,7 +255,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
             {!canQuery && (
               <div className="mb-3 p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-3 text-rose-700">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <p className="text-[10px] font-bold uppercase tracking-wider">Usage limit reached. Upgrade for unlimited queries.</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider">Usage limit reached.</p>
               </div>
             )}
             <div className="relative group">
@@ -272,7 +270,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                 }}
                 rows={1}
                 disabled={!canQuery || isLoading}
-                placeholder={!canQuery ? "Subscription limit reached..." : "Ask your pedagogical tutor..."}
+                placeholder={!canQuery ? "Quota reached..." : "Enter your query..."}
                 className="w-full pl-5 pr-14 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all disabled:opacity-50 text-base font-medium resize-none shadow-sm max-h-40"
               />
               <button 

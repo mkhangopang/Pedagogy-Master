@@ -24,7 +24,7 @@ interface DocumentsProps {
   userPlan: SubscriptionPlan;
 }
 
-type UploadStage = 'idle' | 'reading' | 'uploading' | 'persisting' | 'complete' | 'error';
+type UploadStage = 'idle' | 'uploading' | 'persisting' | 'complete' | 'error';
 
 interface DetailedError {
   type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage';
@@ -72,14 +72,13 @@ const Documents: React.FC<DocumentsProps> = ({
   useEffect(() => {
     let interval: any;
     if (isUploading) {
-      if (uploadStage === 'reading') {
-        setProgress(15);
-      } else if (uploadStage === 'uploading') {
+      if (uploadStage === 'uploading') {
+        // Smoothly progress to 90% while the stream is active
         interval = setInterval(() => {
-          setProgress(prev => (prev < 60 ? prev + 1 : prev));
-        }, 800);
+          setProgress(prev => (prev < 90 ? prev + 0.5 : prev));
+        }, 1000);
       } else if (uploadStage === 'persisting') {
-        setProgress(85);
+        setProgress(95);
       } else if (uploadStage === 'complete') {
         setProgress(100);
       } else if (uploadStage === 'error') {
@@ -91,18 +90,6 @@ const Documents: React.FC<DocumentsProps> = ({
     return () => clearInterval(interval);
   }, [isUploading, uploadStage]);
 
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => {
-        const base64String = (reader.result as string).split(',')[1];
-        resolve(base64String);
-      };
-      reader.onerror = error => reject(error);
-    });
-  };
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -113,7 +100,7 @@ const Documents: React.FC<DocumentsProps> = ({
       setDetailedError({
         type: 'format',
         title: 'Unsupported Format',
-        message: `File type "${file.type}" is not pedagogically extractable.`,
+        message: `File type "${file.type}" is not supported.`,
         fix: 'Use PDF, DOCX, or plain text.'
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -124,8 +111,8 @@ const Documents: React.FC<DocumentsProps> = ({
       setDetailedError({
         type: 'generic',
         title: 'File Too Large',
-        message: `Current limit is ${MAX_FILE_SIZE_MB}MB.`,
-        fix: 'Split the document into smaller chapters.'
+        message: `Maximum allowed size is ${MAX_FILE_SIZE_MB}MB.`,
+        fix: 'Compress the document or split it.'
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
@@ -137,34 +124,25 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     setIsUploading(true);
+    setUploadStage('uploading');
     const docId = crypto.randomUUID();
 
     try {
-      setUploadStage('reading');
-      const base64 = await fileToBase64(file);
-      
-      await new Promise(r => setTimeout(r, 1000));
-      
-      setUploadStage('uploading');
-      
-      const uploadPromise = uploadFile(file);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Cloud Storage Timeout: Transmition took too long. Check your internet or v37 SQL Patch.')), 45000)
-      );
-
-      const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as { path: string };
+      // Step 1: Upload directly using native browser streams (No Base64 to save RAM)
+      const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
 
       setUploadStage('persisting');
+      
       const newDoc: Document = {
         id: docId,
         userId: '', 
         name: file.name,
-        base64Data: base64, 
+        // We skip base64Data here; the server will fetch from filePath when needed
         filePath: filePath,
         mimeType: file.type || 'application/octet-stream',
         status: 'completed',
-        subject: 'Ready for AI',
+        subject: 'Cloud Sync Active',
         gradeLevel: 'Auto',
         sloTags: [],
         createdAt: new Date().toISOString()
@@ -172,26 +150,25 @@ const Documents: React.FC<DocumentsProps> = ({
 
       await onAddDocument(newDoc);
       setSelectedDocId(docId);
-      
       setUploadStage('complete');
 
       setTimeout(() => {
         setIsUploading(false);
         setUploadStage('idle');
-      }, 1000);
+      }, 1500);
 
     } catch (err: any) {
-      console.error("Upload Failure:", err);
+      console.error("Critical Upload Error:", err);
       setUploadStage('error');
       
       setDetailedError({ 
-        type: 'storage', 
-        title: 'Connection Lost', 
-        message: err.message || 'The secure transfer was interrupted.',
-        fix: 'Refresh the page and ensure you have applied SQL Patch v37.'
+        type: 'network', 
+        title: 'Sync Interrupted', 
+        message: err.message || 'The server rejected the file stream.',
+        fix: 'Refresh and try again. Ensure SQL Patch v38 is active.'
       });
       
-      setTimeout(() => setIsUploading(false), 4000);
+      setTimeout(() => setIsUploading(false), 5000);
     } finally {
        if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -199,19 +176,18 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStatusText = () => {
     switch (uploadStage) {
-      case 'reading': return 'Reading File';
-      case 'uploading': return 'Cloud Sync';
-      case 'persisting': return 'Saving Workspace';
-      case 'complete': return 'Ready for AI';
-      case 'error': return 'Transfer Failed';
-      default: return 'Wait...';
+      case 'uploading': return 'Streaming to Cloud';
+      case 'persisting': return 'Saving Record';
+      case 'complete': return 'Material Online';
+      case 'error': return 'Sync Interrupted';
+      default: return 'Standby...';
     }
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24">
       {isUploading && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
           <div className="bg-white rounded-[3rem] p-12 max-w-md w-full shadow-2xl text-center space-y-8 animate-in zoom-in-95 duration-300">
             <div className="relative w-28 h-28 mx-auto">
               <svg className="w-full h-full -rotate-90">
@@ -221,7 +197,7 @@ const Documents: React.FC<DocumentsProps> = ({
                   strokeDasharray={314}
                   strokeDashoffset={314 - (314 * progress) / 100}
                   strokeLinecap="round"
-                  className="transition-all duration-500 ease-out"
+                  className="transition-all duration-300 ease-out"
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center text-indigo-600 font-black text-2xl">
@@ -231,7 +207,7 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="space-y-2">
               <h3 className="text-2xl font-black text-slate-900">{getStatusText()}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
-                {uploadStage === 'uploading' ? 'Uploading to secure institutional storage...' : 'Finalizing document registration...'}
+                {uploadStage === 'uploading' ? 'Transmitting high-fidelity curriculum data...' : 'Finalizing secure persistence...'}
               </p>
             </div>
           </div>

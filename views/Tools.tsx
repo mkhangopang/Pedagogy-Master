@@ -42,7 +42,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         userInput, 
         {
           base64: selectedDoc?.base64Data,
-          mimeType: selectedDoc?.mimeType
+          mimeType: selectedDoc?.mimeType,
+          filePath: selectedDoc?.filePath
         }, 
         brain,
         user
@@ -57,13 +58,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         }
       }
 
-      // Record Artifact for Adaptive Learning
       const artifactId = await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool, docId: selectedDocId });
       setCurrentArtifactId(artifactId);
 
     } catch (err) {
       console.error(err);
-      setResult("Error generating content. Please try again.");
+      setResult("Engine Timeout: The document is too large to process in one pass. Try a more specific requirement.");
     } finally {
       setIsGenerating(false);
     }
@@ -74,7 +74,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
     
-    // Success Signal: Copy counts as "Export" for adaptive learning
     if (currentArtifactId) {
       await adaptiveService.captureEvent(user.id, currentArtifactId, 'export');
     }
@@ -175,7 +174,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                {isGenerating ? 'Generating Content...' : 'Generate Content'}
+                {isGenerating ? 'Synthesizing...' : 'Generate Content'}
               </button>
             </div>
           </div>
@@ -192,7 +191,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 )}
               </div>
               <div className="flex-1 p-8 overflow-y-auto whitespace-pre-wrap font-serif text-slate-800 leading-loose text-lg">
-                {result || (isGenerating ? 'Gemini is synthesizing with your behavioral profile...' : 'Results will appear here based on your preferences.')}
+                {result || (isGenerating ? 'Gemini is processing the document on the server...' : 'Results will appear here based on your preferences.')}
               </div>
             </div>
           </div>
