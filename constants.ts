@@ -4,6 +4,7 @@ import { UserRole, SubscriptionPlan } from './types';
 export const APP_NAME = "Pedagogy Master";
 
 export const ADMIN_EMAILS = [
+  'mkgopang@gmail.com',
   'admin@edunexus.ai',
   'fasi.2001@live.com'
 ];
