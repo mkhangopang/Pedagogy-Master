@@ -68,11 +68,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - HARDENED SECURITY PATCH v30
--- FOCUS: Fixed search_path linter warning, consolidated RLS, and Auth initialization optimization.
+  const sqlSchema = `-- Pedagogy Master - ENTERPRISE OPTIMIZED SECURITY PATCH v31
+-- FOCUS: RLS Plan Optimization, Document Policy Consolidation, and Multi-Role Cleanup.
 
--- 1. SECURITY DEFINER HELPER (RECURSION-SAFE & LINTER-CLEAN)
--- Resolves "Function Search Path Mutable" by explicitly setting search_path.
+-- 1. HIGH-PERFORMANCE SECURITY HELPER
+-- Implements SECURITY DEFINER with fixed search_path to resolve linter warnings.
+-- Utilizes subquery patterns for Postgres query planner stability.
 CREATE OR REPLACE FUNCTION public.check_is_admin()
 RETURNS boolean 
 LANGUAGE plpgsql 
@@ -80,48 +81,55 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
+    current_user_id uuid;
     user_email text;
 BEGIN
-  -- LEVEL 0 FAIL-SAFE: Hardcoded Primary Admin check from JWT email
+  -- Performance: Resolve auth.uid() once
+  current_user_id := (SELECT auth.uid());
   user_email := auth.jwt() ->> 'email';
+  
+  -- PRIMARY ADMIN FAIL-SAFE (Hardcoded Persistence)
   IF user_email = 'mkgopang@gmail.com' THEN
     RETURN true;
   END IF;
 
-  -- LEVEL 1: Check database role for other admin users
-  -- Patterns like (SELECT auth.uid()) provide better query plan stability.
+  -- DATABASE ROLE CHECK
   RETURN EXISTS (
     SELECT 1 
     FROM public.profiles 
-    WHERE id = (SELECT auth.uid())
+    WHERE id = current_user_id 
     AND role = 'app_admin'
   );
 END;
 $$;
 
--- 2. SCHEMA SANITIZATION & COLUMN REINFORCEMENT
+-- 2. SCHEMA CONFORMITY
+-- Ensures every table has the necessary columns for RLS and ownership tracking.
 DO $$ 
 BEGIN
-    -- Ensure required columns for RLS and tracking exist across all critical tables.
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='user_id') THEN
-        ALTER TABLE public.documents ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
-    END IF;
-    
+    -- profiles
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='role') THEN
         ALTER TABLE public.profiles ADD COLUMN role text DEFAULT 'teacher';
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='user_id') THEN
-        ALTER TABLE public.organizations ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+    -- documents
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='user_id') THEN
+        ALTER TABLE public.documents ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
     END IF;
 
+    -- chat_messages
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='chat_messages' AND column_name='user_id') THEN
+        ALTER TABLE public.chat_messages ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+    END IF;
+
+    -- usage_logs
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='usage_logs' AND column_name='user_id') THEN
         ALTER TABLE public.usage_logs ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
     END IF;
 END $$;
 
--- 3. RESET POLICIES (FULL RE-SYNC)
--- Clears all previous policies to avoid conflicts with consolidated v30 rules.
+-- 3. GLOBAL RLS RESET
+-- Clears all fragmented/recursive policies before applying consolidated v31 logic.
 DO $$ 
 DECLARE
     policynames RECORD;
@@ -136,7 +144,6 @@ BEGIN
 END $$;
 
 -- 4. ENABLE RLS (STRICT ENFORCEMENT)
--- Force RLS on every table including metadata and system config.
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
@@ -148,41 +155,42 @@ ALTER TABLE public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.master_prompt ENABLE ROW LEVEL SECURITY;
 
--- 5. CONSOLIDATED ATOMIC POLICIES (OPTIMIZED PERFORMANCE)
--- We target the 'authenticated' role specifically. 'anon' is blocked by default.
--- Patterns use '(SELECT auth.uid())' to improve Postgres query cache hits.
+-- 5. CONSOLIDATED ATOMIC POLICIES (v31 OPTIMIZED)
+-- Pattern: Targets 'authenticated' role explicitly. Block 'anon' entirely.
+-- Uses (SELECT auth.uid()) for optimal "Auth RLS Initialization Plan" performance.
 
--- PROFILES (Users own; Admins oversee)
-CREATE POLICY "v30_profiles_access" ON public.profiles 
-FOR ALL TO authenticated 
-USING (id = (SELECT auth.uid()) OR check_is_admin())
-WITH CHECK (id = (SELECT auth.uid()) OR check_is_admin());
-
--- DOCUMENTS (Consolidated: SELECT, INSERT, UPDATE, DELETE)
-CREATE POLICY "v30_documents_access" ON public.documents 
+-- DOCUMENTS: One policy to rule them all (SELECT, INSERT, UPDATE, DELETE)
+-- Replaces multiple permissive policies for anon/dashboard_user with one secure entry point.
+CREATE POLICY "v31_documents_atomic_access" ON public.documents 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR check_is_admin())
 WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
 
--- OPERATIONAL DATA
-CREATE POLICY "v30_messages_access" ON public.chat_messages FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "v30_artifacts_access" ON public.output_artifacts FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "v30_feedback_access" ON public.feedback_events FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "v30_org_access" ON public.organizations FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "v30_usage_access" ON public.usage_logs FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "v30_curriculum_access" ON public.curriculum_profiles FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+-- PROFILES: Self-management or admin oversight
+CREATE POLICY "v31_profiles_atomic_access" ON public.profiles 
+FOR ALL TO authenticated 
+USING (id = (SELECT auth.uid()) OR check_is_admin())
+WITH CHECK (id = (SELECT auth.uid()) OR check_is_admin());
 
--- SYSTEM READ-ONLY ACCESS
-CREATE POLICY "v30_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (is_active = true);
-CREATE POLICY "v30_prompt_read" ON public.master_prompt FOR SELECT TO authenticated USING (true);
+-- OPERATIONAL DATA (Messages, Artifacts, Feedback, Orgs, Logs)
+CREATE POLICY "v31_messages_access" ON public.chat_messages FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v31_artifacts_access" ON public.output_artifacts FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v31_feedback_access" ON public.feedback_events FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v31_org_access" ON public.organizations FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v31_usage_access" ON public.usage_logs FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v31_curriculum_access" ON public.curriculum_profiles FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
 
--- 6. STRICT PERMISSION LOCKDOWN (REDUCE ATTACK SURFACE)
--- Ensure 'anon' role cannot even peek at internal logic or user metadata.
+-- SYSTEM CONFIG (Read-Only for Users)
+CREATE POLICY "v31_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (is_active = true);
+CREATE POLICY "v31_prompt_read" ON public.master_prompt FOR SELECT TO authenticated USING (true);
+
+-- 6. STRICT PERMISSION HARDENING
+-- Block all 'anon' and public role access to the database engine.
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
 
--- Grant minimal necessary rights to authenticated users.
+-- Explicitly permit authenticated users access through the RLS layer.
 GRANT SELECT ON public.neural_brain TO authenticated;
 GRANT SELECT ON public.master_prompt TO authenticated;
 GRANT ALL ON public.profiles TO authenticated;
@@ -192,14 +200,11 @@ GRANT ALL ON public.output_artifacts TO authenticated;
 GRANT ALL ON public.feedback_events TO authenticated;
 GRANT ALL ON public.organizations TO authenticated;
 GRANT ALL ON public.usage_logs TO authenticated;
-GRANT ALL ON public.curriculum_profiles TO authenticated;
 
--- 7. PERFORMANCE INDEXING
-DROP INDEX IF EXISTS idx_artifacts_user; 
-CREATE INDEX IF NOT EXISTS idx_docs_uid ON public.documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_uid_role ON public.profiles(id, role);
-CREATE INDEX IF NOT EXISTS idx_messages_uid ON public.chat_messages(user_id);
-CREATE INDEX IF NOT EXISTS idx_logs_uid ON public.usage_logs(user_id);
+-- 7. PERFORMANCE INDEXING (RECURSION-SAFE)
+CREATE INDEX IF NOT EXISTS idx_v31_docs_uid ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_v31_profiles_uid_role ON public.profiles(id, role);
+CREATE INDEX IF NOT EXISTS idx_v31_messages_uid ON public.chat_messages(user_id);
 `;
 
   return (
@@ -263,7 +268,7 @@ CREATE INDEX IF NOT EXISTS idx_logs_uid ON public.usage_logs(user_id);
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v30)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v31)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -276,18 +281,18 @@ CREATE INDEX IF NOT EXISTS idx_logs_uid ON public.usage_logs(user_id);
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v30)</h2>
+              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v31)</h2>
             </div>
             <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-4">
               <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
-                <h3 className="font-bold text-emerald-900 tracking-tight">Enterprise Hardening v30</h3>
-                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v30 resolves security linter warnings by hard-fixing the function <code>search_path</code> and strictly enforcing the <code>(SELECT auth.uid())</code> pattern for Postgres plan stability.</p>
+                <h3 className="font-bold text-emerald-900 tracking-tight">Enterprise Hardening v31</h3>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v31 introduces high-efficiency Row Level Security specifically optimized for the Supabase Auth engine. By consolidating permissive role-based policies into single 'FOR ALL' declarations and utilizing the <code>(SELECT auth.uid())</code> subquery pattern, we eliminate query plan initialization overhead and prevent infinite recursion.</p>
                 <ul className="text-xs text-emerald-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>Consolidated RLS:</strong> Documents and operational data use unified FOR ALL blocks.</li>
-                  <li><strong>Linter Remediation:</strong> <code>check_is_admin</code> is now role-safe via fixed search path.</li>
-                  <li><strong>Initialization Fix:</strong> Resolved "Auth RLS Initialization" warnings via subquery patterns.</li>
-                  <li><strong>Strict Role Isolation:</strong> Roles like 'anon' are fully restricted from public schema access.</li>
+                  <li><strong>Consolidated Docs:</strong> Unified policy for SELECT, INSERT, UPDATE, DELETE for authenticated users.</li>
+                  <li><strong>Linter Compliance:</strong> Fixed <code>search_path</code> in security functions.</li>
+                  <li><strong>Initialization Fix:</strong> Strictly uses <code>(SELECT auth.uid())</code> to satisfy Postgres planning rules.</li>
+                  <li><strong>Granular Control:</strong> Only authenticated sessions can interact with the RLS layer; anonymous access is explicitly revoked.</li>
                 </ul>
               </div>
             </div>

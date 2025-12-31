@@ -14,19 +14,19 @@ import { isSupportedFileType, SUPPORTED_MIME_TYPES } from '../lib/gemini-file';
 
 interface DocumentsProps {
   documents: Document[];
-  onAddDocument: (doc: Document) => void;
-  onUpdateDocument: (id: string, updates: Partial<Document>) => void;
-  onDeleteDocument: (id: string) => void;
+  onAddDocument: (doc: Document) => Promise<void>;
+  onUpdateDocument: (id: string, updates: Partial<Document>) => Promise<void>;
+  onDeleteDocument: (id: string) => Promise<void>;
   brain: NeuralBrain;
   onQuery: () => void;
   canQuery: boolean;
   userPlan: SubscriptionPlan;
 }
 
-type UploadStage = 'idle' | 'reading' | 'uploading' | 'analyzing' | 'complete' | 'error';
+type UploadStage = 'idle' | 'reading' | 'uploading' | 'persisting' | 'analyzing' | 'complete' | 'error';
 
 interface DetailedError {
-  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic';
+  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage';
   title: string;
   message: string;
   fix?: string;
@@ -61,11 +61,13 @@ const Documents: React.FC<DocumentsProps> = ({
     let interval: any;
     if (isUploading) {
       if (uploadStage === 'reading') {
-        setProgress(15);
+        setProgress(10);
       } else if (uploadStage === 'uploading') {
         interval = setInterval(() => {
-          setProgress(prev => (prev < 45 ? prev + 5 : prev));
+          setProgress(prev => (prev < 40 ? prev + 5 : prev));
         }, 300);
+      } else if (uploadStage === 'persisting') {
+        setProgress(50);
       } else if (uploadStage === 'analyzing') {
         interval = setInterval(() => {
           setProgress(prev => (prev < 90 ? prev + 2 : prev));
@@ -97,7 +99,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
     setDetailedError(null);
 
-    // Initial Validation
+    // 0. Initial Validation
     if (!isSupportedFileType(file.type)) {
       setDetailedError({
         type: 'format',
@@ -136,41 +138,47 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     setIsUploading(true);
-    setUploadStage('reading');
-
     const docId = crypto.randomUUID();
 
     try {
       // Stage 1: Local Reading
+      setUploadStage('reading');
       const base64 = await fileToBase64(file).catch(() => {
         throw { type: 'generic', title: 'Read Failure', message: 'The browser could not read the local file bytes.' };
       });
       
-      const newDoc: Document = {
-        id: docId,
-        userId: '', 
-        name: file.name,
-        base64Data: base64,
-        mimeType: file.type || 'application/octet-stream',
-        status: 'processing',
-        subject: 'Initializing...',
-        gradeLevel: 'Detecting...',
-        sloTags: [],
-        createdAt: new Date().toISOString()
-      };
-
-      onAddDocument(newDoc);
-      setSelectedDocId(docId);
-      
-      // Stage 2: Cloud Storage
+      // Stage 2: Cloud Storage Upload (Upload First strategy)
       setUploadStage('uploading');
       const uploadResult = await uploadFile(file).catch(() => {
         throw { type: 'network', title: 'Network Interruption', message: 'Failed to secure your document to the cloud storage bucket.', fix: 'Check your internet connection and try again.' };
       });
-      
-      const filePath = uploadResult?.path;
 
-      // Stage 3: AI Analysis
+      if (!uploadResult) {
+        throw { type: 'storage', title: 'Upload Failed', message: 'The storage engine rejected the document.', fix: 'Verify you have storage permissions in Supabase.' };
+      }
+
+      const filePath = uploadResult.path;
+
+      // Stage 3: Database Persistence (Register as Processing)
+      setUploadStage('persisting');
+      const newDoc: Document = {
+        id: docId,
+        userId: '', 
+        name: file.name,
+        base64Data: base64, // Keep in memory for AI task
+        filePath: filePath,
+        mimeType: file.type || 'application/octet-stream',
+        status: 'processing',
+        subject: 'Uploading...',
+        gradeLevel: 'Initializing...',
+        sloTags: [],
+        createdAt: new Date().toISOString()
+      };
+
+      await onAddDocument(newDoc);
+      setSelectedDocId(docId);
+      
+      // Stage 4: AI Analysis
       setUploadStage('analyzing');
       const slos = await geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain).catch((err: any) => {
         if (err.message?.includes('401')) throw { type: 'auth', title: 'Session Expired', message: 'Your security token has expired.', fix: 'Please sign out and sign back in to refresh your credentials.' };
@@ -180,8 +188,8 @@ const Documents: React.FC<DocumentsProps> = ({
         throw { type: 'ai', title: 'Reasoning Error', message: 'Gemini was unable to extract pedagogical logic from this specific file content.', fix: 'Ensure the document contains clear learning objectives or structured text.' };
       });
 
-      onUpdateDocument(docId, { 
-        filePath,
+      // Stage 5: Final Update
+      await onUpdateDocument(docId, { 
         sloTags: slos, 
         status: slos.length > 0 ? 'completed' : 'failed',
         subject: slos.length > 0 ? 'Pedagogically Analyzed' : 'Low Relevance Detected'
@@ -199,7 +207,11 @@ const Documents: React.FC<DocumentsProps> = ({
       console.error("Diagnostic Processing failure:", err);
       setUploadStage('error');
       setDetailedError(err.type ? err : { type: 'generic', title: 'System Error', message: err.message || 'An unexpected error occurred during processing.' });
-      onUpdateDocument(docId, { status: 'failed', subject: 'Analysis Error' });
+      
+      // If the document was already added to the DB, update it to failed
+      if (uploadStage !== 'reading' && uploadStage !== 'uploading') {
+        onUpdateDocument(docId, { status: 'failed', subject: 'Analysis Error' });
+      }
       
       setTimeout(() => {
         setIsUploading(false);
@@ -211,6 +223,7 @@ const Documents: React.FC<DocumentsProps> = ({
     switch (uploadStage) {
       case 'reading': return 'Reading Document Bytes...';
       case 'uploading': return 'Securing to Cloud Storage...';
+      case 'persisting': return 'Registering Workspace Entry...';
       case 'analyzing': return 'Gemini AI Neural Extraction...';
       case 'complete': return 'Ready for Instruction!';
       case 'error': return 'Processing Interrupted';
@@ -363,7 +376,7 @@ const Documents: React.FC<DocumentsProps> = ({
                   <h2 className="font-bold text-slate-900 truncate text-xl tracking-tight">{selectedDoc.name}</h2>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest ${selectedDoc.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                      {selectedDoc.status === 'completed' ? 'Fully Analyzed' : 'Incomplete'}
+                      {selectedDoc.status === 'completed' ? 'Fully Analyzed' : selectedDoc.status === 'processing' ? 'Processing' : 'Incomplete'}
                     </span>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">• {selectedDoc.mimeType.split('/').pop()?.toUpperCase()}</span>
                   </div>
@@ -421,7 +434,7 @@ const Documents: React.FC<DocumentsProps> = ({
                 </div>
               ))}
               
-              {selectedDoc.sloTags.length === 0 && selectedDoc.status !== 'failed' && (
+              {(selectedDoc.sloTags.length === 0 && selectedDoc.status === 'processing') && (
                 <div className="col-span-full py-24 text-center bg-white rounded-[3rem] border-2 border-dashed border-slate-200 shadow-inner">
                   <Loader2 className="w-10 h-10 animate-spin text-indigo-200 mx-auto mb-4" />
                   <h4 className="text-slate-900 font-bold text-lg">Synthesizing Pedagogical Data...</h4>
@@ -463,7 +476,7 @@ const Documents: React.FC<DocumentsProps> = ({
               <h3 className="text-xl font-bold truncate text-slate-900 group-hover:text-indigo-600 transition-colors tracking-tight">{doc.name}</h3>
               <div className="flex items-center gap-3 mt-3">
                 <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">
-                  {doc.status === 'failed' ? 'Processing Error' : doc.subject}
+                  {doc.status === 'failed' ? 'Processing Error' : doc.status === 'processing' ? 'In Queue' : doc.subject}
                 </p>
                 <div className="w-1 h-1 bg-slate-200 rounded-full" />
                 <p className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">
