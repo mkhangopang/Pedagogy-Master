@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy } from 'react';
@@ -141,12 +140,21 @@ export default function App() {
             queries_limit: activeProfile.queriesLimit
           }]);
         } else {
+          // FORCE ADMIN ROLE PERSISTENCE: If email is in ADMIN_EMAILS, force the role even if DB says otherwise
+          const forcedRole = isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole);
+          const forcedPlan = isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan);
+
+          // If the database is out of sync with the hardcoded admin list, correct it immediately
+          if (isSystemAdmin && profile.role !== UserRole.APP_ADMIN) {
+             await supabase.from('profiles').update({ role: UserRole.APP_ADMIN, plan: SubscriptionPlan.ENTERPRISE }).eq('id', userId);
+          }
+
           activeProfile = {
             id: profile.id,
             name: profile.name || 'Educator',
             email: profile.email || '',
-            role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
-            plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
+            role: forcedRole,
+            plan: forcedPlan,
             queriesUsed: profile.queries_used || 0,
             queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
             gradeLevel: profile.grade_level,
@@ -159,7 +167,6 @@ export default function App() {
           };
         }
         
-        // Fetch real documents from DB
         const { data: docs, error: docError } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
         if (docError) throw docError;
         
@@ -179,13 +186,12 @@ export default function App() {
           })));
         }
       } else {
-        // Fallback profile if disconnected
         activeProfile = {
           id: userId,
           name: email?.split('@')[0] || 'Educator',
           email: email || '',
-          role: UserRole.TEACHER,
-          plan: SubscriptionPlan.FREE,
+          role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
           queriesUsed: 0,
           queriesLimit: 30,
           generationCount: 0,
@@ -223,7 +229,6 @@ export default function App() {
                 <Documents 
                   documents={documents} 
                   onAddDocument={async (doc) => {
-                    // PERSISTENCE GUARD
                     if (isActuallyConnected) {
                       const { error } = await supabase.from('documents').insert([{
                         id: doc.id, 

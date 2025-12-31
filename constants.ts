@@ -1,10 +1,13 @@
-
 import { UserRole, SubscriptionPlan } from './types';
 
 export const APP_NAME = "Pedagogy Master";
 
+/**
+ * PRIMARY ADMINISTRATIVE CONFIGURATION
+ * These emails bypass standard role checks and are granted 'app_admin' status.
+ */
 export const ADMIN_EMAILS = [
-  'mkgopang@gmail.com',
+  'mkgopang@gmail.com', // Primary Admin
   'admin@edunexus.ai',
   'fasi.2001@live.com'
 ];
