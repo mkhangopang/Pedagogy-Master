@@ -68,13 +68,17 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - OPTIMIZED SECURITY PATCH v29
--- FOCUS: Auth RLS Initialization optimization and Document policy consolidation.
+  const sqlSchema = `-- Pedagogy Master - HARDENED SECURITY PATCH v30
+-- FOCUS: Fixed search_path linter warning, consolidated RLS, and Auth initialization optimization.
 
--- 1. SECURITY DEFINER HELPER (RECURSION-FREE)
--- Decouples policy logic from table lookups to prevent 'Infinite Recursion' errors.
+-- 1. SECURITY DEFINER HELPER (RECURSION-SAFE & LINTER-CLEAN)
+-- Resolves "Function Search Path Mutable" by explicitly setting search_path.
 CREATE OR REPLACE FUNCTION public.check_is_admin()
-RETURNS boolean AS $$
+RETURNS boolean 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = public
+AS $$
 DECLARE
     user_email text;
 BEGIN
@@ -85,7 +89,7 @@ BEGIN
   END IF;
 
   -- LEVEL 1: Check database role for other admin users
-  -- Note: We do not use auth.uid() here to keep this function strictly definer-context independent
+  -- Patterns like (SELECT auth.uid()) provide better query plan stability.
   RETURN EXISTS (
     SELECT 1 
     FROM public.profiles 
@@ -93,12 +97,12 @@ BEGIN
     AND role = 'app_admin'
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
--- 2. SCHEMA SANITIZATION
--- Ensure required columns for RLS tracking exist across the architecture.
+-- 2. SCHEMA SANITIZATION & COLUMN REINFORCEMENT
 DO $$ 
 BEGIN
+    -- Ensure required columns for RLS and tracking exist across all critical tables.
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='user_id') THEN
         ALTER TABLE public.documents ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
     END IF;
@@ -106,9 +110,18 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='role') THEN
         ALTER TABLE public.profiles ADD COLUMN role text DEFAULT 'teacher';
     END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='user_id') THEN
+        ALTER TABLE public.organizations ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='usage_logs' AND column_name='user_id') THEN
+        ALTER TABLE public.usage_logs ADD COLUMN user_id uuid REFERENCES auth.users ON DELETE CASCADE;
+    END IF;
 END $$;
 
--- 3. RESET LEGACY POLICIES
+-- 3. RESET POLICIES (FULL RE-SYNC)
+-- Clears all previous policies to avoid conflicts with consolidated v30 rules.
 DO $$ 
 DECLARE
     policynames RECORD;
@@ -122,7 +135,8 @@ BEGIN
     END LOOP;
 END $$;
 
--- 4. ENABLE RLS (STRICT MODE)
+-- 4. ENABLE RLS (STRICT ENFORCEMENT)
+-- Force RLS on every table including metadata and system config.
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
@@ -134,45 +148,58 @@ ALTER TABLE public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.master_prompt ENABLE ROW LEVEL SECURITY;
 
--- 5. OPTIMIZED CONSOLIDATED POLICIES
--- Pattern: Using '(SELECT auth.uid())' instead of 'auth.uid()' directly 
--- addresses Supabase "Auth RLS Initialization Plan" performance warnings.
+-- 5. CONSOLIDATED ATOMIC POLICIES (OPTIMIZED PERFORMANCE)
+-- We target the 'authenticated' role specifically. 'anon' is blocked by default.
+-- Patterns use '(SELECT auth.uid())' to improve Postgres query cache hits.
 
--- PROFILES
-CREATE POLICY "profiles_unified_access" ON public.profiles 
+-- PROFILES (Users own; Admins oversee)
+CREATE POLICY "v30_profiles_access" ON public.profiles 
 FOR ALL TO authenticated 
 USING (id = (SELECT auth.uid()) OR check_is_admin())
 WITH CHECK (id = (SELECT auth.uid()) OR check_is_admin());
 
 -- DOCUMENTS (Consolidated: SELECT, INSERT, UPDATE, DELETE)
--- Only 'authenticated' users can see their own data. 'anon' is strictly blocked.
-CREATE POLICY "documents_unified_access" ON public.documents 
+CREATE POLICY "v30_documents_access" ON public.documents 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR check_is_admin())
 WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
 
--- OPERATIONAL DATA (Messages, Artifacts, Events, Logs)
-CREATE POLICY "messages_unified_access" ON public.chat_messages FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "artifacts_unified_access" ON public.output_artifacts FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "feedback_unified_access" ON public.feedback_events FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "org_unified_access" ON public.organizations FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
-CREATE POLICY "usage_unified_access" ON public.usage_logs FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+-- OPERATIONAL DATA
+CREATE POLICY "v30_messages_access" ON public.chat_messages FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v30_artifacts_access" ON public.output_artifacts FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v30_feedback_access" ON public.feedback_events FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v30_org_access" ON public.organizations FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v30_usage_access" ON public.usage_logs FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v30_curriculum_access" ON public.curriculum_profiles FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin()) WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
 
--- SYSTEM READ-ONLY (Brain & Prompt Engine)
-CREATE POLICY "brain_read_only" ON public.neural_brain FOR SELECT TO authenticated USING (is_active = true);
-CREATE POLICY "prompt_read_only" ON public.master_prompt FOR SELECT TO authenticated USING (true);
+-- SYSTEM READ-ONLY ACCESS
+CREATE POLICY "v30_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (is_active = true);
+CREATE POLICY "v30_prompt_read" ON public.master_prompt FOR SELECT TO authenticated USING (true);
 
--- 6. PERMISSION LOCKDOWN
+-- 6. STRICT PERMISSION LOCKDOWN (REDUCE ATTACK SURFACE)
+-- Ensure 'anon' role cannot even peek at internal logic or user metadata.
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon;
+
+-- Grant minimal necessary rights to authenticated users.
 GRANT SELECT ON public.neural_brain TO authenticated;
 GRANT SELECT ON public.master_prompt TO authenticated;
-GRANT ALL ON public.documents TO authenticated;
 GRANT ALL ON public.profiles TO authenticated;
+GRANT ALL ON public.documents TO authenticated;
+GRANT ALL ON public.chat_messages TO authenticated;
+GRANT ALL ON public.output_artifacts TO authenticated;
+GRANT ALL ON public.feedback_events TO authenticated;
+GRANT ALL ON public.organizations TO authenticated;
+GRANT ALL ON public.usage_logs TO authenticated;
+GRANT ALL ON public.curriculum_profiles TO authenticated;
 
--- 7. PERFORMANCE & LINTER OPTIMIZATION
-DROP INDEX IF EXISTS idx_artifacts_user; -- Duplicate of user_id identified by linter
-CREATE INDEX IF NOT EXISTS idx_docs_perf ON public.documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_perf ON public.profiles(id, role);
+-- 7. PERFORMANCE INDEXING
+DROP INDEX IF EXISTS idx_artifacts_user; 
+CREATE INDEX IF NOT EXISTS idx_docs_uid ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_uid_role ON public.profiles(id, role);
+CREATE INDEX IF NOT EXISTS idx_messages_uid ON public.chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_logs_uid ON public.usage_logs(user_id);
 `;
 
   return (
@@ -236,7 +263,7 @@ CREATE INDEX IF NOT EXISTS idx_profiles_perf ON public.profiles(id, role);
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v29)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v30)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -249,18 +276,18 @@ CREATE INDEX IF NOT EXISTS idx_profiles_perf ON public.profiles(id, role);
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v29)</h2>
+              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v30)</h2>
             </div>
             <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-4">
               <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
-                <h3 className="font-bold text-emerald-900 tracking-tight">Optimized Plan Initialization</h3>
-                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v29 addresses "Auth RLS Initialization Plan" warnings by strictly utilizing the <code>(SELECT auth.uid())</code> subquery pattern. This provides significantly better query plan caching in PostgreSQL, especially for heavy document analysis tasks.</p>
+                <h3 className="font-bold text-emerald-900 tracking-tight">Enterprise Hardening v30</h3>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v30 resolves security linter warnings by hard-fixing the function <code>search_path</code> and strictly enforcing the <code>(SELECT auth.uid())</code> pattern for Postgres plan stability.</p>
                 <ul className="text-xs text-emerald-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>Consolidated Docs Policy:</strong> Atomic access for all CRUD operations.</li>
-                  <li><strong>Performance Pattern:</strong> Uses subquery <code>auth.uid()</code> calls for plan stability.</li>
-                  <li><strong>Zero-Recursion Admin:</strong> Hardcoded fail-safe for <code>mkgopang@gmail.com</code> persists regardless of updates.</li>
-                  <li><strong>Strict Role Lockdown:</strong> Non-authenticated (anon) access is fully revoked across all modules.</li>
+                  <li><strong>Consolidated RLS:</strong> Documents and operational data use unified FOR ALL blocks.</li>
+                  <li><strong>Linter Remediation:</strong> <code>check_is_admin</code> is now role-safe via fixed search path.</li>
+                  <li><strong>Initialization Fix:</strong> Resolved "Auth RLS Initialization" warnings via subquery patterns.</li>
+                  <li><strong>Strict Role Isolation:</strong> Roles like 'anon' are fully restricted from public schema access.</li>
                 </ul>
               </div>
             </div>
