@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -33,7 +34,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run the V31 SQL Patch.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run the V32 SQL Patch.' };
       if (profileError.code === 'PGRST301') return { status: 'rls_locked', message: 'API Key permissions blocked by RLS.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
@@ -86,10 +87,10 @@ export const uploadFile = async (file: File, bucket: string = 'documents'): Prom
   if (error) {
     console.error("Supabase Storage Error:", error);
     if (error.message.includes('New rows violated row level security')) {
-      throw new Error('Permission Denied: Ensure you have "INSERT" and "SELECT" policies for authenticated users on the "documents" bucket.');
+      throw new Error('Permission Denied: Run v32 SQL Patch in Supabase to grant Storage access.');
     }
     if (error.message.includes('bucket not found')) {
-      throw new Error(`Storage bucket "${bucket}" not found. Please create it in your Supabase Dashboard.`);
+      throw new Error(`Bucket "${bucket}" missing. Please create it manually in the Supabase Dashboard Storage tab.`);
     }
     throw new Error(`Upload failed: ${error.message}`);
   }
