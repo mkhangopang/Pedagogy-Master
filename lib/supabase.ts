@@ -26,7 +26,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
 
   try {
     // 1. Check Auth Connectivity
-    const { data: authData, error: authError } = await supabase.auth.getSession();
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
     if (authError) return { status: 'error', message: `Auth Error: ${authError.message}` };
 
     // 2. Check Tables Existence & RLS
@@ -64,40 +64,40 @@ export const verifyPersistence = async (userId: string): Promise<boolean> => {
 
 /**
  * Uploads a file to Supabase storage.
- * Throws errors if the bucket is missing or the upload fails.
+ * Directly attempts upload to avoid metadata-related hangs.
  */
 export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string }> => {
   if (!isSupabaseConfigured) {
-    throw new Error('Supabase project is not configured in environment variables.');
+    throw new Error('Supabase project is not configured.');
   }
   
   const fileExt = file.name.split('.').pop();
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
-  // Step 1: Connectivity/Bucket Check
-  const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
-  if (bucketError) {
-    throw new Error(`Cloud Storage connection failed: ${bucketError.message}`);
-  }
-
-  const targetBucket = buckets?.find(b => b.name === bucket);
-  if (!targetBucket) {
-    throw new Error(`Storage bucket "${bucket}" does not exist. Create it in the Supabase Dashboard -> Storage.`);
-  }
-
-  // Step 2: Perform Upload
-  const { data, error } = await supabase.storage.from(bucket).upload(fileName, file, {
-    cacheControl: '3600',
-    upsert: false
-  });
+  // Perform Direct Upload
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .upload(fileName, file, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: file.type || 'application/octet-stream'
+    });
   
   if (error) {
+    console.error("Supabase Storage Error:", error);
     if (error.message.includes('New rows violated row level security')) {
-      throw new Error('Storage RLS Policy Violation: You do not have permission to upload to this bucket.');
+      throw new Error('Permission Denied: Ensure you have "INSERT" and "SELECT" policies for authenticated users on the "documents" bucket.');
     }
-    throw error;
+    if (error.message.includes('bucket not found')) {
+      throw new Error(`Storage bucket "${bucket}" not found. Please create it in your Supabase Dashboard.`);
+    }
+    throw new Error(`Upload failed: ${error.message}`);
   }
   
+  if (!data?.path) {
+    throw new Error('Upload succeeded but no path was returned.');
+  }
+
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
   return { publicUrl, path: data.path };
 };
