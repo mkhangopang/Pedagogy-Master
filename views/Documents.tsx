@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Upload, FileText, Plus, ChevronLeft, Target, 
@@ -32,7 +33,6 @@ interface DetailedError {
   fix?: string;
 }
 
-// getErrorIcon maps error types to Lucide icons for UI feedback
 const getErrorIcon = (type: DetailedError['type']) => {
   switch (type) {
     case 'format': return <FileType size={24} />;
@@ -76,17 +76,15 @@ const Documents: React.FC<DocumentsProps> = ({
       if (uploadStage === 'reading') {
         setProgress(10);
       } else if (uploadStage === 'uploading') {
-        // Slow visual climb while waiting for storage
         interval = setInterval(() => {
-          setProgress(prev => (prev < 40 ? prev + 1 : prev));
-        }, 800);
+          setProgress(prev => (prev < 45 ? prev + 1 : prev));
+        }, 1000);
       } else if (uploadStage === 'persisting') {
-        setProgress(55);
+        setProgress(60);
       } else if (uploadStage === 'analyzing') {
-        // Slow visual climb while waiting for AI
         interval = setInterval(() => {
-          setProgress(prev => (prev < 90 ? prev + 1 : prev));
-        }, 1200);
+          setProgress(prev => (prev < 95 ? prev + 1 : prev));
+        }, 1500);
       } else if (uploadStage === 'complete') {
         setProgress(100);
       } else if (uploadStage === 'error') {
@@ -116,13 +114,12 @@ const Documents: React.FC<DocumentsProps> = ({
 
     setDetailedError(null);
 
-    // 1. Pre-validation
     if (!isSupportedFileType(file.type)) {
       setDetailedError({
         type: 'format',
         title: 'Unsupported Format',
-        message: `File type "${file.type}" cannot be parsed by the pedagogical engine.`,
-        fix: 'Upload PDF, Word, or plain text.'
+        message: `File type "${file.type}" is not pedagogically extractable.`,
+        fix: 'Use PDF, DOCX, or plain text.'
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
@@ -132,8 +129,8 @@ const Documents: React.FC<DocumentsProps> = ({
       setDetailedError({
         type: 'generic',
         title: 'File Too Large',
-        message: `Current limit is ${MAX_FILE_SIZE_MB}MB per document.`,
-        fix: 'Compress the file or upload a partial version.'
+        message: `Current limit is ${MAX_FILE_SIZE_MB}MB.`,
+        fix: 'Split the document into smaller chapters.'
       });
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
@@ -148,22 +145,20 @@ const Documents: React.FC<DocumentsProps> = ({
     const docId = crypto.randomUUID();
 
     try {
-      // Stage 1: Local Reading
       setUploadStage('reading');
       const base64 = await fileToBase64(file);
       
-      // Stage 2: Cloud Storage Upload with 30s Watchdog
       setUploadStage('uploading');
       
+      // Increased timeout to 60s for slow institutional networks
       const uploadPromise = uploadFile(file);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Cloud Storage Timeout: The upload request took too long. Check if the "documents" bucket is public or has correct RLS policies.')), 30000)
+        setTimeout(() => reject(new Error('Cloud Storage Timeout: The upload request took over 60 seconds. Verify your "documents" bucket exists in Supabase and RLS is enabled.')), 60000)
       );
 
       const uploadResult = await Promise.race([uploadPromise, timeoutPromise]) as { path: string };
       const filePath = uploadResult.path;
 
-      // Stage 3: Database Persistence
       setUploadStage('persisting');
       const newDoc: Document = {
         id: docId,
@@ -182,18 +177,16 @@ const Documents: React.FC<DocumentsProps> = ({
       await onAddDocument(newDoc);
       setSelectedDocId(docId);
       
-      // Stage 4: AI Analysis
       setUploadStage('analyzing');
       const slos = await geminiService.generateSLOTagsFromBase64(base64, newDoc.mimeType, brain).catch((err: any) => {
         throw { 
           type: 'ai', 
-          title: 'Analysis Error', 
-          message: err.message || 'Gemini engine failed to extract pedagogical structure.',
-          fix: 'Verify the document has readable text.'
+          title: 'Analysis Interrupted', 
+          message: err.message || 'Gemini could not parse the structural pedagogical data.',
+          fix: 'Ensure the file is not password-protected.'
         };
       });
 
-      // Stage 5: Final Update
       await onUpdateDocument(docId, { 
         sloTags: slos, 
         status: slos.length > 0 ? 'completed' : 'failed',
@@ -209,21 +202,17 @@ const Documents: React.FC<DocumentsProps> = ({
       }, 1000);
 
     } catch (err: any) {
-      console.error("Upload Pipeline Error:", err);
+      console.error("Upload Error:", err);
       setUploadStage('error');
       
       const formattedError: DetailedError = err.type ? err : { 
         type: 'storage', 
-        title: 'Upload Interrupted', 
-        message: err.message || 'The connection to cloud storage was lost.',
-        fix: 'Check Supabase Storage settings and ensure "documents" bucket is active.'
+        title: 'Cloud Connection Error', 
+        message: err.message || 'The storage request failed.',
+        fix: 'Run the v34 SQL Patch in Neural Brain to fix RLS permissions.'
       };
       
       setDetailedError(formattedError);
-      
-      if (uploadStage !== 'reading' && uploadStage !== 'uploading') {
-        onUpdateDocument(docId, { status: 'failed', subject: 'Sync Error' });
-      }
       
       setTimeout(() => {
         setIsUploading(false);
@@ -235,22 +224,21 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStatusText = () => {
     switch (uploadStage) {
-      case 'reading': return 'Reading...';
-      case 'uploading': return 'Uploading...';
-      case 'persisting': return 'Saving...';
-      case 'analyzing': return 'Thinking...';
-      case 'complete': return 'Done!';
-      case 'error': return 'Failed';
+      case 'reading': return 'Preparing File';
+      case 'uploading': return 'Syncing to Cloud';
+      case 'persisting': return 'Registering Data';
+      case 'analyzing': return 'Neural Analysis';
+      case 'complete': return 'Material Ready';
+      case 'error': return 'Sync Failed';
       default: return 'Wait...';
     }
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24">
-      {/* Modals & Overlays */}
       {isUploading && (
         <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md">
-          <div className="bg-white rounded-[3rem] p-12 max-w-md w-full shadow-2xl text-center space-y-8">
+          <div className="bg-white rounded-[3rem] p-12 max-w-md w-full shadow-2xl text-center space-y-8 animate-in zoom-in-95 duration-300">
             <div className="relative w-28 h-28 mx-auto">
               <svg className="w-full h-full -rotate-90">
                 <circle cx="56" cy="56" r="50" stroke="#f1f5f9" strokeWidth="10" fill="transparent" />
@@ -269,19 +257,18 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="space-y-2">
               <h3 className="text-2xl font-black text-slate-900">{getStatusText()}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
-                {uploadStage === 'uploading' ? 'Connecting to cloud storage...' : 'Gemini is processing your pedagogical data.'}
+                {uploadStage === 'uploading' ? 'Establishing secure connection to Supabase...' : 'Gemini is extracting Student Learning Outcomes.'}
               </p>
             </div>
             {uploadStage === 'error' && (
-              <button onClick={() => setIsUploading(false)} className="w-full py-3 bg-rose-500 text-white rounded-2xl font-bold shadow-lg shadow-rose-200">
-                Cancel
+              <button onClick={() => setIsUploading(false)} className="w-full py-4 bg-rose-500 text-white rounded-2xl font-bold shadow-lg shadow-rose-200 hover:bg-rose-600 transition-colors">
+                Close & Review Error
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* Standard Header */}
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">Curriculum Library</h1>
@@ -306,7 +293,6 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
       </header>
 
-      {/* Error Alert */}
       {detailedError && (
         <div className="bg-rose-50 border-2 border-rose-100 p-6 rounded-[2rem] flex items-start gap-5 animate-in slide-in-from-top-4">
           <div className="p-3 bg-rose-100 text-rose-600 rounded-2xl shrink-0">
@@ -321,10 +307,8 @@ const Documents: React.FC<DocumentsProps> = ({
         </div>
       )}
 
-      {/* Main Content Area */}
       {selectedDoc ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Detailed View logic same as before but ensured robust state handling */}
           <div className="lg:col-span-1 space-y-6">
             <button onClick={() => setSelectedDocId(null)} className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:translate-x-[-4px] transition-transform">
               <ChevronLeft size={18} /> Return to Library
