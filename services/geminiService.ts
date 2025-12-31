@@ -1,12 +1,20 @@
-
 import { SLO, NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
+import { supabase } from "../lib/supabase";
 
 /**
  * GOOGLE GENERATIVE AI SERVICE
  * High-performance bridge for pedagogical AI synthesis.
  */
 export const geminiService = {
+  /**
+   * Helper to get the current auth token
+   */
+  async getAuthToken(): Promise<string | undefined> {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.access_token;
+  },
+
   /**
    * Triggers structural analysis for learning outcome extraction via Google Generative AI.
    */
@@ -17,10 +25,14 @@ export const geminiService = {
     user?: UserProfile
   ): Promise<SLO[]> {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'extraction') : "";
+    const token = await this.getAuthToken();
 
     const response = await fetch('/api/ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({
         task: 'extract-slos',
         doc: { base64: base64Data, mimeType },
@@ -49,10 +61,14 @@ export const geminiService = {
     user?: UserProfile
   ) {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
+    const token = await this.getAuthToken();
 
     const response = await fetch('/api/ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({
         task: 'chat',
         message,
@@ -64,7 +80,7 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      yield "Google Generative AI Alert: The engine is currently under high load. Please try again in a few moments.";
+      yield "Google Generative AI Alert: The engine is currently under high load or authentication failed. Please try again.";
       return;
     }
 
@@ -91,10 +107,14 @@ export const geminiService = {
     user?: UserProfile
   ) {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
+    const token = await this.getAuthToken();
 
     const response = await fetch('/api/ai', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
       body: JSON.stringify({
         task: 'generate-tool',
         toolType,
@@ -106,7 +126,7 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      yield "Google Generative AI Alert: Synthesis interrupted. Please reduce document complexity.";
+      yield "Google Generative AI Alert: Synthesis interrupted. Please check your account status.";
       return;
     }
 

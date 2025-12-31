@@ -1,8 +1,8 @@
-
 'use client';
 
 import React, { useState } from 'react';
 import { CheckCircle, XCircle, AlertCircle, Loader, RefreshCw, Download } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 type TestStatus = 'pass' | 'fail' | 'warning';
 
@@ -38,8 +38,19 @@ export default function DeploymentTestDashboard() {
     setError(null);
 
     try {
-      const response = await fetch('/api/deployment-test');
-      if (!response.ok) throw new Error('Test endpoint failed');
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch('/api/deployment-test', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || 'Test endpoint failed');
+      }
       
       const data = await response.json();
       setTestResults(data);

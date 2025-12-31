@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '../../../lib/supabase';
 
@@ -8,8 +7,24 @@ import { supabase } from '../../../lib/supabase';
  */
 export async function POST(request: NextRequest) {
   try {
+    const authHeader = request.headers.get('Authorization');
+    const token = authHeader?.split(' ')[1];
+
+    if (!token) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    }
+
     const { documentId, userId } = await request.json();
-    if (!documentId || !userId) return NextResponse.json({ error: 'Missing IDs' }, { status: 400 });
+    
+    // Ensure user is only accessing their own documents
+    if (!documentId || !userId || userId !== user.id) {
+      return NextResponse.json({ error: 'Unauthorized or missing IDs' }, { status: 400 });
+    }
 
     const { data: doc, error: docError } = await supabase
       .from('documents')

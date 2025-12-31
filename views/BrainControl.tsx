@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { NeuralBrain } from '../types';
@@ -24,10 +23,13 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       'profiles', 
       'documents', 
       'neural_brain', 
+      'master_prompt',
       'output_artifacts', 
       'feedback_events',
       'organizations',
-      'chat_messages'
+      'chat_messages',
+      'usage_logs',
+      'curriculum_profiles'
     ];
     const status = await Promise.all(tables.map(async (table) => {
       try {
@@ -66,91 +68,151 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE PERFORMANCE & SECURITY PATCH v15
--- RESOLVES: auth_rls_initplan (performance) and multiple_permissive_policies (redundancy)
+  const sqlSchema = `-- Pedagogy Master - CONSOLIDATED SECURITY PATCH v23
+-- RESOLVES: rls_disabled_in_public, redundant_policies, and Auth RLS Initialization Plan warnings
 
--- 1. CLEANUP ALL REDUNDANT POLICIES (Comprehensive Drop)
--- Profiles Redundancies
-DROP POLICY IF EXISTS "Own Profile Access" ON public.profiles;
-DROP POLICY IF EXISTS "Users access own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Users can manage own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+-- 1. FORCE ENABLE ROW LEVEL SECURITY ON ALL RELEVANT TABLES
+ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.master_prompt ENABLE ROW LEVEL SECURITY; 
+ALTER TABLE IF EXISTS public.chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.output_artifacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.feedback_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.usage_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
 
--- Documents Redundancies
-DROP POLICY IF EXISTS "Own Docs Access" ON public.documents;
-DROP POLICY IF EXISTS "Owners manage their documents" ON public.documents;
-DROP POLICY IF EXISTS "Users access own docs" ON public.documents;
-DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
-DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
-DROP POLICY IF EXISTS "Users can insert own documents" ON public.documents;
-DROP POLICY IF EXISTS "Users can delete own documents" ON public.documents;
-
--- Other Tables Performance Fixes (auth_rls_initplan)
-DROP POLICY IF EXISTS "Users can manage own messages" ON public.chat_messages;
-DROP POLICY IF EXISTS "Own Curriculum Access" ON public.curriculum_profiles;
-DROP POLICY IF EXISTS "Own Artifacts Access" ON public.output_artifacts;
-DROP POLICY IF EXISTS "Own Events Access" ON public.feedback_events;
-DROP POLICY IF EXISTS "Users see own org" ON public.organizations;
-DROP POLICY IF EXISTS "Users see own usage" ON public.usage_logs;
-DROP POLICY IF EXISTS "Public read active brain" ON public.neural_brain;
-DROP POLICY IF EXISTS "Anyone can read active brain" ON public.neural_brain;
-
--- 2. APPLY OPTIMIZED UNIFIED POLICIES
--- Pattern: USING ((SELECT auth.uid()) = user_id_column)
--- This pattern allows Postgres to cache the execution plan.
-
--- Profiles (Optimized)
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Unified Profile Management" ON public.profiles 
-FOR ALL USING ((SELECT auth.uid()) = id);
-
--- Documents (Optimized)
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Unified Document Access" ON public.documents 
-FOR ALL USING ((SELECT auth.uid()) = user_id);
-
--- Chat Messages (Optimized)
-ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Unified Message Access" ON public.chat_messages 
-FOR ALL USING ((SELECT auth.uid()) = user_id);
-
--- Output Artifacts (Optimized)
-ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Unified Artifact Access" ON public.output_artifacts 
-FOR ALL USING ((SELECT auth.uid()) = user_id);
-
--- Feedback Events (Optimized)
-ALTER TABLE public.feedback_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Unified Event Access" ON public.feedback_events 
-FOR ALL USING ((SELECT auth.uid()) = user_id);
-
--- Neural Brain (Optimized)
-ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Unified Brain Visibility" ON public.neural_brain 
-FOR SELECT USING (is_active = true);
-
--- 3. STORAGE SECURITY (Optimized Performance)
-DROP POLICY IF EXISTS "Optimized Upload Access" ON storage.objects;
-DROP POLICY IF EXISTS "Optimized Read Access" ON storage.objects;
-
-CREATE POLICY "Optimized Upload Access" ON storage.objects 
-FOR INSERT WITH CHECK (
-    bucket_id = 'documents' AND (SELECT auth.role()) = 'authenticated'
-);
-
-CREATE POLICY "Optimized Read Access" ON storage.objects 
-FOR SELECT USING (
-    bucket_id = 'documents' AND (SELECT auth.uid())::text = (storage.foldername(name))[1]
-);
-
--- 4. ENSURE ESSENTIAL INFRASTRUCTURE
+-- 2. DROP ALL EXISTING POLICIES FOR CLEAN CONSOLIDATION
 DO $$ 
-BEGIN 
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='neural_brain' AND column_name='is_active') THEN
-        ALTER TABLE public.neural_brain ADD COLUMN is_active boolean DEFAULT true;
-    END IF;
+DECLARE
+    policynames RECORD;
+BEGIN
+    FOR policynames IN (
+        SELECT policyname, tablename 
+        FROM pg_policies 
+        WHERE schemaname = 'public'
+    ) LOOP
+        EXECUTE 'DROP POLICY IF EXISTS ' || quote_ident(policynames.policyname) || ' ON ' || quote_ident(policynames.tablename);
+    END LOOP;
 END $$;
+
+-- 3. CONSOLIDATED ACTION POLICIES (FOR ALL ACTIONS)
+-- Using (SELECT auth.uid()) pattern to resolve Auth RLS Initialization Plan warnings.
+
+-- Documents
+CREATE POLICY "Unified Document Access" ON public.documents 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- Profiles
+CREATE POLICY "Unified Profile Management" ON public.profiles 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- Chat Messages
+CREATE POLICY "Unified Message Access" ON public.chat_messages 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- Output Artifacts
+CREATE POLICY "Unified Artifact Access" ON public.output_artifacts 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- Feedback Events
+CREATE POLICY "Unified Event Access" ON public.feedback_events 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- Organizations
+CREATE POLICY "Unified Org Access" ON public.organizations 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- Usage Logs
+CREATE POLICY "Unified Usage Access" ON public.usage_logs 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- Curriculum Profiles
+CREATE POLICY "Unified Curriculum Access" ON public.curriculum_profiles 
+FOR ALL TO authenticated 
+USING (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+)
+WITH CHECK (
+  (SELECT auth.uid()) = user_id 
+  OR (SELECT role FROM public.profiles WHERE id = (SELECT auth.uid())) = 'app_admin'
+);
+
+-- 4. SYSTEM BRAIN POLICIES (Read-only for users, Admin controlled)
+CREATE POLICY "Unified Brain Visibility" ON public.neural_brain 
+FOR SELECT TO authenticated 
+USING (is_active = true);
+
+CREATE POLICY "Unified Prompt Visibility" ON public.master_prompt 
+FOR SELECT TO authenticated 
+USING (true);
+
+-- 5. PERFORMANCE INDEXES
+CREATE INDEX IF NOT EXISTS idx_documents_user_id ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
+
+-- 6. SECURITY HARDENING
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon;
+GRANT SELECT ON public.neural_brain TO authenticated;
+GRANT SELECT ON public.master_prompt TO authenticated;
 `;
 
   return (
@@ -200,7 +262,7 @@ END $$;
               Check Status
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {dbStatus.map((s) => (
               <div key={s.table} className={`p-4 rounded-xl border flex items-center justify-between ${s.exists ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-200'}`}>
                 <div className="flex items-center gap-2 min-w-0">
@@ -214,7 +276,7 @@ END $$;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Optimized SQL Patch (v15)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Consolidated SQL Patch (v23)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -227,19 +289,19 @@ END $$;
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Linter Performance Remediation</h2>
+              <h2 className="text-xl font-bold">Consolidated RLS Strategy (v23)</h2>
             </div>
             <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-4">
               <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
-                <h3 className="font-bold text-emerald-900 tracking-tight">Resolving Performance Warnings</h3>
-                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">The Supabase linter identified sub-optimal RLS evaluation patterns. SQL Patch v15 explicitly drops all redundant legacy policies to ensure a clean, optimized state.</p>
-                <ol className="text-xs text-emerald-800 space-y-2 list-decimal ml-4 font-medium">
-                  <li>Copy the <strong>Optimized SQL Patch (v15)</strong> from the Infrastructure tab.</li>
-                  <li>Paste into the <strong>SQL Editor</strong> in Supabase and run.</li>
-                  <li>This patch wraps all <code>auth.uid()</code> calls in subqueries to enable Postgres plan caching.</li>
-                  <li>It removes all multiple permissive policies identified as redundant for high performance.</li>
-                </ol>
+                <h3 className="font-bold text-emerald-900 tracking-tight">Initialization Plan Optimization</h3>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v23 optimizes the way Row Level Security interacts with the Supabase Auth engine. By wrapping <code>auth.uid()</code> calls in subqueries, we eliminate initialization plan warnings and ensure the database engine can index security checks effectively.</p>
+                <ul className="text-xs text-emerald-800 space-y-2 list-disc ml-4 font-medium">
+                  <li><strong>Linter Remediation:</strong> Resolves 'Auth RLS Initialization Plan' warnings for all core tables.</li>
+                  <li><strong>Performance Gain:</strong> Prevents sequential scans on small tables by forcing stable evaluation of the current user ID.</li>
+                  <li><strong>Unified Logic:</strong> Consistent <code>FOR ALL</code> policies for <code>profiles</code>, <code>documents</code>, <code>chat_messages</code>, and <code>curriculum_profiles</code>.</li>
+                  <li><strong>Admin Guard:</strong> Maintains high-security bypass for <code>app_admin</code> roles via the optimized profile lookup pattern.</li>
+                </ul>
               </div>
             </div>
           </div>

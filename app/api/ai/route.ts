@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+import { supabase } from '../../../lib/supabase';
 
 /**
  * GOOGLE GENERATIVE AI - UNIFIED NEURAL ENGINE
@@ -8,6 +9,18 @@ import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
  */
 export async function POST(req: NextRequest) {
   try {
+    const authHeader = req.headers.get('Authorization');
+    const token = authHeader?.split(' ')[1];
+
+    if (!token) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+    }
+
     const { task, message, doc, history, brain, toolType, userInput, adaptiveContext } = await req.json();
     
     // Strictly use API_KEY from environment
