@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, XCircle, ShieldCheck, Lock, ShieldAlert } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -25,9 +26,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       'neural_brain', 
       'output_artifacts', 
       'feedback_events',
-      'master_prompt',
-      'organizations',
-      'usage_logs'
+      'organizations'
     ];
     const status = await Promise.all(tables.map(async (table) => {
       try {
@@ -66,98 +65,68 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE SECURITY PATCH v13
--- FIXES: ERROR 42703 (missing columns) and RLS Linter Warnings
+  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE PERFORMANCE & SECURITY PATCH v14
+-- RESOLVES: auth_rls_initplan (performance) and multiple_permissive_policies (redundancy)
 
--- 1. ENSURE BASE TABLES EXIST
-CREATE TABLE IF NOT EXISTS public.organizations (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    name text NOT NULL,
-    created_at timestamptz DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.master_prompt (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    content text NOT NULL,
-    created_at timestamptz DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.usage_logs (
-    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    created_at timestamptz DEFAULT now()
-);
-
--- 2. DEFENSIVELY ADD MISSING COLUMNS (Prevents ERROR: 42703)
-DO $$ 
-BEGIN 
-    -- Add is_active to master_prompt
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='master_prompt' AND column_name='is_active') THEN
-        ALTER TABLE public.master_prompt ADD COLUMN is_active boolean DEFAULT true;
-    END IF;
-
-    -- Add user_id to usage_logs
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='usage_logs' AND column_name='user_id') THEN
-        ALTER TABLE public.usage_logs ADD COLUMN user_id uuid REFERENCES auth.users(id);
-    END IF;
-
-    -- Add org_id to profiles
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='org_id') THEN
-        ALTER TABLE public.profiles ADD COLUMN org_id uuid REFERENCES public.organizations(id);
-    END IF;
-END $$;
-
--- 3. ENABLE ROW LEVEL SECURITY (Removes Linter Errors)
-ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.master_prompt ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.organizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.usage_logs ENABLE ROW LEVEL SECURITY;
-
--- 4. CLEAN & RECREATE POLICIES
+-- 1. CLEANUP REDUNDANT POLICIES (Identified by Linter)
+-- This ensures only one single permissive policy exists per action.
 DROP POLICY IF EXISTS "Public read active prompt" ON public.master_prompt;
-DROP POLICY IF EXISTS "Users see own org" ON public.organizations;
-DROP POLICY IF EXISTS "Users see own usage" ON public.usage_logs;
-DROP POLICY IF EXISTS "Owners manage their documents" ON public.documents;
+DROP POLICY IF EXISTS "Public Read Active Brain" ON public.neural_brain;
+DROP POLICY IF EXISTS "Anyone can read active brain" ON public.neural_brain;
+DROP POLICY IF EXISTS "Public read for brain" ON public.neural_brain;
+DROP POLICY IF EXISTS "Public read active brain" ON public.neural_brain;
 
--- master_prompt: Public can read active logic
-CREATE POLICY "Public read active prompt" ON public.master_prompt 
+DROP POLICY IF EXISTS "Owners manage their documents" ON public.documents;
+DROP POLICY IF EXISTS "Own Docs Access" ON public.documents;
+DROP POLICY IF EXISTS "Users access own docs" ON public.documents;
+DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
+DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
+
+DROP POLICY IF EXISTS "Users access own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Own Profile Access" ON public.profiles;
+DROP POLICY IF EXISTS "Users can manage own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Own Curriculum Access" ON public.profiles;
+
+-- 2. APPLY OPTIMIZED POLICIES
+-- Using (SELECT auth.uid()) and (SELECT auth.role()) for optimal performance at scale.
+
+-- Profiles
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Unified Profile Management" ON public.profiles 
+FOR ALL USING ((SELECT auth.uid()) = id);
+
+-- Documents
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Unified Document Access" ON public.documents 
+FOR ALL USING ((SELECT auth.uid()) = user_id);
+
+-- Neural Brain Logic
+ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Unified Brain Visibility" ON public.neural_brain 
 FOR SELECT USING (is_active = true);
 
--- organizations: Users see their own organization (Fixed reference to profiles.id)
-CREATE POLICY "Users see own org" ON public.organizations 
-FOR SELECT USING (
-    EXISTS (
-        SELECT 1 FROM public.profiles 
-        WHERE profiles.id = auth.uid() 
-        AND profiles.org_id = organizations.id
-    )
-);
-
--- usage_logs: Users see their own activity logs
-CREATE POLICY "Users see own usage" ON public.usage_logs 
-FOR SELECT USING (auth.uid() = user_id);
-
--- documents: Standard owner isolation
-CREATE POLICY "Owners manage their documents" ON public.documents 
-FOR ALL USING (auth.uid() = user_id);
-
--- 5. STORAGE SECURITY (Bucket: "documents")
--- Ensure bucket exists: Run in Storage UI or through API
--- INSERT INTO storage.buckets (id, name, public) VALUES ('documents', 'documents', false) ON CONFLICT DO NOTHING;
-
+-- 3. STORAGE SECURITY (Optimized)
+-- Resolved bucket policies for 'documents' bucket
 DROP POLICY IF EXISTS "Authenticated users can upload" ON storage.objects;
 DROP POLICY IF EXISTS "Users can view their own files" ON storage.objects;
 
-CREATE POLICY "Authenticated users can upload" ON storage.objects 
+CREATE POLICY "Optimized Upload Access" ON storage.objects 
 FOR INSERT WITH CHECK (
-    bucket_id = 'documents' AND auth.role() = 'authenticated'
+    bucket_id = 'documents' AND (SELECT auth.role()) = 'authenticated'
 );
 
-CREATE POLICY "Users can view their own files" ON storage.objects 
+CREATE POLICY "Optimized Read Access" ON storage.objects 
 FOR SELECT USING (
-    bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]
+    bucket_id = 'documents' AND (SELECT auth.uid())::text = (storage.foldername(name))[1]
 );
+
+-- 4. ENSURE ESSENTIAL COLUMNS
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='neural_brain' AND column_name='is_active') THEN
+        ALTER TABLE public.neural_brain ADD COLUMN is_active boolean DEFAULT true;
+    END IF;
+END $$;
 `;
 
   return (
@@ -165,7 +134,7 @@ FOR SELECT USING (
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">Logic versioning and infrastructure security audits.</p>
+          <p className="text-slate-500 mt-1">Optimization, logic versioning, and security audits.</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
           <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
@@ -221,7 +190,7 @@ FOR SELECT USING (
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Security & RLS Patch SQL (v13)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Optimized SQL Patch (v14)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -234,18 +203,18 @@ FOR SELECT USING (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Linter Remediation Guide</h2>
+              <h2 className="text-xl font-bold">Linter Performance Remediation</h2>
             </div>
-            <div className="p-6 bg-amber-50 rounded-2xl border border-amber-100 flex items-start gap-4">
-              <div className="p-2 bg-amber-100 text-amber-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
+            <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-4">
+              <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
-                <h3 className="font-bold text-amber-900 tracking-tight">Resolving RLS Errors</h3>
-                <p className="text-sm text-amber-700 mt-1 mb-4 leading-relaxed">The Supabase linter identified missing columns and RLS issues. Patch v13 is optimized to handle existing partial tables.</p>
-                <ol className="text-xs text-amber-800 space-y-2 list-decimal ml-4 font-medium">
-                  <li>Copy the <strong>SQL Patch (v13)</strong> from the Infrastructure tab.</li>
+                <h3 className="font-bold text-emerald-900 tracking-tight">Resolving Performance Warnings</h3>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">The Supabase linter identified sub-optimal RLS evaluation patterns. SQL Patch v14 optimizes your database for production scale.</p>
+                <ol className="text-xs text-emerald-800 space-y-2 list-decimal ml-4 font-medium">
+                  <li>Copy the <strong>Optimized SQL Patch (v14)</strong> from the Infrastructure tab.</li>
                   <li>Paste into the <strong>SQL Editor</strong> in Supabase.</li>
-                  <li>This patch ensures <code>is_active</code> and <code>user_id</code> columns exist before applying the RLS policies.</li>
-                  <li>Verify the bucket name is <code>documents</code>.</li>
+                  <li>This patch wraps <code>auth.uid()</code> in subqueries to enable Postgres plan caching.</li>
+                  <li>It also consolidates redundant policies to prevent performance overhead.</li>
                 </ol>
               </div>
             </div>
