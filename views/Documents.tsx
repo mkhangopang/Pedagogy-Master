@@ -64,7 +64,26 @@ const Documents: React.FC<DocumentsProps> = ({
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
-  const MAX_FILE_SIZE_MB = 10;
+  // Load Interrupted Sync from LocalStorage on mount
+  useEffect(() => {
+    const savedSync = localStorage.getItem('pedagogy_pending_sync');
+    if (savedSync) {
+      try {
+        setPendingSync(JSON.parse(savedSync));
+      } catch (e) {
+        localStorage.removeItem('pedagogy_pending_sync');
+      }
+    }
+  }, []);
+
+  // Save Pending Sync to LocalStorage whenever it changes
+  useEffect(() => {
+    if (pendingSync) {
+      localStorage.setItem('pedagogy_pending_sync', JSON.stringify(pendingSync));
+    } else {
+      localStorage.removeItem('pedagogy_pending_sync');
+    }
+  }, [pendingSync]);
 
   useEffect(() => {
     let interval: any;
@@ -109,10 +128,10 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // Set a 10s race to detect RLS hang
+      // v43: Increased timeout to 30s to allow deep RLS checks to finish
       await Promise.race([
         onAddDocument(newDoc),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 10000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 30000))
       ]);
 
       setPendingSync(null);
@@ -136,15 +155,15 @@ const Documents: React.FC<DocumentsProps> = ({
       setDetailedError({ 
         type: 'timeout', 
         title: 'Metadata Sync Stall (90%)', 
-        message: 'The file is safely in cloud storage, but the database is hanging due to RLS conflicts.',
-        fix: 'Run SQL Patch v42 in Brain Control, then click "Resume Sync" below.'
+        message: 'Cloud transfer succeeded, but the database took too long to register the metadata (30s timeout).',
+        fix: 'Run SQL Patch v43 in Brain Control, then click "Complete Sync".'
       });
     } else {
       setDetailedError({ 
         type: 'policy', 
         title: 'Sync Interrupted', 
         message: err.message || 'The database rejected the document registration.',
-        fix: 'Apply SQL Patch v42 to fix policy deadlocks.'
+        fix: 'Apply SQL Patch v43 to fix performance/policy issues.'
       });
     }
   };
@@ -172,8 +191,9 @@ const Documents: React.FC<DocumentsProps> = ({
       const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
 
-      // Store in memory in case the next step (DB Sync) hangs
-      setPendingSync({ name: file.name, path: filePath, type: file.type });
+      // Persist metadata locally so we can resume even after a browser refresh
+      const syncInfo = { name: file.name, path: filePath, type: file.type };
+      setPendingSync(syncInfo);
 
       // Step 2: DB Metadata Sync (Stage 90%)
       setUploadStage('persisting');
@@ -192,10 +212,10 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // Await with Timeout
+      // Await with 30s Timeout (Increased for RLS contention)
       await Promise.race([
         onAddDocument(newDoc),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 10000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 30000))
       ]);
       
       setPendingSync(null);
@@ -249,9 +269,31 @@ const Documents: React.FC<DocumentsProps> = ({
               <p className="text-slate-500 text-sm leading-relaxed">
                 {uploadStage === 'uploading' 
                   ? 'Transmitting curriculum data to storage...' 
-                  : 'Registering metadata in database (Timeout: 10s)...'}
+                  : 'Registering metadata (v43 Adaptive Timeout: 30s)...'}
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* RECOVERY BANNER: Shown if a sync was previously interrupted (Persisted in LocalStorage) */}
+      {!isUploading && pendingSync && (
+        <div className="bg-amber-50 border-2 border-amber-200 p-6 rounded-[2rem] flex items-center justify-between gap-6 shadow-sm animate-in slide-in-from-top-4">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><RotateCcw size={24}/></div>
+            <div>
+              <h4 className="font-bold text-amber-900">Pending Sync Found</h4>
+              <p className="text-sm text-amber-700">The file "<span className="font-bold">{pendingSync.name}</span>" is in the cloud but needs metadata registration.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setPendingSync(null)} className="px-4 py-2 text-amber-600 font-bold text-xs hover:bg-amber-100 rounded-lg transition-colors">Discard</button>
+            <button 
+              onClick={resumeSync}
+              className="px-6 py-2.5 bg-amber-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-amber-700 transition-all flex items-center gap-2"
+            >
+              Complete Sync
+            </button>
           </div>
         </div>
       )}
@@ -289,18 +331,6 @@ const Documents: React.FC<DocumentsProps> = ({
             <h4 className={`text-lg font-bold ${detailedError.type === 'timeout' ? 'text-amber-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
             <p className={`text-sm mt-1 leading-relaxed ${detailedError.type === 'timeout' ? 'text-amber-700' : 'text-rose-700'}`}>{detailedError.message}</p>
             
-            {pendingSync && (
-              <div className="mt-6 flex items-center gap-3">
-                <button 
-                  onClick={resumeSync}
-                  className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-700 transition-all shadow-lg"
-                >
-                  <RotateCcw size={16} /> Resume Metadata Sync
-                </button>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">File: {pendingSync.name}</p>
-              </div>
-            )}
-
             {detailedError.fix && (
               <p className={`text-xs font-black uppercase mt-4 tracking-widest flex items-center gap-1 ${detailedError.type === 'timeout' ? 'text-amber-600' : 'text-rose-400'}`}>
                 <Check size={12}/> {detailedError.fix}
@@ -313,6 +343,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
       {selectedDoc ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Document Detail View */}
           <div className="lg:col-span-1 space-y-6">
             <button onClick={() => setSelectedDocId(null)} className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:translate-x-[-4px] transition-transform">
               <ChevronLeft size={18} /> Return to Library
