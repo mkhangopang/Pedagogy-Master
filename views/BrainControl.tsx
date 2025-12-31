@@ -26,7 +26,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       'neural_brain', 
       'output_artifacts', 
       'feedback_events',
-      'organizations'
+      'organizations',
+      'chat_messages'
     ];
     const status = await Promise.all(tables.map(async (table) => {
       try {
@@ -65,50 +66,73 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE PERFORMANCE & SECURITY PATCH v14
+  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE PERFORMANCE & SECURITY PATCH v15
 -- RESOLVES: auth_rls_initplan (performance) and multiple_permissive_policies (redundancy)
 
--- 1. CLEANUP REDUNDANT POLICIES (Identified by Linter)
--- This ensures only one single permissive policy exists per action.
-DROP POLICY IF EXISTS "Public read active prompt" ON public.master_prompt;
-DROP POLICY IF EXISTS "Public Read Active Brain" ON public.neural_brain;
-DROP POLICY IF EXISTS "Anyone can read active brain" ON public.neural_brain;
-DROP POLICY IF EXISTS "Public read for brain" ON public.neural_brain;
-DROP POLICY IF EXISTS "Public read active brain" ON public.neural_brain;
+-- 1. CLEANUP ALL REDUNDANT POLICIES (Comprehensive Drop)
+-- Profiles Redundancies
+DROP POLICY IF EXISTS "Own Profile Access" ON public.profiles;
+DROP POLICY IF EXISTS "Users access own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can manage own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 
-DROP POLICY IF EXISTS "Owners manage their documents" ON public.documents;
+-- Documents Redundancies
 DROP POLICY IF EXISTS "Own Docs Access" ON public.documents;
+DROP POLICY IF EXISTS "Owners manage their documents" ON public.documents;
 DROP POLICY IF EXISTS "Users access own docs" ON public.documents;
 DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
 DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
+DROP POLICY IF EXISTS "Users can insert own documents" ON public.documents;
+DROP POLICY IF EXISTS "Users can delete own documents" ON public.documents;
 
-DROP POLICY IF EXISTS "Users access own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Own Profile Access" ON public.profiles;
-DROP POLICY IF EXISTS "Users can manage own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Own Curriculum Access" ON public.profiles;
+-- Other Tables Performance Fixes (auth_rls_initplan)
+DROP POLICY IF EXISTS "Users can manage own messages" ON public.chat_messages;
+DROP POLICY IF EXISTS "Own Curriculum Access" ON public.curriculum_profiles;
+DROP POLICY IF EXISTS "Own Artifacts Access" ON public.output_artifacts;
+DROP POLICY IF EXISTS "Own Events Access" ON public.feedback_events;
+DROP POLICY IF EXISTS "Users see own org" ON public.organizations;
+DROP POLICY IF EXISTS "Users see own usage" ON public.usage_logs;
+DROP POLICY IF EXISTS "Public read active brain" ON public.neural_brain;
+DROP POLICY IF EXISTS "Anyone can read active brain" ON public.neural_brain;
 
--- 2. APPLY OPTIMIZED POLICIES
--- Using (SELECT auth.uid()) and (SELECT auth.role()) for optimal performance at scale.
+-- 2. APPLY OPTIMIZED UNIFIED POLICIES
+-- Pattern: USING ((SELECT auth.uid()) = user_id_column)
+-- This pattern allows Postgres to cache the execution plan.
 
--- Profiles
+-- Profiles (Optimized)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Unified Profile Management" ON public.profiles 
 FOR ALL USING ((SELECT auth.uid()) = id);
 
--- Documents
+-- Documents (Optimized)
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Unified Document Access" ON public.documents 
 FOR ALL USING ((SELECT auth.uid()) = user_id);
 
--- Neural Brain Logic
+-- Chat Messages (Optimized)
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Unified Message Access" ON public.chat_messages 
+FOR ALL USING ((SELECT auth.uid()) = user_id);
+
+-- Output Artifacts (Optimized)
+ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Unified Artifact Access" ON public.output_artifacts 
+FOR ALL USING ((SELECT auth.uid()) = user_id);
+
+-- Feedback Events (Optimized)
+ALTER TABLE public.feedback_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Unified Event Access" ON public.feedback_events 
+FOR ALL USING ((SELECT auth.uid()) = user_id);
+
+-- Neural Brain (Optimized)
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Unified Brain Visibility" ON public.neural_brain 
 FOR SELECT USING (is_active = true);
 
--- 3. STORAGE SECURITY (Optimized)
--- Resolved bucket policies for 'documents' bucket
-DROP POLICY IF EXISTS "Authenticated users can upload" ON storage.objects;
-DROP POLICY IF EXISTS "Users can view their own files" ON storage.objects;
+-- 3. STORAGE SECURITY (Optimized Performance)
+DROP POLICY IF EXISTS "Optimized Upload Access" ON storage.objects;
+DROP POLICY IF EXISTS "Optimized Read Access" ON storage.objects;
 
 CREATE POLICY "Optimized Upload Access" ON storage.objects 
 FOR INSERT WITH CHECK (
@@ -120,7 +144,7 @@ FOR SELECT USING (
     bucket_id = 'documents' AND (SELECT auth.uid())::text = (storage.foldername(name))[1]
 );
 
--- 4. ENSURE ESSENTIAL COLUMNS
+-- 4. ENSURE ESSENTIAL INFRASTRUCTURE
 DO $$ 
 BEGIN 
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='neural_brain' AND column_name='is_active') THEN
@@ -190,7 +214,7 @@ END $$;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Optimized SQL Patch (v14)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Optimized SQL Patch (v15)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -209,12 +233,12 @@ END $$;
               <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
                 <h3 className="font-bold text-emerald-900 tracking-tight">Resolving Performance Warnings</h3>
-                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">The Supabase linter identified sub-optimal RLS evaluation patterns. SQL Patch v14 optimizes your database for production scale.</p>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">The Supabase linter identified sub-optimal RLS evaluation patterns. SQL Patch v15 explicitly drops all redundant legacy policies to ensure a clean, optimized state.</p>
                 <ol className="text-xs text-emerald-800 space-y-2 list-decimal ml-4 font-medium">
-                  <li>Copy the <strong>Optimized SQL Patch (v14)</strong> from the Infrastructure tab.</li>
-                  <li>Paste into the <strong>SQL Editor</strong> in Supabase.</li>
-                  <li>This patch wraps <code>auth.uid()</code> in subqueries to enable Postgres plan caching.</li>
-                  <li>It also consolidates redundant policies to prevent performance overhead.</li>
+                  <li>Copy the <strong>Optimized SQL Patch (v15)</strong> from the Infrastructure tab.</li>
+                  <li>Paste into the <strong>SQL Editor</strong> in Supabase and run.</li>
+                  <li>This patch wraps all <code>auth.uid()</code> calls in subqueries to enable Postgres plan caching.</li>
+                  <li>It removes all multiple permissive policies identified as redundant for high performance.</li>
                 </ol>
               </div>
             </div>
