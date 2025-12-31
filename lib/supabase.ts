@@ -32,7 +32,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run the V33 SQL Patch.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v36.' };
       if (profileError.code === 'PGRST301') return { status: 'rls_locked', message: 'API Key permissions blocked by RLS.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
@@ -57,7 +57,7 @@ export const verifyPersistence = async (userId: string): Promise<boolean> => {
 
 /**
  * Uploads a file to Supabase storage.
- * Uses ArrayBuffer to ensure binary stability during high-latency uploads.
+ * Uses ArrayBuffer to bypass metadata hangs and ensures correct content type.
  */
 export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string }> => {
   if (!isSupabaseConfigured) {
@@ -67,7 +67,7 @@ export const uploadFile = async (file: File, bucket: string = 'documents'): Prom
   const fileExt = file.name.split('.').pop();
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
-  // Convert File to ArrayBuffer for more stable transfer
+  // Stable binary conversion
   const arrayBuffer = await file.arrayBuffer();
 
   const { data, error } = await supabase.storage
@@ -79,15 +79,18 @@ export const uploadFile = async (file: File, bucket: string = 'documents'): Prom
     });
   
   if (error) {
-    console.error("Supabase Storage Error:", error);
+    console.error("Storage Critical Error:", error);
     if (error.message.includes('row level security')) {
-      throw new Error('Permission Denied: Ensure the "documents" bucket exists and RLS is set to "authenticated" only.');
+      throw new Error('Access Denied: Row Level Security is blocking the upload. Apply Patch v36.');
     }
-    throw new Error(error.message);
+    if (error.message.includes('bucket not found')) {
+      throw new Error(`The storage bucket "${bucket}" was not found.`);
+    }
+    throw new Error(`Upload Failed: ${error.message}`);
   }
   
   if (!data?.path) {
-    throw new Error('Upload successful but no path returned.');
+    throw new Error('Transfer succeeded but persistence path is missing.');
   }
 
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);

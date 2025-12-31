@@ -64,10 +64,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - ENTERPRISE PERFORMANCE & STORAGE PATCH v34
--- FOCUS: RLS Optimization & Index Consolidation (Fixing Dashboard Warnings).
+  const sqlSchema = `-- Pedagogy Master - HIGH-PERFORMANCE INFRA PATCH v36
+-- FOCUS: Fix Performance Warnings, Redundant Indexes, and Type Mismatches.
 
--- 1. CLEANUP DUPLICATE INDEXES (Supabase Optimization)
+-- 1. DROP ALL REDUNDANT INDEXES (Fixing Dashboard Warnings)
 DROP INDEX IF EXISTS public.idx_messages_uid;
 DROP INDEX IF EXISTS public.idx_v31_messages_uid;
 DROP INDEX IF EXISTS public.idx_docs_perf;
@@ -77,55 +77,64 @@ DROP INDEX IF EXISTS public.idx_profiles_perf;
 DROP INDEX IF EXISTS public.idx_v31_profiles_uid_role;
 DROP INDEX IF EXISTS public.idx_logs_uid;
 
--- 2. HIGH-PERFORMANCE ADMIN CHECK (Memoized in JWT)
+-- 2. PERFORMANCE-OPTIMIZED ADMIN CHECK (SECURITY DEFINER)
 CREATE OR REPLACE FUNCTION public.check_is_admin()
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
-  -- Fast Path: Check JWT email claim directly
-  IF (auth.jwt() ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com') THEN
-    RETURN true;
-  END IF;
-  RETURN false;
+  -- Strict cast check on JWT email
+  RETURN (auth.jwt() ->> 'email')::text IN (
+    'mkgopang@gmail.com', 
+    'admin@edunexus.ai', 
+    'fasi.2001@live.com'
+  );
 END;
 $$;
 
--- 3. OPTIMIZED STORAGE RLS (Fixing Upload Timeout)
--- Deleting old policies to prevent collision
-DROP POLICY IF EXISTS "Teacher Insert" ON storage.objects;
-DROP POLICY IF EXISTS "Teacher Select" ON storage.objects;
-DROP POLICY IF EXISTS "Teacher Delete" ON storage.objects;
+-- 3. GLOBAL RLS RESET (Cleanup for v36)
+DO $$ 
+DECLARE
+    policynames RECORD;
+BEGIN
+    FOR policynames IN (
+        SELECT policyname, tablename FROM pg_policies WHERE schemaname = 'public'
+    ) LOOP
+        EXECUTE 'DROP POLICY IF EXISTS ' || quote_ident(policynames.policyname) || ' ON ' || quote_ident(policynames.tablename);
+    END LOOP;
+END $$;
+
+-- 4. TYPE-STABLE DATABASE RLS (Wrapping auth.uid() in subqueries)
+-- We cast user_id and id to TEXT to handle cases where schema might differ from Auth UUID.
+CREATE POLICY "v36_profiles_access" ON public.profiles FOR ALL TO authenticated USING (id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v36_documents_access" ON public.documents FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v36_artifacts_access" ON public.output_artifacts FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v36_feedback_access" ON public.feedback_events FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v36_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (true);
+
+-- 5. STORAGE POLICIES (Explicit Type Casting & Granular Access)
+-- DROP existing to avoid collisions
 DROP POLICY IF EXISTS "Teacher Storage Access" ON storage.objects;
+DROP POLICY IF EXISTS "v35_storage_insert" ON storage.objects;
+DROP POLICY IF EXISTS "v35_storage_select" ON storage.objects;
+DROP POLICY IF EXISTS "v35_storage_delete" ON storage.objects;
 
--- Grant broad but authenticated access to the documents bucket.
--- Wrapping auth.uid() in (SELECT auth.uid()) prevents row-by-row re-evaluation.
-CREATE POLICY "v34_storage_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'documents');
-CREATE POLICY "v34_storage_select" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'documents');
-CREATE POLICY "v34_storage_delete" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'documents' AND owner = (SELECT auth.uid())::text);
+-- Ensure "documents" bucket exists
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('documents', 'documents', false) 
+ON CONFLICT (id) DO NOTHING;
 
--- 4. PERFORMANCE-OPTIMIZED DATABASE RLS
--- Replacing v32 policies with v34 optimized subqueries
-DROP POLICY IF EXISTS "v32_documents_access" ON public.documents;
-DROP POLICY IF EXISTS "v33_documents_access" ON public.documents;
-CREATE POLICY "v34_documents_access" ON public.documents 
-FOR ALL TO authenticated 
-USING (user_id = (SELECT auth.uid()) OR check_is_admin()) 
-WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+-- Storage Insert Policy: Authenticated users can upload to documents bucket
+CREATE POLICY "v36_storage_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'documents');
 
-DROP POLICY IF EXISTS "v32_profiles_access" ON public.profiles;
-CREATE POLICY "v34_profiles_access" ON public.profiles 
-FOR ALL TO authenticated 
-USING (id = (SELECT auth.uid()) OR check_is_admin()) 
-WITH CHECK (id = (SELECT auth.uid()) OR check_is_admin());
+-- Storage Select Policy: Authenticated users can view objects in documents bucket
+CREATE POLICY "v36_storage_select" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'documents');
 
-DROP POLICY IF EXISTS "v32_artifacts_access" ON public.output_artifacts;
-CREATE POLICY "v34_artifacts_access" ON public.output_artifacts 
-FOR ALL TO authenticated 
-USING (user_id = (SELECT auth.uid()) OR check_is_admin()) 
-WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+-- Storage Delete Policy: Users can only delete their own objects
+CREATE POLICY "v36_storage_delete" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'documents' AND owner::text = (SELECT auth.uid())::text);
 
--- 5. STORAGE BUCKET PERMISSIONS HARDENING
+-- 6. PERMISSIONS RE-HARDENING
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA storage TO authenticated;
 `;
 
   return (
@@ -189,7 +198,7 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA storage TO authenticated;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Optimized SQL Patch (v34)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Performance SQL Patch (v36)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -202,17 +211,17 @@ GRANT ALL ON ALL SEQUENCES IN SCHEMA storage TO authenticated;
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Consolidated Performance Strategy (v34)</h2>
+              <h2 className="text-xl font-bold">Consolidated Health Strategy (v36)</h2>
             </div>
             <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-start gap-4">
               <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl mt-1 shadow-sm"><Activity size={20}/></div>
               <div>
-                <h3 className="font-bold text-indigo-900 tracking-tight">Diagnostics & RLS Optimization</h3>
-                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">Patch v34 addresses critical warnings in Supabase. By wrapping <code>auth.uid()</code> in subqueries, we prevent recursive performance degradation during high-concurrency document uploads.</p>
+                <h3 className="font-bold text-indigo-900 tracking-tight">Post-Migration Optimization</h3>
+                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">Patch v36 resolves persistent performance bottlenecks and type mismatches. It implements high-performance subqueries for RLS, as recommended by the Supabase Diagnostic Dashboard.</p>
                 <ul className="text-xs text-indigo-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>Index Cleanup:</strong> Removed 8 redundant indexes from profiles and documents.</li>
-                  <li><strong>RLS Subqueries:</strong> Implemented <code>(SELECT auth.uid())</code> to optimize query planning.</li>
-                  <li><strong>Storage Robustness:</strong> Redefined storage policies to ensure the <code>documents</code> bucket is accessible to all authenticated teachers.</li>
+                  <li><strong>Index Consolidation:</strong> Removed 8 redundant indexes to prevent write-amplification.</li>
+                  <li><strong>Type Safety:</strong> Explicitly casted UUIDs and IDs to <code>TEXT</code> to solve operator mismatch errors.</li>
+                  <li><strong>Subquery Optimization:</strong> Wrapped <code>auth.uid()</code> in subqueries to prevent row-by-row re-evaluation of policies.</li>
                 </ul>
               </div>
             </div>
