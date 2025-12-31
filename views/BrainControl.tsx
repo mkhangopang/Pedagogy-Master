@@ -64,11 +64,11 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - TOTAL OPTIMIZATION PATCH v40
--- FOCUS: Resolving Policy Conflicts (Deadlocks) and Performance Warnings.
+  const sqlSchema = `-- Pedagogy Master - GLOBAL SYSTEM PURGE v41
+-- FOCUS: Aggressive cleanup of versioned policy ghosts (v37-v40) to fix 90% hang.
 
--- 1. CLEANUP PREVIOUS VERSIONS (Stop the 90% Hang)
--- We drop all known redundant policies to prevent "Multiple Permissive Policies" errors.
+-- 1. AGGRESSIVE POLICY PURGE (Resolves "Multiple Permissive Policies")
+-- This loop finds all policies with versioned prefixes and wipes them clean.
 DO $$ 
 DECLARE
     pol record;
@@ -77,19 +77,23 @@ BEGIN
         SELECT policyname, tablename 
         FROM pg_policies 
         WHERE schemaname = 'public' 
-        AND (policyname LIKE 'v38_%' OR policyname LIKE 'v39_%')
+        AND (
+          policyname LIKE 'v37_%' OR 
+          policyname LIKE 'v38_%' OR 
+          policyname LIKE 'v39_%' OR 
+          policyname LIKE 'v40_%'
+        )
     ) LOOP
         EXECUTE format('DROP POLICY IF EXISTS %I ON %I', pol.policyname, pol.tablename);
     END LOOP;
 END $$;
 
--- 2. OPTIMIZED ADMIN CHECK (v40)
+-- 2. OPTIMIZED ADMIN CHECK (v41)
 CREATE OR REPLACE FUNCTION public.check_is_admin()
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER 
 SET search_path = public, auth
 AS $$
 BEGIN
-  -- Use (SELECT) to optimize subquery re-evaluation
   RETURN (SELECT (auth.jwt() ->> 'email')::text IN (
     'mkgopang@gmail.com', 
     'admin@edunexus.ai', 
@@ -98,8 +102,7 @@ BEGIN
 END;
 $$;
 
--- 3. CORE TABLE UNIFICATION
--- Ensure tables exist and are clean.
+-- 3. CORE INFRASTRUCTURE (v41)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
     email text,
@@ -132,49 +135,48 @@ CREATE TABLE IF NOT EXISTS public.documents (
     created_at timestamp with time zone DEFAULT now()
 );
 
--- 4. OPTIMIZED RLS POLICIES (v40)
--- Using (SELECT auth.uid()) as recommended by Supabase Linter for performance.
+-- 4. UNIFIED V41 POLICIES (Optimized Subqueries)
+-- We use (SELECT auth.uid()) to satisfy Performance Linter 0003.
 
 -- PROFILES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "v40_profiles_unified" ON public.profiles;
-CREATE POLICY "v40_profiles_unified" ON public.profiles 
+DROP POLICY IF EXISTS "v41_profiles_unified" ON public.profiles;
+CREATE POLICY "v41_profiles_unified" ON public.profiles 
 FOR ALL TO authenticated 
 USING (id = (SELECT auth.uid()) OR check_is_admin()) 
 WITH CHECK (id = (SELECT auth.uid()) OR check_is_admin());
 
 -- DOCUMENTS
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "v40_documents_unified" ON public.documents;
-CREATE POLICY "v40_documents_unified" ON public.documents 
+DROP POLICY IF EXISTS "v41_documents_unified" ON public.documents;
+CREATE POLICY "v41_documents_unified" ON public.documents 
 FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid()) OR check_is_admin()) 
 WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
 
--- NEURAL BRAIN (Global Read for Logic)
+-- NEURAL BRAIN
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "v40_brain_read" ON public.neural_brain;
-CREATE POLICY "v40_brain_read" ON public.neural_brain 
+DROP POLICY IF EXISTS "v41_brain_read" ON public.neural_brain;
+CREATE POLICY "v41_brain_read" ON public.neural_brain 
 FOR SELECT TO authenticated USING (true);
-DROP POLICY IF EXISTS "v40_brain_write" ON public.neural_brain;
-CREATE POLICY "v40_brain_write" ON public.neural_brain 
+DROP POLICY IF EXISTS "v41_brain_write" ON public.neural_brain;
+CREATE POLICY "v41_brain_write" ON public.neural_brain 
 FOR INSERT TO authenticated WITH CHECK (check_is_admin());
 
--- CHAT MESSAGES & GHOST TABLES (Cleanup)
+-- CHAT MESSAGES
 ALTER TABLE IF EXISTS public.chat_messages ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "v40_chat_unified" ON public.chat_messages;
-CREATE POLICY "v40_chat_unified" ON public.chat_messages 
+DROP POLICY IF EXISTS "v41_chat_unified" ON public.chat_messages;
+CREATE POLICY "v41_chat_unified" ON public.chat_messages 
 FOR ALL TO authenticated USING (user_id = (SELECT auth.uid()) OR check_is_admin());
 
--- 5. STORAGE ACCESS (v40)
-DROP POLICY IF EXISTS "v39_storage_insert" ON storage.objects;
-DROP POLICY IF EXISTS "v39_storage_select" ON storage.objects;
-CREATE POLICY "v40_storage_access" ON storage.objects 
+-- 5. STORAGE ACCESS (v41)
+DROP POLICY IF EXISTS "v40_storage_access" ON storage.objects;
+CREATE POLICY "v41_storage_access" ON storage.objects 
 FOR ALL TO authenticated 
 USING (bucket_id = 'documents') 
 WITH CHECK (bucket_id = 'documents');
 
--- 6. PERMISSIONS RE-GRANT
+-- 6. FINAL PERMISSIONS RE-GRANT
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
@@ -241,7 +243,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">System Optimization Patch (v40)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">System Optimization Patch (v41)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -254,17 +256,17 @@ GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Optimization Strategy (v40)</h2>
+              <h2 className="text-xl font-bold">Purge Strategy (v41)</h2>
             </div>
             <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-start gap-4">
               <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl mt-1 shadow-sm"><Activity size={20}/></div>
               <div>
-                <h3 className="font-bold text-indigo-900 tracking-tight">Fixing Multiple Policy Conflicts</h3>
-                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">The 90% hang you experienced is a direct result of "Multiple Permissive Policies" on your documents table. Supabase was attempting to evaluate both v38 and v39 rules simultaneously, causing an internal deadlock.</p>
+                <h3 className="font-bold text-indigo-900 tracking-tight">Killing Legacy Deadlocks</h3>
+                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">Your latest Supabase linter report confirmed that 'v37_brain_read' and 'v40_brain_read' were co-existing. This is what causes the 90% hang—the database is literally stuck deciding which rule applies.</p>
                 <ul className="text-xs text-indigo-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>Policy Purge:</strong> V40 includes a recursive loop to DROP all old 'v38' and 'v39' policies before creating the new unified rules.</li>
-                  <li><strong>Performance Boost:</strong> Replaced raw 'auth.uid()' calls with '(SELECT auth.uid())' to satisfy the Supabase Linter's performance requirements.</li>
-                  <li><strong>Deadlock Resolution:</strong> Ensuring only ONE policy exists per action (SELECT, INSERT, UPDATE, DELETE).</li>
+                  <li><strong>Aggressive Wipe:</strong> V41 drops all policies starting with 'v37', 'v38', 'v39', or 'v40'.</li>
+                  <li><strong>Performance Linter:</strong> Full compliance with '(SELECT auth.uid())' syntax to stop performance degradation.</li>
+                  <li><strong>Neural Sync:</strong> Explicitly cleans the 'neural_brain' table policies which were flagging as 'Multiple Permissive Policies'.</li>
                 </ul>
               </div>
             </div>

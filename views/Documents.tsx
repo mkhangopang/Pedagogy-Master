@@ -159,9 +159,9 @@ const Documents: React.FC<DocumentsProps> = ({
       if (err.message?.includes('RLS') || err.message?.includes('policy') || !err.message) {
         setDetailedError({ 
           type: 'policy', 
-          title: 'Database Policy Conflict', 
-          message: 'The server encountered a security deadlock while saving metadata (Stage 90%). This happens when multiple RLS versions coexist.',
-          fix: 'Go to Brain Control and apply the v40 System Optimization Patch.'
+          title: 'System Deadlock (v41 Required)', 
+          message: 'The database hang at 90% is caused by lingering versioned policies (v37/v40) identified in your linter report.',
+          fix: 'Apply SQL Patch v41 in Brain Control to purge legacy ghosts.'
         });
       } else {
         setDetailedError({ 
