@@ -64,24 +64,16 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - HIGH-PERFORMANCE INFRA PATCH v36
--- FOCUS: Fix Performance Warnings, Redundant Indexes, and Type Mismatches.
+  const sqlSchema = `-- Pedagogy Master - SECURE INFRA PATCH v37
+-- FOCUS: Harden Search Path (Security Fix) & Consolidate Storage RLS.
 
--- 1. DROP ALL REDUNDANT INDEXES (Fixing Dashboard Warnings)
-DROP INDEX IF EXISTS public.idx_messages_uid;
-DROP INDEX IF EXISTS public.idx_v31_messages_uid;
-DROP INDEX IF EXISTS public.idx_docs_perf;
-DROP INDEX IF EXISTS public.idx_docs_uid;
-DROP INDEX IF EXISTS public.idx_v31_docs_uid;
-DROP INDEX IF EXISTS public.idx_profiles_perf;
-DROP INDEX IF EXISTS public.idx_v31_profiles_uid_role;
-DROP INDEX IF EXISTS public.idx_logs_uid;
-
--- 2. PERFORMANCE-OPTIMIZED ADMIN CHECK (SECURITY DEFINER)
+-- 1. SECURE ADMIN CHECK (SECURITY DEFINER + SEARCH_PATH FIX)
+-- This resolves the "function_search_path_mutable" warning in Supabase.
 CREATE OR REPLACE FUNCTION public.check_is_admin()
-RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER 
+SET search_path = public, auth
+AS $$
 BEGIN
-  -- Strict cast check on JWT email
   RETURN (auth.jwt() ->> 'email')::text IN (
     'mkgopang@gmail.com', 
     'admin@edunexus.ai', 
@@ -90,7 +82,8 @@ BEGIN
 END;
 $$;
 
--- 3. GLOBAL RLS RESET (Cleanup for v36)
+-- 2. GLOBAL RLS RESET & TYPE-STABLE POLICIES
+-- Clean up all previous v36 policies to ensure fresh v37 state
 DO $$ 
 DECLARE
     policynames RECORD;
@@ -102,36 +95,36 @@ BEGIN
     END LOOP;
 END $$;
 
--- 4. TYPE-STABLE DATABASE RLS (Wrapping auth.uid() in subqueries)
--- We cast user_id and id to TEXT to handle cases where schema might differ from Auth UUID.
-CREATE POLICY "v36_profiles_access" ON public.profiles FOR ALL TO authenticated USING (id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (id::text = (SELECT auth.uid())::text OR check_is_admin());
-CREATE POLICY "v36_documents_access" ON public.documents FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
-CREATE POLICY "v36_artifacts_access" ON public.output_artifacts FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
-CREATE POLICY "v36_feedback_access" ON public.feedback_events FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
-CREATE POLICY "v36_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (true);
+-- Database RLS with optimized subqueries and explicit casting
+CREATE POLICY "v37_profiles_access" ON public.profiles FOR ALL TO authenticated USING (id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v37_documents_access" ON public.documents FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v37_artifacts_access" ON public.output_artifacts FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v37_feedback_access" ON public.feedback_events FOR ALL TO authenticated USING (user_id::text = (SELECT auth.uid())::text OR check_is_admin()) WITH CHECK (user_id::text = (SELECT auth.uid())::text OR check_is_admin());
+CREATE POLICY "v37_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (true);
 
--- 5. STORAGE POLICIES (Explicit Type Casting & Granular Access)
--- DROP existing to avoid collisions
-DROP POLICY IF EXISTS "Teacher Storage Access" ON storage.objects;
-DROP POLICY IF EXISTS "v35_storage_insert" ON storage.objects;
-DROP POLICY IF EXISTS "v35_storage_select" ON storage.objects;
-DROP POLICY IF EXISTS "v35_storage_delete" ON storage.objects;
+-- 3. STORAGE HARDENING
+-- Reset storage policies
+DROP POLICY IF EXISTS "v36_storage_insert" ON storage.objects;
+DROP POLICY IF EXISTS "v36_storage_select" ON storage.objects;
+DROP POLICY IF EXISTS "v36_storage_delete" ON storage.objects;
 
 -- Ensure "documents" bucket exists
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('documents', 'documents', false) 
 ON CONFLICT (id) DO NOTHING;
 
--- Storage Insert Policy: Authenticated users can upload to documents bucket
-CREATE POLICY "v36_storage_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'documents');
+-- Storage Policies v37
+CREATE POLICY "v37_storage_insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (bucket_id = 'documents');
+CREATE POLICY "v37_storage_select" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'documents');
+CREATE POLICY "v37_storage_delete" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'documents' AND owner::text = (SELECT auth.uid())::text);
 
--- Storage Select Policy: Authenticated users can view objects in documents bucket
-CREATE POLICY "v36_storage_select" ON storage.objects FOR SELECT TO authenticated USING (bucket_id = 'documents');
+-- 4. CLEANUP REDUNDANT INDEXES
+DROP INDEX IF EXISTS public.idx_messages_uid;
+DROP INDEX IF EXISTS public.idx_v31_messages_uid;
+DROP INDEX IF EXISTS public.idx_docs_perf;
+DROP INDEX IF EXISTS public.idx_docs_uid;
 
--- Storage Delete Policy: Users can only delete their own objects
-CREATE POLICY "v36_storage_delete" ON storage.objects FOR DELETE TO authenticated USING (bucket_id = 'documents' AND owner::text = (SELECT auth.uid())::text);
-
--- 6. PERMISSIONS RE-HARDENING
+-- 5. FINAL PERMISSIONS
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
@@ -198,7 +191,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Performance SQL Patch (v36)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Harden SQL Patch (v37)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -211,17 +204,17 @@ GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold">Consolidated Health Strategy (v36)</h2>
+              <h2 className="text-xl font-bold">Consolidated Health Strategy (v37)</h2>
             </div>
-            <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-start gap-4">
-              <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl mt-1 shadow-sm"><Activity size={20}/></div>
+            <div className="p-6 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-start gap-4">
+              <div className="p-2 bg-emerald-100 text-emerald-600 rounded-xl mt-1 shadow-sm"><Activity size={20}/></div>
               <div>
-                <h3 className="font-bold text-indigo-900 tracking-tight">Post-Migration Optimization</h3>
-                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">Patch v36 resolves persistent performance bottlenecks and type mismatches. It implements high-performance subqueries for RLS, as recommended by the Supabase Diagnostic Dashboard.</p>
-                <ul className="text-xs text-indigo-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>Index Consolidation:</strong> Removed 8 redundant indexes to prevent write-amplification.</li>
-                  <li><strong>Type Safety:</strong> Explicitly casted UUIDs and IDs to <code>TEXT</code> to solve operator mismatch errors.</li>
-                  <li><strong>Subquery Optimization:</strong> Wrapped <code>auth.uid()</code> in subqueries to prevent row-by-row re-evaluation of policies.</li>
+                <h3 className="font-bold text-emerald-900 tracking-tight">Security Hardening (Search Path)</h3>
+                <p className="text-sm text-emerald-700 mt-1 mb-4 leading-relaxed">Patch v37 addresses critical security warnings regarding the search_path of SECURITY DEFINER functions. It ensures the neural engine logic remains isolated and performant.</p>
+                <ul className="text-xs text-emerald-800 space-y-2 list-disc ml-4 font-medium">
+                  <li><strong>Search Path Lockdown:</strong> Explicitly set search_path to public/auth for admin checks.</li>
+                  <li><strong>RLS Consolidation:</strong> Standardized v37 naming for all Row Level Security policies.</li>
+                  <li><strong>Type Consistency:</strong> Maintained TEXT-based casting for UUID comparisons to avoid operator mismatch errors.</li>
                 </ul>
               </div>
             </div>
