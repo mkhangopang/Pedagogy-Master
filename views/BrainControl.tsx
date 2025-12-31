@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, XCircle, ShieldCheck, Lock, ShieldAlert } from 'lucide-react';
 import { NeuralBrain } from '../types';
@@ -66,66 +67,86 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE SECURITY PATCH v11
--- FIXES: RLS Linter Errors & Column reference errors (user_id vs id)
+  const sqlSchema = `-- Pedagogy Master - COMPREHENSIVE SECURITY PATCH v12
+-- FIXES: RLS Linter Errors, Missing Columns, and user_id vs id mismatch
 
--- 1. ENABLE ROW LEVEL SECURITY (RLS)
+-- 1. ENSURE SCHEMA STRUCTURE FOR LINTER-FLAGGED TABLES
+CREATE TABLE IF NOT EXISTS public.organizations (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL,
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.master_prompt (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    content text NOT NULL,
+    is_active boolean DEFAULT true,
+    created_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS public.usage_logs (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid REFERENCES auth.users(id),
+    action text,
+    metadata jsonb,
+    created_at timestamptz DEFAULT now()
+);
+
+-- 2. ADD MISSING COLUMNS TO PROFILES IF NECESSARY
+DO $$ 
+BEGIN 
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='profiles' AND column_name='org_id') THEN
+        ALTER TABLE public.profiles ADD COLUMN org_id uuid REFERENCES public.organizations(id);
+    END IF;
+END $$;
+
+-- 3. ENABLE ROW LEVEL SECURITY (RLS)
 ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.output_artifacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.feedback_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.master_prompt ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.organizations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.usage_logs ENABLE ROW LEVEL SECURITY;
 
--- 2. CREATE ACCESS POLICIES
-DO $$ 
-BEGIN
-    -- master_prompt: Public read access
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'master_prompt' AND policyname = 'Public read active prompt') THEN
-        CREATE POLICY "Public read active prompt" ON public.master_prompt FOR SELECT USING (true);
-    END IF;
+-- 4. DROP OLD POLICIES TO PREVENT COLLISIONS
+DROP POLICY IF EXISTS "Public read active prompt" ON public.master_prompt;
+DROP POLICY IF EXISTS "Users see own org" ON public.organizations;
+DROP POLICY IF EXISTS "Users see own usage" ON public.usage_logs;
+DROP POLICY IF EXISTS "Owners can manage docs" ON public.documents;
 
-    -- organizations: Users see their own organization based on profile link
-    -- FIXED: Changed 'user_id' to 'id' to match the profiles table schema
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'organizations' AND policyname = 'Users see own org') THEN
-        CREATE POLICY "Users see own org" ON public.organizations FOR SELECT USING (
-            EXISTS (
-                SELECT 1 FROM public.profiles 
-                WHERE profiles.id = auth.uid() 
-                AND profiles.org_id = organizations.id
-            )
-        );
-    END IF;
+-- 5. CREATE NEW ROBUST POLICIES
+-- master_prompt: Public can read active logic
+CREATE POLICY "Public read active prompt" ON public.master_prompt FOR SELECT USING (is_active = true);
 
-    -- usage_logs: Users see their own logs
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'usage_logs' AND policyname = 'Users see own usage') THEN
-        CREATE POLICY "Users see own usage" ON public.usage_logs FOR SELECT USING (auth.uid() = user_id);
-    END IF;
+-- organizations: Users can see their organization if they are members (fixed profile id reference)
+CREATE POLICY "Users see own org" ON public.organizations FOR SELECT USING (
+    EXISTS (
+        SELECT 1 FROM public.profiles 
+        WHERE profiles.id = auth.uid() 
+        AND profiles.org_id = organizations.id
+    )
+);
 
-    -- documents: Owner access
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'documents' AND policyname = 'Owners can manage docs') THEN
-        CREATE POLICY "Owners can manage docs" ON public.documents FOR ALL USING (auth.uid() = user_id);
-    END IF;
-END $$;
+-- usage_logs: Users can see their own activity logs
+CREATE POLICY "Users see own usage" ON public.usage_logs FOR SELECT USING (auth.uid() = user_id);
 
--- 3. STORAGE SECURITY FOR "documents" BUCKET
--- Ensure the bucket exists and policies are applied
+-- documents: Basic owner access
+CREATE POLICY "Owners can manage docs" ON public.documents FOR ALL USING (auth.uid() = user_id);
+
+-- 6. STORAGE SECURITY FOR "documents" BUCKET
+-- Run this once to ensure the bucket is configured for the app
 -- INSERT INTO storage.buckets (id, name, public) VALUES ('documents', 'documents', false) ON CONFLICT DO NOTHING;
 
-DO $$
-BEGIN
-    -- Storage Policy: Users can upload to their own folder
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'objects' AND schemaname = 'storage' AND policyname = 'Users can upload docs') THEN
-        CREATE POLICY "Users can upload docs" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'documents' AND auth.role() = 'authenticated');
-    END IF;
+DROP POLICY IF EXISTS "Users can upload docs" ON storage.objects;
+DROP POLICY IF EXISTS "Users can view own docs" ON storage.objects;
 
-    -- Storage Policy: Users can see their own files
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'objects' AND schemaname = 'storage' AND policyname = 'Users can view own docs') THEN
-        CREATE POLICY "Users can view own docs" ON storage.objects FOR SELECT USING (bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]);
-    END IF;
-END $$;
+CREATE POLICY "Users can upload docs" ON storage.objects FOR INSERT WITH CHECK (
+    bucket_id = 'documents' AND auth.role() = 'authenticated'
+);
+
+CREATE POLICY "Users can view own docs" ON storage.objects FOR SELECT USING (
+    bucket_id = 'documents' AND auth.uid()::text = (storage.foldername(name))[1]
+);
 `;
 
   return (
@@ -189,7 +210,7 @@ END $$;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Security & RLS Patch SQL (v11)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Security & RLS Patch SQL (v12)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -208,12 +229,12 @@ END $$;
               <div className="p-2 bg-amber-100 text-amber-600 rounded-xl mt-1 shadow-sm"><ShieldAlert size={20}/></div>
               <div>
                 <h3 className="font-bold text-amber-900 tracking-tight">Resolving RLS Errors</h3>
-                <p className="text-sm text-amber-700 mt-1 mb-4 leading-relaxed">The Supabase linter identified public tables and column reference errors. Patch v11 addresses these specific security and logic issues.</p>
+                <p className="text-sm text-amber-700 mt-1 mb-4 leading-relaxed">The Supabase linter identified public tables and column reference errors. Patch v12 addresses these specific security and logic issues.</p>
                 <ol className="text-xs text-amber-800 space-y-2 list-decimal ml-4 font-medium">
-                  <li>Copy the <strong>SQL Patch (v11)</strong> from the Infrastructure tab.</li>
+                  <li>Copy the <strong>SQL Patch (v12)</strong> from the Infrastructure tab.</li>
                   <li>Paste into the <strong>SQL Editor</strong> in Supabase.</li>
-                  <li>This will fix the <code>user_id</code> reference in the <code>organizations</code> policy and secure <code>master_prompt</code> and <code>usage_logs</code>.</li>
-                  <li>Verify the bucket name is <code>documents</code>.</li>
+                  <li>This version includes <code>DROP POLICY</code> commands to clean up the broken <code>user_id</code> references.</li>
+                  <li>Verify the bucket name is exactly <code>documents</code>.</li>
                 </ol>
               </div>
             </div>
