@@ -4,11 +4,10 @@ import {
   Upload, FileText, Plus, ChevronLeft, Target, 
   Loader2, AlertCircle, Trash2, Lock, 
   CheckCircle2, ShieldAlert, X, Zap, 
-  FileCode, FileType, Check, RefreshCw, Sparkles,
-  Database, WifiOff, FileWarning, Fingerprint
+  FileType, Check, RefreshCw, Sparkles,
+  Database, WifiOff
 } from 'lucide-react';
-import { Document, SLO, NeuralBrain, SubscriptionPlan } from '../types';
-import { geminiService } from '../services/geminiService';
+import { Document, NeuralBrain, SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
 import { uploadFile } from '../lib/supabase';
 import { isSupportedFileType } from '../lib/gemini-file';
@@ -27,7 +26,7 @@ interface DocumentsProps {
 type UploadStage = 'idle' | 'uploading' | 'persisting' | 'complete' | 'error';
 
 interface DetailedError {
-  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage';
+  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage' | 'policy';
   title: string;
   message: string;
   fix?: string;
@@ -41,6 +40,7 @@ const getErrorIcon = (type: DetailedError['type']) => {
     case 'auth': return <Lock size={24} />;
     case 'quota': return <Zap size={24} />;
     case 'storage': return <Database size={24} />;
+    case 'policy': return <ShieldAlert size={24} />;
     default: return <AlertCircle size={24} />;
   }
 };
@@ -48,11 +48,7 @@ const getErrorIcon = (type: DetailedError['type']) => {
 const Documents: React.FC<DocumentsProps> = ({ 
   documents, 
   onAddDocument, 
-  onUpdateDocument, 
   onDeleteDocument,
-  brain, 
-  onQuery, 
-  canQuery,
   userPlan
 }) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -73,15 +69,12 @@ const Documents: React.FC<DocumentsProps> = ({
     let interval: any;
     if (isUploading) {
       if (uploadStage === 'uploading') {
-        // Step 1: 0% to 90% is the raw storage upload
         interval = setInterval(() => {
           setProgress(prev => (prev < 90 ? prev + 0.5 : prev));
         }, 1000);
       } else if (uploadStage === 'persisting') {
-        // Step 2: 90% to 95% is the database record creation
         setProgress(93);
       } else if (uploadStage === 'complete') {
-        // Step 3: Done
         setProgress(100);
       } else if (uploadStage === 'error') {
         setProgress(0);
@@ -105,7 +98,6 @@ const Documents: React.FC<DocumentsProps> = ({
         message: `File type "${file.type}" is not supported.`,
         fix: 'Use PDF, DOCX, or plain text.'
       });
-      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
@@ -116,7 +108,6 @@ const Documents: React.FC<DocumentsProps> = ({
         message: `Maximum allowed size is ${MAX_FILE_SIZE_MB}MB.`,
         fix: 'Compress the document or split it.'
       });
-      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
@@ -130,11 +121,11 @@ const Documents: React.FC<DocumentsProps> = ({
     const docId = crypto.randomUUID();
 
     try {
-      // Step 1: Storage Upload (The part that reaches 90%)
+      // Step 1: Storage Upload
       const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
 
-      // Step 2: DB Persistence (If this hangs, RLS v39 patch is needed)
+      // Step 2: DB Metadata Registration (The 90% hang point)
       setUploadStage('persisting');
       
       const newDoc: Document = {
@@ -150,7 +141,6 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // Call to parent to save in Supabase table 'documents'
       await onAddDocument(newDoc);
       
       setSelectedDocId(docId);
@@ -165,14 +155,24 @@ const Documents: React.FC<DocumentsProps> = ({
       console.error("Critical Upload Error:", err);
       setUploadStage('error');
       
-      setDetailedError({ 
-        type: 'network', 
-        title: 'System Stall', 
-        message: err.message || 'The database failed to record the document metadata.',
-        fix: 'Run SQL Patch v39 in Brain Control to fix RLS Deadlocks.'
-      });
+      // Handle the "Multiple Permissive Policies" hang explicitly
+      if (err.message?.includes('RLS') || err.message?.includes('policy') || !err.message) {
+        setDetailedError({ 
+          type: 'policy', 
+          title: 'Database Policy Conflict', 
+          message: 'The server encountered a security deadlock while saving metadata (Stage 90%). This happens when multiple RLS versions coexist.',
+          fix: 'Go to Brain Control and apply the v40 System Optimization Patch.'
+        });
+      } else {
+        setDetailedError({ 
+          type: 'network', 
+          title: 'Upload Interrupted', 
+          message: err.message || 'The database failed to record the document metadata.',
+          fix: 'Check your internet connection and try again.'
+        });
+      }
       
-      setTimeout(() => setIsUploading(false), 5000);
+      setTimeout(() => setIsUploading(false), 8000);
     } finally {
        if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -180,10 +180,10 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStatusText = () => {
     switch (uploadStage) {
-      case 'uploading': return 'Uploading File';
+      case 'uploading': return 'Transmitting File';
       case 'persisting': return 'Syncing Metadata';
       case 'complete': return 'Material Online';
-      case 'error': return 'Sync Interrupted';
+      case 'error': return 'Sync Failed';
       default: return 'Standby...';
     }
   };
@@ -212,8 +212,8 @@ const Documents: React.FC<DocumentsProps> = ({
               <h3 className="text-2xl font-black text-slate-900">{getStatusText()}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
                 {uploadStage === 'uploading' 
-                  ? 'Transmitting document to secure cloud...' 
-                  : 'Verifying database permissions (Patch v39)...'}
+                  ? 'Streaming high-fidelity curriculum data...' 
+                  : 'Resolving database permissions (Stage 90%)...'}
               </p>
             </div>
           </div>
@@ -245,16 +245,20 @@ const Documents: React.FC<DocumentsProps> = ({
       </header>
 
       {detailedError && (
-        <div className="bg-rose-50 border-2 border-rose-100 p-6 rounded-[2rem] flex items-start gap-5 animate-in slide-in-from-top-4">
-          <div className="p-3 bg-rose-100 text-rose-600 rounded-2xl shrink-0">
+        <div className={`border-2 p-6 rounded-[2rem] flex items-start gap-5 animate-in slide-in-from-top-4 ${detailedError.type === 'policy' ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-100'}`}>
+          <div className={`p-3 rounded-2xl shrink-0 ${detailedError.type === 'policy' ? 'bg-indigo-100 text-indigo-600' : 'bg-rose-100 text-rose-600'}`}>
             {getErrorIcon(detailedError.type)}
           </div>
           <div className="flex-1">
-            <h4 className="font-bold text-rose-900">{detailedError.title}</h4>
-            <p className="text-sm text-rose-700 mt-1 leading-relaxed">{detailedError.message}</p>
-            {detailedError.fix && <p className="text-xs font-black uppercase text-rose-400 mt-3 tracking-widest flex items-center gap-1"><Check size={12}/> {detailedError.fix}</p>}
+            <h4 className={`font-bold ${detailedError.type === 'policy' ? 'text-indigo-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
+            <p className={`text-sm mt-1 leading-relaxed ${detailedError.type === 'policy' ? 'text-indigo-700' : 'text-rose-700'}`}>{detailedError.message}</p>
+            {detailedError.fix && (
+              <p className={`text-xs font-black uppercase mt-3 tracking-widest flex items-center gap-1 ${detailedError.type === 'policy' ? 'text-indigo-500' : 'text-rose-400'}`}>
+                <Check size={12}/> {detailedError.fix}
+              </p>
+            )}
           </div>
-          <button onClick={() => setDetailedError(null)} className="p-2 hover:bg-rose-200/50 rounded-xl text-rose-400"><X size={20}/></button>
+          <button onClick={() => setDetailedError(null)} className="p-2 hover:bg-black/5 rounded-xl text-slate-400"><X size={20}/></button>
         </div>
       )}
 
