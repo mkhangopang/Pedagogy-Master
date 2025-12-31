@@ -5,7 +5,7 @@ export const APP_NAME = "Pedagogy Master";
 
 export const ADMIN_EMAILS = [
   'admin@edunexus.ai',
-  'fasi.2001@live.com'
+  'mkgopang@gmail.com'
 ];
 
 export const BLOOM_LEVELS = [
