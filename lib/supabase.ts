@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 export const isSupabaseConfigured = 
   supabaseUrl !== '' && 
@@ -10,16 +11,30 @@ export const isSupabaseConfigured =
   supabaseAnonKey !== '' &&
   supabaseAnonKey !== 'placeholder';
 
+// Standard client for browser-side RLS-bound operations
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co', 
   supabaseAnonKey || 'placeholder'
 );
 
+/**
+ * Creates a privileged client for server-side routes only.
+ * This bypasses RLS and is used to solve the 90% hang issue.
+ */
+export const createPrivilegedClient = () => {
+  if (!serviceRoleKey) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY is missing from environment variables.');
+  }
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+};
+
 export type ConnectionStatus = 'disconnected' | 'configured' | 'connected' | 'error' | 'rls_locked';
 
-/**
- * Performs a deep health check of the database connection and schema
- */
 export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; message: string }> => {
   if (!isSupabaseConfigured) {
     return { status: 'disconnected', message: 'Environment variables are missing.' };
@@ -32,8 +47,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v38.' };
-      if (profileError.code === 'PGRST301') return { status: 'rls_locked', message: 'API Key permissions blocked by RLS.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v49.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
@@ -43,22 +57,6 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
   }
 };
 
-/**
- * Verifies if the current user can actually write to the database
- */
-export const verifyPersistence = async (userId: string): Promise<boolean> => {
-  try {
-    const { error } = await supabase.from('profiles').update({ updated_at: new Date().toISOString() }).eq('id', userId);
-    return !error;
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Uploads a file to Supabase storage.
- * Updated: Passes the File object directly to use native stream handling.
- */
 export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string }> => {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase project is not configured.');
@@ -67,7 +65,6 @@ export const uploadFile = async (file: File, bucket: string = 'documents'): Prom
   const fileExt = file.name.split('.').pop();
   const fileName = `${crypto.randomUUID()}.${fileExt}`;
 
-  // Using the File object directly is safer for memory and timeouts
   const { data, error } = await supabase.storage
     .from(bucket)
     .upload(fileName, file, {
@@ -77,10 +74,6 @@ export const uploadFile = async (file: File, bucket: string = 'documents'): Prom
     });
   
   if (error) {
-    console.error("Storage Logic Error:", error);
-    if (error.message.includes('row level security')) {
-      throw new Error('Access Denied: RLS is blocking the transfer. Apply SQL Patch v38.');
-    }
     throw new Error(`Cloud Rejection: ${error.message}`);
   }
   

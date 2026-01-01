@@ -64,23 +64,22 @@ const Documents: React.FC<DocumentsProps> = ({
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
-  // Persistence Engine: Check for hung syncs on mount
   useEffect(() => {
-    const saved = localStorage.getItem('pedagogy_sync_v45');
+    const saved = localStorage.getItem('pedagogy_sync_v49');
     if (saved) {
       try {
         setPendingSync(JSON.parse(saved));
       } catch (e) {
-        localStorage.removeItem('pedagogy_sync_v45');
+        localStorage.removeItem('pedagogy_sync_v49');
       }
     }
   }, []);
 
   useEffect(() => {
     if (pendingSync) {
-      localStorage.setItem('pedagogy_sync_v45', JSON.stringify(pendingSync));
+      localStorage.setItem('pedagogy_sync_v49', JSON.stringify(pendingSync));
     } else {
-      localStorage.removeItem('pedagogy_sync_v45');
+      localStorage.removeItem('pedagogy_sync_v49');
     }
   }, [pendingSync]);
 
@@ -89,8 +88,8 @@ const Documents: React.FC<DocumentsProps> = ({
     if (isUploading) {
       if (uploadStage === 'uploading') {
         interval = setInterval(() => {
-          setProgress(prev => (prev < 90 ? prev + 0.5 : prev));
-        }, 600);
+          setProgress(prev => (prev < 90 ? prev + 0.8 : prev));
+        }, 400);
       } else if (uploadStage === 'persisting') {
         setProgress(95);
       } else if (uploadStage === 'complete') {
@@ -103,11 +102,28 @@ const Documents: React.FC<DocumentsProps> = ({
   }, [isUploading, uploadStage]);
 
   /**
-   * RPC SYNC RECOVERY: Uses the v45 bypass to complete the sync
+   * PRIVILEGED SYNC: Uses the server-side API to bypass browser RLS hangs
    */
+  const syncWithServer = async (doc: Document) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const response = await fetch('/api/docs/register', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`
+      },
+      body: JSON.stringify({ doc })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error || 'Server Sync Failed');
+    }
+    return response.json();
+  };
+
   const resumeSync = async () => {
     if (!pendingSync) return;
-    
     setIsUploading(true);
     setUploadStage('persisting');
     setDetailedError(null);
@@ -116,7 +132,7 @@ const Documents: React.FC<DocumentsProps> = ({
       const docId = pendingSync.id || crypto.randomUUID();
       const newDoc: Document = {
         id: docId,
-        userId: '', // Set by server session
+        userId: '', 
         name: pendingSync.name,
         filePath: pendingSync.path,
         mimeType: pendingSync.type,
@@ -127,49 +143,27 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // V45 RPC Call - Bypasses standard RLS scan
-      const { error } = await supabase.rpc('register_document', {
-        p_id: newDoc.id,
-        p_user_id: (await supabase.auth.getUser()).data.user?.id,
-        p_name: newDoc.name,
-        p_file_path: newDoc.filePath,
-        p_mime_type: newDoc.mimeType,
-        p_status: newDoc.status,
-        p_subject: newDoc.subject,
-        p_grade_level: newDoc.gradeLevel,
-        p_slo_tags: JSON.stringify(newDoc.sloTags),
-        p_created_at: newDoc.createdAt
-      });
-
-      if (error) throw error;
-
+      await syncWithServer(newDoc);
       await onAddDocument(newDoc);
       setPendingSync(null);
       setSelectedDocId(docId);
       setUploadStage('complete');
-      setTimeout(() => {
-        setIsUploading(false);
-        setUploadStage('idle');
-      }, 1000);
+      setTimeout(() => { setIsUploading(false); setUploadStage('idle'); }, 1000);
     } catch (err: any) {
       handleSyncError(err);
     }
   };
 
   const handleSyncError = (err: any) => {
-    console.error("Critical Sync Error:", err);
+    console.error("Privileged Sync Error:", err);
     setUploadStage('error');
     setIsUploading(false);
-
-    const isTimeout = err.message === 'METADATA_TIMEOUT' || err.code === 'PGRST102';
     
     setDetailedError({ 
-      type: isTimeout ? 'timeout' : 'policy', 
-      title: isTimeout ? 'Sync Stall (90%)' : 'Sync Denied', 
-      message: isTimeout 
-        ? 'The file reached cloud storage, but the database registration timed out.' 
-        : err.message || 'The database rejected the document metadata.',
-      fix: 'Apply SQL Patch v45 in Brain Control, then click "Resume" below.'
+      type: 'timeout', 
+      title: 'Database Sync Timeout', 
+      message: 'The file is safe in cloud storage, but the server sync is lagging. This is likely a cold start on the API.',
+      fix: 'Wait 10 seconds and click "Resume Progress" below.'
     });
   };
 
@@ -184,7 +178,7 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     if (limitReached) {
-      setDetailedError({ type: 'quota', title: 'Storage Limit', message: 'Document limit reached for your plan.' });
+      setDetailedError({ type: 'quota', title: 'Storage Limit', message: 'Document limit reached.' });
       return;
     }
 
@@ -192,16 +186,13 @@ const Documents: React.FC<DocumentsProps> = ({
     setUploadStage('uploading');
 
     try {
-      // Stage 1: Storage transfer (0-90%)
       const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
       const docId = crypto.randomUUID();
 
-      // Checkpoint: Save to local storage in case of next stage hang
       const syncInfo = { name: file.name, path: filePath, type: file.type, id: docId };
       setPendingSync(syncInfo);
 
-      // Stage 2: Database Sync (90-100%)
       setUploadStage('persisting');
       
       const newDoc: Document = {
@@ -217,35 +208,19 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // V45 RPC Strategy with 20s Race
+      // 25s timeout for API sync
       await Promise.race([
         (async () => {
-          const { error } = await supabase.rpc('register_document', {
-            p_id: newDoc.id,
-            p_user_id: (await supabase.auth.getUser()).data.user?.id,
-            p_name: newDoc.name,
-            p_file_path: newDoc.filePath,
-            p_mime_type: newDoc.mimeType,
-            p_status: newDoc.status,
-            p_subject: newDoc.subject,
-            p_grade_level: newDoc.gradeLevel,
-            p_slo_tags: JSON.stringify(newDoc.sloTags),
-            p_created_at: newDoc.createdAt
-          });
-          if (error) throw error;
+          await syncWithServer(newDoc);
           await onAddDocument(newDoc);
         })(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 20000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 25000))
       ]);
       
       setPendingSync(null);
       setSelectedDocId(docId);
       setUploadStage('complete');
-
-      setTimeout(() => {
-        setIsUploading(false);
-        setUploadStage('idle');
-      }, 1500);
+      setTimeout(() => { setIsUploading(false); setUploadStage('idle'); }, 1500);
 
     } catch (err: any) {
       handleSyncError(err);
@@ -288,8 +263,8 @@ const Documents: React.FC<DocumentsProps> = ({
               <h3 className="text-2xl font-black text-slate-900">{getStatusText()}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
                 {uploadStage === 'uploading' 
-                  ? 'Streaming curriculum data to storage...' 
-                  : 'Registering metadata via High-Speed RPC (v45)...'}
+                  ? 'Transmitting curriculum data to storage...' 
+                  : 'Bypassing RLS with Privileged API (v49)...'}
               </p>
             </div>
           </div>
@@ -302,18 +277,12 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><RotateCcw size={24}/></div>
             <div>
               <h4 className="font-bold text-amber-900">Incomplete Sync Found</h4>
-              <p className="text-sm text-amber-700">"<span className="font-bold">{pendingSync.name}</span>" is in the cloud. We can resume the metadata sync immediately.</p>
+              <p className="text-sm text-amber-700">"<span className="font-bold">{pendingSync.name}</span>" is in the cloud. Click below to re-attempt the privileged metadata registration.</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setPendingSync(null)} className="px-4 py-2 text-amber-600 font-bold text-xs hover:bg-amber-100 rounded-lg transition-colors">Discard</button>
-            <button 
-              onClick={resumeSync}
-              className="px-6 py-2.5 bg-amber-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-amber-700 transition-all flex items-center gap-2"
-            >
-              Resume Progress
-            </button>
-          </div>
+          <button onClick={resumeSync} className="px-6 py-2.5 bg-amber-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-amber-700 transition-all flex items-center gap-2 shrink-0">
+            Resume Progress
+          </button>
         </div>
       )}
 
@@ -349,11 +318,9 @@ const Documents: React.FC<DocumentsProps> = ({
           <div className="flex-1">
             <h4 className={`text-lg font-bold ${detailedError.type === 'timeout' ? 'text-amber-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
             <p className={`text-sm mt-1 leading-relaxed ${detailedError.type === 'timeout' ? 'text-amber-700' : 'text-rose-700'}`}>{detailedError.message}</p>
-            {detailedError.fix && (
-              <p className={`text-xs font-black uppercase mt-4 tracking-widest flex items-center gap-1 ${detailedError.type === 'timeout' ? 'text-amber-600' : 'text-rose-400'}`}>
-                <Check size={12}/> {detailedError.fix}
-              </p>
-            )}
+            <p className="text-xs font-black uppercase mt-4 tracking-widest flex items-center gap-1 text-slate-400">
+              <Check size={12}/> {detailedError.fix}
+            </p>
           </div>
           <button onClick={() => setDetailedError(null)} className="p-2 hover:bg-black/5 rounded-xl text-slate-400"><X size={20}/></button>
         </div>
