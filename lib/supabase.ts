@@ -1,4 +1,3 @@
-
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -47,7 +46,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v56.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v57.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
@@ -68,20 +67,29 @@ export async function uploadToPrivateBucket(
   
   try {
     // Step 1: Authentication (10%)
-    onProgress?.(10, 'Authenticating session...');
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) throw new Error('Authentication lost. Please sign in again.');
+    // USE getSession: it's localized and faster than getUser, fixing the 10% hang.
+    onProgress?.(10, 'Validating local session...');
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
+    
+    if (authError || !session?.user) {
+       // Fallback to getUser if session is missing but we're trying to upload
+       const { data: { user } } = await supabase.auth.getUser();
+       if (!user) throw new Error('Session expired. Please sign in again.');
+    }
+    
+    const userId = session?.user?.id || (await supabase.auth.getUser()).data.user?.id;
+    if (!userId) throw new Error('Authorization required.');
 
     // Step 2: Validate file (20%)
-    onProgress?.(20, 'Validating file integrity...');
+    onProgress?.(20, 'Verifying file integrity...');
     const maxSize = 25 * 1024 * 1024; // 25MB
-    if (file.size > maxSize) throw new Error('File too large (Max 25MB).');
+    if (file.size > maxSize) throw new Error('Curriculum file too large (Max 25MB).');
 
     // Step 3: Prepare path (30%)
     onProgress?.(30, 'Preparing secure tunnel...');
     const timestamp = Date.now();
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const filePath = `${user.id}/${timestamp}_${sanitizedName}`;
+    const filePath = `${userId}/${timestamp}_${sanitizedName}`;
 
     // Step 4: Transmit (40-80%)
     onProgress?.(40, 'Transmitting to cloud cluster...');
@@ -90,7 +98,7 @@ export async function uploadToPrivateBucket(
       .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Storage upload timeout after 45s')), 45000)
+      setTimeout(() => reject(new Error('Storage transmission timed out (45s)')), 45000)
     );
 
     const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
