@@ -228,31 +228,12 @@ export default function App() {
                 <Documents 
                   documents={documents} 
                   onAddDocument={async (doc) => {
-                    if (isActuallyConnected) {
-                      // v42 Resilience: Wrap DB insert in a promise that can be raced for timeouts
-                      const insertTask = async () => {
-                        const { error } = await supabase.from('documents').insert([{
-                          id: doc.id, 
-                          user_id: userProfile.id, 
-                          name: doc.name, 
-                          file_path: doc.filePath,
-                          mime_type: doc.mimeType, 
-                          status: doc.status, 
-                          subject: doc.subject,
-                          grade_level: doc.gradeLevel, 
-                          slo_tags: doc.sloTags, 
-                          created_at: doc.createdAt
-                        }]);
-                        if (error) throw error;
-                      };
-
-                      try {
-                        await insertTask();
-                      } catch (error: any) {
-                        throw new Error(error.message || 'DATABASE_STALL');
-                      }
-                    }
-                    setDocuments(prev => [doc, ...prev]);
+                    // Update state immediately. DB persistence is now handled by RPC in the view.
+                    setDocuments(prev => {
+                      // Avoid duplicates on recovery
+                      if (prev.find(p => p.id === doc.id)) return prev;
+                      return [doc, ...prev];
+                    });
                   }} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));

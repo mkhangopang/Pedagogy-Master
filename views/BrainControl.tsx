@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, ShieldCheck, ShieldAlert, Trash2, Flame, Zap } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, ShieldCheck, ShieldAlert, Trash2, Flame, Zap, Check } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -64,10 +64,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - PERFORMANCE INDEXING & CONFLICT RESOLUTION v43
--- FOCUS: Adding indexes to FKs to stop 90% hang and fixing policy conflicts.
+  const sqlSchema = `-- Pedagogy Master - RPC BYPASS & DEADLOCK RESOLUTION v45
+-- FOCUS: Implementing RPC to bypass RLS-induced hangs during high-concurrency document registration.
 
--- 1. PURGE LEGACY VERSIONS (Including v42 conflicts)
+-- 1. PURGE OBSOLETE POLICIES (v37 - v44)
 DO $$ 
 DECLARE
     pol record;
@@ -82,61 +82,67 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. ADD MISSING INDEXES (Performance Linter Fixes)
--- This significantly speeds up RLS evaluation which prevents 90% stalls.
-CREATE INDEX IF NOT EXISTS idx_docs_user_id ON public.documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_org_id ON public.profiles(org_id) WHERE org_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_chat_docs_id ON public.chat_messages(document_id) WHERE document_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_brain_updated_by ON public.neural_brain(updated_by) WHERE updated_by IS NOT NULL;
-
--- 3. OPTIMIZED ADMIN CHECK
-CREATE OR REPLACE FUNCTION public.check_is_admin()
-RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER 
-SET search_path = public, auth
+-- 2. HIGH-PERFORMANCE RPC FUNCTION (Bypasses RLS for Writes)
+-- This eliminates the 90% hang by running with elevated privileges (SECURITY DEFINER).
+CREATE OR REPLACE FUNCTION public.register_document(
+  p_id uuid,
+  p_user_id uuid,
+  p_name text,
+  p_file_path text,
+  p_mime_type text,
+  p_status text,
+  p_subject text,
+  p_grade_level text,
+  p_slo_tags jsonb,
+  p_created_at timestamp with time zone
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
-  RETURN (SELECT (auth.jwt() ->> 'email')::text IN (
-    'mkgopang@gmail.com', 
-    'admin@edunexus.ai', 
-    'fasi.2001@live.com'
-  ));
+  -- Validate user attempting the insert (Optional security check)
+  IF auth.uid() <> p_user_id AND NOT (SELECT (auth.jwt() ->> 'email')::text IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')) THEN
+    RAISE EXCEPTION 'Unauthorized document registration attempt.';
+  END IF;
+
+  INSERT INTO public.documents (
+    id, user_id, name, file_path, mime_type, status, subject, grade_level, slo_tags, created_at
+  ) VALUES (
+    p_id, p_user_id, p_name, p_file_path, p_mime_type, p_status, p_subject, p_grade_level, p_slo_tags, p_created_at
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    status = EXCLUDED.status,
+    subject = EXCLUDED.subject,
+    slo_tags = EXCLUDED.slo_tags;
 END;
 $$;
 
--- 4. UNIFIED V43 POLICIES (No Overlaps)
+-- 3. ESSENTIAL INDEXING (Linter 0001 Fix)
+CREATE INDEX IF NOT EXISTS idx_documents_user_id_v45 ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_doc_id_v45 ON public.chat_messages(document_id);
 
--- PROFILES
+-- 4. CONSOLIDATED V45 POLICIES (Read Optimized)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "v43_profiles_access" ON public.profiles 
-FOR ALL TO authenticated 
-USING (id = (SELECT auth.uid()) OR check_is_admin()) 
-WITH CHECK (id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v45_profiles_access" ON public.profiles FOR ALL TO authenticated USING (id = (SELECT auth.uid())) WITH CHECK (id = (SELECT auth.uid()));
 
--- DOCUMENTS
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "v43_documents_access" ON public.documents 
-FOR ALL TO authenticated 
-USING (user_id = (SELECT auth.uid()) OR check_is_admin()) 
-WITH CHECK (user_id = (SELECT auth.uid()) OR check_is_admin());
+CREATE POLICY "v45_documents_read" ON public.documents FOR SELECT TO authenticated USING (user_id = (SELECT auth.uid()));
+-- Note: Insert is handled via RPC for performance; DELETE still uses RLS
+CREATE POLICY "v45_documents_delete" ON public.documents FOR DELETE TO authenticated USING (user_id = (SELECT auth.uid()));
 
--- NEURAL BRAIN (Fixed Conflict: SELECT vs WRITE)
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "v43_brain_select" ON public.neural_brain FOR SELECT TO authenticated USING (true);
-CREATE POLICY "v43_brain_admin" ON public.neural_brain FOR ALL TO authenticated 
-USING (check_is_admin()) 
-WITH CHECK (check_is_admin());
+CREATE POLICY "v45_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (true);
 
--- 5. STORAGE RESET
-DROP POLICY IF EXISTS "v42_storage_access" ON storage.objects;
-CREATE POLICY "v43_storage_access" ON storage.objects 
-FOR ALL TO authenticated 
-USING (bucket_id = 'documents') 
-WITH CHECK (bucket_id = 'documents');
+-- 5. STORAGE & PERMISSIONS
+DROP POLICY IF EXISTS "v44_storage_access" ON storage.objects;
+CREATE POLICY "v45_storage_access" ON storage.objects FOR ALL TO authenticated USING (bucket_id = 'documents') WITH CHECK (bucket_id = 'documents');
 
--- 6. PERMISSIONS
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
+GRANT EXECUTE ON FUNCTION public.register_document TO authenticated;
 `;
 
   return (
@@ -144,7 +150,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">Infrastructure diagnostics, performance indexing, and logic.</p>
+          <p className="text-slate-500 mt-1">Infrastructure diagnostics, RPC patching, and logic.</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
           <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
@@ -200,7 +206,7 @@ GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Indexing & Purge Patch (v43)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">RPC Deadlock Bypass Patch (v45)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -212,18 +218,18 @@ GRANT ALL ON ALL TABLES IN SCHEMA storage TO authenticated;
         <div className="space-y-6 max-w-4xl">
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
-              <Zap size={28} />
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">V43 Strategy: Resilient Performance</h2>
+              <ShieldCheck size={28} />
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">V45: RPC vs RLS Performance</h2>
             </div>
             <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-start gap-4">
               <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl mt-1 shadow-sm"><Activity size={20}/></div>
               <div>
-                <h3 className="font-bold text-indigo-900 tracking-tight">Optimizing the 90% Stage</h3>
-                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">The metadata hang occurs because Supabase must scan tables to verify permissions. Without indexes, this scan times out. V43 injects indices to make this instantaneous.</p>
+                <h3 className="font-bold text-indigo-900 tracking-tight">Bypassing the 90% Deadlock</h3>
+                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">The metadata hang occurs because standard INSERTs are subjected to complex RLS recursive scans. By moving the insert logic to a 'SECURITY DEFINER' RPC function, we execute the write as a superuser, bypassing the scan while maintaining auth verification within the function body.</p>
                 <ul className="text-xs text-indigo-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>FK Indexing:</strong> Created indices for 'documents.user_id' and 'chat_messages.document_id'.</li>
-                  <li><strong>Linter Compliance:</strong> Separated SELECT from ALL policies on 'neural_brain' to remove conflict warnings.</li>
-                  <li><strong>Conflict Destruction:</strong> A regex-based purge of all legacy vXX policies to ensure a clean state.</li>
+                  <li><strong>RPC Implementation:</strong> Created 'register_document' function for high-speed metadata ingestion.</li>
+                  <li><strong>Auth Consistency:</strong> The RPC still verifies auth.uid() before proceeding.</li>
+                  <li><strong>Legacy Clean:</strong> Aggressive regex purge of all versioned policies from v37-v44.</li>
                 </ul>
               </div>
             </div>

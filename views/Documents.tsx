@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import { Document, NeuralBrain, SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
-import { uploadFile } from '../lib/supabase';
+import { uploadFile, supabase } from '../lib/supabase';
 import { isSupportedFileType } from '../lib/gemini-file';
 
 interface DocumentsProps {
@@ -57,31 +57,30 @@ const Documents: React.FC<DocumentsProps> = ({
   const [progress, setProgress] = useState(0);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [detailedError, setDetailedError] = useState<DetailedError | null>(null);
-  const [pendingSync, setPendingSync] = useState<{name: string, path: string, type: string} | null>(null);
+  const [pendingSync, setPendingSync] = useState<{name: string, path: string, type: string, id?: string} | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
-  // Load Interrupted Sync from LocalStorage on mount
+  // Persistence Engine: Check for hung syncs on mount
   useEffect(() => {
-    const savedSync = localStorage.getItem('pedagogy_pending_sync');
-    if (savedSync) {
+    const saved = localStorage.getItem('pedagogy_sync_v45');
+    if (saved) {
       try {
-        setPendingSync(JSON.parse(savedSync));
+        setPendingSync(JSON.parse(saved));
       } catch (e) {
-        localStorage.removeItem('pedagogy_pending_sync');
+        localStorage.removeItem('pedagogy_sync_v45');
       }
     }
   }, []);
 
-  // Save Pending Sync to LocalStorage whenever it changes
   useEffect(() => {
     if (pendingSync) {
-      localStorage.setItem('pedagogy_pending_sync', JSON.stringify(pendingSync));
+      localStorage.setItem('pedagogy_sync_v45', JSON.stringify(pendingSync));
     } else {
-      localStorage.removeItem('pedagogy_pending_sync');
+      localStorage.removeItem('pedagogy_sync_v45');
     }
   }, [pendingSync]);
 
@@ -91,7 +90,7 @@ const Documents: React.FC<DocumentsProps> = ({
       if (uploadStage === 'uploading') {
         interval = setInterval(() => {
           setProgress(prev => (prev < 90 ? prev + 0.5 : prev));
-        }, 800);
+        }, 600);
       } else if (uploadStage === 'persisting') {
         setProgress(95);
       } else if (uploadStage === 'complete') {
@@ -104,7 +103,7 @@ const Documents: React.FC<DocumentsProps> = ({
   }, [isUploading, uploadStage]);
 
   /**
-   * RECOVERY: Attempt to save metadata for an already uploaded file
+   * RPC SYNC RECOVERY: Uses the v45 bypass to complete the sync
    */
   const resumeSync = async () => {
     if (!pendingSync) return;
@@ -114,26 +113,37 @@ const Documents: React.FC<DocumentsProps> = ({
     setDetailedError(null);
 
     try {
-      const docId = crypto.randomUUID();
+      const docId = pendingSync.id || crypto.randomUUID();
       const newDoc: Document = {
         id: docId,
-        userId: '', 
+        userId: '', // Set by server session
         name: pendingSync.name,
         filePath: pendingSync.path,
         mimeType: pendingSync.type,
         status: 'completed',
-        subject: 'Metadata Restored',
+        subject: 'Cloud Sync Recovered',
         gradeLevel: 'Auto',
         sloTags: [],
         createdAt: new Date().toISOString()
       };
 
-      // v43: Increased timeout to 30s to allow deep RLS checks to finish
-      await Promise.race([
-        onAddDocument(newDoc),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 30000))
-      ]);
+      // V45 RPC Call - Bypasses standard RLS scan
+      const { error } = await supabase.rpc('register_document', {
+        p_id: newDoc.id,
+        p_user_id: (await supabase.auth.getUser()).data.user?.id,
+        p_name: newDoc.name,
+        p_file_path: newDoc.filePath,
+        p_mime_type: newDoc.mimeType,
+        p_status: newDoc.status,
+        p_subject: newDoc.subject,
+        p_grade_level: newDoc.gradeLevel,
+        p_slo_tags: JSON.stringify(newDoc.sloTags),
+        p_created_at: newDoc.createdAt
+      });
 
+      if (error) throw error;
+
+      await onAddDocument(newDoc);
       setPendingSync(null);
       setSelectedDocId(docId);
       setUploadStage('complete');
@@ -147,25 +157,20 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   const handleSyncError = (err: any) => {
-    console.error("Sync Logic Error:", err);
+    console.error("Critical Sync Error:", err);
     setUploadStage('error');
     setIsUploading(false);
 
-    if (err.message === 'METADATA_TIMEOUT') {
-      setDetailedError({ 
-        type: 'timeout', 
-        title: 'Metadata Sync Stall (90%)', 
-        message: 'Cloud transfer succeeded, but the database took too long to register the metadata (30s timeout).',
-        fix: 'Run SQL Patch v43 in Brain Control, then click "Complete Sync".'
-      });
-    } else {
-      setDetailedError({ 
-        type: 'policy', 
-        title: 'Sync Interrupted', 
-        message: err.message || 'The database rejected the document registration.',
-        fix: 'Apply SQL Patch v43 to fix performance/policy issues.'
-      });
-    }
+    const isTimeout = err.message === 'METADATA_TIMEOUT' || err.code === 'PGRST102';
+    
+    setDetailedError({ 
+      type: isTimeout ? 'timeout' : 'policy', 
+      title: isTimeout ? 'Sync Stall (90%)' : 'Sync Denied', 
+      message: isTimeout 
+        ? 'The file reached cloud storage, but the database registration timed out.' 
+        : err.message || 'The database rejected the document metadata.',
+      fix: 'Apply SQL Patch v45 in Brain Control, then click "Resume" below.'
+    });
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,7 +184,7 @@ const Documents: React.FC<DocumentsProps> = ({
     }
 
     if (limitReached) {
-      setDetailedError({ type: 'quota', title: 'Storage Limit', message: 'You have reached your document limit.' });
+      setDetailedError({ type: 'quota', title: 'Storage Limit', message: 'Document limit reached for your plan.' });
       return;
     }
 
@@ -187,18 +192,18 @@ const Documents: React.FC<DocumentsProps> = ({
     setUploadStage('uploading');
 
     try {
-      // Step 1: Storage Upload
+      // Stage 1: Storage transfer (0-90%)
       const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
+      const docId = crypto.randomUUID();
 
-      // Persist metadata locally so we can resume even after a browser refresh
-      const syncInfo = { name: file.name, path: filePath, type: file.type };
+      // Checkpoint: Save to local storage in case of next stage hang
+      const syncInfo = { name: file.name, path: filePath, type: file.type, id: docId };
       setPendingSync(syncInfo);
 
-      // Step 2: DB Metadata Sync (Stage 90%)
+      // Stage 2: Database Sync (90-100%)
       setUploadStage('persisting');
       
-      const docId = crypto.randomUUID();
       const newDoc: Document = {
         id: docId,
         userId: '', 
@@ -212,10 +217,25 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // Await with 30s Timeout (Increased for RLS contention)
+      // V45 RPC Strategy with 20s Race
       await Promise.race([
-        onAddDocument(newDoc),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 30000))
+        (async () => {
+          const { error } = await supabase.rpc('register_document', {
+            p_id: newDoc.id,
+            p_user_id: (await supabase.auth.getUser()).data.user?.id,
+            p_name: newDoc.name,
+            p_file_path: newDoc.filePath,
+            p_mime_type: newDoc.mimeType,
+            p_status: newDoc.status,
+            p_subject: newDoc.subject,
+            p_grade_level: newDoc.gradeLevel,
+            p_slo_tags: JSON.stringify(newDoc.sloTags),
+            p_created_at: newDoc.createdAt
+          });
+          if (error) throw error;
+          await onAddDocument(newDoc);
+        })(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('METADATA_TIMEOUT')), 20000))
       ]);
       
       setPendingSync(null);
@@ -236,7 +256,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const getStatusText = () => {
     switch (uploadStage) {
-      case 'uploading': return 'Streaming to Cloud';
+      case 'uploading': return 'Transmitting to Cloud';
       case 'persisting': return 'Syncing Metadata';
       case 'complete': return 'Material Online';
       case 'error': return 'Sync Failed';
@@ -268,22 +288,21 @@ const Documents: React.FC<DocumentsProps> = ({
               <h3 className="text-2xl font-black text-slate-900">{getStatusText()}</h3>
               <p className="text-slate-500 text-sm leading-relaxed">
                 {uploadStage === 'uploading' 
-                  ? 'Transmitting curriculum data to storage...' 
-                  : 'Registering metadata (v43 Adaptive Timeout: 30s)...'}
+                  ? 'Streaming curriculum data to storage...' 
+                  : 'Registering metadata via High-Speed RPC (v45)...'}
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* RECOVERY BANNER: Shown if a sync was previously interrupted (Persisted in LocalStorage) */}
       {!isUploading && pendingSync && (
         <div className="bg-amber-50 border-2 border-amber-200 p-6 rounded-[2rem] flex items-center justify-between gap-6 shadow-sm animate-in slide-in-from-top-4">
           <div className="flex items-center gap-4">
             <div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><RotateCcw size={24}/></div>
             <div>
-              <h4 className="font-bold text-amber-900">Pending Sync Found</h4>
-              <p className="text-sm text-amber-700">The file "<span className="font-bold">{pendingSync.name}</span>" is in the cloud but needs metadata registration.</p>
+              <h4 className="font-bold text-amber-900">Incomplete Sync Found</h4>
+              <p className="text-sm text-amber-700">"<span className="font-bold">{pendingSync.name}</span>" is in the cloud. We can resume the metadata sync immediately.</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -292,7 +311,7 @@ const Documents: React.FC<DocumentsProps> = ({
               onClick={resumeSync}
               className="px-6 py-2.5 bg-amber-600 text-white rounded-xl font-bold text-sm shadow-lg hover:bg-amber-700 transition-all flex items-center gap-2"
             >
-              Complete Sync
+              Resume Progress
             </button>
           </div>
         </div>
@@ -330,7 +349,6 @@ const Documents: React.FC<DocumentsProps> = ({
           <div className="flex-1">
             <h4 className={`text-lg font-bold ${detailedError.type === 'timeout' ? 'text-amber-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
             <p className={`text-sm mt-1 leading-relaxed ${detailedError.type === 'timeout' ? 'text-amber-700' : 'text-rose-700'}`}>{detailedError.message}</p>
-            
             {detailedError.fix && (
               <p className={`text-xs font-black uppercase mt-4 tracking-widest flex items-center gap-1 ${detailedError.type === 'timeout' ? 'text-amber-600' : 'text-rose-400'}`}>
                 <Check size={12}/> {detailedError.fix}
@@ -343,7 +361,6 @@ const Documents: React.FC<DocumentsProps> = ({
 
       {selectedDoc ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Document Detail View */}
           <div className="lg:col-span-1 space-y-6">
             <button onClick={() => setSelectedDocId(null)} className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:translate-x-[-4px] transition-transform">
               <ChevronLeft size={18} /> Return to Library
