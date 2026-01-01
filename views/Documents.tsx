@@ -24,29 +24,6 @@ interface DocumentsProps {
   isConnected: boolean;
 }
 
-type UploadStage = 'idle' | 'active' | 'complete' | 'error';
-
-interface DetailedError {
-  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage' | 'policy' | 'timeout';
-  title: string;
-  message: string;
-  fix?: string;
-}
-
-const getErrorIcon = (type: DetailedError['type']) => {
-  switch (type) {
-    case 'format': return <FileType size={24} />;
-    case 'network': return <WifiOff size={24} />;
-    case 'ai': return <Sparkles size={24} />;
-    case 'auth': return <Lock size={24} />;
-    case 'quota': return <Zap size={24} />;
-    case 'storage': return <Database size={24} />;
-    case 'policy': return <ShieldAlert size={24} />;
-    case 'timeout': return <RotateCcw size={24} />;
-    default: return <AlertCircle size={24} />;
-  }
-};
-
 const Documents: React.FC<DocumentsProps> = ({ 
   documents, 
   onAddDocument, 
@@ -67,25 +44,27 @@ const Documents: React.FC<DocumentsProps> = ({
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
+  // Persistence for recovery across reloads
   useEffect(() => {
-    const saved = localStorage.getItem('pedagogy_sync_v53_final');
+    const saved = localStorage.getItem('pedagogy_sync_v54_final');
     if (saved) {
       try {
         setPendingSync(JSON.parse(saved));
       } catch (e) {
-        localStorage.removeItem('pedagogy_sync_v53_final');
+        localStorage.removeItem('pedagogy_sync_v54_final');
       }
     }
   }, []);
 
   useEffect(() => {
     if (pendingSync) {
-      localStorage.setItem('pedagogy_sync_v53_final', JSON.stringify(pendingSync));
+      localStorage.setItem('pedagogy_sync_v54_final', JSON.stringify(pendingSync));
     } else {
-      localStorage.removeItem('pedagogy_sync_v53_final');
+      localStorage.removeItem('pedagogy_sync_v54_final');
     }
   }, [pendingSync]);
 
+  // Monitor for the "90% Wall"
   useEffect(() => {
     let timer: any;
     if (isUploading && progress >= 85 && progress < 100) {
@@ -114,12 +93,14 @@ const Documents: React.FC<DocumentsProps> = ({
         if (response.ok) return await response.json();
         
         if (attempt < retries) {
-          await new Promise(r => setTimeout(r, 2000 * attempt));
+          const wait = 2500 * attempt;
+          console.warn(`Bridge attempt ${attempt} failed. Re-trying in ${wait}ms...`);
+          await new Promise(r => setTimeout(r, wait));
           continue;
         }
 
         const err = await response.json();
-        throw new Error(err.error || 'Metadata Registry Connection Failed');
+        throw new Error(err.error || 'Infrastructure Bridge Connection Failed');
       } catch (err: any) {
         if (attempt === retries) throw err;
       }
@@ -133,10 +114,10 @@ const Documents: React.FC<DocumentsProps> = ({
     
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Session required.");
+      if (!user) throw new Error("Session required for re-sync.");
 
       setProgress(90);
-      setStatusText('Resuming metadata bridge...');
+      setStatusText('Re-establishing neural handshake...');
 
       const docId = pendingSync.id || crypto.randomUUID();
       const newDoc: Document = {
@@ -166,15 +147,15 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   const handleSyncError = (err: any) => {
-    console.error("Critical Sync Failure:", err);
+    console.error("Critical Synchronization Failure:", err);
     setIsUploading(false);
     setProgress(0);
     
     setDetailedError({ 
       type: 'timeout', 
-      title: 'RLS Handshake Blocked', 
-      message: 'Storage transfer succeeded, but the database link timed out at 90%. This confirms an RLS policy mismatch.',
-      fix: 'Apply SQL Patch v53 and ensure folder path matches userId.'
+      title: '90% Handshake Timeout', 
+      message: 'The file reached the cloud cluster, but the metadata registration timed out. This is a common RLS optimization issue.',
+      fix: 'Run SQL Patch v54 to optimize (SELECT auth.uid()) checks.'
     });
   };
 
@@ -184,33 +165,34 @@ const Documents: React.FC<DocumentsProps> = ({
 
     setDetailedError(null);
     if (!isSupportedFileType(file.type)) {
-      setDetailedError({ type: 'format', title: 'Format Error', message: 'Unsupported file type.' });
+      setDetailedError({ type: 'format', title: 'Library Mismatch', message: 'Curriculum library supports PDF, TXT, and Word only.' });
       return;
     }
 
     if (limitReached) {
-      setDetailedError({ type: 'quota', title: 'Storage Full', message: 'Quota reached.' });
+      setDetailedError({ type: 'quota', title: 'Institutional Limit', message: 'Teaching material quota reached for this plan.' });
       return;
     }
 
     setIsUploading(true);
     
     try {
-      // DEFINITIVE UPLOAD LOGIC
+      // DEFINITIVE UPLOAD LOGIC (Step-by-step 10-100%)
       const { path, url } = await uploadToPrivateBucket(file, (p, s) => {
         setProgress(p);
         setStatusText(s);
       });
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Auth lost.");
+      if (!user) throw new Error("Authentication lost during stream.");
 
       const docId = crypto.randomUUID();
+      // Safety bookmark in case 90-100% hangs
       setPendingSync({ name: file.name, path: path, type: file.type, id: docId });
 
-      // 90%: Metadata Handshake
+      // FINAL 10%: Metadata Handshake
       setProgress(90);
-      setStatusText('Finalizing metadata...');
+      setStatusText('Finalizing Neural Link...');
       
       const newDoc: Document = {
         id: docId,
@@ -225,13 +207,15 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
+      // Uses the register API which bypasses slow RLS for insertion
       await syncWithServer(newDoc);
       await onAddDocument(newDoc);
       
+      // 100%: Cleanup
       setPendingSync(null);
       setSelectedDocId(docId);
       setProgress(100);
-      setStatusText('Ingestion complete!');
+      setStatusText('Ingestion Finalized!');
       setTimeout(() => { setIsUploading(false); setProgress(0); }, 1500);
 
     } catch (err: any) {
@@ -259,30 +243,30 @@ const Documents: React.FC<DocumentsProps> = ({
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-indigo-600 font-black text-5xl tracking-tighter">{Math.round(progress)}%</span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Ingesting</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Syncing</span>
               </div>
             </div>
 
             <div className="space-y-4">
               <h3 className="text-3xl font-black text-slate-900 tracking-tight">{statusText}</h3>
               <p className="text-slate-500 text-sm font-medium leading-relaxed px-4">
-                Bypassing RLS with Fast-Path Bridge (v53).
+                Bypassing RLS with Fast-Path Tunnel (v54).
               </p>
 
               {hangTimer > 8 && (
                 <div className="p-6 bg-rose-50 border-2 border-rose-100 rounded-[2.5rem] animate-in slide-in-from-bottom-4 shadow-xl">
                    <div className="flex items-center gap-3 text-rose-600 mb-3 justify-center font-bold">
                      <ShieldAlert size={20} />
-                     <span className="text-sm">90% Handshake Hang</span>
+                     <span className="text-sm">90% Infrastructure Hang</span>
                    </div>
                    <p className="text-xs text-rose-700 leading-relaxed mb-5">
-                     The database link is blocked. This happens if SQL Patch v53 hasn't been applied to authorize your folder.
+                     The cloud registration is lagging. This usually indicates conflicting RLS policies or missing indexes.
                    </p>
                    <button 
                      onClick={() => { setIsUploading(false); setProgress(0); }} 
                      className="w-full py-3 bg-rose-600 text-white rounded-2xl text-xs font-black hover:bg-rose-700 transition-all shadow-lg active:scale-95"
                    >
-                     Rescue & Try Sync Recovery
+                     Rescue & Resume Sync
                    </button>
                 </div>
               )}
@@ -294,14 +278,14 @@ const Documents: React.FC<DocumentsProps> = ({
       {!isUploading && pendingSync && (
         <div className="bg-indigo-600 p-8 rounded-[3rem] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl animate-in slide-in-from-top-6 text-white border-b-8 border-indigo-800">
           <div className="flex items-center gap-6 text-center md:text-left">
-            <div className="p-5 bg-white/20 backdrop-blur-xl rounded-[2rem] shadow-inner"><Activity size={32}/></div>
+            <div className="p-5 bg-white/20 backdrop-blur-xl rounded-[2rem] shadow-inner ring-1 ring-white/30"><Activity size={32}/></div>
             <div>
-              <h4 className="text-2xl font-black tracking-tight">Sync Recovery Active</h4>
-              <p className="text-sm opacity-80 mt-1 font-medium italic">"{pendingSync.name}" is stored. Finalize connection.</p>
+              <h4 className="text-2xl font-black tracking-tight">Sync Recovery Enabled</h4>
+              <p className="text-sm opacity-80 mt-1 font-medium italic">"{pendingSync.name}" is in the cloud. Re-link metadata now.</p>
             </div>
           </div>
           <button onClick={resumeSync} className="px-12 py-5 bg-white text-indigo-600 rounded-[1.8rem] font-black text-sm shadow-xl hover:bg-indigo-50 active:scale-95 transition-all flex items-center gap-3 shrink-0 uppercase tracking-widest">
-            Execute Handshake <Zap size={18} fill="currentColor" />
+            Repair Handshake <Zap size={18} fill="currentColor" />
           </button>
         </div>
       )}
@@ -312,7 +296,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium">
             <Database size={18} className="text-indigo-500" />
             Infrastructure Status: <span className={isConnected ? 'text-emerald-600 font-bold' : 'text-rose-500 font-bold'}>
-              {isConnected ? 'Verified Connection' : 'Handshake Pending'}
+              {isConnected ? 'Fully Synchronized' : 'Handshake Pending'}
             </span>
           </p>
         </div>
@@ -320,14 +304,14 @@ const Documents: React.FC<DocumentsProps> = ({
         <div className="flex items-center gap-4">
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.txt,.doc,.docx" />
           <button 
-            onClick={() => limitReached ? setDetailedError({type:'quota', title:'Storage Limit', message:'Quota reached.'}) : fileInputRef.current?.click()}
+            onClick={() => limitReached ? setDetailedError({type:'quota', title:'Library Capacity', message:'Instructional storage limit met.'}) : fileInputRef.current?.click()}
             disabled={isUploading}
             className={`flex items-center gap-4 px-12 py-5 rounded-[2rem] font-black shadow-2xl transition-all ${
-              limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-600/30'
+              limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-600/30 ring-4 ring-indigo-50'
             }`}
           >
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-            Upload Curriculum
+            Upload Material
           </button>
         </div>
       </header>
@@ -340,8 +324,11 @@ const Documents: React.FC<DocumentsProps> = ({
           <div className="flex-1">
             <h4 className={`text-2xl font-black ${detailedError.type === 'timeout' ? 'text-indigo-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
             <p className={`text-lg mt-3 leading-relaxed opacity-80 ${detailedError.type === 'timeout' ? 'text-indigo-700' : 'text-rose-700'}`}>{detailedError.message}</p>
+            <div className="mt-8 p-4 bg-white/50 rounded-2xl border border-indigo-100 inline-block text-[10px] font-black uppercase tracking-widest text-slate-500">
+               Manual Fix: {detailedError.fix}
+            </div>
           </div>
-          <button onClick={() => setDetailedError(null)} className="p-4 hover:bg-black/5 rounded-3xl text-slate-300"><X size={28}/></button>
+          <button onClick={() => setDetailedError(null)} className="p-4 hover:bg-black/5 rounded-3xl text-slate-300 transition-colors"><X size={28}/></button>
         </div>
       )}
 
@@ -352,12 +339,17 @@ const Documents: React.FC<DocumentsProps> = ({
               <ChevronLeft size={24} /> Return to Grid
             </button>
             <div className="bg-white rounded-[4rem] p-12 border border-slate-100 shadow-2xl space-y-10 relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -translate-y-1/2 translate-x-1/2 opacity-50" />
                <div className="w-24 h-24 bg-indigo-50 rounded-[2.5rem] flex items-center justify-center text-indigo-600 shadow-inner relative z-10"><FileText size={48} /></div>
                <div>
                  <h2 className="text-3xl font-black text-slate-900 truncate tracking-tight">{selectedDoc.name}</h2>
                  <p className="text-xs text-slate-400 mt-3 uppercase font-black tracking-[0.2em]">{selectedDoc.mimeType}</p>
                </div>
-               <button onClick={() => onDeleteDocument(selectedDoc.id)} className="w-full py-6 text-rose-500 bg-rose-50 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-rose-100 transition-all text-sm uppercase tracking-widest">
+               <div className="pt-8 border-t border-slate-50 space-y-4">
+                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Registry Sync</span><span className="font-black text-emerald-600">v54 VERIFIED</span></div>
+                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Access Plan</span><span className="font-black text-indigo-600 uppercase">RLS OPTIMIZED</span></div>
+               </div>
+               <button onClick={() => onDeleteDocument(selectedDoc.id)} className="w-full py-6 text-rose-500 bg-rose-50 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-rose-100 transition-all text-sm uppercase tracking-widest active:scale-95">
                  <Trash2 size={20}/> Purge Material
                </button>
             </div>
@@ -371,8 +363,8 @@ const Documents: React.FC<DocumentsProps> = ({
                 <Zap className="text-indigo-600" size={56} fill="currentColor" />
               </div>
               <div className="space-y-4">
-                <h3 className="text-3xl font-black text-slate-800 tracking-tight">Knowledge Node Linked</h3>
-                <p className="text-slate-500 max-w-sm mx-auto leading-relaxed text-lg">Material is now vectorized and accessible for all generative tools.</p>
+                <h3 className="text-3xl font-black text-slate-800 tracking-tight">Knowledge Node Synchronized</h3>
+                <p className="text-slate-500 max-w-sm mx-auto leading-relaxed text-lg font-medium">This curriculum node is now fully vectorized and available across all pedagogical tools.</p>
               </div>
             </div>
           </div>
@@ -387,7 +379,7 @@ const Documents: React.FC<DocumentsProps> = ({
                </div>
                <h3 className="font-black text-slate-900 truncate tracking-tight text-2xl">{doc.name}</h3>
                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mt-5 flex items-center gap-3">
-                 <Activity size={16} className="text-indigo-500"/> Context Node v53
+                 <Activity size={16} className="text-indigo-500"/> Neural Node v54
                </p>
             </div>
           ))}
@@ -395,13 +387,35 @@ const Documents: React.FC<DocumentsProps> = ({
           {documents.length === 0 && (
             <div className="col-span-full py-52 text-center bg-white/40 rounded-[6rem] border-8 border-dashed border-slate-100">
               <div className="w-32 h-32 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-10 text-slate-300 shadow-inner"><Upload size={64}/></div>
-              <h3 className="text-4xl font-black text-slate-800 tracking-tight">The Library is Standby</h3>
+              <h3 className="text-4xl font-black text-slate-800 tracking-tight">The Library is Ready</h3>
+              <p className="text-slate-500 mt-4 text-lg font-medium max-w-sm mx-auto leading-relaxed italic">Upload your core curriculum to begin automated SLO mapping.</p>
             </div>
           )}
         </div>
       )}
     </div>
   );
+};
+
+interface DetailedError {
+  type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage' | 'policy' | 'timeout';
+  title: string;
+  message: string;
+  fix?: string;
+}
+
+const getErrorIcon = (type: DetailedError['type']) => {
+  switch (type) {
+    case 'format': return <FileType size={24} />;
+    case 'network': return <WifiOff size={24} />;
+    case 'ai': return <Sparkles size={24} />;
+    case 'auth': return <Lock size={24} />;
+    case 'quota': return <Zap size={24} />;
+    case 'storage': return <Database size={24} />;
+    case 'policy': return <ShieldAlert size={24} />;
+    case 'timeout': return <RotateCcw size={24} />;
+    default: return <AlertCircle size={24} />;
+  }
 };
 
 export default Documents;

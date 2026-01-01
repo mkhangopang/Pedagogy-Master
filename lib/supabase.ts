@@ -47,7 +47,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v53.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v55.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
@@ -58,47 +58,59 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
 };
 
 /**
- * DEFINITIVE UPLOAD CODE FOR PRIVATE BUCKET WITH RLS
- * Path must be {user_id}/{filename} for RLS to work.
+ * Robust upload to private bucket with RLS support.
+ * Path MUST be {user_id}/{filename} for v55 policies.
  */
 export async function uploadToPrivateBucket(
   file: File,
   onProgress?: (progress: number, status: string) => void
 ): Promise<{ path: string; url: string }> {
   
-  // Step 1: Authentication (10%)
-  onProgress?.(10, 'Authenticating...');
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) throw new Error('Not authenticated. Please sign in.');
+  try {
+    // Step 1: Authentication (10%)
+    onProgress?.(10, 'Authenticating session...');
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) throw new Error('Authentication lost. Please sign in again.');
 
-  // Step 2: Validate file (20%)
-  onProgress?.(20, 'Validating file...');
-  const maxSize = 25 * 1024 * 1024; // 25MB
-  if (file.size > maxSize) throw new Error('File too large (Max 25MB).');
+    // Step 2: Validate file (20%)
+    onProgress?.(20, 'Validating file integrity...');
+    const maxSize = 25 * 1024 * 1024; // 25MB
+    if (file.size > maxSize) throw new Error('File too large (Max 25MB).');
 
-  // Step 3: Prepare file path (30%)
-  onProgress?.(30, 'Preparing tunnel...');
-  const timestamp = Date.now();
-  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const filePath = `${user.id}/${timestamp}_${sanitizedName}`;
+    // Step 3: Prepare path (30%)
+    onProgress?.(30, 'Preparing secure tunnel...');
+    const timestamp = Date.now();
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filePath = `${user.id}/${timestamp}_${sanitizedName}`;
 
-  // Step 4: Upload to storage (40-80%)
-  onProgress?.(40, 'Uploading to storage...');
-  const { data: uploadData, error: uploadError } = await supabase.storage
-    .from('documents')
-    .upload(filePath, file, { cacheControl: '3600', upsert: false });
+    // Step 4: Transmit (40-80%)
+    onProgress?.(40, 'Transmitting to cloud cluster...');
+    const uploadPromise = supabase.storage
+      .from('documents')
+      .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-  if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Storage upload timeout after 45s')), 45000)
+    );
 
-  // Step 5: Get URL (85%)
-  onProgress?.(85, 'Generating link...');
-  const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
+    const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
 
-  return { path: filePath, url: publicUrl };
+    if (error) throw new Error(`Cloud Rejection: ${error.message}`);
+
+    // Step 5: Finalize link (90%)
+    onProgress?.(90, 'Generating link...');
+    const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
+
+    return { path: filePath, url: publicUrl };
+
+  } catch (err: any) {
+    console.error('Ingestion Core Error:', err);
+    throw err;
+  }
 }
 
 /**
- * LEGACY WRAPPER: Matches existing signature in app.
+ * Legacy wrapper for compatibility.
  */
 export const uploadFile = async (file: File, userId: string) => {
   const result = await uploadToPrivateBucket(file);
