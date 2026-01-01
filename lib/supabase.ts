@@ -47,7 +47,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v55.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v56.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
@@ -59,7 +59,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
 
 /**
  * Robust upload to private bucket with RLS support.
- * Path MUST be {user_id}/{filename} for v55 policies.
+ * Path MUST be {user_id}/{filename} for v55+ policies.
  */
 export async function uploadToPrivateBucket(
   file: File,
