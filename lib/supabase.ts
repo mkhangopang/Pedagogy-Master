@@ -47,7 +47,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v50.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v52.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
@@ -58,27 +58,39 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
 };
 
 /**
- * Robust file upload with progress tracking
+ * Robust file upload with progress tracking and folder-based RLS support.
+ * Enforces {userId}/{filename} path required for private bucket policies.
  */
 export const uploadFile = async (
   file: File, 
-  bucket: string = 'documents',
-  onProgress?: (pct: number) => void
+  userId: string,
+  bucket: string = 'documents'
 ): Promise<{ publicUrl: string, path: string }> => {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase project is not configured.');
   }
   
   const fileExt = file.name.split('.').pop();
-  const fileName = `${crypto.randomUUID()}.${fileExt}`;
+  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+  const fileName = `${Date.now()}_${sanitizedName}`;
+  
+  // CRITICAL: Path must be {user_id}/{filename} for RLS to work on private buckets
+  const filePath = `${userId}/${fileName}`;
 
-  const { data, error } = await supabase.storage
+  // Upload with a race to handle potential hangs
+  const uploadPromise = supabase.storage
     .from(bucket)
-    .upload(fileName, file, {
+    .upload(filePath, file, {
       cacheControl: '3600',
       upsert: false,
       contentType: file.type || 'application/octet-stream'
     });
+
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error('Storage upload timeout after 30s')), 30000)
+  );
+
+  const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
   
   if (error) {
     throw new Error(`Cloud Rejection: ${error.message}`);
@@ -88,6 +100,7 @@ export const uploadFile = async (
     throw new Error('Transfer succeeded but path registration failed.');
   }
 
+  // Get public URL (or create signed URL if needed, but the current policy allows public read if signed/authed)
   const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
   return { publicUrl, path: data.path };
 };

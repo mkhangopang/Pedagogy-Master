@@ -24,7 +24,7 @@ interface DocumentsProps {
   isConnected: boolean;
 }
 
-type UploadStage = 'idle' | 'uploading' | 'persisting' | 'complete' | 'error';
+type UploadStage = 'idle' | 'auth' | 'validate' | 'prepare' | 'storage' | 'url' | 'metadata' | 'complete' | 'error';
 
 interface DetailedError {
   type: 'format' | 'network' | 'ai' | 'auth' | 'quota' | 'generic' | 'storage' | 'policy' | 'timeout';
@@ -57,6 +57,7 @@ const Documents: React.FC<DocumentsProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
   const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('');
   const [hangTimer, setHangTimer] = useState(0);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [detailedError, setDetailedError] = useState<DetailedError | null>(null);
@@ -67,43 +68,38 @@ const Documents: React.FC<DocumentsProps> = ({
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
-  // Persist session state for recovery
   useEffect(() => {
-    const saved = localStorage.getItem('pedagogy_sync_v51');
+    const saved = localStorage.getItem('pedagogy_sync_v52_final');
     if (saved) {
       try {
         setPendingSync(JSON.parse(saved));
       } catch (e) {
-        localStorage.removeItem('pedagogy_sync_v51');
+        localStorage.removeItem('pedagogy_sync_v52_final');
       }
     }
   }, []);
 
   useEffect(() => {
     if (pendingSync) {
-      localStorage.setItem('pedagogy_sync_v51', JSON.stringify(pendingSync));
+      localStorage.setItem('pedagogy_sync_v52_final', JSON.stringify(pendingSync));
     } else {
-      localStorage.removeItem('pedagogy_sync_v51');
+      localStorage.removeItem('pedagogy_sync_v52_final');
     }
   }, [pendingSync]);
 
-  // Tracking for the hang UI
   useEffect(() => {
     let timer: any;
-    if (uploadStage === 'persisting') {
+    if (isUploading && progress >= 90 && progress < 100) {
       timer = setInterval(() => setHangTimer(prev => prev + 1), 1000);
     } else {
       setHangTimer(0);
     }
     return () => clearInterval(timer);
-  }, [uploadStage]);
+  }, [isUploading, progress]);
 
-  /**
-   * THE SUSPENDERS: Resilient Metadata Sync with Server-Side Privileged Bridge
-   */
   const syncWithServer = async (doc: Document, retries = 3): Promise<any> => {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("Session expired during upload.");
+    if (!session) throw new Error("Authentication session expired.");
     
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -118,16 +114,15 @@ const Documents: React.FC<DocumentsProps> = ({
 
         if (response.ok) return await response.json();
         
-        // Handle cold starts or transient server issues
         if (attempt < retries) {
-          const waitTime = attempt * 2000;
-          console.warn(`Sync attempt ${attempt} failed. Retrying in ${waitTime}ms...`);
-          await new Promise(r => setTimeout(r, waitTime));
+          const wait = 2000 * attempt;
+          console.warn(`Handshake attempt ${attempt} failed. Retrying in ${wait}ms...`);
+          await new Promise(r => setTimeout(r, wait));
           continue;
         }
 
         const err = await response.json();
-        throw new Error(err.error || 'Server Handshake Failed');
+        throw new Error(err.error || 'Server Metadata Handshake Failed');
       } catch (err: any) {
         if (attempt === retries) throw err;
       }
@@ -137,20 +132,25 @@ const Documents: React.FC<DocumentsProps> = ({
   const resumeSync = async () => {
     if (!pendingSync) return;
     setIsUploading(true);
-    setUploadStage('persisting');
-    setProgress(95);
     setDetailedError(null);
-
+    
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Session required for recovery.");
+
+      setUploadStage('metadata');
+      setProgress(90);
+      setStatusText('Resuming metadata handshake...');
+
       const docId = pendingSync.id || crypto.randomUUID();
       const newDoc: Document = {
         id: docId,
-        userId: '', 
+        userId: user.id, 
         name: pendingSync.name,
         filePath: pendingSync.path,
         mimeType: pendingSync.type,
         status: 'completed',
-        subject: 'Recovered Sync',
+        subject: 'Recovered Curriculum',
         gradeLevel: 'Auto',
         sloTags: [],
         createdAt: new Date().toISOString()
@@ -163,6 +163,7 @@ const Documents: React.FC<DocumentsProps> = ({
       setSelectedDocId(docId);
       setUploadStage('complete');
       setProgress(100);
+      setStatusText('Sync complete!');
       setTimeout(() => { setIsUploading(false); setUploadStage('idle'); }, 1000);
     } catch (err: any) {
       handleSyncError(err);
@@ -170,15 +171,15 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   const handleSyncError = (err: any) => {
-    console.error("Critical Sync Failure:", err);
+    console.error("Critical Ingestion Failure:", err);
     setUploadStage('error');
     setIsUploading(false);
     
     setDetailedError({ 
       type: 'timeout', 
-      title: 'Sync Pipeline Interrupted', 
-      message: 'The curriculum is stored in cloud storage, but the final handshake with the pedagogical database failed. This happens if the server is under heavy load.',
-      fix: 'Wait 5 seconds and use the "Resume Sync" button below.'
+      title: 'Infrastructure Bridge Blocked', 
+      message: 'The curriculum file reached storage, but the final metadata handshake timed out. This is usually caused by RLS policies or database latency.',
+      fix: 'Run SQL Patch v52 in Supabase and use the "Finalize Ingestion" button.'
     });
   };
 
@@ -188,37 +189,62 @@ const Documents: React.FC<DocumentsProps> = ({
 
     setDetailedError(null);
     if (!isSupportedFileType(file.type)) {
-      setDetailedError({ type: 'format', title: 'Format Warning', message: 'This file format may not be fully parsed by Gemini.' });
+      setDetailedError({ type: 'format', title: 'File Format Mismatch', message: 'The AI engine supports PDF, Word, and Text documents only.' });
       return;
     }
 
     if (limitReached) {
-      setDetailedError({ type: 'quota', title: 'Library Full', message: 'You have reached the document limit for your plan.' });
+      setDetailedError({ type: 'quota', title: 'Library Capacity Reached', message: 'Institutional storage limit met. Please upgrade or prune library.' });
       return;
     }
 
     setIsUploading(true);
-    setUploadStage('uploading');
-    setProgress(0);
-
+    
     try {
-      // THE BELT: Real-time Upload Progress
-      // Supabase storage upload
-      const uploadResult = await uploadFile(file);
+      // 10%: Auth
+      setUploadStage('auth');
+      setProgress(10);
+      setStatusText('Authenticating cluster access...');
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error("Session verification failed.");
+
+      // 20%: Validate
+      setUploadStage('validate');
+      setProgress(20);
+      setStatusText('Validating file integrity...');
+      const maxSize = 25 * 1024 * 1024; // 25MB
+      if (file.size > maxSize) throw new Error("File exceeds 25MB limit.");
+
+      // 30%: Prepare
+      setUploadStage('prepare');
+      setProgress(30);
+      setStatusText('Preparing ingestion tunnel...');
+      
+      // 40-80%: Storage
+      setUploadStage('storage');
+      setProgress(40);
+      setStatusText('Transmitting to cloud storage...');
+      const uploadResult = await uploadFile(file, user.id);
       const filePath = uploadResult.path;
       const docId = crypto.randomUUID();
+      setProgress(80);
 
-      // Bookmark progress locally for safety
-      const syncInfo = { name: file.name, path: filePath, type: file.type, id: docId };
-      setPendingSync(syncInfo);
+      // Bookmark for safety
+      setPendingSync({ name: file.name, path: filePath, type: file.type, id: docId });
 
-      // Transition to Database registration
-      setUploadStage('persisting');
+      // 80%: URL
+      setUploadStage('url');
+      setStatusText('Generating secure access links...');
+      // (uploadFile already got the URL)
+      
+      // 90%: Metadata Handshake
+      setUploadStage('metadata');
       setProgress(90);
+      setStatusText('Finalizing metadata handshake...');
       
       const newDoc: Document = {
         id: docId,
-        userId: '', 
+        userId: user.id, 
         name: file.name,
         filePath: filePath,
         mimeType: file.type,
@@ -229,14 +255,15 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: new Date().toISOString()
       };
 
-      // Resilient Server-Side Sync
       await syncWithServer(newDoc);
       await onAddDocument(newDoc);
       
+      // 100%: Complete
       setPendingSync(null);
       setSelectedDocId(docId);
       setUploadStage('complete');
       setProgress(100);
+      setStatusText('Inception complete!');
       setTimeout(() => { setIsUploading(false); setUploadStage('idle'); }, 1500);
 
     } catch (err: any) {
@@ -259,39 +286,37 @@ const Documents: React.FC<DocumentsProps> = ({
                   strokeDasharray={464}
                   strokeDashoffset={464 - (464 * progress) / 100}
                   strokeLinecap="round"
-                  className="transition-all duration-700 ease-out"
+                  className="transition-all duration-500 ease-out"
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-indigo-600 font-black text-5xl tracking-tighter">{Math.round(progress)}%</span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Syncing</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Ingesting</span>
               </div>
             </div>
 
             <div className="space-y-4">
               <h3 className="text-3xl font-black text-slate-900 tracking-tight">
-                {uploadStage === 'uploading' ? 'Cloud Transfer' : 'Neural Ingestion'}
+                {statusText}
               </h3>
               <p className="text-slate-500 text-sm font-medium leading-relaxed px-4">
-                {uploadStage === 'uploading' 
-                  ? 'Transmitting curriculum to the edge network...' 
-                  : 'Bypassing RLS with Privileged Handshake (v51)...'}
+                {uploadStage === 'storage' ? 'Streaming bits to the global edge...' : 'Bypassing RLS with Fast-Path Bridge (v52)...'}
               </p>
 
-              {hangTimer > 10 && (
-                <div className="p-6 bg-rose-50 border-2 border-rose-100 rounded-[2.5rem] animate-in slide-in-from-bottom-4 shadow-xl shadow-rose-900/5">
+              {hangTimer > 7 && (
+                <div className="p-6 bg-rose-50 border-2 border-rose-100 rounded-[2.5rem] animate-in slide-in-from-bottom-4 shadow-xl">
                    <div className="flex items-center gap-3 text-rose-600 mb-3 justify-center font-bold">
                      <ShieldAlert size={20} />
-                     <span className="text-sm">Extended Sync Detected</span>
+                     <span className="text-sm">90% Handshake Latency</span>
                    </div>
                    <p className="text-xs text-rose-700 leading-relaxed mb-5">
-                     The database is taking longer than usual to acknowledge the transfer. This is often a cold-start issue.
+                     The metadata link is hanging. This usually happens if the database RLS policies are not optimized. You can force a rescue if this continues.
                    </p>
                    <button 
                      onClick={() => { setIsUploading(false); setUploadStage('error'); }} 
-                     className="w-full py-3 bg-rose-600 text-white rounded-2xl text-xs font-black hover:bg-rose-700 transition-all shadow-lg shadow-rose-600/20 active:scale-95 flex items-center justify-center gap-2"
+                     className="w-full py-3 bg-rose-600 text-white rounded-2xl text-xs font-black hover:bg-rose-700 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                    >
-                     Rescue Progress <ArrowRight size={14} />
+                     Trigger Rescue Ingestion <ArrowRight size={14} />
                    </button>
                 </div>
               )}
@@ -301,16 +326,16 @@ const Documents: React.FC<DocumentsProps> = ({
       )}
 
       {!isUploading && pendingSync && (
-        <div className="bg-indigo-600 p-8 rounded-[3rem] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl shadow-indigo-600/30 animate-in slide-in-from-top-6 text-white border-b-8 border-indigo-800">
+        <div className="bg-indigo-600 p-8 rounded-[3rem] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl animate-in slide-in-from-top-6 text-white border-b-8 border-indigo-800">
           <div className="flex items-center gap-6 text-center md:text-left">
             <div className="p-5 bg-white/20 backdrop-blur-xl rounded-[2rem] shadow-inner ring-1 ring-white/30"><Activity size={32}/></div>
             <div>
-              <h4 className="text-2xl font-black tracking-tight">Sync Recovery Active</h4>
-              <p className="text-sm opacity-80 mt-1 font-medium italic">"<span className="font-bold underline">{pendingSync.name}</span>" is safely stored. Finalize the sync now.</p>
+              <h4 className="text-2xl font-black tracking-tight">Finalize Ingestion</h4>
+              <p className="text-sm opacity-80 mt-1 font-medium italic">"{pendingSync.name}" is in the cloud. Re-bridge to brain now.</p>
             </div>
           </div>
           <button onClick={resumeSync} className="px-12 py-5 bg-white text-indigo-600 rounded-[1.8rem] font-black text-sm shadow-xl hover:bg-indigo-50 active:scale-95 transition-all flex items-center gap-3 shrink-0 uppercase tracking-widest">
-            Complete Handshake <Zap size={18} fill="currentColor" />
+            Execute Handshake <Zap size={18} fill="currentColor" />
           </button>
         </div>
       )}
@@ -320,8 +345,8 @@ const Documents: React.FC<DocumentsProps> = ({
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">Curriculum Library</h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium">
             <Database size={18} className="text-indigo-500" />
-            Infrastructure: <span className={isConnected ? 'text-emerald-600 font-bold' : 'text-rose-500'}>
-              {isConnected ? 'Verified Live' : 'Handshake Pending'}
+            Infrastructure Status: <span className={isConnected ? 'text-emerald-600 font-bold' : 'text-rose-500 font-bold'}>
+              {isConnected ? 'Verified Connection' : 'Handshake Pending'}
             </span>
           </p>
         </div>
@@ -329,10 +354,10 @@ const Documents: React.FC<DocumentsProps> = ({
         <div className="flex items-center gap-4">
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.txt,.doc,.docx" />
           <button 
-            onClick={() => limitReached ? setDetailedError({type:'quota', title:'Storage Limit', message:'Institutional quota met.'}) : fileInputRef.current?.click()}
+            onClick={() => limitReached ? setDetailedError({type:'quota', title:'Storage Full', message:'Institutional library capacity met.'}) : fileInputRef.current?.click()}
             disabled={isUploading}
             className={`flex items-center gap-4 px-12 py-5 rounded-[2rem] font-black shadow-2xl transition-all ${
-              limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-600/30 ring-4 ring-indigo-100'
+              limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-600/30 ring-4 ring-indigo-50'
             }`}
           >
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
@@ -342,16 +367,16 @@ const Documents: React.FC<DocumentsProps> = ({
       </header>
 
       {detailedError && (
-        <div className={`border-2 p-10 rounded-[4rem] flex items-start gap-8 animate-in slide-in-from-top-4 shadow-2xl ${detailedError.type === 'timeout' ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-100'}`}>
+        <div className={`border-2 p-10 rounded-[4rem] flex items-start gap-8 animate-in shadow-2xl ${detailedError.type === 'timeout' ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-100'}`}>
           <div className={`p-6 rounded-3xl shrink-0 shadow-lg ${detailedError.type === 'timeout' ? 'bg-white text-indigo-600' : 'bg-white text-rose-600'}`}>
             {getErrorIcon(detailedError.type)}
           </div>
           <div className="flex-1">
-            <h4 className={`text-2xl font-black tracking-tight ${detailedError.type === 'timeout' ? 'text-indigo-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
+            <h4 className={`text-2xl font-black ${detailedError.type === 'timeout' ? 'text-indigo-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
             <p className={`text-lg mt-3 leading-relaxed opacity-80 ${detailedError.type === 'timeout' ? 'text-indigo-700' : 'text-rose-700'}`}>{detailedError.message}</p>
             <div className="mt-8 flex items-center gap-6">
                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
-                 <Target size={16} className="text-indigo-500"/> Optimal Resolution:
+                 <Target size={16} className="text-indigo-500"/> Optimal Fix:
                </span>
                <span className="text-xs font-bold text-slate-700 bg-white px-4 py-2 rounded-full border border-slate-100 shadow-sm">{detailedError.fix}</span>
             </div>
@@ -361,7 +386,7 @@ const Documents: React.FC<DocumentsProps> = ({
       )}
 
       {selectedDoc ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 animate-in fade-in duration-700">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           <div className="lg:col-span-1 space-y-10">
             <button onClick={() => setSelectedDocId(null)} className="flex items-center gap-4 text-indigo-600 font-black text-sm hover:translate-x-[-10px] transition-transform">
               <ChevronLeft size={24} /> Return to Grid
@@ -373,11 +398,11 @@ const Documents: React.FC<DocumentsProps> = ({
                  <h2 className="text-3xl font-black text-slate-900 truncate tracking-tight">{selectedDoc.name}</h2>
                  <p className="text-xs text-slate-400 mt-3 uppercase font-black tracking-[0.2em]">{selectedDoc.mimeType}</p>
                </div>
-               <div className="pt-10 border-t border-slate-50 space-y-5">
-                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Registry Sync</span><span className="font-black text-emerald-600 tracking-tight">v51 VERIFIED</span></div>
-                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Ingestion</span><span className="font-black text-indigo-600 tracking-tight">PRIVILEGED</span></div>
+               <div className="pt-8 border-t border-slate-50 space-y-4">
+                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Registry Sync</span><span className="font-black text-emerald-600 uppercase">v52 Verified</span></div>
+                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Ingestion</span><span className="font-black text-indigo-600 uppercase">Privileged</span></div>
                </div>
-               <button onClick={() => onDeleteDocument(selectedDoc.id)} className="w-full py-6 text-rose-500 bg-rose-50 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-rose-100 transition-all shadow-md active:scale-95 text-sm uppercase tracking-widest">
+               <button onClick={() => onDeleteDocument(selectedDoc.id)} className="w-full py-6 text-rose-500 bg-rose-50 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-rose-100 transition-all text-sm uppercase tracking-widest active:scale-95">
                  <Trash2 size={20}/> Purge Material
                </button>
             </div>
@@ -387,14 +412,12 @@ const Documents: React.FC<DocumentsProps> = ({
               <Sparkles size={40} className="text-indigo-600" /> Neural Integration
             </h2>
             <div className="bg-slate-50 border-4 border-dashed border-slate-200 p-20 rounded-[5rem] text-center space-y-8">
-              <div className="w-28 h-28 bg-white rounded-[2.5rem] shadow-2xl flex items-center justify-center mx-auto ring-[16px] ring-indigo-50 group-hover:scale-110 transition-transform">
+              <div className="w-28 h-28 bg-white rounded-[2.5rem] shadow-2xl flex items-center justify-center mx-auto ring-[16px] ring-indigo-50 transition-transform hover:scale-105">
                 <Zap className="text-indigo-600" size={56} fill="currentColor" />
               </div>
               <div className="space-y-4">
                 <h3 className="text-3xl font-black text-slate-800 tracking-tight">Knowledge Node Verified</h3>
-                <p className="text-slate-500 max-w-md mx-auto leading-relaxed text-xl font-medium">
-                  This material is now vectorized and ready for pedagogical interaction. 
-                </p>
+                <p className="text-slate-500 max-w-sm mx-auto leading-relaxed text-lg">This material is now vectorized and accessible for all generative pedagogical tools.</p>
               </div>
             </div>
           </div>
@@ -409,7 +432,7 @@ const Documents: React.FC<DocumentsProps> = ({
                </div>
                <h3 className="font-black text-slate-900 truncate tracking-tight text-2xl">{doc.name}</h3>
                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mt-5 flex items-center gap-3">
-                 <Activity size={16} className="text-indigo-500"/> Knowledge Node v51
+                 <Activity size={16} className="text-indigo-500"/> Context Node v52
                </p>
             </div>
           ))}
@@ -418,7 +441,7 @@ const Documents: React.FC<DocumentsProps> = ({
             <div className="col-span-full py-52 text-center bg-white/40 rounded-[6rem] border-8 border-dashed border-slate-100">
               <div className="w-32 h-32 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-10 text-slate-300 shadow-inner"><Upload size={64}/></div>
               <h3 className="text-4xl font-black text-slate-800 tracking-tight">The Library is Open</h3>
-              <p className="text-slate-500 mt-5 text-xl font-medium max-w-lg mx-auto leading-relaxed">Your curriculum documents will serve as the neural foundation for all AI generations.</p>
+              <p className="text-slate-500 mt-4 text-lg font-medium max-w-sm mx-auto leading-relaxed">Bridge your curriculum documents into the pedagogical neural engine for automated analysis.</p>
             </div>
           )}
         </div>
