@@ -69,10 +69,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - GLOBAL SECURITY ALIGNMENT v46
--- FOCUS: Enabling RLS on ALL tables to resolve linter security errors and adding mission-critical indexes.
+  const sqlSchema = `-- Pedagogy Master - PERFORMANCE OPTIMIZATION v47
+-- FOCUS: Resolving Auth RLS re-evaluation and purging duplicate indexes for high-scale performance.
 
--- 1. PURGE ALL LEGACY POLICIES (v37 - v45)
+-- 1. PURGE ALL LEGACY POLICIES (v37 - v46)
 DO $$ 
 DECLARE
     pol record;
@@ -87,53 +87,61 @@ BEGIN
     END LOOP;
 END $$;
 
--- 2. ENABLE RLS ON ALL IDENTIFIED TABLES
-ALTER TABLE IF EXISTS public.master_prompt ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.organizations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.usage_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.chat_messages ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.global_intelligence ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.curriculum_profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.neural_brain ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.output_artifacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS public.feedback_events ENABLE ROW LEVEL SECURITY;
+-- 2. DUPLICATE INDEX PURGE (Linter 0009: Efficiency)
+DROP INDEX IF EXISTS idx_chat_messages_doc_id_v45;
+DROP INDEX IF EXISTS idx_messages_user_id;
+DROP INDEX IF EXISTS idx_docs_user_id;
+DROP INDEX IF EXISTS idx_documents_user_id;
+DROP INDEX IF EXISTS idx_documents_user_id_v45;
+DROP INDEX IF EXISTS idx_artifacts_user_id;
+DROP INDEX IF EXISTS idx_usage_logs_user;
 
--- 3. PERFORMANCE INDEXING (Linter 0001: Foreign Key Optimization)
-CREATE INDEX IF NOT EXISTS idx_v46_chat_messages_user_id ON public.chat_messages(user_id);
-CREATE INDEX IF NOT EXISTS idx_v46_chat_messages_doc_id ON public.chat_messages(document_id);
-CREATE INDEX IF NOT EXISTS idx_v46_usage_logs_user_id ON public.usage_logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_v46_curriculum_profiles_user_id ON public.curriculum_profiles(user_id);
-CREATE INDEX IF NOT EXISTS idx_v46_output_artifacts_user_id ON public.output_artifacts(user_id);
+-- 3. ENSURE CLEAN UNIQUE INDEXES REMAIN
+CREATE INDEX IF NOT EXISTS idx_v47_chat_messages_user_id ON public.chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_v47_chat_messages_doc_id ON public.chat_messages(document_id);
+CREATE INDEX IF NOT EXISTS idx_v47_usage_logs_user_id ON public.usage_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_v47_curriculum_profiles_user_id ON public.curriculum_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_v47_output_artifacts_user_id ON public.output_artifacts(user_id);
+CREATE INDEX IF NOT EXISTS idx_v47_documents_user_id ON public.documents(user_id);
 
--- 4. CONSOLIDATED V46 POLICIES (Unified Security Model)
+-- 4. OPTIMIZED RLS POLICIES (Linter 0003: Auth Init Plan Optimization)
+-- Using (SELECT auth.uid()) ensures the ID is cached during the query execution.
 
--- PROFILE ACCESS
-CREATE POLICY "v46_profiles_self" ON public.profiles FOR ALL TO authenticated USING (id = auth.uid()) WITH CHECK (id = auth.uid());
+-- PROFILES
+CREATE POLICY "v47_profiles_self" ON public.profiles 
+FOR ALL TO authenticated 
+USING (id = (SELECT auth.uid())) 
+WITH CHECK (id = (SELECT auth.uid()));
 
--- DOCUMENT ACCESS
-CREATE POLICY "v46_documents_self" ON public.documents FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+-- DOCUMENTS
+CREATE POLICY "v47_documents_self" ON public.documents 
+FOR ALL TO authenticated 
+USING (user_id = (SELECT auth.uid())) 
+WITH CHECK (user_id = (SELECT auth.uid()));
 
--- CHAT MESSAGE ACCESS
-CREATE POLICY "v46_chat_messages_self" ON public.chat_messages FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+-- CHAT MESSAGES
+CREATE POLICY "v47_chat_messages_self" ON public.chat_messages 
+FOR ALL TO authenticated 
+USING (user_id = (SELECT auth.uid())) 
+WITH CHECK (user_id = (SELECT auth.uid()));
 
--- USAGE LOGS (Read only for users, system write)
-CREATE POLICY "v46_usage_logs_self" ON public.usage_logs FOR SELECT TO authenticated USING (user_id = auth.uid());
-
--- MASTER PROMPT (Read only for authenticated)
-CREATE POLICY "v46_master_prompt_read" ON public.master_prompt FOR SELECT TO authenticated USING (true);
-
--- NEURAL BRAIN (Read only for authenticated)
-CREATE POLICY "v46_neural_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (true);
-
--- GLOBAL INTELLIGENCE (Read only for authenticated)
-CREATE POLICY "v46_global_intelligence_read" ON public.global_intelligence FOR SELECT TO authenticated USING (true);
+-- USAGE LOGS
+CREATE POLICY "v47_usage_logs_self" ON public.usage_logs 
+FOR SELECT TO authenticated 
+USING (user_id = (SELECT auth.uid()));
 
 -- CURRICULUM PROFILES
-CREATE POLICY "v46_curriculum_profiles_self" ON public.curriculum_profiles FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "v47_curriculum_profiles_self" ON public.curriculum_profiles 
+FOR ALL TO authenticated 
+USING (user_id = (SELECT auth.uid())) 
+WITH CHECK (user_id = (SELECT auth.uid()));
 
--- 5. RPC ENGINE (SECURITY DEFINER bypass for high-speed writes)
+-- NEURAL BRAIN, MASTER PROMPT, GLOBAL INTEL (Static access)
+CREATE POLICY "v47_neural_brain_read" ON public.neural_brain FOR SELECT TO authenticated USING (true);
+CREATE POLICY "v47_master_prompt_read" ON public.master_prompt FOR SELECT TO authenticated USING (true);
+CREATE POLICY "v47_global_intelligence_read" ON public.global_intelligence FOR SELECT TO authenticated USING (true);
+
+-- 5. RPC ENGINE (Maintaining High-Speed registration)
 CREATE OR REPLACE FUNCTION public.register_document(
   p_id uuid,
   p_user_id uuid,
@@ -152,8 +160,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  -- Security validation: only allow self or admin
-  IF auth.uid() <> p_user_id AND NOT (SELECT (auth.jwt() ->> 'email')::text IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')) THEN
+  -- Optimized auth check
+  IF (SELECT auth.uid()) <> p_user_id AND NOT (SELECT (auth.jwt() ->> 'email')::text IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')) THEN
     RAISE EXCEPTION 'Unauthorized document registration.';
   END IF;
 
@@ -180,7 +188,7 @@ GRANT EXECUTE ON FUNCTION public.register_document TO authenticated;
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">Infrastructure diagnostics, RLS alignment, and logic.</p>
+          <p className="text-slate-500 mt-1">Infrastructure diagnostics, RLS optimization, and index management.</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
           <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
@@ -236,7 +244,7 @@ GRANT EXECUTE ON FUNCTION public.register_document TO authenticated;
 
           <div className="bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-2xl">
             <div className="p-4 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Security Alignment Patch (v46)</span></div>
+              <div className="flex items-center gap-2 text-slate-300"><Terminal size={16} /><span className="text-xs font-mono font-bold uppercase">Performance Patch (v47)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-bold text-indigo-400 flex items-center gap-1.5">{copiedSql ? <CheckCircle2 size={14} className="text-emerald-400" /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-6 overflow-x-auto bg-slate-950 max-h-80 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-relaxed">{sqlSchema}</pre></div>
@@ -249,17 +257,17 @@ GRANT EXECUTE ON FUNCTION public.register_document TO authenticated;
           <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm">
             <div className="flex items-center gap-3 text-indigo-600 mb-6">
               <ShieldCheck size={28} />
-              <h2 className="text-xl font-bold text-slate-900 tracking-tight">V46: Global RLS Hardening</h2>
+              <h2 className="text-xl font-bold text-slate-900 tracking-tight">V47: Performance & Cleanup</h2>
             </div>
             <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-start gap-4">
               <div className="p-2 bg-indigo-100 text-indigo-600 rounded-xl mt-1 shadow-sm"><Activity size={20}/></div>
               <div>
-                <h3 className="font-bold text-indigo-900 tracking-tight">Resolving "RLS Disabled" Errors</h3>
-                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">The linter correctly identified several ghost tables in the public schema without active security policies. V46 locks down all tables (master_prompt, chat_messages, etc.) while preserving authenticated read access where required.</p>
+                <h3 className="font-bold text-indigo-900 tracking-tight">Optimizing RLS & Storage</h3>
+                <p className="text-sm text-indigo-700 mt-1 mb-4 leading-relaxed">V47 resolves critical performance bottlenecks identified by the Supabase linter. By moving auth functions into subqueries, we prevent redundant computations for every row scanned.</p>
                 <ul className="text-xs text-indigo-800 space-y-2 list-disc ml-4 font-medium">
-                  <li><strong>RLS Lock:</strong> Enabled RLS on 6 previously unprotected tables.</li>
-                  <li><strong>Auth Consistency:</strong> Standardized "USING (user_id = auth.uid())" across all user-owned datasets.</li>
-                  <li><strong>Performance Boost:</strong> Added 5 new covering indexes for foreign keys to ensure RLS evaluation remains fast.</li>
+                  <li><strong>Auth Subqueries:</strong> Replaced raw auth.uid() with (SELECT auth.uid()) in all active RLS policies.</li>
+                  <li><strong>Duplicate Index Purge:</strong> Removed 7 identical indexes that were slowing down database write operations.</li>
+                  <li><strong>Scale Readiness:</strong> Improved query initialization plans for profiles, documents, and chat messages.</li>
                 </ul>
               </div>
             </div>
