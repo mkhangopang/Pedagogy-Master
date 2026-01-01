@@ -47,7 +47,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v52.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v53.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
@@ -58,49 +58,49 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
 };
 
 /**
- * Robust file upload with progress tracking and folder-based RLS support.
- * Enforces {userId}/{filename} path required for private bucket policies.
+ * DEFINITIVE UPLOAD CODE FOR PRIVATE BUCKET WITH RLS
+ * Path must be {user_id}/{filename} for RLS to work.
  */
-export const uploadFile = async (
-  file: File, 
-  userId: string,
-  bucket: string = 'documents'
-): Promise<{ publicUrl: string, path: string }> => {
-  if (!isSupabaseConfigured) {
-    throw new Error('Supabase project is not configured.');
-  }
+export async function uploadToPrivateBucket(
+  file: File,
+  onProgress?: (progress: number, status: string) => void
+): Promise<{ path: string; url: string }> {
   
-  const fileExt = file.name.split('.').pop();
+  // Step 1: Authentication (10%)
+  onProgress?.(10, 'Authenticating...');
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) throw new Error('Not authenticated. Please sign in.');
+
+  // Step 2: Validate file (20%)
+  onProgress?.(20, 'Validating file...');
+  const maxSize = 25 * 1024 * 1024; // 25MB
+  if (file.size > maxSize) throw new Error('File too large (Max 25MB).');
+
+  // Step 3: Prepare file path (30%)
+  onProgress?.(30, 'Preparing tunnel...');
+  const timestamp = Date.now();
   const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const fileName = `${Date.now()}_${sanitizedName}`;
-  
-  // CRITICAL: Path must be {user_id}/{filename} for RLS to work on private buckets
-  const filePath = `${userId}/${fileName}`;
+  const filePath = `${user.id}/${timestamp}_${sanitizedName}`;
 
-  // Upload with a race to handle potential hangs
-  const uploadPromise = supabase.storage
-    .from(bucket)
-    .upload(filePath, file, {
-      cacheControl: '3600',
-      upsert: false,
-      contentType: file.type || 'application/octet-stream'
-    });
+  // Step 4: Upload to storage (40-80%)
+  onProgress?.(40, 'Uploading to storage...');
+  const { data: uploadData, error: uploadError } = await supabase.storage
+    .from('documents')
+    .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-  const timeoutPromise = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error('Storage upload timeout after 30s')), 30000)
-  );
+  if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-  const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
-  
-  if (error) {
-    throw new Error(`Cloud Rejection: ${error.message}`);
-  }
-  
-  if (!data?.path) {
-    throw new Error('Transfer succeeded but path registration failed.');
-  }
+  // Step 5: Get URL (85%)
+  onProgress?.(85, 'Generating link...');
+  const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(filePath);
 
-  // Get public URL (or create signed URL if needed, but the current policy allows public read if signed/authed)
-  const { data: { publicUrl } } = supabase.storage.from(bucket).getPublicUrl(data.path);
-  return { publicUrl, path: data.path };
+  return { path: filePath, url: publicUrl };
+}
+
+/**
+ * LEGACY WRAPPER: Matches existing signature in app.
+ */
+export const uploadFile = async (file: File, userId: string) => {
+  const result = await uploadToPrivateBucket(file);
+  return { publicUrl: result.url, path: result.path };
 };
