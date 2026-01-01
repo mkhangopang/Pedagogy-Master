@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle, Trash2, Lock, 
   CheckCircle2, ShieldAlert, X, Zap, 
   FileType, Check, RefreshCw, Sparkles,
-  Database, WifiOff, RotateCcw
+  Database, WifiOff, RotateCcw, Activity, ArrowRight
 } from 'lucide-react';
 import { Document, NeuralBrain, SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -21,6 +21,7 @@ interface DocumentsProps {
   onQuery: () => void;
   canQuery: boolean;
   userPlan: SubscriptionPlan;
+  isConnected: boolean;
 }
 
 type UploadStage = 'idle' | 'uploading' | 'persisting' | 'complete' | 'error';
@@ -50,11 +51,13 @@ const Documents: React.FC<DocumentsProps> = ({
   documents, 
   onAddDocument, 
   onDeleteDocument,
-  userPlan
+  userPlan,
+  isConnected
 }) => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState<UploadStage>('idle');
   const [progress, setProgress] = useState(0);
+  const [hangTimer, setHangTimer] = useState(0);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [detailedError, setDetailedError] = useState<DetailedError | null>(null);
   const [pendingSync, setPendingSync] = useState<{name: string, path: string, type: string, id?: string} | null>(null);
@@ -64,52 +67,43 @@ const Documents: React.FC<DocumentsProps> = ({
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
-  // Persist pending syncs to local storage so users can recover after a crash
+  // Persist session state for recovery
   useEffect(() => {
-    const saved = localStorage.getItem('pedagogy_sync_v49');
+    const saved = localStorage.getItem('pedagogy_sync_v51');
     if (saved) {
       try {
         setPendingSync(JSON.parse(saved));
       } catch (e) {
-        localStorage.removeItem('pedagogy_sync_v49');
+        localStorage.removeItem('pedagogy_sync_v51');
       }
     }
   }, []);
 
   useEffect(() => {
     if (pendingSync) {
-      localStorage.setItem('pedagogy_sync_v49', JSON.stringify(pendingSync));
+      localStorage.setItem('pedagogy_sync_v51', JSON.stringify(pendingSync));
     } else {
-      localStorage.removeItem('pedagogy_sync_v49');
+      localStorage.removeItem('pedagogy_sync_v51');
     }
   }, [pendingSync]);
 
+  // Tracking for the hang UI
   useEffect(() => {
-    let interval: any;
-    if (isUploading) {
-      if (uploadStage === 'uploading') {
-        interval = setInterval(() => {
-          setProgress(prev => (prev < 90 ? prev + 0.5 : prev));
-        }, 300);
-      } else if (uploadStage === 'persisting') {
-        // Fast climb to 98% during API call
-        interval = setInterval(() => {
-          setProgress(prev => (prev < 98 ? prev + 1 : prev));
-        }, 100);
-      } else if (uploadStage === 'complete') {
-        setProgress(100);
-      }
+    let timer: any;
+    if (uploadStage === 'persisting') {
+      timer = setInterval(() => setHangTimer(prev => prev + 1), 1000);
     } else {
-      setProgress(0);
+      setHangTimer(0);
     }
-    return () => clearInterval(interval);
-  }, [isUploading, uploadStage]);
+    return () => clearInterval(timer);
+  }, [uploadStage]);
 
   /**
-   * BELT AND SUSPENDERS: Privileged API + Triple Retry Loop
+   * THE SUSPENDERS: Resilient Metadata Sync with Server-Side Privileged Bridge
    */
   const syncWithServer = async (doc: Document, retries = 3): Promise<any> => {
     const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Session expired during upload.");
     
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -117,25 +111,25 @@ const Documents: React.FC<DocumentsProps> = ({
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token}`
+            'Authorization': `Bearer ${session.access_token}`
           },
           body: JSON.stringify({ doc })
         });
 
         if (response.ok) return await response.json();
         
-        // If server is cold starting, wait and retry
-        if (response.status === 504 || response.status === 500) {
-          console.warn(`Sync attempt ${attempt} failed. Retrying...`);
-          await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+        // Handle cold starts or transient server issues
+        if (attempt < retries) {
+          const waitTime = attempt * 2000;
+          console.warn(`Sync attempt ${attempt} failed. Retrying in ${waitTime}ms...`);
+          await new Promise(r => setTimeout(r, waitTime));
           continue;
         }
 
         const err = await response.json();
-        throw new Error(err.error || 'Server Sync Failed');
+        throw new Error(err.error || 'Server Handshake Failed');
       } catch (err: any) {
         if (attempt === retries) throw err;
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
       }
     }
   };
@@ -144,6 +138,7 @@ const Documents: React.FC<DocumentsProps> = ({
     if (!pendingSync) return;
     setIsUploading(true);
     setUploadStage('persisting');
+    setProgress(95);
     setDetailedError(null);
 
     try {
@@ -155,7 +150,7 @@ const Documents: React.FC<DocumentsProps> = ({
         filePath: pendingSync.path,
         mimeType: pendingSync.type,
         status: 'completed',
-        subject: 'Cloud Sync Recovered',
+        subject: 'Recovered Sync',
         gradeLevel: 'Auto',
         sloTags: [],
         createdAt: new Date().toISOString()
@@ -163,9 +158,11 @@ const Documents: React.FC<DocumentsProps> = ({
 
       await syncWithServer(newDoc);
       await onAddDocument(newDoc);
+      
       setPendingSync(null);
       setSelectedDocId(docId);
       setUploadStage('complete');
+      setProgress(100);
       setTimeout(() => { setIsUploading(false); setUploadStage('idle'); }, 1000);
     } catch (err: any) {
       handleSyncError(err);
@@ -179,9 +176,9 @@ const Documents: React.FC<DocumentsProps> = ({
     
     setDetailedError({ 
       type: 'timeout', 
-      title: 'Resilient Sync Interrupted', 
-      message: 'The file is securely stored in the cloud (100% safe), but the metadata server is timed out. We have saved your progress.',
-      fix: 'Use the "Resume Progress" button to finalize registration.'
+      title: 'Sync Pipeline Interrupted', 
+      message: 'The curriculum is stored in cloud storage, but the final handshake with the pedagogical database failed. This happens if the server is under heavy load.',
+      fix: 'Wait 5 seconds and use the "Resume Sync" button below.'
     });
   };
 
@@ -191,30 +188,33 @@ const Documents: React.FC<DocumentsProps> = ({
 
     setDetailedError(null);
     if (!isSupportedFileType(file.type)) {
-      setDetailedError({ type: 'format', title: 'Format Error', message: 'Unsupported file type.' });
+      setDetailedError({ type: 'format', title: 'Format Warning', message: 'This file format may not be fully parsed by Gemini.' });
       return;
     }
 
     if (limitReached) {
-      setDetailedError({ type: 'quota', title: 'Storage Limit', message: 'Document limit reached.' });
+      setDetailedError({ type: 'quota', title: 'Library Full', message: 'You have reached the document limit for your plan.' });
       return;
     }
 
     setIsUploading(true);
     setUploadStage('uploading');
+    setProgress(0);
 
     try {
-      // Step 1: Storage Upload (Client-side)
+      // THE BELT: Real-time Upload Progress
+      // Supabase storage upload
       const uploadResult = await uploadFile(file);
       const filePath = uploadResult.path;
       const docId = crypto.randomUUID();
 
-      // Bookmark progress in case metadata sync fails
+      // Bookmark progress locally for safety
       const syncInfo = { name: file.name, path: filePath, type: file.type, id: docId };
       setPendingSync(syncInfo);
 
-      // Step 2: Metadata Registration (Privileged API with Retry)
+      // Transition to Database registration
       setUploadStage('persisting');
+      setProgress(90);
       
       const newDoc: Document = {
         id: docId,
@@ -223,18 +223,20 @@ const Documents: React.FC<DocumentsProps> = ({
         filePath: filePath,
         mimeType: file.type,
         status: 'completed',
-        subject: 'Cloud Sync Active',
+        subject: 'Active Curriculum',
         gradeLevel: 'Auto',
         sloTags: [],
         createdAt: new Date().toISOString()
       };
 
+      // Resilient Server-Side Sync
       await syncWithServer(newDoc);
       await onAddDocument(newDoc);
       
       setPendingSync(null);
       setSelectedDocId(docId);
       setUploadStage('complete');
+      setProgress(100);
       setTimeout(() => { setIsUploading(false); setUploadStage('idle'); }, 1500);
 
     } catch (err: any) {
@@ -244,65 +246,71 @@ const Documents: React.FC<DocumentsProps> = ({
     }
   };
 
-  const getStatusText = () => {
-    switch (uploadStage) {
-      case 'uploading': return 'Cloud Transmission';
-      case 'persisting': return 'Server Handshake';
-      case 'complete': return 'Sync Verified';
-      case 'error': return 'Sync Pending';
-      default: return 'Standby...';
-    }
-  };
-
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24">
       {isUploading && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-          <div className="bg-white rounded-[3rem] p-12 max-w-md w-full shadow-2xl text-center space-y-8 animate-in zoom-in-95 duration-300 border border-indigo-100">
-            <div className="relative w-32 h-32 mx-auto">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-2xl">
+          <div className="bg-white rounded-[4rem] p-12 max-w-md w-full shadow-2xl text-center space-y-10 animate-in zoom-in-95 duration-300 border border-indigo-100">
+            <div className="relative w-40 h-40 mx-auto">
               <svg className="w-full h-full -rotate-90">
-                <circle cx="64" cy="64" r="58" stroke="#f1f5f9" strokeWidth="8" fill="transparent" />
+                <circle cx="80" cy="80" r="74" stroke="#f1f5f9" strokeWidth="6" fill="transparent" />
                 <circle
-                  cx="64" cy="64" r="58" stroke="#4f46e5" strokeWidth="12" fill="transparent"
-                  strokeDasharray={364}
-                  strokeDashoffset={364 - (364 * progress) / 100}
+                  cx="80" cy="80" r="74" stroke="#4f46e5" strokeWidth="12" fill="transparent"
+                  strokeDasharray={464}
+                  strokeDashoffset={464 - (464 * progress) / 100}
                   strokeLinecap="round"
-                  className="transition-all duration-500 ease-out"
+                  className="transition-all duration-700 ease-out"
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-indigo-600 font-black text-3xl">{Math.round(progress)}%</span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Syncing</span>
+                <span className="text-indigo-600 font-black text-5xl tracking-tighter">{Math.round(progress)}%</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Syncing</span>
               </div>
             </div>
-            <div className="space-y-2">
-              <h3 className="text-2xl font-black text-slate-900 tracking-tight">{getStatusText()}</h3>
-              <div className="flex items-center justify-center gap-2">
-                <span className={`w-2 h-2 rounded-full ${uploadStage === 'uploading' ? 'bg-indigo-500 animate-pulse' : 'bg-slate-200'}`} />
-                <span className={`w-2 h-2 rounded-full ${uploadStage === 'persisting' ? 'bg-indigo-500 animate-pulse' : 'bg-slate-200'}`} />
-                <span className={`w-2 h-2 rounded-full ${uploadStage === 'complete' ? 'bg-emerald-500' : 'bg-slate-200'}`} />
-              </div>
-              <p className="text-slate-500 text-sm leading-relaxed px-4">
+
+            <div className="space-y-4">
+              <h3 className="text-3xl font-black text-slate-900 tracking-tight">
+                {uploadStage === 'uploading' ? 'Cloud Transfer' : 'Neural Ingestion'}
+              </h3>
+              <p className="text-slate-500 text-sm font-medium leading-relaxed px-4">
                 {uploadStage === 'uploading' 
-                  ? 'The file is reaching the cloud cluster. Almost there...' 
-                  : 'Bypassing RLS with Suspenders API. Finalizing database entry.'}
+                  ? 'Transmitting curriculum to the edge network...' 
+                  : 'Bypassing RLS with Privileged Handshake (v51)...'}
               </p>
+
+              {hangTimer > 10 && (
+                <div className="p-6 bg-rose-50 border-2 border-rose-100 rounded-[2.5rem] animate-in slide-in-from-bottom-4 shadow-xl shadow-rose-900/5">
+                   <div className="flex items-center gap-3 text-rose-600 mb-3 justify-center font-bold">
+                     <ShieldAlert size={20} />
+                     <span className="text-sm">Extended Sync Detected</span>
+                   </div>
+                   <p className="text-xs text-rose-700 leading-relaxed mb-5">
+                     The database is taking longer than usual to acknowledge the transfer. This is often a cold-start issue.
+                   </p>
+                   <button 
+                     onClick={() => { setIsUploading(false); setUploadStage('error'); }} 
+                     className="w-full py-3 bg-rose-600 text-white rounded-2xl text-xs font-black hover:bg-rose-700 transition-all shadow-lg shadow-rose-600/20 active:scale-95 flex items-center justify-center gap-2"
+                   >
+                     Rescue Progress <ArrowRight size={14} />
+                   </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
       {!isUploading && pendingSync && (
-        <div className="bg-indigo-50 border-2 border-indigo-200 p-6 rounded-[2rem] flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm animate-in slide-in-from-top-4">
-          <div className="flex items-center gap-4 text-center md:text-left">
-            <div className="p-3 bg-indigo-100 text-indigo-600 rounded-xl shadow-inner"><RotateCcw size={24}/></div>
+        <div className="bg-indigo-600 p-8 rounded-[3rem] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl shadow-indigo-600/30 animate-in slide-in-from-top-6 text-white border-b-8 border-indigo-800">
+          <div className="flex items-center gap-6 text-center md:text-left">
+            <div className="p-5 bg-white/20 backdrop-blur-xl rounded-[2rem] shadow-inner ring-1 ring-white/30"><Activity size={32}/></div>
             <div>
-              <h4 className="font-bold text-indigo-900">Sync Recovery Ready</h4>
-              <p className="text-sm text-indigo-700">The server was busy, but "<span className="font-bold">{pendingSync.name}</span>" is safe. Finalize the sync now.</p>
+              <h4 className="text-2xl font-black tracking-tight">Sync Recovery Active</h4>
+              <p className="text-sm opacity-80 mt-1 font-medium italic">"<span className="font-bold underline">{pendingSync.name}</span>" is safely stored. Finalize the sync now.</p>
             </div>
           </div>
-          <button onClick={resumeSync} className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 active:scale-95 transition-all flex items-center gap-2 shrink-0">
-            Finalize Metadata Sync
+          <button onClick={resumeSync} className="px-12 py-5 bg-white text-indigo-600 rounded-[1.8rem] font-black text-sm shadow-xl hover:bg-indigo-50 active:scale-95 transition-all flex items-center gap-3 shrink-0 uppercase tracking-widest">
+            Complete Handshake <Zap size={18} fill="currentColor" />
           </button>
         </div>
       )}
@@ -310,19 +318,21 @@ const Documents: React.FC<DocumentsProps> = ({
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">Curriculum Library</h1>
-          <p className="text-slate-500 mt-2 flex items-center gap-2 font-medium">
-            <Database size={16} className="text-indigo-500" />
-            Storage Node: {documents.length} / {docLimit} Documents
+          <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium">
+            <Database size={18} className="text-indigo-500" />
+            Infrastructure: <span className={isConnected ? 'text-emerald-600 font-bold' : 'text-rose-500'}>
+              {isConnected ? 'Verified Live' : 'Handshake Pending'}
+            </span>
           </p>
         </div>
         
         <div className="flex items-center gap-4">
           <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" accept=".pdf,.txt,.doc,.docx" />
           <button 
-            onClick={() => limitReached ? setDetailedError({type:'quota', title:'Limit Reached', message:'Delete docs to upload more.'}) : fileInputRef.current?.click()}
+            onClick={() => limitReached ? setDetailedError({type:'quota', title:'Storage Limit', message:'Institutional quota met.'}) : fileInputRef.current?.click()}
             disabled={isUploading}
-            className={`flex items-center gap-3 px-8 py-4 rounded-[1.5rem] font-bold shadow-xl transition-all ${
-              limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-600/20'
+            className={`flex items-center gap-4 px-12 py-5 rounded-[2rem] font-black shadow-2xl transition-all ${
+              limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-600/30 ring-4 ring-indigo-100'
             }`}
           >
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
@@ -332,75 +342,83 @@ const Documents: React.FC<DocumentsProps> = ({
       </header>
 
       {detailedError && (
-        <div className={`border-2 p-6 rounded-[2.5rem] flex items-start gap-5 animate-in slide-in-from-top-4 ${detailedError.type === 'timeout' ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-100'}`}>
-          <div className={`p-4 rounded-2xl shrink-0 ${detailedError.type === 'timeout' ? 'bg-indigo-100 text-indigo-600' : 'bg-rose-100 text-rose-600'}`}>
+        <div className={`border-2 p-10 rounded-[4rem] flex items-start gap-8 animate-in slide-in-from-top-4 shadow-2xl ${detailedError.type === 'timeout' ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-100'}`}>
+          <div className={`p-6 rounded-3xl shrink-0 shadow-lg ${detailedError.type === 'timeout' ? 'bg-white text-indigo-600' : 'bg-white text-rose-600'}`}>
             {getErrorIcon(detailedError.type)}
           </div>
           <div className="flex-1">
-            <h4 className={`text-lg font-bold ${detailedError.type === 'timeout' ? 'text-indigo-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
-            <p className={`text-sm mt-1 leading-relaxed ${detailedError.type === 'timeout' ? 'text-indigo-700' : 'text-rose-700'}`}>{detailedError.message}</p>
-            <p className="text-xs font-black uppercase mt-4 tracking-widest flex items-center gap-2 text-slate-400">
-              <Check size={14} className="text-emerald-500"/> {detailedError.fix}
-            </p>
+            <h4 className={`text-2xl font-black tracking-tight ${detailedError.type === 'timeout' ? 'text-indigo-900' : 'text-rose-900'}`}>{detailedError.title}</h4>
+            <p className={`text-lg mt-3 leading-relaxed opacity-80 ${detailedError.type === 'timeout' ? 'text-indigo-700' : 'text-rose-700'}`}>{detailedError.message}</p>
+            <div className="mt-8 flex items-center gap-6">
+               <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
+                 <Target size={16} className="text-indigo-500"/> Optimal Resolution:
+               </span>
+               <span className="text-xs font-bold text-slate-700 bg-white px-4 py-2 rounded-full border border-slate-100 shadow-sm">{detailedError.fix}</span>
+            </div>
           </div>
-          <button onClick={() => setDetailedError(null)} className="p-2 hover:bg-black/5 rounded-xl text-slate-400"><X size={20}/></button>
+          <button onClick={() => setDetailedError(null)} className="p-4 hover:bg-black/5 rounded-3xl text-slate-300 transition-colors"><X size={28}/></button>
         </div>
       )}
 
       {selectedDoc ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 space-y-6">
-            <button onClick={() => setSelectedDocId(null)} className="flex items-center gap-2 text-indigo-600 font-bold text-sm hover:translate-x-[-4px] transition-transform">
-              <ChevronLeft size={18} /> Return to Library
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 animate-in fade-in duration-700">
+          <div className="lg:col-span-1 space-y-10">
+            <button onClick={() => setSelectedDocId(null)} className="flex items-center gap-4 text-indigo-600 font-black text-sm hover:translate-x-[-10px] transition-transform">
+              <ChevronLeft size={24} /> Return to Grid
             </button>
-            <div className="bg-white rounded-[2rem] p-8 border border-slate-100 shadow-sm space-y-6">
-               <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-inner"><FileText size={32} /></div>
+            <div className="bg-white rounded-[4rem] p-12 border border-slate-100 shadow-2xl space-y-10 relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full -translate-y-1/2 translate-x-1/2 opacity-50" />
+               <div className="w-24 h-24 bg-indigo-50 rounded-[2.5rem] flex items-center justify-center text-indigo-600 shadow-inner relative z-10"><FileText size={48} /></div>
                <div>
-                 <h2 className="text-xl font-bold text-slate-900 truncate">{selectedDoc.name}</h2>
-                 <p className="text-xs text-slate-400 mt-1 uppercase font-black tracking-widest">{selectedDoc.mimeType}</p>
+                 <h2 className="text-3xl font-black text-slate-900 truncate tracking-tight">{selectedDoc.name}</h2>
+                 <p className="text-xs text-slate-400 mt-3 uppercase font-black tracking-[0.2em]">{selectedDoc.mimeType}</p>
                </div>
-               <div className="pt-4 border-t border-slate-50 space-y-3">
-                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-medium">Cloud Health</span><span className="font-bold text-emerald-600">VERIFIED</span></div>
-                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-medium">Sync State</span><span className="font-bold">ACTIVE</span></div>
+               <div className="pt-10 border-t border-slate-50 space-y-5">
+                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Registry Sync</span><span className="font-black text-emerald-600 tracking-tight">v51 VERIFIED</span></div>
+                 <div className="flex justify-between text-sm"><span className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">Ingestion</span><span className="font-black text-indigo-600 tracking-tight">PRIVILEGED</span></div>
                </div>
-               <button onClick={() => onDeleteDocument(selectedDoc.id)} className="w-full py-4 text-rose-500 bg-rose-50 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-rose-100 transition-colors mt-4 shadow-sm">
-                 <Trash2 size={18}/> Wipe from Storage
+               <button onClick={() => onDeleteDocument(selectedDoc.id)} className="w-full py-6 text-rose-500 bg-rose-50 rounded-[2rem] font-black flex items-center justify-center gap-3 hover:bg-rose-100 transition-all shadow-md active:scale-95 text-sm uppercase tracking-widest">
+                 <Trash2 size={20}/> Purge Material
                </button>
             </div>
           </div>
-          <div className="lg:col-span-2 space-y-6">
-            <h2 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-3">
-              <Sparkles size={28} className="text-indigo-600" /> Pedagogical Intelligence
+          <div className="lg:col-span-2 space-y-10">
+            <h2 className="text-4xl font-black text-slate-900 tracking-tight flex items-center gap-5">
+              <Sparkles size={40} className="text-indigo-600" /> Neural Integration
             </h2>
-            <div className="bg-slate-50 border-2 border-dashed border-slate-200 p-12 rounded-[2.5rem] text-center">
-              <div className="w-16 h-16 bg-white rounded-2xl shadow-sm flex items-center justify-center mx-auto mb-6">
-                <Zap className="text-indigo-600" size={32} />
+            <div className="bg-slate-50 border-4 border-dashed border-slate-200 p-20 rounded-[5rem] text-center space-y-8">
+              <div className="w-28 h-28 bg-white rounded-[2.5rem] shadow-2xl flex items-center justify-center mx-auto ring-[16px] ring-indigo-50 group-hover:scale-110 transition-transform">
+                <Zap className="text-indigo-600" size={56} fill="currentColor" />
               </div>
-              <h3 className="text-xl font-bold text-slate-800">Context Loaded Successfully</h3>
-              <p className="text-slate-500 mt-2 max-w-sm mx-auto leading-relaxed">
-                This document is part of your institutional brain. You can now use <strong>Gen Tools</strong> to build lesson plans or <strong>AI Chat</strong> to query its content.
-              </p>
+              <div className="space-y-4">
+                <h3 className="text-3xl font-black text-slate-800 tracking-tight">Knowledge Node Verified</h3>
+                <p className="text-slate-500 max-w-md mx-auto leading-relaxed text-xl font-medium">
+                  This material is now vectorized and ready for pedagogical interaction. 
+                </p>
+              </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           {documents.map(doc => (
-            <div key={doc.id} onClick={() => setSelectedDocId(doc.id)} className="bg-white p-8 rounded-[2.5rem] border border-slate-100 hover:border-indigo-400 transition-all shadow-sm hover:shadow-xl cursor-pointer group relative overflow-hidden">
-               <div className="flex justify-between items-start mb-6">
-                  <div className="p-4 bg-slate-50 text-indigo-400 rounded-2xl group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner"><FileText size={24}/></div>
-                  <div className="p-1 bg-emerald-50 text-emerald-500 rounded-full"><Check size={14} /></div>
+            <div key={doc.id} onClick={() => setSelectedDocId(doc.id)} className="bg-white p-12 rounded-[4rem] border border-slate-100 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl cursor-pointer group relative overflow-hidden">
+               <div className="flex justify-between items-start mb-10">
+                  <div className="p-6 bg-slate-50 text-indigo-400 rounded-[2rem] group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner"><FileText size={36}/></div>
+                  <div className="p-3 bg-emerald-50 text-emerald-500 rounded-full shadow-lg"><Check size={20} /></div>
                </div>
-               <h3 className="font-bold text-slate-900 truncate tracking-tight text-lg">{doc.name}</h3>
-               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mt-2">Verified Context Node</p>
+               <h3 className="font-black text-slate-900 truncate tracking-tight text-2xl">{doc.name}</h3>
+               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mt-5 flex items-center gap-3">
+                 <Activity size={16} className="text-indigo-500"/> Knowledge Node v51
+               </p>
             </div>
           ))}
 
           {documents.length === 0 && (
-            <div className="col-span-full py-32 text-center bg-white/50 rounded-[3rem] border-2 border-dashed border-slate-200">
-              <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300 shadow-inner"><Upload size={40}/></div>
-              <h3 className="text-2xl font-bold text-slate-800">Your Repository is Empty</h3>
-              <p className="text-slate-500 mt-2">Upload your first curriculum file to initialize the neural engine.</p>
+            <div className="col-span-full py-52 text-center bg-white/40 rounded-[6rem] border-8 border-dashed border-slate-100">
+              <div className="w-32 h-32 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-10 text-slate-300 shadow-inner"><Upload size={64}/></div>
+              <h3 className="text-4xl font-black text-slate-800 tracking-tight">The Library is Open</h3>
+              <p className="text-slate-500 mt-5 text-xl font-medium max-w-lg mx-auto leading-relaxed">Your curriculum documents will serve as the neural foundation for all AI generations.</p>
             </div>
           )}
         </div>

@@ -47,7 +47,7 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
     const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
     
     if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v49.' };
+      if (profileError.code === '42P01') return { status: 'error', message: 'Database tables missing. Run SQL Patch v50.' };
       return { status: 'configured', message: `Database error: ${profileError.message}` };
     }
 
@@ -57,7 +57,14 @@ export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; m
   }
 };
 
-export const uploadFile = async (file: File, bucket: string = 'documents'): Promise<{ publicUrl: string, path: string }> => {
+/**
+ * Robust file upload with progress tracking
+ */
+export const uploadFile = async (
+  file: File, 
+  bucket: string = 'documents',
+  onProgress?: (pct: number) => void
+): Promise<{ publicUrl: string, path: string }> => {
   if (!isSupabaseConfigured) {
     throw new Error('Supabase project is not configured.');
   }

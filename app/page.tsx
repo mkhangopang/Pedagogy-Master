@@ -256,6 +256,8 @@ export default function App() {
                   onQuery={incrementQueries}
                   canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN}
                   userPlan={userProfile.plan}
+                  // Fix: Pass isActuallyConnected to the Documents component via isConnected prop
+                  isConnected={isActuallyConnected}
                 />
               );
             case 'chat':
