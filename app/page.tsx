@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense, lazy } from 'react';
+import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
 import { supabase, isSupabaseConfigured, getSupabaseHealth } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
@@ -10,11 +10,11 @@ import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } fr
 import { paymentService } from '../services/paymentService';
 import { Loader2, Menu, AlertCircle, RefreshCw } from 'lucide-react';
 
-const Documents = lazy(() => import('../views/Documents'));
-const Chat = lazy(() => import('../views/Chat'));
-const Tools = lazy(() => import('../views/Tools'));
-const BrainControl = lazy(() => import('../views/BrainControl'));
-const Pricing = lazy(() => import('../views/Pricing'));
+const DocumentsView = lazy(() => import('../views/Documents'));
+const ChatView = lazy(() => import('../views/Chat'));
+const ToolsView = lazy(() => import('../views/Tools'));
+const BrainControlView = lazy(() => import('../views/BrainControl'));
+const PricingView = lazy(() => import('../views/Pricing'));
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -24,12 +24,17 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
-  const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ status: 'checking', message: 'Verifying systems...' });
+  const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ 
+    status: 'checking', 
+    message: 'Verifying systems...' 
+  });
 
   const isActuallyConnected = healthStatus.status === 'connected';
 
   const [brain, setBrain] = useState<NeuralBrain>({
-    id: typeof crypto !== 'undefined' ? (crypto as any).randomUUID() : 'initial-brain-id',
+    id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
+      ? (crypto as any).randomUUID() 
+      : Math.random().toString(36).substring(2),
     masterPrompt: DEFAULT_MASTER_PROMPT,
     bloomRules: DEFAULT_BLOOM_RULES,
     version: 1,
@@ -37,63 +42,103 @@ export default function App() {
     updatedAt: new Date().toISOString()
   });
 
-  const checkDb = async () => {
+  const checkDb = useCallback(async () => {
     const health = await getSupabaseHealth();
     setHealthStatus(health);
     return health.status === 'connected';
-  };
-
-  useEffect(() => {
-    paymentService.init();
-    
-    const initSession = async () => {
-      try {
-        const isConnected = await checkDb();
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        
-        if (currentSession) {
-          setSession(currentSession);
-          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
-          await fetchBrain(isConnected);
-        } else {
-          setSession(null);
-        }
-      } catch (err) {
-        console.error("Critical Session Init Error:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initSession();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-      if (currentSession) {
-        setSession(currentSession);
-        const isConnected = await checkDb();
-        await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
-        await fetchBrain(isConnected);
-      } else {
-        setSession(null);
-        setUserProfile(null);
-        setDocuments([]);
-      }
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
-  const fetchBrain = async (connected: boolean) => {
-    if (!connected) return;
+  const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined, connected: boolean) => {
+    if (!connected || !supabase) {
+      // Fallback local profile if cloud is disconnected
+      setUserProfile({
+        id: userId,
+        name: email?.split('@')[0] || 'Educator',
+        email: email || '',
+        role: UserRole.TEACHER,
+        plan: SubscriptionPlan.FREE,
+        queriesUsed: 0,
+        queriesLimit: 30,
+        generationCount: 0,
+        successRate: 0,
+        editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+      });
+      return;
+    }
+
     try {
-      const { data } = await supabase
-        .from('neural_brain')
-        .select('*')
-        .eq('is_active', true)
-        .order('version', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
       
+      let activeProfile: UserProfile;
+
+      if (!profile) {
+        activeProfile = {
+          id: userId,
+          name: email?.split('@')[0] || 'Educator',
+          email: email || '',
+          role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
+          queriesUsed: 0,
+          queriesLimit: isSystemAdmin ? 999999 : 30,
+          generationCount: 0,
+          successRate: 0,
+          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        };
+        await supabase.from('profiles').insert([{
+          id: userId,
+          name: activeProfile.name,
+          email: activeProfile.email,
+          role: activeProfile.role,
+          plan: activeProfile.plan,
+          queries_used: 0,
+          queries_limit: activeProfile.queriesLimit
+        }]);
+      } else {
+        activeProfile = {
+          id: profile.id,
+          name: profile.name || 'Educator',
+          email: profile.email || '',
+          role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
+          queriesUsed: profile.queries_used || 0,
+          queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
+          gradeLevel: profile.grade_level,
+          subjectArea: profile.subject_area,
+          teachingStyle: profile.teaching_style,
+          pedagogicalApproach: profile.pedagogical_approach,
+          generationCount: profile.generation_count || 0,
+          successRate: profile.success_rate || 0,
+          editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        };
+      }
+      
+      setUserProfile(activeProfile);
+
+      const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      if (docs) {
+        setDocuments(docs.map(d => ({
+          id: d.id,
+          userId: d.user_id,
+          name: d.name,
+          filePath: d.file_path,
+          mimeType: d.mime_type,
+          status: d.status as any,
+          subject: d.subject,
+          gradeLevel: d.grade_level,
+          sloTags: d.slo_tags || [],
+          createdAt: d.created_at
+        })));
+      }
+    } catch (e: any) {
+      console.error("Profile Fetch Failure:", e.message);
+    }
+  }, []);
+
+  const fetchBrain = useCallback(async (connected: boolean) => {
+    if (!connected || !supabase) return;
+    try {
+      const { data } = await supabase.from('neural_brain').select('*').eq('is_active', true).order('version', { ascending: false }).limit(1).maybeSingle();
       if (data) {
         setBrain({
           id: data.id,
@@ -104,114 +149,65 @@ export default function App() {
           updatedAt: data.updated_at
         });
       }
-    } catch (e) {
-      console.warn("Database error while fetching brain logic.");
-    }
-  };
+    } catch (e) {}
+  }, []);
 
-  const fetchProfileAndDocs = async (userId: string, email: string | undefined, connected: boolean) => {
-    try {
-      let activeProfile: UserProfile;
-      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
-
-      if (connected) {
-        const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-        
-        if (!profile) {
-          activeProfile = {
-            id: userId,
-            name: email?.split('@')[0] || 'Educator',
-            email: email || '',
-            role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
-            plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
-            queriesUsed: 0,
-            queriesLimit: isSystemAdmin ? 999999 : 30,
-            generationCount: 0,
-            successRate: 0,
-            editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-          };
-          await supabase.from('profiles').insert([{
-            id: userId,
-            name: activeProfile.name,
-            email: activeProfile.email,
-            role: activeProfile.role,
-            plan: activeProfile.plan,
-            queries_used: 0,
-            queries_limit: activeProfile.queriesLimit
-          }]);
-        } else {
-          const forcedRole = isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole);
-          const forcedPlan = isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan);
-
-          if (isSystemAdmin && profile.role !== UserRole.APP_ADMIN) {
-             await supabase.from('profiles').update({ role: UserRole.APP_ADMIN, plan: SubscriptionPlan.ENTERPRISE }).eq('id', userId);
-          }
-
-          activeProfile = {
-            id: profile.id,
-            name: profile.name || 'Educator',
-            email: profile.email || '',
-            role: forcedRole,
-            plan: forcedPlan,
-            queriesUsed: profile.queries_used || 0,
-            queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
-            gradeLevel: profile.grade_level,
-            subjectArea: profile.subject_area,
-            teachingStyle: profile.teaching_style,
-            pedagogicalApproach: profile.pedagogical_approach,
-            generationCount: profile.generation_count || 0,
-            successRate: profile.success_rate || 0,
-            editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-          };
-        }
-        
-        const { data: docs, error: docError } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
-        if (docError) throw docError;
-        
-        if (docs) {
-          setDocuments(docs.map(d => ({
-            id: d.id,
-            userId: d.user_id,
-            name: d.name,
-            base64Data: d.base64_data,
-            filePath: d.file_path,
-            mimeType: d.mime_type,
-            status: d.status as any,
-            subject: d.subject,
-            gradeLevel: d.grade_level,
-            sloTags: d.slo_tags || [],
-            createdAt: d.created_at
-          })));
-        }
-      } else {
-        activeProfile = {
-          id: userId,
-          name: email?.split('@')[0] || 'Educator',
-          email: email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
-          queriesUsed: 0,
-          queriesLimit: 30,
-          generationCount: 0,
-          successRate: 0,
-          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-        };
+  useEffect(() => {
+    paymentService.init();
+    
+    const initSession = async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        setLoading(false);
+        return;
       }
-      setUserProfile(activeProfile);
-    } catch (e: any) {
-      console.error("Profile/Doc Fetch Failure:", e.message);
-      setHealthStatus({ status: 'error', message: 'Failed to sync documents with cloud.' });
-    }
-  };
 
-  const incrementQueries = async () => {
+      try {
+        const isConnected = await checkDb();
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        
+        if (currentSession) {
+          setSession(currentSession);
+          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
+          await fetchBrain(isConnected);
+        }
+      } catch (err) {
+        console.error("Init Session Error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    initSession();
+
+    let subscription: any = null;
+    if (supabase) {
+      const { data } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
+        if (currentSession) {
+          setSession(currentSession);
+          const isConnected = await checkDb();
+          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
+        } else {
+          setSession(null);
+          setUserProfile(null);
+          setDocuments([]);
+        }
+      });
+      subscription = data.subscription;
+    }
+
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
+  }, [checkDb, fetchBrain, fetchProfileAndDocs]);
+
+  const incrementQueries = useCallback(async () => {
     if (!userProfile) return;
     const newCount = userProfile.queriesUsed + 1;
-    setUserProfile({ ...userProfile, queriesUsed: newCount });
-    if (isActuallyConnected) {
+    setUserProfile(prev => prev ? { ...prev, queriesUsed: newCount } : null);
+    if (isActuallyConnected && supabase) {
       await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
     }
-  };
+  }, [userProfile, isActuallyConnected]);
 
   const renderView = () => {
     if (!userProfile) return null;
@@ -224,30 +220,19 @@ export default function App() {
               return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             case 'documents':
               return (
-                <Documents 
+                <DocumentsView 
                   documents={documents} 
                   userProfile={userProfile}
-                  onAddDocument={async (doc) => {
-                    setDocuments(prev => {
-                      if (prev.find(p => p.id === doc.id)) return prev;
-                      return [doc, ...prev];
-                    });
-                  }} 
+                  onAddDocument={async (doc) => setDocuments(prev => [doc, ...prev])} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-                    if (isActuallyConnected) {
-                      const dbUpdates: any = {};
-                      if (updates.status) dbUpdates.status = updates.status;
-                      if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
-                      if (updates.subject) dbUpdates.subject = updates.subject;
-                      if (updates.filePath) dbUpdates.file_path = updates.filePath;
-                      // FIXED: Column name 'id' and value 'id' must both be passed to eq()
-                      await supabase.from('documents').update(dbUpdates).eq('id', id);
+                    if (isActuallyConnected && supabase) {
+                      await supabase.from('documents').update(updates as any).eq('id', id);
                     }
                   }}
                   onDeleteDocument={async (id) => {
                     setDocuments(prev => prev.filter(d => d.id !== id));
-                    if (isActuallyConnected) {
+                    if (isActuallyConnected && supabase) {
                       await supabase.from('documents').delete().eq('id', id);
                     }
                   }}
@@ -255,16 +240,16 @@ export default function App() {
                 />
               );
             case 'chat':
-              return <Chat user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
+              return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
             case 'tools':
-              return <Tools user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
+              return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
             case 'brain':
-              return userProfile.role === UserRole.APP_ADMIN ? <BrainControl brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+              return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             case 'pricing':
-              return <Pricing currentPlan={userProfile.plan} onUpgrade={(plan) => {
+              return <PricingView currentPlan={userProfile.plan} onUpgrade={(plan) => {
                 const limit = plan === SubscriptionPlan.FREE ? 30 : 1000;
-                setUserProfile({ ...userProfile, plan, queriesLimit: limit });
-                if (isActuallyConnected) {
+                setUserProfile(prev => prev ? { ...prev, plan, queriesLimit: limit } : null);
+                if (isActuallyConnected && supabase) {
                   supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
                 }
                 setCurrentView('dashboard');
@@ -282,32 +267,23 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {isSidebarOpen && (
-        <div className="fixed inset-0 z-[100] lg:hidden">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)} />
-          <div className="fixed inset-y-0 left-0 w-72 bg-indigo-950 shadow-2xl animate-in slide-in-from-left duration-300">
-            <Sidebar currentView={currentView} onViewChange={(view) => { setCurrentView(view); setIsSidebarOpen(false); }} userProfile={userProfile} isCollapsed={false} setIsCollapsed={() => {}} onClose={() => setIsSidebarOpen(false)} />
-          </div>
-        </div>
-      )}
-
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
         <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b shadow-sm">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500">
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600">
             <Menu size={24} />
           </button>
-          <span className="font-bold text-indigo-950 tracking-tight text-lg">{APP_NAME}</span>
+          <span className="font-bold text-indigo-950">{APP_NAME}</span>
           <div className="w-10" />
         </header>
 
         {healthStatus.status !== 'connected' && (
-          <div className="bg-rose-100 border-b border-rose-200 px-4 py-3 flex items-center justify-center gap-3 text-rose-900 text-[11px] font-bold">
-            <AlertCircle size={14} className="shrink-0" />
-            <span className="uppercase tracking-tight">Sync Warning: {healthStatus.message}</span>
+          <div className="bg-rose-100 border-b border-rose-200 px-4 py-2 flex items-center justify-center gap-3 text-rose-900 text-xs font-bold">
+            <AlertCircle size={14} />
+            <span>Sync Warning: {healthStatus.message}</span>
             <button onClick={checkDb} className="bg-rose-200 hover:bg-rose-300 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
               <RefreshCw size={10} /> Re-verify Cloud
             </button>
