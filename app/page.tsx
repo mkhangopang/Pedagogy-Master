@@ -226,6 +226,7 @@ export default function App() {
               return (
                 <Documents 
                   documents={documents} 
+                  userProfile={userProfile}
                   onAddDocument={async (doc) => {
                     setDocuments(prev => {
                       if (prev.find(p => p.id === doc.id)) return prev;
@@ -240,7 +241,7 @@ export default function App() {
                       if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
                       if (updates.subject) dbUpdates.subject = updates.subject;
                       if (updates.filePath) dbUpdates.file_path = updates.filePath;
-                      await supabase.from('documents').update(dbUpdates).eq('id', id);
+                      await supabase.from('documents').update(dbUpdates).eq(id);
                     }
                   }}
                   onDeleteDocument={async (id) => {
@@ -249,7 +250,6 @@ export default function App() {
                       await supabase.from('documents').delete().eq('id', id);
                     }
                   }}
-                  userPlan={userProfile.plan}
                   isConnected={isActuallyConnected}
                 />
               );
