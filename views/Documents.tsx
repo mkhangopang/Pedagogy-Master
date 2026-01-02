@@ -53,7 +53,7 @@ const Documents: React.FC<DocumentsProps> = ({
     setUploadPhase('preparing');
     setProgress(5);
     setStatusText('Initiating handshake...');
-    console.debug('Starting upload preparation for:', file.name);
+    console.log('[Upload] Starting prep for:', file.name);
     
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -62,7 +62,7 @@ const Documents: React.FC<DocumentsProps> = ({
       }
 
       // PHASE 1: PREPARE
-      console.debug('Calling /api/uploads/prepare');
+      console.log('[Upload] Requesting signed URL from /api/uploads/prepare');
       const prepRes = await fetch('/api/uploads/prepare', {
         method: 'POST',
         headers: { 
@@ -82,13 +82,14 @@ const Documents: React.FC<DocumentsProps> = ({
       }
 
       const { uploadUrl, docId } = await prepRes.json();
-      console.debug('Upload URL received, moving to phase 2');
+      console.log('[Upload] Prep successful. DocID:', docId);
       
       setUploadPhase('uploading');
       setProgress(15);
       setStatusText('Streaming to cloud storage...');
 
       // PHASE 2: DIRECT UPLOAD
+      console.log('[Upload] Streaming to R2...');
       const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
@@ -102,7 +103,7 @@ const Documents: React.FC<DocumentsProps> = ({
       setStatusText('Updating library registry...');
 
       // PHASE 3: COMPLETE
-      console.debug('Calling /api/uploads/complete');
+      console.log('[Upload] Finalizing in database...');
       const completeRes = await fetch('/api/uploads/complete', {
         method: 'POST',
         headers: { 
@@ -129,12 +130,13 @@ const Documents: React.FC<DocumentsProps> = ({
         createdAt: dbDoc.created_at
       });
 
+      console.log('[Upload] Full ingestion sequence complete.');
       setProgress(100);
       setStatusText('Ingestion complete');
       setTimeout(() => setUploadPhase('idle'), 1000);
 
     } catch (err: any) {
-      console.error("Critical Upload Error:", err);
+      console.error("[Upload] Fatal Error:", err);
       setUploadPhase('error');
       setDetailedError({ 
         title: 'Ingestion Failed', 
@@ -207,7 +209,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <AlertCircle size={24} className="text-rose-600" />
           <div>
             <h3 className="font-bold text-sm">Infrastructure Warning</h3>
-            <p className="text-xs opacity-75">Persistence is disabled. Uploads will only stay in memory until tables are correctly configured in Supabase.</p>
+            <p className="text-xs opacity-75">Persistence is disabled. Ensure SQL tables are created in Supabase.</p>
           </div>
         </div>
       )}
