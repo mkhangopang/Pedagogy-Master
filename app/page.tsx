@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy } from 'react';
@@ -99,7 +98,7 @@ export default function App() {
         setBrain({
           id: data.id,
           masterPrompt: data.master_prompt,
-          bloom_rules: data.bloom_rules, 
+          bloomRules: data.bloom_rules, 
           version: data.version,
           isActive: data.is_active,
           updatedAt: data.updated_at
@@ -228,9 +227,7 @@ export default function App() {
                 <Documents 
                   documents={documents} 
                   onAddDocument={async (doc) => {
-                    // Update state immediately. DB persistence is now handled by RPC in the view.
                     setDocuments(prev => {
-                      // Avoid duplicates on recovery
                       if (prev.find(p => p.id === doc.id)) return prev;
                       return [doc, ...prev];
                     });
