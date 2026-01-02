@@ -1,23 +1,17 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { supabase as anonClient } from '../../../lib/supabase';
 import { r2Client, BUCKET_NAME } from '../../../lib/r2';
 import { GetObjectCommand } from "@aws-sdk/client-s3";
+import { Buffer } from 'buffer';
 
 /**
- * Robust Base64 Encoder
- * Handles both ArrayBuffer and SharedArrayBuffer to resolve TS error:
- * "Argument of type 'ArrayBufferLike' is not assignable to parameter of type 'ArrayBuffer'"
+ * FIXED BASE64 CONVERTER
+ * Accepts Uint8Array directly to avoid ArrayBufferLike / SharedArrayBuffer type conflicts.
  */
-function encodeBase64(buffer: ArrayBuffer | ArrayBufferLike): string {
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+function encodeBase64(bytes: Uint8Array): string {
+  // Use Node.js Buffer for high performance and reliability on Vercel
+  return Buffer.from(bytes).toString("base64");
 }
 
 export async function POST(req: NextRequest) {
@@ -36,7 +30,6 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI({ apiKey });
 
     const getDocPart = async () => {
-      // SECURE RETRIEVAL FROM CLOUDFLARE R2
       if (doc?.filePath) {
         try {
           const command = new GetObjectCommand({
@@ -48,8 +41,8 @@ export async function POST(req: NextRequest) {
           
           if (!bytes) return null;
           
-          // Fix: Ensure we pass the underlying buffer to the encoder
-          const base64 = encodeBase64(bytes.buffer);
+          // Fix: Pass the Uint8Array directly to resolve the TS ArrayBufferLike error
+          const base64 = encodeBase64(bytes);
           return { inlineData: { mimeType: doc.mimeType, data: base64 } };
         } catch (r2Err: any) {
           console.error("R2 AI Retrieval Error:", r2Err);

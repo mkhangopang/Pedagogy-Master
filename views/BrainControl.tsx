@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, AlertCircle, CheckCircle2, Info, Database, Copy, Terminal, Activity, ShieldCheck, ShieldAlert, Trash2, Flame, Zap, Check } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Terminal, ShieldCheck } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -58,39 +57,49 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - INFRASTRUCTURE PATCH v59 (R2 LOCKDOWN)
+  const sqlSchema = `-- Pedagogy Master - INFRASTRUCTURE PATCH v60 (R2 ULTIMATE)
 -- ============================================
--- 1. CLEANUP LEGACY SUPABASE STORAGE
+-- 1. PURGE LEGACY BUCKET METADATA
 -- ============================================
-DROP POLICY IF EXISTS "v58_documents_access" ON public.documents;
-DROP POLICY IF EXISTS "v58_profiles_access" ON public.profiles;
+-- Completely ignore 'storage.buckets' or 'storage.objects'
+-- We handle our own lifecycle via Cloudflare R2
 
 -- ============================================
--- 2. CLOUD METADATA OPTIMIZATION
+-- 2. METADATA SCHEMA REINFORCEMENT
 -- ============================================
--- Ensure file_path lookups (R2 keys) are high-speed
-CREATE INDEX IF NOT EXISTS idx_r2_file_path ON public.documents(file_path);
+ALTER TABLE public.documents 
+ADD COLUMN IF NOT EXISTS status text DEFAULT 'ready';
 
 -- ============================================
--- 3. RLS SECURITY HANDSHAKE (LINTER ABSOLUTE)
+-- 3. VERSIONLESS INDEXING (LINTER FIX)
 -- ============================================
--- Consolidate policies to satisfy linter subquery requirements
+DROP INDEX IF EXISTS idx_pedagogy_docs_user_id;
+DROP INDEX IF EXISTS idx_pedagogy_docs_date;
+DROP INDEX IF EXISTS idx_r2_file_path;
+
+CREATE INDEX IF NOT EXISTS idx_docs_v60_uid ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_docs_v60_date ON public.documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_docs_v60_path ON public.documents(file_path);
+
+-- ============================================
+-- 4. RLS SHIELD (SUBQUERY OPTIMIZED)
+-- ============================================
+DROP POLICY IF EXISTS "v59_documents_access" ON public.documents;
+DROP POLICY IF EXISTS "v59_profiles_access" ON public.profiles;
+
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "v59_documents_access" ON public.documents FOR ALL TO authenticated 
+CREATE POLICY "v60_documents_access" ON public.documents FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid())) 
 WITH CHECK (user_id = (SELECT auth.uid()));
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "v59_profiles_access" ON public.profiles FOR ALL TO authenticated 
+CREATE POLICY "v60_profiles_access" ON public.profiles FOR ALL TO authenticated 
 USING (id = (SELECT auth.uid())) 
 WITH CHECK (id = (SELECT auth.uid()));
 
 -- ============================================
--- 4. HOUSEKEEPING
+-- 5. FINAL ANALYZE
 -- ============================================
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-
 ANALYZE public.documents;
 ANALYZE public.profiles;
 `;
@@ -100,12 +109,11 @@ ANALYZE public.profiles;
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">Infrastructure diagnostics, R2 v59.</p>
+          <p className="text-slate-500 mt-1">SaaS Infrastructure Diagnostics, Patch v60.</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
           <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
           <button onClick={() => setActiveTab('infra')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'infra' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Infrastructure</button>
-          <button onClick={() => setActiveTab('security')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'security' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Security</button>
         </div>
       </header>
       
@@ -114,11 +122,11 @@ ANALYZE public.profiles;
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className="text-xs font-bold text-slate-400 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-sm">Active V{formData.version}.0</span>
-              {showStatus && <div className="text-emerald-600 text-sm font-bold flex items-center gap-1"><CheckCircle2 size={14}/> Synchronized</div>}
+              {showStatus && <div className="text-emerald-600 text-sm font-bold flex items-center gap-1"><CheckCircle2 size={14}/> Prompt Ready</div>}
             </div>
             <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all disabled:opacity-50 active:scale-95">
               {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-              Deploy V{formData.version + 1}
+              Deploy Logic V{formData.version + 1}
             </button>
           </div>
           <textarea 
@@ -133,10 +141,10 @@ ANALYZE public.profiles;
       {activeTab === 'infra' && (
         <div className="space-y-8 animate-in slide-in-from-right duration-500">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Database size={16} className="text-indigo-500" /> Database Health</h3>
-            <button onClick={checkHealth} disabled={isChecking} className="text-xs font-bold text-indigo-600 flex items-center gap-1.5 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-all border border-indigo-100">
+            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Database size={16} className="text-indigo-500" /> Infrastructure Node Status</h3>
+            <button onClick={checkHealth} disabled={isChecking} className="text-xs font-bold text-indigo-600 flex items-center gap-1.5 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-all border border-indigo-100 shadow-sm">
               <RefreshCw size={14} className={isChecking ? 'animate-spin' : ''} />
-              Verify Node
+              Scan Tables
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -144,7 +152,7 @@ ANALYZE public.profiles;
               <div key={s.table} className={`p-5 rounded-[1.5rem] border-2 flex items-center justify-between ${s.exists ? 'bg-white border-emerald-100' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${s.exists ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}><Database size={18} /></div>
-                  <span className="text-sm font-black tracking-tight">{s.table}</span>
+                  <span className="text-sm font-black tracking-tight uppercase">{s.table}</span>
                 </div>
                 {s.exists ? <CheckCircle2 size={18} className="text-emerald-500" /> : <AlertCircle size={18} className="text-slate-300" />}
               </div>
@@ -152,25 +160,10 @@ ANALYZE public.profiles;
           </div>
           <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl relative">
             <div className="p-6 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between backdrop-blur-md">
-              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">R2 Final Patch (v59)</span></div>
+              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">R2 Infrastructure Patch (v60)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-black text-white bg-indigo-600 px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-500 transition-all">{copiedSql ? <Check size={14} /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-8 overflow-x-auto bg-slate-950 max-h-96 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-loose">{sqlSchema}</pre></div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'security' && (
-        <div className="space-y-8 animate-in slide-in-from-right duration-500 max-w-4xl mx-auto">
-          <div className="bg-white rounded-[3rem] border border-slate-200 p-12 shadow-2xl relative overflow-hidden">
-            <div className="flex items-center gap-4 text-indigo-600 mb-8 relative z-10">
-              <ShieldCheck size={40} className="drop-shadow-sm" />
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">Security Handshake v59</h2>
-            </div>
-            <div className="p-8 bg-indigo-50 rounded-[2rem] border border-indigo-100 relative z-10">
-              <h3 className="text-xl font-bold text-indigo-900">Cloudflare R2 Direct Access</h3>
-              <p className="text-base text-indigo-700/80 mt-2 leading-relaxed">Patch v59 optimizes metadata indexes for R2 key lookups. Legacy Supabase storage triggers are removed to ensure absolute migration to Cloudflare's S3-compatible infrastructure.</p>
-            </div>
           </div>
         </div>
       )}

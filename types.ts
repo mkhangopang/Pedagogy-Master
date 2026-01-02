@@ -1,4 +1,3 @@
-
 export enum UserRole {
   TEACHER = 'teacher',
   ENTERPRISE_ADMIN = 'enterprise_admin',
@@ -61,7 +60,7 @@ export interface Document {
   base64Data?: string;
   filePath?: string;
   mimeType?: string;
-  status: 'processing' | 'completed' | 'failed';
+  status: 'processing' | 'completed' | 'failed' | 'uploading' | 'ready';
   subject: string;
   gradeLevel: string;
   sloTags: SLO[];

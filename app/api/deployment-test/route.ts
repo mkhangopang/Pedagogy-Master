@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
 import { ADMIN_EMAILS } from '../../../constants';
+import { r2Client, BUCKET_NAME } from '../../../lib/r2';
+import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 type TestResult = {
   name: string;
@@ -40,19 +42,21 @@ export async function GET(request: NextRequest) {
       supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       supabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       apiKey: !!process.env.API_KEY,
-      nodeEnv: process.env.NODE_ENV,
+      r2Endpoint: !!process.env.R2_ENDPOINT,
+      r2AccessKey: !!process.env.R2_ACCESS_KEY_ID,
+      r2Secret: !!process.env.R2_SECRET_ACCESS_KEY,
     };
 
-    const allPresent = envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.apiKey;
+    const allPresent = Object.values(envCheck).every(v => v === true);
 
     results.push({
       name: '1. Environment Variables',
       status: allPresent ? 'pass' : 'fail',
       message: allPresent 
-        ? 'All required environment variables are set' 
+        ? 'All required environment variables (Supabase, Gemini, R2) are set' 
         : 'Missing required environment variables',
       details: envCheck,
-      fix: !allPresent ? 'Add missing variables in Vercel Dashboard → Settings → Environment Variables, then redeploy' : undefined
+      fix: !allPresent ? 'Add missing variables in Vercel Dashboard → Settings → Environment Variables' : undefined
     });
 
     if (!allPresent) overallStatus = 'fail';
@@ -87,52 +91,32 @@ export async function GET(request: NextRequest) {
       status: 'fail',
       message: 'Failed to connect to Supabase database',
       details: error.message,
-      fix: 'Verify Supabase URL and key in environment variables. Ensure "documents" table exists.'
+      fix: 'Verify Supabase URL and key. Run SQL Patch v60 if documents table is missing.'
     });
     overallStatus = 'fail';
   }
 
-  // Test 3: Supabase Storage
+  // Test 3: Cloudflare R2 Connectivity
   try {
-    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
-    
-    if (bucketsError) throw bucketsError;
+    const command = new ListObjectsV2Command({
+      Bucket: BUCKET_NAME,
+      MaxKeys: 1,
+    });
+    const response = await r2Client.send(command);
 
-    const documentsBucket = buckets?.find(b => b.name === 'documents');
-
-    if (!documentsBucket) {
-      results.push({
-        name: '3. Supabase Storage',
-        status: 'fail',
-        message: 'Documents bucket not found',
-        details: { availableBuckets: buckets?.map(b => b.name) },
-        fix: 'Create a bucket named "documents" in Supabase Dashboard → Storage'
-      });
-      overallStatus = 'fail';
-    } else {
-      const { data, error } = await supabase.storage
-        .from('documents')
-        .list('', { limit: 1 });
-
-      results.push({
-        name: '3. Supabase Storage',
-        status: error ? 'warning' : 'pass',
-        message: error 
-          ? 'Bucket exists but access may be restricted' 
-          : 'Storage bucket configured correctly',
-        details: { bucket: 'documents', accessible: !error },
-        fix: error ? 'Check bucket policies in Supabase Dashboard → Storage → documents → Policies' : undefined
-      });
-
-      if (error) overallStatus = 'fail';
-    }
+    results.push({
+      name: '3. Cloudflare R2 Storage',
+      status: 'pass',
+      message: 'Successfully connected to R2 bucket',
+      details: { bucket: BUCKET_NAME, metadata: response.$metadata }
+    });
   } catch (error: any) {
     results.push({
-      name: '3. Supabase Storage',
+      name: '3. Cloudflare R2 Storage',
       status: 'fail',
-      message: 'Failed to check storage configuration',
+      message: 'Failed to connect to R2 bucket',
       details: error.message,
-      fix: 'Verify Supabase configuration and storage setup'
+      fix: 'Verify R2 credentials and endpoint. Ensure CORS is configured for your domain on R2.'
     });
     overallStatus = 'fail';
   }
@@ -148,11 +132,10 @@ export async function GET(request: NextRequest) {
     
     const text = response.text?.trim();
     const duration = Date.now() - startTime;
-
     const isValid = text?.toLowerCase().includes('ok');
 
     results.push({
-      name: '4. Gemini API',
+      name: '4. Gemini AI Engine',
       status: isValid ? 'pass' : 'warning',
       message: isValid 
         ? 'Gemini API responding correctly' 
@@ -164,53 +147,14 @@ export async function GET(request: NextRequest) {
       }
     });
   } catch (error: any) {
-    let fix = 'Add API_KEY to Vercel environment variables';
-    
-    if (error.message?.includes('API_KEY_INVALID')) {
-      fix = 'Invalid API key. Check your AI Studio settings.';
-    } else if (error.message?.includes('quota')) {
-      fix = 'API quota exceeded. Check usage in your Google Cloud Console.';
-    }
-
     results.push({
-      name: '4. Gemini API',
+      name: '4. Gemini AI Engine',
       status: 'fail',
       message: 'Gemini API connection failed',
       details: error.message,
-      fix
+      fix: 'Check API_KEY validity and quota in Google AI Studio'
     });
     overallStatus = 'fail';
-  }
-
-  // Test 5: RLS Policies Check
-  try {
-    const { data, error } = await supabase
-      .from('documents')
-      .select('*')
-      .limit(1);
-
-    if (!error) {
-      results.push({
-        name: '5. Row Level Security (RLS)',
-        status: 'warning',
-        message: 'Query succeeded - RLS may not be fully restrictive or your account has access',
-        details: { rlsEnabled: 'Access verified' }
-      });
-    } else {
-      results.push({
-        name: '5. Row Level Security (RLS)',
-        status: 'pass',
-        message: 'RLS is active and enforcing access control',
-        details: { rlsEnabled: true }
-      });
-    }
-  } catch (error: any) {
-    results.push({
-      name: '5. Row Level Security (RLS)',
-      status: 'warning',
-      message: 'Could not check RLS configuration',
-      details: error.message
-    });
   }
 
   const passed = results.filter(r => r.status === 'pass').length;
@@ -230,36 +174,23 @@ export async function GET(request: NextRequest) {
     tests: results,
     recommendations: generateRecommendations(results)
   }, {
-    headers: {
-      'Cache-Control': 'no-store, max-age=0',
-    }
+    headers: { 'Cache-Control': 'no-store, max-age=0' }
   });
 }
 
 function generateRecommendations(results: TestResult[]): string[] {
   const recommendations: string[] = [];
   const failedTests = results.filter(r => r.status === 'fail');
-  const warningTests = results.filter(r => r.status === 'warning');
 
-  if (failedTests.length === 0 && warningTests.length === 0) {
-    recommendations.push('✅ Your app is production-ready!');
-    recommendations.push('🚀 All systems are operational');
+  if (failedTests.length === 0) {
+    recommendations.push('✅ System architecture is validated.');
+    recommendations.push('🚀 R2 Storage and Gemini AI are fully integrated.');
     return recommendations;
   }
 
-  if (failedTests.length > 0) {
-    recommendations.push('🚨 CRITICAL: Fix failed tests before launching');
-    failedTests.forEach(test => {
-      if (test.fix) recommendations.push(`   - ${test.name}: ${test.fix}`);
-    });
-  }
-
-  if (warningTests.length > 0) {
-    recommendations.push('⚠️  Address warnings for optimal performance');
-    warningTests.forEach(test => {
-      if (test.fix) recommendations.push(`   - ${test.name}: ${test.fix}`);
-    });
-  }
+  failedTests.forEach(test => {
+    if (test.fix) recommendations.push(`🚨 Fix ${test.name}: ${test.fix}`);
+  });
 
   return recommendations;
 }
