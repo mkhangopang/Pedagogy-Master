@@ -99,7 +99,7 @@ export default function App() {
         setBrain({
           id: data.id,
           masterPrompt: data.master_prompt,
-          bloomRules: data.bloom_rules, 
+          bloom_rules: data.bloom_rules, 
           version: data.version,
           isActive: data.is_active,
           updatedAt: data.updated_at
@@ -252,11 +252,7 @@ export default function App() {
                       await supabase.from('documents').delete().eq('id', id);
                     }
                   }}
-                  brain={brain}
-                  onQuery={incrementQueries}
-                  canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN}
                   userPlan={userProfile.plan}
-                  // Fix: Pass isActuallyConnected to the Documents component via isConnected prop
                   isConnected={isActuallyConnected}
                 />
               );
