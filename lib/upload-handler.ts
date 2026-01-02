@@ -20,11 +20,19 @@ class TimeoutError extends Error {
   }
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> {
+/**
+ * Wraps a promise or thenable (like Supabase query builders) with a timeout.
+ */
+async function withTimeout<T>(
+  promise: Promise<T> | PromiseLike<T> | any, 
+  ms: number, 
+  errorMessage: string
+): Promise<T> {
   const timeout = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new TimeoutError(errorMessage)), ms);
   });
-  return Promise.race([promise, timeout]);
+  // Use Promise.resolve to safely handle thenables from Supabase
+  return Promise.race([Promise.resolve(promise), timeout]);
 }
 
 async function retryWithBackoff<T>(
@@ -35,7 +43,7 @@ async function retryWithBackoff<T>(
   try {
     return await operation();
   } catch (error) {
-    if (retries === 0 || error instanceof Error && error.message.includes('Auth')) throw error;
+    if (retries === 0 || (error instanceof Error && error.message.includes('Auth'))) throw error;
     console.warn(`Attempt failed. Retrying in ${delay}ms...`, error);
     await new Promise(resolve => setTimeout(resolve, delay));
     return retryWithBackoff(operation, retries - 1, delay * 2);
@@ -53,7 +61,13 @@ export async function uploadDocument(
 
   onProgress(10, 'Validating curriculum payload...');
   if (file.size > 10 * 1024 * 1024) throw new Error('Maximum node size is 10MB.');
-  const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/png'];
+  const allowed = [
+    'application/pdf', 
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+    'text/plain', 
+    'image/jpeg', 
+    'image/png'
+  ];
   if (!allowed.includes(file.type)) throw new Error('Unsupported format. Please use PDF, DOCX, TXT or PNG/JPG.');
 
   onProgress(15, 'Verifying cloud storage bucket...');
@@ -69,11 +83,16 @@ export async function uploadDocument(
 
   const performStorageUpload = async () => {
     onProgress(30, 'Streaming to cloud library...');
-    const uploadPromise = supabase.storage
+    const uploadRequest = supabase.storage
       .from('documents')
       .upload(filePath, file, { cacheControl: '3600', upsert: false });
 
-    const { data, error } = (await withTimeout(uploadPromise, STORAGE_TIMEOUT, 'Storage channel timed out. Please check your network.')) as any;
+    const { data, error } = (await withTimeout(
+      uploadRequest, 
+      STORAGE_TIMEOUT, 
+      'Storage channel timed out. Please check your network.'
+    )) as any;
+    
     if (error) throw error;
     onProgress(70, 'Stream finalized.');
     return data;
@@ -85,7 +104,7 @@ export async function uploadDocument(
 
   const performDbRegistry = async () => {
     onProgress(90, 'Updating curriculum manifest...');
-    const insertPromise = supabase
+    const insertRequest = supabase
       .from('documents')
       .insert({
         user_id: userId,
@@ -98,7 +117,12 @@ export async function uploadDocument(
       .select()
       .single();
 
-    const { data, error } = (await withTimeout(insertPromise, DB_TIMEOUT, 'Database sync failed. Retrying...')) as any;
+    const { data, error } = (await withTimeout(
+      insertRequest, 
+      DB_TIMEOUT, 
+      'Database sync failed. Retrying...'
+    )) as any;
+    
     if (error) {
       // Rollback storage if DB fails
       await supabase.storage.from('documents').remove([filePath]);
