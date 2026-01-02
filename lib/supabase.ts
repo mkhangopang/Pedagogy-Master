@@ -31,7 +31,7 @@ export const supabase: SupabaseClient = isSupabaseConfigured
   : (null as any);
 
 if (!isSupabaseConfigured && typeof window !== 'undefined') {
-  console.warn("Pedagogy Master: Supabase credentials not found yet. Infrastructure will attempt lazy recovery on next auth check.");
+  console.warn("Pedagogy Master: NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY missing.");
 }
 
 export const getSupabaseHealth = async () => {
