@@ -21,8 +21,11 @@ interface DocumentsProps {
 
 const Documents: React.FC<DocumentsProps> = ({ 
   documents, 
-  onAddDocument, 
-  userPlan
+  onAddDocument,
+  onUpdateDocument,
+  onDeleteDocument,
+  userPlan,
+  isConnected
 }) => {
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle');
   const [progress, setProgress] = useState(0);
@@ -33,9 +36,6 @@ const Documents: React.FC<DocumentsProps> = ({
   const docLimit = ROLE_LIMITS[userPlan].docs;
   const limitReached = documents.length >= docLimit;
 
-  /**
-   * REFACTORED 3-PHASE UPLOAD LIFECYCLE
-   */
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -52,13 +52,17 @@ const Documents: React.FC<DocumentsProps> = ({
 
     setUploadPhase('preparing');
     setProgress(5);
-    setStatusText('Handshaking with Cloudflare R2...');
+    setStatusText('Initiating handshake...');
+    console.debug('Starting upload preparation for:', file.name);
     
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Please re-authenticate.");
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        throw new Error("Authentication session expired. Please sign in again.");
+      }
 
-      // PHASE 1: PREPARE (Verify & Signed URL)
+      // PHASE 1: PREPARE
+      console.debug('Calling /api/uploads/prepare');
       const prepRes = await fetch('/api/uploads/prepare', {
         method: 'POST',
         headers: { 
@@ -73,36 +77,32 @@ const Documents: React.FC<DocumentsProps> = ({
       });
 
       if (!prepRes.ok) {
-        const errData = await prepRes.json();
-        throw new Error(errData.error || 'Preparation failed.');
+        const errData = await prepRes.json().catch(() => ({}));
+        throw new Error(errData.error || `Server responded with ${prepRes.status} during preparation.`);
       }
 
-      const { uploadUrl, key, docId } = await prepRes.json();
+      const { uploadUrl, docId } = await prepRes.json();
+      console.debug('Upload URL received, moving to phase 2');
       
       setUploadPhase('uploading');
-      setProgress(10);
-      setStatusText('Directly streaming to R2...');
+      setProgress(15);
+      setStatusText('Streaming to cloud storage...');
 
-      // PHASE 2: DIRECT UPLOAD (Browser -> R2)
-      const uploadInterval = setInterval(() => {
-        setProgress(prev => (prev < 85 ? prev + 2 : prev));
-      }, 300);
-
+      // PHASE 2: DIRECT UPLOAD
       const uploadRes = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type }
       });
 
-      clearInterval(uploadInterval);
-
-      if (!uploadRes.ok) throw new Error('Cloudflare R2 transmission failed.');
+      if (!uploadRes.ok) throw new Error('Cloudflare R2 storage rejected the upload stream.');
       
       setUploadPhase('completing');
       setProgress(90);
-      setStatusText('Finalizing metadata...');
+      setStatusText('Updating library registry...');
 
-      // PHASE 3: COMPLETE (Mark Ready)
+      // PHASE 3: COMPLETE
+      console.debug('Calling /api/uploads/complete');
       const completeRes = await fetch('/api/uploads/complete', {
         method: 'POST',
         headers: { 
@@ -112,18 +112,17 @@ const Documents: React.FC<DocumentsProps> = ({
         body: JSON.stringify({ docId })
       });
 
-      if (!completeRes.ok) throw new Error('Completion handshake failed.');
+      if (!completeRes.ok) throw new Error('Failed to finalize metadata after storage success.');
 
       const { doc: dbDoc } = await completeRes.json();
 
-      // Update Local State with consistent status
       await onAddDocument({
         id: dbDoc.id,
         userId: dbDoc.user_id,
         name: dbDoc.name,
         filePath: dbDoc.file_path,
         mimeType: dbDoc.mime_type,
-        status: 'ready', // Align with DB status
+        status: 'ready',
         subject: dbDoc.subject,
         gradeLevel: dbDoc.grade_level,
         sloTags: dbDoc.slo_tags,
@@ -131,22 +130,31 @@ const Documents: React.FC<DocumentsProps> = ({
       });
 
       setProgress(100);
-      setStatusText('Ready for AI Analysis');
-      setTimeout(() => setUploadPhase('idle'), 1500);
+      setStatusText('Ingestion complete');
+      setTimeout(() => setUploadPhase('idle'), 1000);
 
     } catch (err: any) {
-      console.error("Ingestion Hub Error:", err);
+      console.error("Critical Upload Error:", err);
       setUploadPhase('error');
-      setDetailedError({ title: 'Storage Failure', message: err.message });
+      setDetailedError({ 
+        title: 'Ingestion Failed', 
+        message: err.message || 'An unknown network error occurred. Please check your connection.' 
+      });
     } finally {
        if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Remove this document from the library?')) {
+      await onDeleteDocument(id);
     }
   };
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24">
       {uploadPhase !== 'idle' && uploadPhase !== 'error' && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-2xl">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl">
           <div className="bg-white rounded-[4rem] p-12 max-w-md w-full shadow-2xl text-center space-y-10 border border-indigo-100">
             <div className="relative w-40 h-40 mx-auto">
               <svg className="w-full h-full -rotate-90">
@@ -161,12 +169,11 @@ const Documents: React.FC<DocumentsProps> = ({
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className="text-indigo-600 font-black text-5xl tracking-tighter">{Math.round(progress)}%</span>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">S3/R2 Node</span>
               </div>
             </div>
             <div className="space-y-2">
               <h3 className="text-2xl font-black text-slate-900">{statusText}</h3>
-              <p className="text-slate-500 text-sm">Direct encryption via Cloudflare R2 active.</p>
+              <p className="text-slate-500 text-sm">Securely processing curriculum nodes...</p>
             </div>
           </div>
         </div>
@@ -177,7 +184,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">R2 Curriculum Library</h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium">
             <Database size={18} className="text-indigo-500" />
-            Vercel Serverless + Cloudflare R2 Ingestion
+            Cloudflare R2 Direct Ingestion
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -190,19 +197,29 @@ const Documents: React.FC<DocumentsProps> = ({
             }`}
           >
             {uploadPhase !== 'idle' ? <Loader2 className="animate-spin" size={20} /> : <Plus size={20} />}
-            Cloud Ingestion
+            Upload Doc
           </button>
         </div>
       </header>
 
+      {!isConnected && (
+        <div className="p-6 bg-rose-50 border border-rose-100 rounded-[2rem] flex items-center gap-4 text-rose-800">
+          <AlertCircle size={24} className="text-rose-600" />
+          <div>
+            <h3 className="font-bold text-sm">Infrastructure Warning</h3>
+            <p className="text-xs opacity-75">Persistence is disabled. Uploads will only stay in memory until tables are correctly configured in Supabase.</p>
+          </div>
+        </div>
+      )}
+
       {detailedError && (
-        <div className="bg-rose-50 border-2 border-rose-100 p-10 rounded-[4rem] flex items-start gap-8 shadow-2xl animate-in">
+        <div className="bg-rose-50 border-2 border-rose-100 p-10 rounded-[4rem] flex items-start gap-8 shadow-2xl animate-in fade-in">
           <div className="p-6 bg-white text-rose-600 rounded-3xl shadow-lg"><AlertCircle size={28}/></div>
           <div className="flex-1">
             <h4 className="text-2xl font-black text-rose-900">{detailedError.title}</h4>
             <p className="text-lg mt-3 text-rose-700 opacity-80">{detailedError.message}</p>
           </div>
-          <button onClick={() => { setDetailedError(null); setUploadPhase('idle'); }} className="p-4 text-slate-300"><X size={28}/></button>
+          <button onClick={() => { setDetailedError(null); setUploadPhase('idle'); }} className="p-4 text-slate-300 hover:text-rose-500 transition-colors"><X size={28}/></button>
         </div>
       )}
 
@@ -211,11 +228,19 @@ const Documents: React.FC<DocumentsProps> = ({
           <div key={doc.id} className="bg-white p-12 rounded-[4rem] border border-slate-100 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl cursor-pointer group relative">
              <div className="flex justify-between items-start mb-10">
                 <div className="p-6 bg-slate-50 text-indigo-400 rounded-[2rem] group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-inner"><FileText size={36}/></div>
-                <div className="p-3 bg-emerald-50 text-emerald-500 rounded-full shadow-lg"><Check size={20} /></div>
+                <div className="flex items-center gap-2">
+                   <div className="p-3 bg-emerald-50 text-emerald-500 rounded-full shadow-lg"><Check size={20} /></div>
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }}
+                     className="p-3 bg-rose-50 text-rose-500 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                     <X size={20} />
+                   </button>
+                </div>
              </div>
              <h3 className="font-black text-slate-900 truncate tracking-tight text-2xl">{doc.name}</h3>
              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mt-5 flex items-center gap-3">
-               <Database size={16} className="text-indigo-500"/> R2 Object Ref
+               <Database size={16} className="text-indigo-500"/> Verified Object
              </p>
           </div>
         ))}
@@ -223,7 +248,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <div className="col-span-full py-52 text-center bg-white/40 rounded-[6rem] border-8 border-dashed border-slate-100">
             <div className="w-32 h-32 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-10 text-slate-300 shadow-inner"><Upload size={64}/></div>
             <h3 className="text-4xl font-black text-slate-800 tracking-tight">Library Empty</h3>
-            <p className="text-slate-400 font-bold mt-4">Ingest curriculum to begin analysis.</p>
+            <p className="text-slate-400 font-bold mt-4">Upload curriculum to begin analysis.</p>
           </div>
         )}
       </div>
