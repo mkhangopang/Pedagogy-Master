@@ -3,28 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-// Environment validation for runtime safety
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn("Supabase credentials missing. App may malfunction.");
+  console.error("CRITICAL: Supabase credentials missing from environment.");
 }
 
-// Added missing export to satisfy import in app/page.tsx
-/**
- * Export a check for configuration status
- */
-export const isSupabaseConfigured = !!supabaseUrl && !!supabaseAnonKey && supabaseUrl !== 'https://placeholder.supabase.co';
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * Standard client for browser-side RLS-bound operations.
- */
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder.supabase.co', 
-  supabaseAnonKey || 'placeholder'
-);
-
-/**
- * Creates a privileged client for server-side routes only.
- * Bypasses RLS to ensure metadata integrity during the upload lifecycle.
+ * Creates a privileged client for server-side operations only.
  */
 export const createPrivilegedClient = () => {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -39,26 +25,21 @@ export const createPrivilegedClient = () => {
   });
 };
 
-export type ConnectionStatus = 'disconnected' | 'configured' | 'connected' | 'error';
+export const isSupabaseConfigured = !!supabaseUrl && !!supabaseAnonKey;
 
 /**
- * Diagnostic health check for Supabase metadata layer
+ * Diagnostic health check for Supabase
  */
-export const getSupabaseHealth = async (): Promise<{ status: ConnectionStatus; message: string }> => {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return { status: 'disconnected', message: 'Config missing.' };
-  }
-
+export const getSupabaseHealth = async () => {
+  if (!isSupabaseConfigured) return { status: 'disconnected', message: 'Config missing' };
   try {
-    const { error: profileError } = await supabase.from('profiles').select('id').limit(1);
-    
-    if (profileError) {
-      if (profileError.code === '42P01') return { status: 'error', message: 'Schema missing. Run SQL initialization.' };
-      return { status: 'error', message: profileError.message };
+    const { error } = await supabase.from('profiles').select('id').limit(1);
+    if (error) {
+      if (error.code === '42P01') return { status: 'error', message: 'Tables missing' };
+      return { status: 'error', message: error.message };
     }
-
-    return { status: 'connected', message: 'Infrastructure ready.' };
+    return { status: 'connected', message: 'Infrastructure ready' };
   } catch (err) {
-    return { status: 'error', message: 'Connection failure.' };
+    return { status: 'error', message: 'Connection failure' };
   }
 };

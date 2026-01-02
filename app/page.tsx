@@ -29,7 +29,7 @@ export default function App() {
   const isActuallyConnected = healthStatus.status === 'connected';
 
   const [brain, setBrain] = useState<NeuralBrain>({
-    id: typeof crypto !== 'undefined' ? crypto.randomUUID() : 'initial-brain-id',
+    id: typeof crypto !== 'undefined' ? (crypto as any).randomUUID() : 'initial-brain-id',
     masterPrompt: DEFAULT_MASTER_PROMPT,
     bloomRules: DEFAULT_BLOOM_RULES,
     version: 1,
@@ -241,7 +241,8 @@ export default function App() {
                       if (updates.sloTags) dbUpdates.slo_tags = updates.sloTags;
                       if (updates.subject) dbUpdates.subject = updates.subject;
                       if (updates.filePath) dbUpdates.file_path = updates.filePath;
-                      await supabase.from('documents').update(dbUpdates).eq(id);
+                      // FIXED: Column name 'id' and value 'id' must both be passed to eq()
+                      await supabase.from('documents').update(dbUpdates).eq('id', id);
                     }
                   }}
                   onDeleteDocument={async (id) => {

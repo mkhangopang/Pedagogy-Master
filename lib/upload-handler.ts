@@ -13,81 +13,79 @@ const MAX_RETRIES = 3;
 const STORAGE_TIMEOUT = 30000;
 const DB_TIMEOUT = 15000;
 
-/**
- * Exponential backoff helper
- */
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  retries = MAX_RETRIES,
-  delay = 1000
-): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (retries <= 0) throw err;
-    console.warn(`Upload attempt failed. Retrying in ${delay}ms...`, err);
-    await new Promise(resolve => setTimeout(resolve, delay));
-    return withRetry(fn, retries - 1, delay * 2);
+class TimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'TimeoutError';
   }
 }
 
-/**
- * Promise timeout helper
- */
-async function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+async function withTimeout<T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> {
   const timeout = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error(message)), ms);
+    setTimeout(() => reject(new TimeoutError(errorMessage)), ms);
   });
   return Promise.race([promise, timeout]);
 }
 
-/**
- * Master Upload Handler: Solves the 5% hang issue
- */
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  retries: number = MAX_RETRIES,
+  delay: number = 1000
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (retries === 0 || error instanceof Error && error.message.includes('Auth')) throw error;
+    console.warn(`Attempt failed. Retrying in ${delay}ms...`, error);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return retryWithBackoff(operation, retries - 1, delay * 2);
+  }
+}
+
 export async function uploadDocument(
   file: File,
   userId: string,
   onProgress: UploadProgress
 ): Promise<UploadResult> {
+  onProgress(5, 'Authenticating node...');
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Authentication expired. Please log in again.');
+
+  onProgress(10, 'Validating curriculum payload...');
+  if (file.size > 10 * 1024 * 1024) throw new Error('Maximum node size is 10MB.');
+  const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/png'];
+  if (!allowed.includes(file.type)) throw new Error('Unsupported format. Please use PDF, DOCX, TXT or PNG/JPG.');
+
+  onProgress(15, 'Verifying cloud storage bucket...');
+  const { data: buckets } = await supabase.storage.listBuckets();
+  if (!buckets?.some(b => b.name === 'documents')) {
+    throw new Error('Infrastructure error: Storage bucket "documents" not found. Run SQL Initialization.');
+  }
+
+  onProgress(20, 'Opening secure channel...');
   const timestamp = Date.now();
-  const sanitizedName = file.name.replace(/[^a-z0-9.]/gi, '_').toLowerCase();
+  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
   const filePath = `${userId}/${timestamp}_${sanitizedName}`;
 
-  // 5% - Already set by component
-  
-  // 10% - File Validation
-  onProgress(10, 'Validating file properties...');
-  if (file.size > 10 * 1024 * 1024) throw new Error('Max 10MB allowed');
-  const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/png'];
-  if (!allowedTypes.includes(file.type)) throw new Error('Format unsupported. Use PDF, DOCX, TXT, or Image.');
-
-  // 20% - Preparing Upload
-  onProgress(20, 'Preparing secure storage channel...');
-
-  // 30-70% - Uploading to Storage
-  const storageUpload = async () => {
-    onProgress(30, 'Streaming to cloud storage...');
-    const { data, error } = await supabase.storage
+  const performStorageUpload = async () => {
+    onProgress(30, 'Streaming to cloud library...');
+    const uploadPromise = supabase.storage
       .from('documents')
-      .upload(filePath, file, {
-        cacheControl: '3600',
-        upsert: false
-      });
-    
+      .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+    const { data, error } = (await withTimeout(uploadPromise, STORAGE_TIMEOUT, 'Storage channel timed out. Please check your network.')) as any;
     if (error) throw error;
-    onProgress(70, 'Upload stream complete');
+    onProgress(70, 'Stream finalized.');
     return data;
   };
 
-  await withRetry(() => withTimeout(storageUpload(), STORAGE_TIMEOUT, 'Storage upload timeout. Connection might be unstable.'));
+  await retryWithBackoff(performStorageUpload);
 
-  // 80% - Verification
-  onProgress(80, 'Verifying file integrity...');
+  onProgress(80, 'Verifying node persistence...');
 
-  // 90% - Saving to Database
-  const dbRegistry = async () => {
-    onProgress(90, 'Syncing metadata with library...');
-    const { data, error } = await supabase
+  const performDbRegistry = async () => {
+    onProgress(90, 'Updating curriculum manifest...');
+    const insertPromise = supabase
       .from('documents')
       .insert({
         user_id: userId,
@@ -100,23 +98,23 @@ export async function uploadDocument(
       .select()
       .single();
 
+    const { data, error } = (await withTimeout(insertPromise, DB_TIMEOUT, 'Database sync failed. Retrying...')) as any;
     if (error) {
-      // Clean up orphaned file if DB fails
+      // Rollback storage if DB fails
       await supabase.storage.from('documents').remove([filePath]);
       throw error;
     }
     return data;
   };
 
-  const dbDoc = await withRetry(() => withTimeout(dbRegistry(), DB_TIMEOUT, 'Database save failure. Retrying...'));
+  const dbRecord = await retryWithBackoff(performDbRegistry);
 
-  // 100% - Success
-  onProgress(100, 'Success! Node ingested.');
+  onProgress(100, 'Handshake complete.');
 
   return {
-    id: dbDoc.id,
-    name: dbDoc.name,
-    filePath: dbDoc.file_path,
-    mimeType: dbDoc.mime_type
+    id: dbRecord.id,
+    name: dbRecord.name,
+    filePath: dbRecord.file_path,
+    mimeType: dbRecord.mime_type
   };
 }

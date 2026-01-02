@@ -79,12 +79,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 2. DOCUMENTS TABLE (R2 File Metadata)
+-- 2. DOCUMENTS TABLE (Metadata)
 CREATE TABLE IF NOT EXISTS public.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
   name text NOT NULL,
-  file_path text NOT NULL, -- This stores the Cloudflare R2 Key
+  file_path text NOT NULL, -- Bucket Key
   mime_type text,
   status text DEFAULT 'ready',
   subject text DEFAULT 'General',
@@ -115,7 +115,11 @@ CREATE TABLE IF NOT EXISTS public.output_artifacts (
   created_at timestamp with time zone DEFAULT now()
 );
 
--- 5. ROW LEVEL SECURITY (The Shield)
+-- 5. ENABLE BUCKET POLICY (Run this if upload fails at 15%)
+-- This must be done manually in the Storage tab usually, but here is the policy:
+-- Bucket name: 'documents'
+
+-- 6. ROW LEVEL SECURITY
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
@@ -130,14 +134,9 @@ CREATE POLICY "Users can manage their own documents" ON public.documents
 CREATE POLICY "Users can manage their own artifacts" ON public.output_artifacts 
   FOR ALL USING (auth.uid() = user_id);
 
--- 6. PERFORMANCE INDEXES
+-- 7. PERFORMANCE INDEXES
 CREATE INDEX IF NOT EXISTS idx_docs_uid ON public.documents(user_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_uid ON public.output_artifacts(user_id);
-
--- 7. INITIAL NEURAL BRAIN (Optional Seed)
-INSERT INTO public.neural_brain (master_prompt, bloom_rules, version)
-SELECT 'You are an adaptive pedagogical engine...', 'Recall, Understand, Apply...', 1
-WHERE NOT EXISTS (SELECT 1 FROM public.neural_brain WHERE version = 1);
 `;
 
   return (
@@ -177,8 +176,8 @@ WHERE NOT EXISTS (SELECT 1 FROM public.neural_brain WHERE version = 1);
       {activeTab === 'infra' && (
         <div className="space-y-8 animate-in slide-in-from-right duration-500">
           <div className="p-6 bg-rose-50 border border-rose-100 rounded-3xl text-rose-800">
-            <h3 className="font-bold flex items-center gap-2 mb-2"><AlertCircle size={18}/> Critical Step Required</h3>
-            <p className="text-sm opacity-90">If the app hangs at 5% during upload, copy the SQL below and run it in the <strong>Supabase SQL Editor</strong>. This creates the tables needed to track your R2 files.</p>
+            <h3 className="font-bold flex items-center gap-2 mb-2"><AlertCircle size={18}/> Global Health Diagnostics</h3>
+            <p className="text-sm opacity-90">If the ingest node hangs at 5-15%, run the SQL below in Supabase. Also ensure a storage bucket named <strong>'documents'</strong> is created and set to <strong>Public</strong> (or has RLS policies for uploads).</p>
           </div>
 
           <div className="flex items-center justify-between">
@@ -203,7 +202,7 @@ WHERE NOT EXISTS (SELECT 1 FROM public.neural_brain WHERE version = 1);
 
           <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl relative">
             <div className="p-6 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between backdrop-blur-md">
-              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">INITIALIZATION_PATCH.SQL</span></div>
+              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">INFRASTRUCTURE_PATCH.SQL</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-black text-white bg-indigo-600 px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-500 transition-all">{copiedSql ? <Check size={14} /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-8 overflow-x-auto bg-slate-950 max-h-96 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-loose">{sqlSchema}</pre></div>

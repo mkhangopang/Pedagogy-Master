@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { supabase as anonClient } from '../../../lib/supabase';
-import { r2Client, BUCKET_NAME } from '../../../lib/r2';
-import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Buffer } from 'buffer';
 
 /**
  * FIXED BASE64 CONVERTER
- * Accepts Uint8Array directly to avoid ArrayBufferLike / SharedArrayBuffer type conflicts.
  */
 function encodeBase64(bytes: Uint8Array): string {
-  // Use Node.js Buffer for high performance and reliability on Vercel
   return Buffer.from(bytes).toString("base64");
 }
 
@@ -29,23 +25,28 @@ export async function POST(req: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey });
 
+    /**
+     * UNIFIED DOCUMENT RETRIEVAL
+     * Prioritizes Supabase Storage (current default for the Ingest Node).
+     */
     const getDocPart = async () => {
       if (doc?.filePath) {
         try {
-          const command = new GetObjectCommand({
-            Bucket: BUCKET_NAME,
-            Key: doc.filePath,
-          });
-          const response = await r2Client.send(command);
-          const bytes = await response.Body?.transformToByteArray();
+          // Download from Supabase Storage bucket 'documents'
+          const { data, error } = await anonClient.storage
+            .from('documents')
+            .download(doc.filePath);
           
-          if (!bytes) return null;
+          if (error || !data) {
+             console.warn("Storage Retrieval Warning:", error?.message);
+             return null;
+          }
           
-          // Fix: Pass the Uint8Array directly to resolve the TS ArrayBufferLike error
-          const base64 = encodeBase64(bytes);
+          const arrayBuffer = await data.arrayBuffer();
+          const base64 = encodeBase64(new Uint8Array(arrayBuffer));
           return { inlineData: { mimeType: doc.mimeType, data: base64 } };
-        } catch (r2Err: any) {
-          console.error("R2 AI Retrieval Error:", r2Err);
+        } catch (err: any) {
+          console.error("Multimedia Retrieval Error:", err);
           return null;
         }
       }
@@ -55,13 +56,13 @@ export async function POST(req: NextRequest) {
 
     if (task === 'extract-slos') {
       const docPart = await getDocPart();
-      if (!docPart) return NextResponse.json({ error: 'Source curriculum inaccessible in R2.' }, { status: 400 });
+      if (!docPart) return NextResponse.json({ error: 'Source curriculum node inaccessible in cloud storage.' }, { status: 400 });
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: { parts: [{ text: "Extract curriculum alignment nodes." }, docPart] },
+        contents: { parts: [{ text: "Analyze curriculum standards and map SLOs." }, docPart] },
         config: {
-          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}\nTAXONOMY: ${brain.bloomRules}`,
+          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}\nTAXONOMY RULES: ${brain.bloomRules}`,
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.ARRAY,
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
       const docPart = await getDocPart();
       const streamResponse = await ai.models.generateContentStream({
         model: "gemini-3-flash-preview",
-        contents: { parts: [...(docPart ? [docPart] : []), { text: `Synthesize a ${toolType}: ${userInput}` }] },
+        contents: { parts: [...(docPart ? [docPart] : []), { text: `Synthesize a ${toolType} based on the context: ${userInput}` }] },
         config: { systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}` },
       });
 
