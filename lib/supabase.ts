@@ -1,18 +1,23 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Robustly retrieves environment variables using process.env.
- * This ensures compatibility with Next.js 14 and environment shims.
+ * Robustly retrieves environment variables from various possible sources.
+ * In some environments, process.env is shimmed on the window object.
  */
-const getEnvVar = (key: string): string => {
-  if (typeof process !== 'undefined' && process.env?.[key]) {
+const getEnv = (key: string): string => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) {
     return process.env[key] as string;
+  }
+  if (typeof window !== 'undefined') {
+    const win = window as any;
+    if (win.process?.env?.[key]) return win.process.env[key];
+    if (win.__ENV__?.[key]) return win.__ENV__[key];
   }
   return '';
 };
 
-const supabaseUrl = getEnvVar('NEXT_PUBLIC_SUPABASE_URL');
-const supabaseAnonKey = getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
 export const isSupabaseConfigured = !!(
   supabaseUrl && 
@@ -23,7 +28,7 @@ export const isSupabaseConfigured = !!(
 /**
  * Global Supabase instance.
  * We initialize with placeholder values if keys are missing to ensure the object 
- * structure (e.g., .auth) exists, preventing runtime crashes.
+ * structure (e.g., .auth) exists, preventing runtime crashes like "reading 'auth' of null".
  */
 export const supabase: SupabaseClient = createClient(
   supabaseUrl || 'https://placeholder-project.supabase.co',
@@ -38,7 +43,7 @@ export const supabase: SupabaseClient = createClient(
 );
 
 if (!isSupabaseConfigured && typeof window !== 'undefined') {
-  console.warn("Pedagogy Master: Cloud configuration missing. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+  console.warn("Pedagogy Master: Supabase environment variables are missing or invalid. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
 }
 
 export const getSupabaseHealth = async () => {
@@ -58,7 +63,7 @@ export const getSupabaseHealth = async () => {
 };
 
 export const createPrivilegedClient = () => {
-  const serviceRoleKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error('Service Role configuration missing.');
   }

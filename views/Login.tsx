@@ -15,7 +15,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   
-  // Security Honeypot to prevent basic bot registration
+  // Security Honeypot
   const [honeypot, setHoneypot] = useState('');
 
   useEffect(() => {
@@ -23,7 +23,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
     console.log('Env check:', {
       hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       hasKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      url: process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 20)
+      urlPrefix: process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 20)
     });
 
     if (!isSupabaseConfigured) {
@@ -34,18 +34,18 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Defensive check to prevent "reading auth of null"
+    // ISSUE 3 FIX: Defensive check before calling auth
     if (!supabase || !supabase.auth) {
-      setError("Authentication service is unavailable. Please check your configuration.");
+      console.error('Supabase auth not initialized');
+      setError("Authentication service is currently unavailable.");
       return;
     }
 
     if (!isSupabaseConfigured) {
-      setError("Cannot proceed: Supabase environment variables are missing.");
+      setError("Cannot proceed: Environment variables are missing.");
       return;
     }
 
-    // Simple bot check
     if (honeypot) return;
 
     setLoading(true);
@@ -69,12 +69,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
             emailRedirectTo: window.location.origin
           }
         });
-        if (authError) {
-          if (authError.message.includes('already registered')) {
-            throw new Error("An account with this email already exists.");
-          }
-          throw authError;
-        }
+        if (authError) throw authError;
         if (data.user && !data.session) {
           setView('signup-success');
         } else if (data.user) {
