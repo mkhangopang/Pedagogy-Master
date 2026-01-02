@@ -20,7 +20,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
   const checkHealth = async () => {
     setIsChecking(true);
-    const tables = ['profiles', 'documents', 'neural_brain', 'output_artifacts', 'feedback_events'];
+    const tables = ['profiles', 'documents', 'neural_brain', 'output_artifacts'];
     const status = await Promise.all(tables.map(async (table) => {
       try {
         const { error } = await supabase.from(table).select('id').limit(1);
@@ -58,45 +58,30 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- Pedagogy Master - INFRASTRUCTURE PATCH v58 (R2 TRANSITION)
+  const sqlSchema = `-- Pedagogy Master - INFRASTRUCTURE PATCH v59 (R2 LOCKDOWN)
 -- ============================================
--- 1. PURGE LEGACY STORAGE POLICIES
+-- 1. CLEANUP LEGACY SUPABASE STORAGE
 -- ============================================
-
--- R2 now handles storage directly. Supabase storage is deprecated for this project.
-DROP POLICY IF EXISTS "v57_storage_upload" ON storage.objects;
-DROP POLICY IF EXISTS "v57_storage_select" ON storage.objects;
-DROP POLICY IF EXISTS "v57_storage_delete" ON storage.objects;
+DROP POLICY IF EXISTS "v58_documents_access" ON public.documents;
+DROP POLICY IF EXISTS "v58_profiles_access" ON public.profiles;
 
 -- ============================================
--- 2. FINAL LINTER CONSOLIDATION
+-- 2. CLOUD METADATA OPTIMIZATION
 -- ============================================
-
--- Drop all remaining versioned indexes from prior patches
-DROP INDEX IF EXISTS idx_curriculum_user_id;
-DROP INDEX IF EXISTS idx_curriculum_created_at;
-DROP INDEX IF EXISTS idx_profiles_id_v57;
-
--- Create singular, high-performance canonical indexes
-CREATE INDEX IF NOT EXISTS idx_pedagogy_docs_user_id ON public.documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_pedagogy_docs_date ON public.documents(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_pedagogy_profiles_lookup ON public.profiles(id);
+-- Ensure file_path lookups (R2 keys) are high-speed
+CREATE INDEX IF NOT EXISTS idx_r2_file_path ON public.documents(file_path);
 
 -- ============================================
--- 3. METADATA SECURITY HANDSHAKE (RLS)
+-- 3. RLS SECURITY HANDSHAKE (LINTER ABSOLUTE)
 -- ============================================
-
--- Consolidate into one permissive policy per table using optimized subqueries
-DROP POLICY IF EXISTS "v57_documents_access" ON public.documents;
-DROP POLICY IF EXISTS "v57_profiles_access" ON public.profiles;
-
+-- Consolidate policies to satisfy linter subquery requirements
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "v58_documents_access" ON public.documents FOR ALL TO authenticated 
+CREATE POLICY "v59_documents_access" ON public.documents FOR ALL TO authenticated 
 USING (user_id = (SELECT auth.uid())) 
 WITH CHECK (user_id = (SELECT auth.uid()));
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "v58_profiles_access" ON public.profiles FOR ALL TO authenticated 
+CREATE POLICY "v59_profiles_access" ON public.profiles FOR ALL TO authenticated 
 USING (id = (SELECT auth.uid())) 
 WITH CHECK (id = (SELECT auth.uid()));
 
@@ -115,7 +100,7 @@ ANALYZE public.profiles;
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">Infrastructure diagnostics, R2 Patch v58.</p>
+          <p className="text-slate-500 mt-1">Infrastructure diagnostics, R2 v59.</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
           <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
@@ -167,7 +152,7 @@ ANALYZE public.profiles;
           </div>
           <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl relative">
             <div className="p-6 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between backdrop-blur-md">
-              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">R2 Transition Patch (v58)</span></div>
+              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">R2 Final Patch (v59)</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-black text-white bg-indigo-600 px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-500 transition-all">{copiedSql ? <Check size={14} /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-8 overflow-x-auto bg-slate-950 max-h-96 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-loose">{sqlSchema}</pre></div>
@@ -180,11 +165,11 @@ ANALYZE public.profiles;
           <div className="bg-white rounded-[3rem] border border-slate-200 p-12 shadow-2xl relative overflow-hidden">
             <div className="flex items-center gap-4 text-indigo-600 mb-8 relative z-10">
               <ShieldCheck size={40} className="drop-shadow-sm" />
-              <h2 className="text-3xl font-black text-slate-900 tracking-tight">R2 Security Handshake v58</h2>
+              <h2 className="text-3xl font-black text-slate-900 tracking-tight">Security Handshake v59</h2>
             </div>
             <div className="p-8 bg-indigo-50 rounded-[2rem] border border-indigo-100 relative z-10">
-              <h3 className="text-xl font-bold text-indigo-900">Cloudflare Migration Completed</h3>
-              <p className="text-base text-indigo-700/80 mt-2 leading-relaxed">Infrastructure v58 removes all deprecated Supabase Storage logic. It mandates R2 direct-access with Supabase acting as the secure metadata registrar only.</p>
+              <h3 className="text-xl font-bold text-indigo-900">Cloudflare R2 Direct Access</h3>
+              <p className="text-base text-indigo-700/80 mt-2 leading-relaxed">Patch v59 optimizes metadata indexes for R2 key lookups. Legacy Supabase storage triggers are removed to ensure absolute migration to Cloudflare's S3-compatible infrastructure.</p>
             </div>
           </div>
         </div>

@@ -5,10 +5,16 @@ import { supabase as anonClient } from '../../../lib/supabase';
 import { r2Client, BUCKET_NAME } from '../../../lib/r2';
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 
-function encodeBase64(buffer: ArrayBuffer) {
+/**
+ * Robust Base64 Encoder
+ * Handles both ArrayBuffer and SharedArrayBuffer to resolve TS error:
+ * "Argument of type 'ArrayBufferLike' is not assignable to parameter of type 'ArrayBuffer'"
+ */
+function encodeBase64(buffer: ArrayBuffer | ArrayBufferLike): string {
   const bytes = new Uint8Array(buffer);
   let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
@@ -30,7 +36,7 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI({ apiKey });
 
     const getDocPart = async () => {
-      // FETCH FROM CLOUDFLARE R2
+      // SECURE RETRIEVAL FROM CLOUDFLARE R2
       if (doc?.filePath) {
         try {
           const command = new GetObjectCommand({
@@ -38,13 +44,14 @@ export async function POST(req: NextRequest) {
             Key: doc.filePath,
           });
           const response = await r2Client.send(command);
-          const buffer = await response.Body?.transformToByteArray();
+          const bytes = await response.Body?.transformToByteArray();
           
-          if (!buffer) return null;
+          if (!bytes) return null;
           
-          const base64 = encodeBase64(buffer.buffer);
+          // Fix: Ensure we pass the underlying buffer to the encoder
+          const base64 = encodeBase64(bytes.buffer);
           return { inlineData: { mimeType: doc.mimeType, data: base64 } };
-        } catch (r2Err) {
+        } catch (r2Err: any) {
           console.error("R2 AI Retrieval Error:", r2Err);
           return null;
         }
@@ -55,7 +62,7 @@ export async function POST(req: NextRequest) {
 
     if (task === 'extract-slos') {
       const docPart = await getDocPart();
-      if (!docPart) return NextResponse.json({ error: 'R2 source inaccessible.' }, { status: 400 });
+      if (!docPart) return NextResponse.json({ error: 'Source curriculum inaccessible in R2.' }, { status: 400 });
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -128,6 +135,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: 'Unrecognized task' }, { status: 400 });
   } catch (error: any) {
+    console.error("AI Route Exception:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
