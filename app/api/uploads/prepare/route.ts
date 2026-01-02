@@ -11,58 +11,54 @@ const QUOTAS = {
 };
 
 export async function POST(req: NextRequest) {
+  // Use a controller to enforce a hard timeout on the entire operation
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8-second limit
+
   try {
-    // 1. Validate Environment
+    // 1. Environment Guard
     if (!process.env.R2_ENDPOINT || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error("Critical: Missing R2_ENDPOINT or SUPABASE_SERVICE_ROLE_KEY");
-      return NextResponse.json({ 
-        error: 'Server configuration error: Missing R2 or Supabase keys.' 
-      }, { status: 500 });
+      return NextResponse.json({ error: 'Infrastructure configuration missing (R2/Supabase Keys).' }, { status: 500 });
     }
 
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-
-    if (!token) return NextResponse.json({ error: 'Session required' }, { status: 401 });
+    if (!token) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
+    if (authError || !user) return NextResponse.json({ error: 'Session verification failed' }, { status: 401 });
 
     const { filename, contentType, fileSize } = await req.json();
 
-    // 2. Quota Enforcement
+    // 2. Fetch Profile Quota
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('plan')
       .eq('id', user.id)
-      .single();
+      .maybeSingle();
 
-    if (profileError) {
-      console.warn("Profile fetch error, defaulting to FREE quota:", profileError.message);
+    if (profileError && profileError.code === '42P01') {
+      return NextResponse.json({ error: 'Supabase table "profiles" not found. Run SQL Initialization script.' }, { status: 500 });
     }
     
     const userPlan = (profile?.plan as SubscriptionPlan) || SubscriptionPlan.FREE;
     if (fileSize > QUOTAS[userPlan]) {
-      return NextResponse.json({ 
-        error: `File size exceeds your ${userPlan} plan limit (${QUOTAS[userPlan] / 1024 / 1024}MB).` 
-      }, { status: 403 });
+      return NextResponse.json({ error: 'File size exceeds plan quota.' }, { status: 403 });
     }
 
-    // 3. Generate Cloudflare R2 Key
+    // 3. R2 Handshake
     const timestamp = Date.now();
-    const sanitizedName = filename.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const key = `${user.id}/${timestamp}_${sanitizedName}`;
-
-    // 4. Request Signed PUT URL from R2
+    const key = `${user.id}/${timestamp}_${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    
     let uploadUrl;
     try {
       uploadUrl = await getUploadPresignedUrl(key, contentType);
-    } catch (r2Error: any) {
-      console.error("R2 Signed URL Error:", r2Error);
-      return NextResponse.json({ error: "Storage handshake failed. Verify R2 credentials." }, { status: 500 });
+    } catch (r2Err: any) {
+      console.error("R2 Error:", r2Err);
+      return NextResponse.json({ error: 'Cloudflare R2 handshake failed. Check endpoint and keys.' }, { status: 500 });
     }
 
-    // 5. Create "uploading" Metadata Record (Privileged)
+    // 4. DB Registry Entry
     const admin = createPrivilegedClient();
     const docId = crypto.randomUUID();
     
@@ -72,24 +68,24 @@ export async function POST(req: NextRequest) {
       name: filename,
       file_path: key,
       mime_type: contentType,
-      status: 'uploading',
-      subject: 'General',
-      grade_level: 'Auto',
-      slo_tags: [],
-      created_at: new Date().toISOString()
+      status: 'uploading'
     });
 
     if (dbError) {
-      console.error("Database Metadata Insert Failed:", dbError);
-      // If table doesn't exist, this is the most likely spot for a 500
-      return NextResponse.json({ 
-        error: `Metadata storage failed. Ensure SQL tables are created. (${dbError.message})` 
-      }, { status: 500 });
+      if (dbError.code === '42P01') {
+        return NextResponse.json({ error: 'Supabase table "documents" missing. Use Neural Brain to run SQL Patch.' }, { status: 500 });
+      }
+      return NextResponse.json({ error: `DB Error: ${dbError.message}` }, { status: 500 });
     }
 
+    clearTimeout(timeoutId);
     return NextResponse.json({ uploadUrl, key, docId });
+
   } catch (err: any) {
-    console.error("Preparation Route Crash:", err);
-    return NextResponse.json({ error: "Internal server error during upload preparation." }, { status: 500 });
+    clearTimeout(timeoutId);
+    const isTimeout = err.name === 'AbortError';
+    return NextResponse.json({ 
+      error: isTimeout ? 'Handshake timed out. Check your database connection.' : 'Internal processing error.' 
+    }, { status: 500 });
   }
 }
