@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { supabase } from '../lib/supabase';
+import React, { useState, useEffect } from 'react';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface LoginProps {
@@ -18,14 +18,35 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
   // Security Honeypot to prevent basic bot registration
   const [honeypot, setHoneypot] = useState('');
 
+  useEffect(() => {
+    // Debug environment variables as requested
+    console.log('Env check:', {
+      hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      hasKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      url: process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 20)
+    });
+
+    if (!isSupabaseConfigured) {
+      setError("Cloud services are not configured. Please check your environment variables.");
+    }
+  }, []);
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Simple bot check
-    if (honeypot) {
-      console.warn("Bot detected.");
+    // Defensive check to prevent "reading auth of null"
+    if (!supabase || !supabase.auth) {
+      setError("Authentication service is unavailable. Please check your configuration.");
       return;
     }
+
+    if (!isSupabaseConfigured) {
+      setError("Cannot proceed: Supabase environment variables are missing.");
+      return;
+    }
+
+    // Simple bot check
+    if (honeypot) return;
 
     setLoading(true);
     setError(null);
@@ -36,7 +57,6 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
         if (authError) throw authError;
         if (data.user) onSession(data.user);
       } else if (view === 'signup') {
-        // Basic validation
         if (password.length < 8) {
           throw new Error("Password must be at least 8 characters.");
         }
@@ -51,7 +71,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
         });
         if (authError) {
           if (authError.message.includes('already registered')) {
-            throw new Error("An account with this email already exists. Try signing in.");
+            throw new Error("An account with this email already exists.");
           }
           throw authError;
         }
@@ -83,8 +103,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
           <p className="text-slate-500 mb-8">
-            We've sent a confirmation link to <span className="font-semibold text-slate-800">{email}</span>. 
-            Please verify your email to access your workspace.
+            We've sent a confirmation link to <span className="font-semibold text-slate-800">{email}</span>.
           </p>
           <button 
             onClick={() => setView('login')}
@@ -105,9 +124,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
             <Mail className="w-12 h-12 text-indigo-500" />
           </div>
           <h2 className="text-2xl font-bold text-slate-900 mb-2">Recovery link sent</h2>
-          <p className="text-slate-500 mb-8">
-            Check your inbox for instructions on how to reset your password.
-          </p>
+          <p className="text-slate-500 mb-8">Check your inbox for password reset instructions.</p>
           <button 
             onClick={() => setView('login')}
             className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all"
@@ -147,15 +164,8 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
           </div>
           
           <form onSubmit={handleAuth} className="space-y-4">
-            {/* Honeypot field - Hidden from users */}
             <div className="hidden" aria-hidden="true">
-              <input 
-                type="text" 
-                value={honeypot} 
-                onChange={e => setHoneypot(e.target.value)} 
-                tabIndex={-1} 
-                autoComplete="off" 
-              />
+              <input type="text" value={honeypot} onChange={e => setHoneypot(e.target.value)} tabIndex={-1} autoComplete="off" />
             </div>
 
             <div className="space-y-1">
@@ -178,13 +188,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
                 <div className="flex items-center justify-between ml-1">
                   <label className="text-sm font-semibold text-slate-600">Password</label>
                   {view === 'login' && (
-                    <button 
-                      type="button"
-                      onClick={() => setView('forgot-password')}
-                      className="text-[11px] font-bold text-indigo-600 hover:underline"
-                    >
-                      Forgot?
-                    </button>
+                    <button type="button" onClick={() => setView('forgot-password')} className="text-[11px] font-bold text-indigo-600 hover:underline">Forgot?</button>
                   )}
                 </div>
                 <div className="relative">
@@ -224,13 +228,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
 
           {view === 'login' && (
             <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-              <button 
-                onClick={() => { setView('signup'); setError(null); }}
-                className="text-sm font-semibold text-indigo-600 hover:text-indigo-800"
-                type="button"
-              >
-                Don't have an account? Join now
-              </button>
+              <button onClick={() => { setView('signup'); setError(null); }} className="text-sm font-semibold text-indigo-600 hover:text-indigo-800" type="button">Don't have an account? Join now</button>
             </div>
           )}
         </div>
@@ -239,10 +237,6 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
           <ShieldCheck size={14} />
           <span>Secure AES-256 Encryption active</span>
         </div>
-        
-        <p className="mt-4 text-center text-xs text-slate-400">
-          By continuing, you agree to our Terms of Service and Privacy Policy.
-        </p>
       </div>
     </div>
   );

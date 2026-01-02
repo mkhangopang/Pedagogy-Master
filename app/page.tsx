@@ -43,6 +43,10 @@ export default function App() {
   });
 
   const checkDb = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setHealthStatus({ status: 'disconnected', message: 'Cloud credentials missing.' });
+      return false;
+    }
     const health = await getSupabaseHealth();
     setHealthStatus(health);
     return health.status === 'connected';
@@ -50,7 +54,6 @@ export default function App() {
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined, connected: boolean) => {
     if (!connected || !supabase) {
-      // Fallback local profile if cloud is disconnected
       setUserProfile({
         id: userId,
         name: email?.split('@')[0] || 'Educator',
@@ -85,15 +88,17 @@ export default function App() {
           successRate: 0,
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         };
-        await supabase.from('profiles').insert([{
-          id: userId,
-          name: activeProfile.name,
-          email: activeProfile.email,
-          role: activeProfile.role,
-          plan: activeProfile.plan,
-          queries_used: 0,
-          queries_limit: activeProfile.queriesLimit
-        }]);
+        if (isSupabaseConfigured) {
+          await supabase.from('profiles').insert([{
+            id: userId,
+            name: activeProfile.name,
+            email: activeProfile.email,
+            role: activeProfile.role,
+            plan: activeProfile.plan,
+            queries_used: 0,
+            queries_limit: activeProfile.queriesLimit
+          }]);
+        }
       } else {
         activeProfile = {
           id: profile.id,
@@ -156,6 +161,7 @@ export default function App() {
     paymentService.init();
     
     const initSession = async () => {
+      setLoading(true);
       if (!isSupabaseConfigured || !supabase) {
         setLoading(false);
         return;
@@ -180,7 +186,7 @@ export default function App() {
     initSession();
 
     let subscription: any = null;
-    if (supabase) {
+    if (isSupabaseConfigured && supabase) {
       const { data } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
         if (currentSession) {
           setSession(currentSession);
@@ -204,7 +210,7 @@ export default function App() {
     if (!userProfile) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile(prev => prev ? { ...prev, queriesUsed: newCount } : null);
-    if (isActuallyConnected && supabase) {
+    if (isActuallyConnected && isSupabaseConfigured && supabase) {
       await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
     }
   }, [userProfile, isActuallyConnected]);
@@ -226,13 +232,13 @@ export default function App() {
                   onAddDocument={async (doc) => setDocuments(prev => [doc, ...prev])} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-                    if (isActuallyConnected && supabase) {
+                    if (isActuallyConnected && isSupabaseConfigured && supabase) {
                       await supabase.from('documents').update(updates as any).eq('id', id);
                     }
                   }}
                   onDeleteDocument={async (id) => {
                     setDocuments(prev => prev.filter(d => d.id !== id));
-                    if (isActuallyConnected && supabase) {
+                    if (isActuallyConnected && isSupabaseConfigured && supabase) {
                       await supabase.from('documents').delete().eq('id', id);
                     }
                   }}
@@ -249,7 +255,7 @@ export default function App() {
               return <PricingView currentPlan={userProfile.plan} onUpgrade={(plan) => {
                 const limit = plan === SubscriptionPlan.FREE ? 30 : 1000;
                 setUserProfile(prev => prev ? { ...prev, plan, queriesLimit: limit } : null);
-                if (isActuallyConnected && supabase) {
+                if (isActuallyConnected && isSupabaseConfigured && supabase) {
                   supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
                 }
                 setCurrentView('dashboard');
