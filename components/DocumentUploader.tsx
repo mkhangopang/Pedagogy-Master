@@ -20,7 +20,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     setIsUploading(true);
     setError(null);
     setProgress(5);
-    setStatus('Authenticating...');
+    setStatus('Initializing handshake...');
 
     try {
       const result = await uploadDocument(file, userId, (p, s) => {
@@ -28,10 +28,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         setStatus(s);
       });
       
-      setTimeout(() => onComplete(result), 800);
+      // Delay slightly for success animation
+      setTimeout(() => {
+        onComplete(result);
+      }, 1000);
     } catch (err: any) {
-      console.error("Upload Error:", err);
-      setError(err.message || 'Connection lost. Please retry.');
+      console.error("Upload process failure:", err);
+      setError(err.message || 'Connection interrupted. Please try again.');
       setIsUploading(false);
     }
   };
@@ -48,25 +51,26 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     if (currentFile) startUpload(currentFile);
   };
 
-  const circumference = 2 * Math.PI * 45; // radius 45 for 100x100 svg
+  const circumference = 2 * Math.PI * 45;
 
   return (
     <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 w-full max-w-sm mx-auto animate-in fade-in zoom-in duration-300">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h3 className="text-xl font-bold text-slate-900 tracking-tight">Ingest Node</h3>
+          <h3 className="text-xl font-bold text-slate-900 tracking-tight">Cloud Ingest</h3>
           {currentFile && <p className="text-[10px] text-slate-400 truncate max-w-[150px] font-bold uppercase">{currentFile.name}</p>}
         </div>
-        <button 
-          onClick={onCancel} 
-          disabled={isUploading}
-          className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 disabled:opacity-30"
-        >
-          <X size={20} />
-        </button>
+        {!isUploading && (
+          <button 
+            onClick={onCancel} 
+            className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400"
+          >
+            <X size={20} />
+          </button>
+        )}
       </div>
 
-      <div className="relative flex flex-col items-center justify-center py-6">
+      <div className="relative flex flex-col items-center justify-center py-4">
         <svg className="w-40 h-40 -rotate-90">
           <circle
             cx="80" cy="80" r="45"
@@ -102,7 +106,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         </div>
       </div>
 
-      <div className="text-center mt-6 min-h-[3rem]">
+      <div className="text-center mt-6 min-h-[3.5rem]">
         <p className={`text-sm font-bold tracking-tight ${error ? 'text-rose-500' : 'text-slate-600'}`}>
           {error ? 'Handshake Failed' : status}
         </p>
@@ -128,6 +132,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
           onChange={handleFileChange} 
           className="hidden" 
           accept=".pdf,.doc,.docx,.txt,.jpg,.png"
+          disabled={isUploading}
         />
         
         {error ? (
@@ -136,14 +141,14 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black shadow-xl shadow-rose-200 hover:bg-rose-700 transition-all active:scale-95 flex items-center justify-center gap-2"
           >
             <RefreshCcw size={18} />
-            Retry Upload
+            Retry Connection
           </button>
         ) : !isUploading ? (
           <button
             onClick={() => fileInputRef.current?.click()}
             className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95"
           >
-            Select Curriculum Node
+            Select Node
           </button>
         ) : (
           <div className="w-full py-4 bg-slate-50 text-slate-400 rounded-2xl font-black text-center text-sm border-2 border-dashed border-slate-200">
@@ -151,9 +156,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
           </div>
         )}
       </div>
-
+      
       <p className="mt-6 text-[9px] text-center text-slate-400 font-bold uppercase tracking-[0.2em] opacity-60">
-        AES-256 Cloud Channel
+        AES-256 Encrypted Cloud Channel
       </p>
     </div>
   );

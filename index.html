@@ -6,6 +6,10 @@
     <title>Pedagogy Master</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
+    <script>
+      // Early initialization of process.env to prevent library evaluation errors
+      window.process = window.process || { env: {} };
+    </script>
     <style>
       body { margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
       #root { min-height: 100vh; }
@@ -26,14 +30,14 @@
     "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.7?external=react",
     "clsx": "https://esm.sh/clsx@2.1.1",
     "tailwind-merge": "https://esm.sh/tailwind-merge@2.3.0",
-    "@aws-sdk/client-s3": "https://esm.sh/@aws-sdk/client-s3@3.554.0",
-    "@aws-sdk/s3-request-presigner": "https://esm.sh/@aws-sdk/s3-request-presigner@3.554.0",
     "buffer": "https://esm.sh/buffer@6.0.3",
-    "crypto": "https://esm.sh/crypto-js@4.2.0",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
     "next": "https://esm.sh/next@^16.1.1",
-    "next/": "https://esm.sh/next@^16.1.1/"
+    "next/": "https://esm.sh/next@^16.1.1/",
+    "@aws-sdk/client-s3": "https://esm.sh/@aws-sdk/client-s3@^3.958.0",
+    "@aws-sdk/s3-request-presigner": "https://esm.sh/@aws-sdk/s3-request-presigner@^3.958.0",
+    "crypto": "https://esm.sh/crypto@^1.0.1"
   }
 }
 </script>

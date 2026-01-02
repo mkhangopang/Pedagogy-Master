@@ -1,9 +1,16 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Access variables safely
+const getEnv = (key: string) => {
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key];
+  }
+  return undefined;
+};
 
-// Check for both existence and basic format validity
+const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+
 export const isSupabaseConfigured = !!(
   supabaseUrl && 
   supabaseAnonKey && 
@@ -11,53 +18,43 @@ export const isSupabaseConfigured = !!(
 );
 
 /**
- * Global Supabase instance. 
- * Initialized safely to prevent "Url is required" runtime errors.
+ * Global Supabase instance.
  */
 export const supabase: SupabaseClient = isSupabaseConfigured 
   ? createClient(supabaseUrl!, supabaseAnonKey!)
   : (null as any);
 
-if (!isSupabaseConfigured) {
-  console.warn("Pedagogy Master: Supabase credentials missing. Cloud persistence disabled.");
+if (!isSupabaseConfigured && typeof window !== 'undefined') {
+  // Only log if we are reasonably sure they are actually missing
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error("PEDAGOGY MASTER: Supabase configuration is missing. Cloud persistence and authentication will be unavailable. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
+  } else if (!supabaseUrl.startsWith('http')) {
+    console.error("PEDAGOGY MASTER: Supabase URL is invalid. It must start with http:// or https://");
+  }
 }
 
-/**
- * Diagnostic health check for Supabase infrastructure.
- */
 export const getSupabaseHealth = async () => {
   if (!isSupabaseConfigured || !supabase) {
-    return { status: 'disconnected', message: 'Credentials missing in environment' };
+    return { status: 'disconnected', message: 'Environment keys missing' };
   }
-  
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
-    
     if (error) {
-      if (error.code === '42P01') {
-        return { status: 'error', message: 'Database schema not initialized (Profiles table missing)' };
-      }
+      if (error.code === '42P01') return { status: 'error', message: 'Profiles table missing' };
       return { status: 'error', message: error.message };
     }
-    
-    return { status: 'connected', message: 'All systems operational' };
+    return { status: 'connected', message: 'Ready' };
   } catch (err: any) {
-    return { status: 'error', message: 'Cloud connection timeout or network failure' };
+    return { status: 'error', message: err.message };
   }
 };
 
-/**
- * Privileged client for internal API routes (Service Role).
- */
 export const createPrivilegedClient = () => {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Infrastructure configuration missing (Service Role Key).');
+  const serviceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  
+  if (!url || !serviceRoleKey) {
+    throw new Error('Service Role configuration missing.');
   }
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  });
+  return createClient(url, serviceRoleKey);
 };

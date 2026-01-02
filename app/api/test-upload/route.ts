@@ -8,26 +8,27 @@ export async function GET(req: NextRequest) {
     // 1. Auth Health Check
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     tests.push({ 
-      name: "Supabase Session", 
+      name: "Supabase Authentication", 
       status: !sessionError && session ? "pass" : "fail", 
-      message: session ? "Active session found" : "No active session" 
+      message: session ? "Active session identified" : "No active session detected" 
     });
 
     // 2. Storage Bucket Accessibility
+    // We check if we can at least interact with the storage client
     const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
     const docBucket = buckets?.find(b => b.name === 'documents');
     tests.push({ 
       name: "Storage Access", 
       status: docBucket ? "pass" : "fail", 
-      message: docBucket ? "'documents' bucket accessible" : "Bucket not found or permission denied" 
+      message: docBucket ? "'documents' bucket found" : (bucketError ? `Bucket Error: ${bucketError.message}` : "Bucket 'documents' not found")
     });
 
     // 3. Database Table Integrity
     const { error: dbError } = await supabase.from('documents').select('id').limit(1);
     tests.push({ 
-      name: "Database Insert Capability", 
-      status: !dbError || dbError.code !== '42P01' ? "pass" : "fail",
-      message: dbError ? `Error: ${dbError.message}` : "Documents table accessible"
+      name: "Database Write Permission", 
+      status: !dbError || (dbError.code !== '42P01' && dbError.code !== '42501') ? "pass" : "fail",
+      message: dbError ? `Error ${dbError.code}: ${dbError.message}` : "Documents table accessible"
     });
 
     const overall = tests.every(t => t.status === "pass") ? "success" : "partial_failure";
@@ -36,7 +37,9 @@ export async function GET(req: NextRequest) {
       tests, 
       overall, 
       timestamp: new Date().toISOString(),
-      instructions: overall === 'success' ? "All systems operational." : "Run SQL initialization in Neural Brain tab."
+      instructions: overall === 'success' 
+        ? "Infrastructure is validated." 
+        : "Check Supabase project settings and SQL schema."
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message, overall: "error" }, { status: 500 });
