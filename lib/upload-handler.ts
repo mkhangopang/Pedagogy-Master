@@ -10,8 +10,8 @@ interface UploadResult {
 }
 
 const MAX_RETRIES = 3;
-const STORAGE_TIMEOUT = 30000;
-const DB_TIMEOUT = 15000;
+const STORAGE_TIMEOUT = 30000; // 30s
+const DB_TIMEOUT = 15000;      // 15s
 
 class TimeoutError extends Error {
   constructor(message: string) {
@@ -21,10 +21,10 @@ class TimeoutError extends Error {
 }
 
 /**
- * Promise wrapper with explicit timeout and support for Supabase thenables.
+ * Wraps a promise with a timeout.
  */
 async function withTimeout<T>(
-  promise: Promise<T> | PromiseLike<T> | any, 
+  promise: Promise<T> | PromiseLike<T>, 
   ms: number, 
   errorMessage: string
 ): Promise<T> {
@@ -53,64 +53,66 @@ async function retryWithBackoff<T>(
 }
 
 /**
- * Main upload handler with staged progress and robust error recovery.
+ * Main upload handler strictly using Supabase Storage.
  */
 export async function uploadDocument(
   file: File,
   userId: string,
   onProgress: UploadProgress
 ): Promise<UploadResult> {
-  // Stage 1: Auth check
-  onProgress(5, 'Checking authentication...');
+  // Stage 1: Auth check (5%)
+  onProgress(5, 'Authenticating session...');
   const { data: { session }, error: sessionError } = await supabase.auth.getSession();
   if (sessionError || !session) {
-    throw new Error('Authentication failure. Please sign in again.');
+    throw new Error('Please sign in to upload.');
   }
 
-  // Stage 2: Validation
-  onProgress(10, 'Validating file node...');
-  if (file.size > 10 * 1024 * 1024) throw new Error('File too large (Max 10MB allowed).');
+  // Stage 2: Validation (10%)
+  onProgress(10, 'Validating curriculum file...');
+  if (file.size > 10 * 1024 * 1024) throw new Error('Max 10MB allowed.');
   
-  const allowedMimeTypes = [
+  const allowed = [
     'application/pdf',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'text/plain',
     'image/jpeg',
     'image/png'
   ];
-  if (!allowedMimeTypes.includes(file.type)) {
-    throw new Error('Unsupported format. Please use PDF, DOCX, TXT, or images.');
+  if (!allowed.includes(file.type)) {
+    throw new Error('Unsupported format. Use PDF, DOCX, TXT or PNG/JPG.');
   }
 
-  // Stage 3: Prepare path
-  onProgress(20, 'Preparing secure path...');
+  // Stage 3: Prepare (20%)
+  onProgress(20, 'Preparing secure channel...');
   const timestamp = Date.now();
   const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
   const filePath = `${userId}/${timestamp}_${sanitizedName}`;
 
   // Stage 4: Storage Upload (30% - 70%)
   const performStorageUpload = async () => {
-    onProgress(30, 'Uploading to secure storage...');
+    onProgress(40, 'Uploading to storage...');
     
+    // Note: Standard Supabase upload doesn't provide fine-grained progress without additional setup,
+    // so we use staged updates here.
     const { data, error } = (await withTimeout(
-      supabase.storage.from('documents').upload(filePath, file, { cacheControl: '3600', upsert: false }),
+      supabase.storage.from('documents').upload(filePath, file, { 
+        cacheControl: '3600', 
+        upsert: false 
+      }),
       STORAGE_TIMEOUT,
-      'Storage upload timed out. Retrying...'
+      'Upload timeout. Retrying...'
     )) as any;
     
     if (error) throw error;
-    onProgress(70, 'Storage upload complete.');
+    onProgress(70, 'Upload complete.');
     return data;
   };
 
   await retryWithBackoff(performStorageUpload);
 
-  // Stage 5: URL verification
-  onProgress(80, 'Verifying file node URL...');
-
-  // Stage 6: Database Registry (90%)
+  // Stage 5: Database Registry (80% - 90%)
   const performDbRegistry = async () => {
-    onProgress(90, 'Saving metadata to database...');
+    onProgress(85, 'Saving metadata...');
     
     const { data, error } = (await withTimeout(
       supabase.from('documents').insert({
@@ -122,11 +124,11 @@ export async function uploadDocument(
         created_at: new Date().toISOString()
       }).select().single(),
       DB_TIMEOUT,
-      'Database registry timed out. Retrying...'
+      'Failed to save metadata. Retrying...'
     )) as any;
     
     if (error) {
-      // Cleanup storage on DB failure
+      // Rollback storage if DB fails
       await supabase.storage.from('documents').remove([filePath]);
       throw error;
     }
@@ -135,8 +137,8 @@ export async function uploadDocument(
 
   const dbRecord = await retryWithBackoff(performDbRegistry);
 
-  // Stage 7: Complete
-  onProgress(100, 'Success!');
+  // Stage 6: Success (100%)
+  onProgress(100, 'Handshake success!');
 
   return {
     id: dbRecord.id,

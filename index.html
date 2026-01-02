@@ -7,7 +7,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
     <script>
-      // Early initialization of process.env to prevent library evaluation errors
+      // Early shim for process.env to prevent library initialization crashes
       window.process = window.process || { env: {} };
     </script>
     <style>
