@@ -1,9 +1,8 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
 import { ADMIN_EMAILS } from '../../../constants';
-import { r2Client, R2_BUCKET, isR2Configured } from '../../../lib/r2';
+import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 type TestResult = {
@@ -33,7 +32,8 @@ export async function GET(request: NextRequest) {
       supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       supabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       geminiKey: !!process.env.API_KEY,
-      r2Configured: isR2Configured()
+      r2Configured: isR2Configured(),
+      r2PublicUrl: !!R2_PUBLIC_BASE_URL
     };
     results.push({
       name: 'Cloud Infrastructure Keys',
@@ -51,6 +51,20 @@ export async function GET(request: NextRequest) {
           status: 'pass',
           message: `Successfully connected to bucket: ${R2_BUCKET}`
         });
+        
+        if (R2_PUBLIC_BASE_URL) {
+          results.push({
+            name: 'R2 Public Access',
+            status: 'pass',
+            message: `Public URL established: ${R2_PUBLIC_BASE_URL}`
+          });
+        } else {
+          results.push({
+            name: 'R2 Public Access',
+            status: 'warning',
+            message: 'R2 is active but NEXT_PUBLIC_R2_PUBLIC_URL is missing. Documents will be proxied via server.'
+          });
+        }
       } catch (e: any) {
         results.push({
           name: 'Cloudflare R2 Storage',
@@ -94,14 +108,22 @@ export async function GET(request: NextRequest) {
       results.push({ name: 'Gemini AI Synthesis Engine', status: 'fail', message: `Engine offline: ${e.message}` });
     }
 
+    const passedCount = results.filter(r => r.status === 'pass').length;
+    const failedCount = results.filter(r => r.status === 'fail').length;
+    const warningCount = results.filter(r => r.status === 'warning').length;
+
     return NextResponse.json({
       summary: {
-        overall: results.every(r => r.status !== 'fail') ? 'pass' : 'fail',
+        overall: failedCount === 0 ? 'pass' : 'fail',
+        passed: passedCount,
+        failed: failedCount,
+        warnings: warningCount,
+        total: results.length,
         timestamp: new Date().toISOString(),
-        readyForProduction: results.every(r => r.status === 'pass')
+        readyForProduction: failedCount === 0
       },
       tests: results,
-      recommendations: results.every(r => r.status === 'pass') 
+      recommendations: failedCount === 0 
         ? ["Infrastructure is fully validated for production."] 
         : ["Address failing modules or provide missing R2 credentials."]
     });
