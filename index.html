@@ -7,8 +7,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
     <script>
-      // Early shim for process.env to prevent library initialization crashes
+      /**
+       * CORE INFRASTRUCTURE SHIM
+       * Ensures process.env exists globally before any modules load.
+       */
       window.process = window.process || { env: {} };
+      window.process.env = window.process.env || {};
+      window.__ENV__ = window.__ENV__ || {};
     </script>
     <style>
       body { margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }

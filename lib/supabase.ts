@@ -1,71 +1,65 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * Robustly retrieves environment variables from various possible sources.
- * In some environments, process.env is shimmed on the window object.
+ * DIRECT ENVIRONMENT RESOLUTION
+ * Priority: process.env > window.__ENV__ > window
  */
 const getEnv = (key: string): string => {
-  if (typeof process !== 'undefined' && process.env && process.env[key]) {
-    return process.env[key] as string;
-  }
-  if (typeof window !== 'undefined') {
-    const win = window as any;
-    if (win.process?.env?.[key]) return win.process.env[key];
-    if (win.__ENV__?.[key]) return win.__ENV__[key];
-  }
+  if (typeof process !== 'undefined' && process.env?.[key]) return process.env[key] as string;
+  if ((window as any).process?.env?.[key]) return (window as any).process.env[key];
+  if ((window as any).__ENV__?.[key]) return (window as any).__ENV__[key];
+  if ((window as any)[key]) return (window as any)[key];
   return '';
 };
 
 const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL');
 const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-export const isSupabaseConfigured = !!(
-  supabaseUrl && 
-  supabaseAnonKey && 
-  supabaseUrl.startsWith('http')
-);
+/**
+ * Validates if the cloud environment is correctly setup.
+ */
+export const isSupabaseConfigured = (): boolean => {
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  return !!(url && key && url.startsWith('http'));
+};
+
+// Diagnostic handshake
+if (typeof window !== 'undefined') {
+  console.log('🌐 Supabase Handshake:', isSupabaseConfigured() ? '✅ Ready' : '⚠️ Missing Credentials');
+}
 
 /**
- * Global Supabase instance.
- * We initialize with placeholder values if keys are missing to ensure the object 
- * structure (e.g., .auth) exists, preventing runtime crashes like "reading 'auth' of null".
+ * Global Supabase Client
  */
 export const supabase: SupabaseClient = createClient(
-  supabaseUrl || 'https://placeholder-project.supabase.co',
-  supabaseAnonKey || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDI0MjI4OTIsImV4cCI6MTk1ODAwMjg5Mn0.placeholder',
+  supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseAnonKey || 'placeholder-key',
   {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true
+      detectSessionInUrl: true,
+      flowType: 'pkce'
     }
   }
 );
 
-if (!isSupabaseConfigured && typeof window !== 'undefined') {
-  console.warn("Pedagogy Master: Supabase environment variables are missing or invalid. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
-}
-
+/**
+ * Verifies live connectivity
+ */
 export const getSupabaseHealth = async () => {
-  if (!isSupabaseConfigured) {
-    return { status: 'disconnected', message: 'Environment keys missing in runtime.' };
+  if (!isSupabaseConfigured()) {
+    return { status: 'disconnected', message: 'Environment variables not detected.' };
   }
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error) {
-      if (error.code === '42P01') return { status: 'error', message: 'Infrastructure tables missing (Run SQL Patch).' };
+      if (error.code === '42P01') return { status: 'error', message: 'Schema missing. Run SQL patch.' };
       return { status: 'error', message: error.message };
     }
-    return { status: 'connected', message: 'All systems operational.' };
+    return { status: 'connected', message: 'Operational' };
   } catch (err: any) {
-    return { status: 'error', message: err.message || 'Network timeout.' };
+    return { status: 'error', message: err.message || 'Connection timeout' };
   }
-};
-
-export const createPrivilegedClient = () => {
-  const serviceRoleKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error('Service Role configuration missing.');
-  }
-  return createClient(supabaseUrl, serviceRoleKey);
 };
