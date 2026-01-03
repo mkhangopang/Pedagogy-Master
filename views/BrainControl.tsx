@@ -57,10 +57,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: FULL INFRASTRUCTURE INITIALIZATION (RUN IN SUPABASE SQL EDITOR)
+  const sqlSchema = `-- PEDAGOGY MASTER: IDEMPOTENT INFRASTRUCTURE INITIALIZATION
 -- ========================================================================================
 
--- 1. PROFILES TABLE (User Accounts & Quotas)
+-- 1. PROFILES TABLE
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   email text,
@@ -79,12 +79,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 2. DOCUMENTS TABLE (Metadata)
+-- 2. DOCUMENTS TABLE
 CREATE TABLE IF NOT EXISTS public.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
   name text NOT NULL,
-  file_path text NOT NULL, -- Bucket Key
+  file_path text NOT NULL,
   mime_type text,
   status text DEFAULT 'ready',
   subject text DEFAULT 'General',
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at timestamp with time zone DEFAULT now()
 );
 
--- 3. NEURAL BRAIN TABLE (AI Core Logic)
+-- 3. NEURAL BRAIN TABLE
 CREATE TABLE IF NOT EXISTS public.neural_brain (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   master_prompt text NOT NULL,
@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS public.neural_brain (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 4. OUTPUT ARTIFACTS (Generation History)
+-- 4. OUTPUT ARTIFACTS
 CREATE TABLE IF NOT EXISTS public.output_artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
@@ -115,26 +115,29 @@ CREATE TABLE IF NOT EXISTS public.output_artifacts (
   created_at timestamp with time zone DEFAULT now()
 );
 
--- 5. ENABLE BUCKET POLICY (Run this if upload fails at 15%)
--- This must be done manually in the Storage tab usually, but here is the policy:
--- Bucket name: 'documents'
+-- 5. RLS POLICIES (Idempotent using DO blocks)
+DO $$ 
+BEGIN
+    -- Profiles Policy
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own profile') THEN
+        ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can manage their own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
+    END IF;
 
--- 6. ROW LEVEL SECURITY
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+    -- Documents Policy
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own documents') THEN
+        ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can manage their own documents" ON public.documents FOR ALL USING (auth.uid() = user_id);
+    END IF;
 
--- Allow users to see/edit only their own data
-CREATE POLICY "Users can manage their own profile" ON public.profiles 
-  FOR ALL USING (auth.uid() = id);
+    -- Artifacts Policy
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own artifacts') THEN
+        ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+        CREATE POLICY "Users can manage their own artifacts" ON public.output_artifacts FOR ALL USING (auth.uid() = user_id);
+    END IF;
+END $$;
 
-CREATE POLICY "Users can manage their own documents" ON public.documents 
-  FOR ALL USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can manage their own artifacts" ON public.output_artifacts 
-  FOR ALL USING (auth.uid() = user_id);
-
--- 7. PERFORMANCE INDEXES
+-- 6. PERFORMANCE INDEXES
 CREATE INDEX IF NOT EXISTS idx_docs_uid ON public.documents(user_id);
 CREATE INDEX IF NOT EXISTS idx_artifacts_uid ON public.output_artifacts(user_id);
 `;

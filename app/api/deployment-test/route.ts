@@ -1,7 +1,10 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
 import { ADMIN_EMAILS } from '../../../constants';
+import { r2Client, R2_BUCKET, isR2Configured } from '../../../lib/r2';
+import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 
 type TestResult = {
   name: string;
@@ -30,15 +33,40 @@ export async function GET(request: NextRequest) {
       supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       supabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       geminiKey: !!process.env.API_KEY,
+      r2Configured: isR2Configured()
     };
     results.push({
       name: 'Cloud Infrastructure Keys',
-      status: Object.values(envCheck).every(v => v) ? 'pass' : 'fail',
-      message: 'All essential environment variables are detected in current runtime.',
+      status: (envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.geminiKey) ? 'pass' : 'fail',
+      message: 'Critical environment variables detected.',
       details: envCheck
     });
 
-    // 2. Database Connectivity
+    // 2. R2 Handshake
+    if (isR2Configured() && r2Client) {
+      try {
+        await r2Client.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, MaxKeys: 1 }));
+        results.push({
+          name: 'Cloudflare R2 Storage',
+          status: 'pass',
+          message: `Successfully connected to bucket: ${R2_BUCKET}`
+        });
+      } catch (e: any) {
+        results.push({
+          name: 'Cloudflare R2 Storage',
+          status: 'fail',
+          message: `R2 Connection Error: ${e.message}`
+        });
+      }
+    } else {
+      results.push({
+        name: 'Cloudflare R2 Storage',
+        status: 'warning',
+        message: 'R2 not configured. System is using Supabase fallback.'
+      });
+    }
+
+    // 3. Database Connectivity
     try {
       const { error } = await supabase.from('profiles').select('id').limit(1);
       results.push({
@@ -50,7 +78,7 @@ export async function GET(request: NextRequest) {
       results.push({ name: 'Supabase Data Plane', status: 'fail', message: e.message });
     }
 
-    // 3. AI Engine Handshake
+    // 4. AI Engine Handshake
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
       const response = await ai.models.generateContent({
@@ -75,7 +103,7 @@ export async function GET(request: NextRequest) {
       tests: results,
       recommendations: results.every(r => r.status === 'pass') 
         ? ["Infrastructure is fully validated for production."] 
-        : ["Address failing modules before high-traffic deployment."]
+        : ["Address failing modules or provide missing R2 credentials."]
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

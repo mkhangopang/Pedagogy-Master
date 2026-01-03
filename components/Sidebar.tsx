@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -46,7 +45,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'pricing', label: 'Pricing Tiers', icon: CreditCard },
   ];
 
-  // Only show Neural Brain to App Admins (Developers)
   if (userProfile.role === UserRole.APP_ADMIN) {
     navItems.push({ id: 'brain', label: 'Neural Brain', icon: BrainCircuit });
   }
@@ -69,12 +67,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   const roleInfo = getRoleDisplay();
 
   return (
-    <aside className={`h-screen bg-indigo-950 text-white flex flex-col transition-all duration-300 relative ${isCollapsed ? 'w-20' : 'w-full'}`}>
+    <aside className={`h-full bg-indigo-950 text-white flex flex-col transition-all duration-300 relative w-full`}>
       {/* Desktop Collapse Toggle */}
       {!onClose && (
         <button 
-          onClick={() => setIsCollapsed(!isCollapsed)}
-          className="absolute -right-3 top-16 w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center border-2 border-indigo-950 hover:bg-indigo-500 z-50 hidden lg:flex"
+          onClick={(e) => { e.stopPropagation(); setIsCollapsed(!isCollapsed); }}
+          className="absolute -right-3 top-16 w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center border-2 border-indigo-950 hover:bg-indigo-500 z-[60] hidden lg:flex"
         >
           {isCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
         </button>
@@ -84,7 +82,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       {onClose && (
         <button 
           onClick={onClose}
-          className="absolute right-4 top-6 p-2 text-indigo-300 hover:text-white transition-colors lg:hidden focus:outline-none"
+          className="absolute right-4 top-6 p-2 text-indigo-300 hover:text-white transition-colors lg:hidden focus:outline-none z-[60]"
           aria-label="Close menu"
         >
           <X size={24} />
@@ -110,7 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 if (onClose) onClose();
               }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                isActive ? 'bg-indigo-600 shadow-lg text-white' : 'text-indigo-200 hover:bg-indigo-900/50 hover:text-white'
+                isActive ? 'bg-indigo-600 shadow-lg text-white font-bold' : 'text-indigo-200 hover:bg-indigo-900/50 hover:text-white'
               } ${isCollapsed ? 'justify-center' : ''}`}
               title={isCollapsed ? item.label : ''}
             >

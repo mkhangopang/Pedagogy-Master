@@ -1,6 +1,9 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from "@google/genai";
 import { supabase as anonClient } from '../../../lib/supabase';
+import { r2Client, R2_BUCKET } from '../../../lib/r2';
+import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 
 function encodeBase64(bytes: Uint8Array): string {
@@ -16,30 +19,49 @@ export async function POST(req: NextRequest) {
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const { task, message, doc, history, brain, toolType, userInput, adaptiveContext } = await req.json();
+    const { task, message, doc, brain, adaptiveContext, history } = await req.json();
     const apiKey = process.env.API_KEY;
     if (!apiKey) return NextResponse.json({ error: 'AI key missing' }, { status: 500 });
 
     const ai = new GoogleGenAI({ apiKey });
 
+    /**
+     * Dual-Storage Retrieval
+     */
     const getDocPart = async () => {
-      if (doc?.filePath) {
-        const { data, error } = await anonClient.storage
-          .from('documents')
-          .download(doc.filePath);
+      if (!doc?.filePath) return null;
+
+      try {
+        // First check database for storage type
+        const { data: meta } = await anonClient.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
         
-        if (error || !data) return null;
+        let bytes: Uint8Array;
         
-        const arrayBuffer = await data.arrayBuffer();
-        const base64 = encodeBase64(new Uint8Array(arrayBuffer));
-        return { inlineData: { mimeType: doc.mimeType, data: base64 } };
+        if (meta?.storage_type === 'r2' && r2Client) {
+          const response = await r2Client.send(new GetObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: doc.filePath
+          }));
+          const arrayBuffer = await response.Body?.transformToByteArray();
+          if (!arrayBuffer) return null;
+          bytes = arrayBuffer;
+        } else {
+          // Default to Supabase
+          const { data, error } = await anonClient.storage.from('documents').download(doc.filePath);
+          if (error || !data) return null;
+          bytes = new Uint8Array(await data.arrayBuffer());
+        }
+
+        return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
+      } catch (e) {
+        console.error("Doc retrieval error:", e);
+        return null;
       }
-      return null;
     };
 
     if (task === 'extract-slos') {
       const docPart = await getDocPart();
-      if (!docPart) return NextResponse.json({ error: 'Source node missing' }, { status: 400 });
+      if (!docPart) return NextResponse.json({ error: 'Source node missing or unreachable' }, { status: 400 });
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
