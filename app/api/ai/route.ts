@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
-          for (const chunk of streamResponse) {
+          for await (const chunk of streamResponse) {
             if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
           }
           controller.close();
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
-          for (const chunk of streamResponse) {
+          for await (const chunk of streamResponse) {
             if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
           }
           controller.close();
