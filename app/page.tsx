@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
@@ -53,21 +54,7 @@ export default function App() {
   }, []);
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined, connected: boolean) => {
-    if (!connected || !supabase) {
-      setUserProfile({
-        id: userId,
-        name: email?.split('@')[0] || 'Educator',
-        email: email || '',
-        role: UserRole.TEACHER,
-        plan: SubscriptionPlan.FREE,
-        queriesUsed: 0,
-        queriesLimit: 30,
-        generationCount: 0,
-        successRate: 0,
-        editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-      });
-      return;
-    }
+    if (!connected || !supabase) return;
 
     try {
       const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
@@ -88,17 +75,15 @@ export default function App() {
           successRate: 0,
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         };
-        if (isSupabaseConfigured) {
-          await supabase.from('profiles').insert([{
-            id: userId,
-            name: activeProfile.name,
-            email: activeProfile.email,
-            role: activeProfile.role,
-            plan: activeProfile.plan,
-            queries_used: 0,
-            queries_limit: activeProfile.queriesLimit
-          }]);
-        }
+        await supabase.from('profiles').insert([{
+          id: userId,
+          name: activeProfile.name,
+          email: activeProfile.email,
+          role: activeProfile.role,
+          plan: activeProfile.plan,
+          queries_used: 0,
+          queries_limit: activeProfile.queriesLimit
+        }]);
       } else {
         activeProfile = {
           id: profile.id,
@@ -129,6 +114,8 @@ export default function App() {
           filePath: d.file_path,
           mimeType: d.mime_type,
           status: d.status as any,
+          storageType: d.storage_type,
+          isPublic: d.is_public,
           subject: d.subject,
           gradeLevel: d.grade_level,
           sloTags: d.slo_tags || [],
@@ -237,9 +224,17 @@ export default function App() {
                     }
                   }}
                   onDeleteDocument={async (id) => {
-                    setDocuments(prev => prev.filter(d => d.id !== id));
-                    if (isActuallyConnected && isSupabaseConfigured && supabase) {
-                      await supabase.from('documents').delete().eq('id', id);
+                    const { data: { session } } = await supabase.auth.getSession();
+                    const response = await fetch('/api/docs/delete', {
+                      method: 'DELETE',
+                      headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${session?.access_token}`
+                      },
+                      body: JSON.stringify({ id })
+                    });
+                    if (response.ok) {
+                      setDocuments(prev => prev.filter(d => d.id !== id));
                     }
                   }}
                   isConnected={isActuallyConnected}
@@ -273,27 +268,15 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      {/* Desktop Sidebar */}
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
         <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
       </div>
 
-      {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-[500] flex">
-          <div 
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" 
-            onClick={() => setIsSidebarOpen(false)} 
-          />
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSidebarOpen(false)} />
           <div className="relative w-[280px] h-full shadow-2xl animate-in slide-in-from-left duration-300">
-            <Sidebar 
-              currentView={currentView} 
-              onViewChange={setCurrentView} 
-              userProfile={userProfile} 
-              isCollapsed={false} 
-              setIsCollapsed={() => {}} 
-              onClose={() => setIsSidebarOpen(false)}
-            />
+            <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={false} setIsCollapsed={() => {}} onClose={() => setIsSidebarOpen(false)} />
           </div>
         </div>
       )}

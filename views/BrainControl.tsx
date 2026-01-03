@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Globe, ShieldCheck } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Globe, ShieldCheck, ExternalLink, Terminal } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -137,6 +137,8 @@ BEGIN
 END $$;
 `;
 
+  const allTablesOk = dbStatus.length > 0 && dbStatus.every(s => s.exists);
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -173,13 +175,26 @@ END $$;
 
       {activeTab === 'infra' && (
         <div className="space-y-8 animate-in slide-in-from-right duration-500">
+          {!allTablesOk && (
+            <div className="p-6 bg-amber-50 border-2 border-dashed border-amber-200 rounded-[2rem] text-amber-900 flex flex-col md:flex-row gap-6 items-center">
+              <div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertCircle size={32}/></div>
+              <div className="flex-1 text-center md:text-left">
+                <h3 className="text-lg font-black uppercase tracking-tight">Manual Action Required</h3>
+                <p className="text-sm opacity-80 mt-1">Your Supabase schema is not fully synchronized. Copy the SQL below and run it in your <strong>Supabase SQL Editor</strong> to enable persistence.</p>
+              </div>
+              <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="bg-amber-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-amber-700 transition-all shadow-lg active:scale-95">
+                Supabase Dashboard <ExternalLink size={18}/>
+              </a>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-3xl text-emerald-800">
+            <div className={`p-6 border rounded-3xl transition-all ${process.env.NEXT_PUBLIC_R2_PUBLIC_URL ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
               <h3 className="font-bold flex items-center gap-2 mb-2"><Globe size={18}/> R2 Public Availability</h3>
               <p className="text-sm opacity-90">
                 {process.env.NEXT_PUBLIC_R2_PUBLIC_URL 
                   ? `Active Traffic Node: ${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}`
-                  : "Inactive. Add NEXT_PUBLIC_R2_PUBLIC_URL to Vercel for public asset delivery."}
+                  : "Inactive. Traffic is proxied via secure server nodes."}
               </p>
             </div>
             <div className="p-6 bg-indigo-50 border border-indigo-100 rounded-3xl text-indigo-800">
@@ -210,8 +225,11 @@ END $$;
 
           <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl relative">
             <div className="p-6 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between backdrop-blur-md">
-              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">INITIALIZATION_CORE.SQL</span></div>
-              <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-black text-white bg-indigo-600 px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-500 transition-all">{copiedSql ? <Check size={14} /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
+              <div className="flex items-center gap-3 text-slate-300"><Terminal size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">INITIALIZATION_CORE.SQL</span></div>
+              <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-black text-white bg-indigo-600 px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-500 transition-all">
+                {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+                {copiedSql ? 'Ready for Dashboard' : 'Copy Script'}
+              </button>
             </div>
             <div className="p-8 overflow-x-auto bg-slate-950 max-h-96 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-loose">{sqlSchema}</pre></div>
           </div>

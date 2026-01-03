@@ -1,3 +1,4 @@
+
 export enum UserRole {
   TEACHER = 'teacher',
   ENTERPRISE_ADMIN = 'enterprise_admin',
@@ -18,12 +19,10 @@ export interface UserProfile {
   queriesUsed: number;
   queriesLimit: number;
   name: string;
-  // Adaptive Learning Fields
   gradeLevel?: string;
   subjectArea?: string;
   teachingStyle?: 'concise' | 'balanced' | 'comprehensive';
   pedagogicalApproach?: 'inquiry-based' | 'direct-instruction' | 'flipped-classroom';
-  // Behavioral Stats
   generationCount: number;
   successRate: number;
   editPatterns: {
@@ -61,6 +60,8 @@ export interface Document {
   filePath?: string;
   mimeType?: string;
   status: 'processing' | 'completed' | 'failed' | 'uploading' | 'ready';
+  storageType?: 'r2' | 'supabase';
+  isPublic?: boolean;
   subject: string;
   gradeLevel: string;
   sloTags: SLO[];

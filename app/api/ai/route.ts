@@ -19,22 +19,21 @@ export async function POST(req: NextRequest) {
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const { task, message, doc, brain, adaptiveContext, history } = await req.json();
+    const { task, message, doc, brain, adaptiveContext, history, toolType, userInput } = await req.json();
     const apiKey = process.env.API_KEY;
     if (!apiKey) return NextResponse.json({ error: 'AI key missing' }, { status: 500 });
 
     const ai = new GoogleGenAI({ apiKey });
 
     /**
-     * Dual-Storage Retrieval
+     * Dual-Storage Retrieval System
+     * Resolves the physical file from either R2 or Supabase
      */
     const getDocPart = async () => {
       if (!doc?.filePath) return null;
 
       try {
-        // First check database for storage type
         const { data: meta } = await anonClient.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
-        
         let bytes: Uint8Array;
         
         if (meta?.storage_type === 'r2' && r2Client) {
@@ -46,7 +45,6 @@ export async function POST(req: NextRequest) {
           if (!arrayBuffer) return null;
           bytes = arrayBuffer;
         } else {
-          // Default to Supabase
           const { data, error } = await anonClient.storage.from('documents').download(doc.filePath);
           if (error || !data) return null;
           bytes = new Uint8Array(await data.arrayBuffer());
@@ -59,9 +57,10 @@ export async function POST(req: NextRequest) {
       }
     };
 
+    // TASK 1: SLO EXTRACTION (JSON Mode)
     if (task === 'extract-slos') {
       const docPart = await getDocPart();
-      if (!docPart) return NextResponse.json({ error: 'Source node missing or unreachable' }, { status: 400 });
+      if (!docPart) return NextResponse.json({ error: 'Source node missing' }, { status: 400 });
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -89,6 +88,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ text: response.text });
     }
 
+    // TASK 2: ADAPTIVE CHAT (Streaming Mode)
     if (task === 'chat') {
       const docPart = await getDocPart();
       const streamResponse = await ai.models.generateContentStream({
@@ -103,7 +103,34 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
-          for await (const chunk of streamResponse) {
+          for (const chunk of streamResponse) {
+            if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
+          }
+          controller.close();
+        },
+      });
+      return new Response(stream);
+    }
+
+    // TASK 3: PEDAGOGICAL TOOL GENERATION (Streaming Mode)
+    if (task === 'generate-tool') {
+      const docPart = await getDocPart();
+      const prompt = `Task: Generate a ${toolType}.\nUser Requirements: ${userInput}\nReference Document: ${docPart ? 'Provided' : 'Not Provided'}`;
+      
+      const streamResponse = await ai.models.generateContentStream({
+        model: 'gemini-3-pro-preview',
+        contents: { 
+          parts: [...(docPart ? [docPart] : []), { text: prompt }] 
+        },
+        config: { 
+          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}\nFocus specifically on generating a high-quality ${toolType} structure.` 
+        },
+      });
+
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          for (const chunk of streamResponse) {
             if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
           }
           controller.close();
