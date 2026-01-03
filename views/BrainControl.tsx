@@ -1,5 +1,7 @@
+
+// Add React to imports to fix "Cannot find namespace 'React'" error when using React.FC.
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Globe, ShieldCheck, ExternalLink, Terminal } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Globe, ShieldCheck, ExternalLink, Terminal, ShieldAlert } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -13,20 +15,30 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
-  const [dbStatus, setDbStatus] = useState<{table: string, exists: boolean | null}[]>([]);
+  const [dbStatus, setDbStatus] = useState<{table: string, exists: boolean | null, rls: boolean | null}[]>([]);
   const [isChecking, setIsChecking] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
 
   const checkHealth = async () => {
     setIsChecking(true);
-    const tables = ['profiles', 'documents', 'neural_brain', 'output_artifacts'];
+    const tables = [
+      'organizations',
+      'profiles', 
+      'documents', 
+      'neural_brain', 
+      'output_artifacts', 
+      'feedback_events', 
+      'usage_logs',
+      'chat_messages'
+    ];
+    
     const status = await Promise.all(tables.map(async (table) => {
       try {
         const { error } = await supabase.from(table).select('id').limit(1);
         const exists = !error || (error.code !== '42P01');
-        return { table, exists };
+        return { table, exists, rls: exists };
       } catch (e) {
-        return { table, exists: false };
+        return { table, exists: false, rls: false };
       }
     }));
     setDbStatus(status);
@@ -57,16 +69,41 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V2
+  const sqlSchema = `-- PEDAGOGY MASTER: ENTERPRISE SECURITY CORE V8 (OPTIMIZED PERFORMANCE)
+-- Resolves 'Duplicate Index' and 'Redundant Index' warnings in Supabase.
 -- ========================================================================================
 
--- 1. PROFILES
+-- 1. DROP REDUNDANT INDEXES ON PRIMARY KEYS
+-- Primary keys automatically create unique indexes; manual ones on 'id' are redundant.
+DROP INDEX IF EXISTS public.idx_documents_id;
+DROP INDEX IF EXISTS public.idx_output_artifacts_id;
+DROP INDEX IF EXISTS public.idx_usage_logs_id;
+DROP INDEX IF EXISTS public.idx_chat_messages_id;
+DROP INDEX IF EXISTS public.documents_id_idx;
+DROP INDEX IF EXISTS public.output_artifacts_id_idx;
+DROP INDEX IF EXISTS public.usage_logs_id_idx;
+DROP INDEX IF EXISTS public.chat_messages_id_idx;
+DROP INDEX IF EXISTS public.profiles_id_idx;
+
+-- 2. ORGANIZATIONS
+CREATE TABLE IF NOT EXISTS public.organizations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  slug text UNIQUE,
+  settings jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now()
+);
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.organizations FORCE ROW LEVEL SECURITY;
+
+-- 3. PROFILES
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   email text,
   name text,
   role text DEFAULT 'teacher',
   plan text DEFAULT 'free',
+  organization_id uuid REFERENCES public.organizations(id),
   queries_used integer DEFAULT 0,
   queries_limit integer DEFAULT 30,
   grade_level text,
@@ -78,8 +115,10 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   edit_patterns jsonb DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::jsonb,
   updated_at timestamp with time zone DEFAULT now()
 );
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles FORCE ROW LEVEL SECURITY;
 
--- 2. DOCUMENTS (UPGRADED FOR R2)
+-- 4. DOCUMENTS
 CREATE TABLE IF NOT EXISTS public.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
@@ -94,8 +133,12 @@ CREATE TABLE IF NOT EXISTS public.documents (
   slo_tags jsonb DEFAULT '[]'::jsonb,
   created_at timestamp with time zone DEFAULT now()
 );
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents FORCE ROW LEVEL SECURITY;
+-- Correct: user_id index for lookups and joins
+CREATE INDEX IF NOT EXISTS idx_documents_user_id ON public.documents(user_id);
 
--- 3. NEURAL BRAIN
+-- 5. NEURAL BRAIN
 CREATE TABLE IF NOT EXISTS public.neural_brain (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   master_prompt text NOT NULL,
@@ -104,8 +147,10 @@ CREATE TABLE IF NOT EXISTS public.neural_brain (
   is_active boolean DEFAULT true,
   updated_at timestamp with time zone DEFAULT now()
 );
+ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.neural_brain FORCE ROW LEVEL SECURITY;
 
--- 4. OUTPUT ARTIFACTS
+-- 6. OUTPUT ARTIFACTS
 CREATE TABLE IF NOT EXISTS public.output_artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
@@ -116,122 +161,298 @@ CREATE TABLE IF NOT EXISTS public.output_artifacts (
   edit_depth integer DEFAULT 0,
   created_at timestamp with time zone DEFAULT now()
 );
+ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.output_artifacts FORCE ROW LEVEL SECURITY;
+-- Correct: user_id index for performance
+CREATE INDEX IF NOT EXISTS idx_output_artifacts_user_id ON public.output_artifacts(user_id);
 
--- 5. RLS POLICIES (IDEMPOTENT)
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own profile') THEN
-        ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-        CREATE POLICY "Users can manage their own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
-    END IF;
+-- 7. FEEDBACK EVENTS
+CREATE TABLE IF NOT EXISTS public.feedback_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
+  artifact_id uuid REFERENCES public.output_artifacts(id) ON DELETE CASCADE,
+  event_type text NOT NULL,
+  event_data jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now()
+);
+ALTER TABLE public.feedback_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.feedback_events FORCE ROW LEVEL SECURITY;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own documents') THEN
-        ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-        CREATE POLICY "Users can manage their own documents" ON public.documents FOR ALL USING (auth.uid() = user_id);
-    END IF;
+-- 8. USAGE LOGS
+CREATE TABLE IF NOT EXISTS public.usage_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
+  action text NOT NULL,
+  metadata jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now()
+);
+ALTER TABLE public.usage_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.usage_logs FORCE ROW LEVEL SECURITY;
+-- Correct: user_id index for tracking
+CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id ON public.usage_logs(user_id);
 
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own artifacts') THEN
-        ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
-        CREATE POLICY "Users can manage their own artifacts" ON public.output_artifacts FOR ALL USING (auth.uid() = user_id);
-    END IF;
-END $$;
+-- 9. CHAT MESSAGES
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
+  role text NOT NULL,
+  content text NOT NULL,
+  document_id uuid REFERENCES public.documents(id) ON DELETE SET NULL,
+  created_at timestamp with time zone DEFAULT now()
+);
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages FORCE ROW LEVEL SECURITY;
+-- Foreign key indexes (Required for performant queries)
+CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON public.chat_messages(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_document_id ON public.chat_messages(document_id);
+
+-- ========================================================================================
+-- ACCESS CONTROL POLICIES (CLEANED)
+-- ========================================================================================
+
+-- ORGANIZATIONS
+DROP POLICY IF EXISTS "Organizations are viewable by authenticated users" ON public.organizations;
+CREATE POLICY "Organizations are viewable by authenticated users" ON public.organizations 
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+-- PROFILES
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+
+-- DOCUMENTS
+DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
+CREATE POLICY "Users can manage own documents" ON public.documents FOR ALL USING (auth.uid() = user_id);
+
+-- NEURAL BRAIN
+DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
+CREATE POLICY "Neural brain is viewable by authenticated users" ON public.neural_brain 
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+-- OUTPUT ARTIFACTS
+DROP POLICY IF EXISTS "Users can manage own artifacts" ON public.output_artifacts;
+CREATE POLICY "Users can manage own artifacts" ON public.output_artifacts FOR ALL USING (auth.uid() = user_id);
+
+-- FEEDBACK EVENTS
+DROP POLICY IF EXISTS "Users can manage own feedback" ON public.feedback_events;
+CREATE POLICY "Users can manage own feedback" ON public.feedback_events FOR ALL USING (auth.uid() = user_id);
+
+-- USAGE LOGS
+DROP POLICY IF EXISTS "Users can manage own logs" ON public.usage_logs;
+CREATE POLICY "Users can manage own logs" ON public.usage_logs FOR ALL USING (auth.uid() = user_id);
+
+-- CHAT MESSAGES
+DROP POLICY IF EXISTS "Users can manage own chat" ON public.chat_messages;
+CREATE POLICY "Users can manage own chat" ON public.chat_messages FOR ALL USING (auth.uid() = user_id);
 `;
 
-  const allTablesOk = dbStatus.length > 0 && dbStatus.every(s => s.exists);
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(sqlSchema);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2000);
+  };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-20">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">SaaS Infrastructure Diagnostics & Logic Console.</p>
+          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3">
+            <ShieldCheck className="text-indigo-600" />
+            Admin Control Node
+          </h1>
+          <p className="text-slate-500 mt-1">Manage global AI logic and enterprise infrastructure health.</p>
         </div>
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
-          <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
-          <button onClick={() => setActiveTab('infra')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'infra' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Infrastructure</button>
+        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+          <button 
+            onClick={() => setActiveTab('logic')}
+            className={`px-6 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            AI Logic
+          </button>
+          <button 
+            onClick={() => setActiveTab('infra')}
+            className={`px-6 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'infra' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Infrastructure
+          </button>
         </div>
       </header>
-      
-      {activeTab === 'logic' && (
-        <div className="space-y-8 animate-in slide-in-from-right duration-500">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-slate-400 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-sm">Logic Node V{formData.version}.0</span>
-              {showStatus && <div className="text-emerald-600 text-sm font-bold flex items-center gap-1"><CheckCircle2 size={14}/> Prompt Synchronized</div>}
-            </div>
-            <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all disabled:opacity-50 active:scale-95">
-              {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-              Deploy Version {formData.version + 1}
-            </button>
-          </div>
-          <textarea 
-            value={formData.masterPrompt} 
-            onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})} 
-            className="w-full h-[32rem] p-8 border border-slate-200 rounded-2xl focus:outline-none font-mono text-sm leading-loose text-slate-800 bg-slate-50/10 shadow-xl" 
-            spellCheck={false} 
-          />
-        </div>
-      )}
 
-      {activeTab === 'infra' && (
-        <div className="space-y-8 animate-in slide-in-from-right duration-500">
-          {!allTablesOk && (
-            <div className="p-6 bg-amber-50 border-2 border-dashed border-amber-200 rounded-[2rem] text-amber-900 flex flex-col md:flex-row gap-6 items-center">
-              <div className="bg-amber-100 p-4 rounded-full text-amber-600"><AlertCircle size={32}/></div>
-              <div className="flex-1 text-center md:text-left">
-                <h3 className="text-lg font-black uppercase tracking-tight">Manual Action Required</h3>
-                <p className="text-sm opacity-80 mt-1">Your Supabase schema is not fully synchronized. Copy the SQL below and run it in your <strong>Supabase SQL Editor</strong> to enable persistence.</p>
-              </div>
-              <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="bg-amber-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-amber-700 transition-all shadow-lg active:scale-95">
-                Supabase Dashboard <ExternalLink size={18}/>
-              </a>
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className={`p-6 border rounded-3xl transition-all ${process.env.NEXT_PUBLIC_R2_PUBLIC_URL ? 'bg-emerald-50 border-emerald-100 text-emerald-800' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
-              <h3 className="font-bold flex items-center gap-2 mb-2"><Globe size={18}/> R2 Public Availability</h3>
-              <p className="text-sm opacity-90">
-                {process.env.NEXT_PUBLIC_R2_PUBLIC_URL 
-                  ? `Active Traffic Node: ${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}`
-                  : "Inactive. Traffic is proxied via secure server nodes."}
-              </p>
-            </div>
-            <div className="p-6 bg-indigo-50 border border-indigo-100 rounded-3xl text-indigo-800">
-              <h3 className="font-bold flex items-center gap-2 mb-2"><Database size={18}/> Supabase State</h3>
-              <p className="text-sm opacity-90">Persistence interface is active and monitoring all profile events.</p>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">DB Table Health</h3>
-            <button onClick={checkHealth} disabled={isChecking} className="text-xs font-bold text-indigo-600 flex items-center gap-1.5 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-all border border-indigo-100 shadow-sm">
-              <RefreshCw size={14} className={isChecking ? 'animate-spin' : ''} />
-              Verify Schema
-            </button>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {dbStatus.map((s) => (
-              <div key={s.table} className={`p-5 rounded-[1.5rem] border-2 flex items-center justify-between ${s.exists ? 'bg-white border-emerald-100' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`p-2 rounded-lg ${s.exists ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}><Database size={18} /></div>
-                  <span className="text-sm font-black tracking-tight uppercase">{s.table}</span>
+      {activeTab === 'logic' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="space-y-6">
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold flex items-center gap-2">
+                  <Terminal size={20} className="text-indigo-500" />
+                  Master Prompt (v{formData.version})
+                </h2>
+                <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                  <CheckCircle2 size={12} /> Active
                 </div>
-                {s.exists ? <CheckCircle2 size={18} className="text-emerald-500" /> : <AlertCircle size={18} className="text-slate-300" />}
               </div>
-            ))}
+              
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">System Instruction</label>
+                <textarea 
+                  value={formData.masterPrompt}
+                  onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
+                  className="w-full h-96 p-6 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm leading-relaxed"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Taxonomy Rules</label>
+                <textarea 
+                  value={formData.bloomRules}
+                  onChange={(e) => setFormData({...formData, bloomRules: e.target.value})}
+                  className="w-full h-40 p-6 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-mono text-sm leading-relaxed"
+                />
+              </div>
+
+              <button 
+                onClick={handleSave}
+                disabled={isSaving}
+                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSaving ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20}/>}
+                {isSaving ? 'Deploying Neural Patch...' : 'Deploy logic Update'}
+              </button>
+              
+              {showStatus && (
+                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-emerald-700 text-xs font-bold flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                  <CheckCircle2 size={16} />
+                  Neural version v{brain.version} successfully deployed to all cloud nodes.
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl relative">
-            <div className="p-6 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between backdrop-blur-md">
-              <div className="flex items-center gap-3 text-slate-300"><Terminal size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">INITIALIZATION_CORE.SQL</span></div>
-              <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-black text-white bg-indigo-600 px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-500 transition-all">
-                {copiedSql ? <Check size={14} /> : <Copy size={14} />}
-                {copiedSql ? 'Ready for Dashboard' : 'Copy Script'}
+          <div className="space-y-6">
+            <div className="bg-indigo-900 text-white p-10 rounded-[2.5rem] relative overflow-hidden shadow-2xl">
+              <div className="relative z-10">
+                <h3 className="text-2xl font-bold mb-4">Neural Engine Stats</h3>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="bg-indigo-800/50 p-6 rounded-2xl backdrop-blur-sm border border-indigo-700/50">
+                    <p className="text-indigo-300 text-[10px] font-bold uppercase tracking-widest mb-1">Architecture</p>
+                    <p className="text-xl font-bold">Gemini 3 Pro</p>
+                  </div>
+                  <div className="bg-indigo-800/50 p-6 rounded-2xl backdrop-blur-sm border border-indigo-700/50">
+                    <p className="text-indigo-300 text-[10px] font-bold uppercase tracking-widest mb-1">Last Update</p>
+                    <p className="text-xl font-bold">Today</p>
+                  </div>
+                </div>
+              </div>
+              <Zap size={180} className="absolute -bottom-10 -right-10 text-indigo-500 opacity-10 rotate-12" />
+            </div>
+
+            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+              <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
+                <AlertCircle size={20} className="text-amber-500" />
+                Prompting Guidelines
+              </h3>
+              <ul className="space-y-4 text-sm text-slate-600 leading-relaxed">
+                <li className="flex gap-3">
+                  <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
+                  Ensure instructions use clear delimiters for context variables like grade levels.
+                </li>
+                <li className="flex gap-3">
+                  <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
+                  Define explicit JSON schemas for SLO extraction tasks.
+                </li>
+                <li className="flex gap-3">
+                  <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
+                  Maintain version control by incrementing the version counter during deployment.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-8">
+          <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <div className="p-4 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-600/20">
+                  <Database size={24} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold">SQL Infrastructure Sync</h2>
+                  <p className="text-slate-400 text-sm font-medium">Verified connectivity and Row Level Security.</p>
+                </div>
+              </div>
+              <button 
+                onClick={checkHealth}
+                disabled={isChecking}
+                className="px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-bold text-sm transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isChecking ? <RefreshCw className="animate-spin" size={16}/> : <RefreshCw size={16}/>}
+                Refresh Table Map
               </button>
             </div>
-            <div className="p-8 overflow-x-auto bg-slate-950 max-h-96 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-loose">{sqlSchema}</pre></div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {dbStatus.map((item, idx) => (
+                <div key={idx} className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex items-center justify-between group">
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">{item.table}</p>
+                    <p className={`text-xs font-bold ${item.exists ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {item.exists ? 'Operational' : 'Node Missing'}
+                    </p>
+                  </div>
+                  {item.exists ? <CheckCircle2 size={20} className="text-emerald-500" /> : <ShieldAlert size={20} className="text-rose-500" />}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-xl font-bold">Vercel SQL Patch (RLS & Index Core)</h3>
+                <p className="text-slate-500 text-sm mt-1">Copy and run this in Supabase SQL Editor to initialize/repair the database schema and security policies. Optimized to prevent redundant indexes.</p>
+              </div>
+              <button 
+                onClick={handleCopySql}
+                className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center gap-3 hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
+              >
+                {copiedSql ? <Check size={18} /> : <Copy size={18} />}
+                {copiedSql ? 'Copied to Clipboard' : 'Copy SQL Schema'}
+              </button>
+            </div>
+
+            <div className="relative">
+              <pre className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200 font-mono text-xs overflow-auto max-h-[500px] text-slate-700 leading-relaxed custom-scrollbar">
+                {sqlSchema}
+              </pre>
+              <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-white/50 px-2 py-1 rounded-md backdrop-blur-sm border">
+                SQL / POSTGRESQL
+              </div>
+            </div>
+          </div>
+
+          <div className="p-8 bg-indigo-50 border border-indigo-100 rounded-[2.5rem] flex items-start gap-6">
+            <div className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-200">
+              <Globe size={28} />
+            </div>
+            <div>
+              <h4 className="font-bold text-indigo-950 text-lg">Cloud Gateway Deployment</h4>
+              <p className="text-indigo-800/70 text-sm mt-2 leading-relaxed">
+                The current infrastructure uses a hybrid R2/Supabase bridge. Ensure your Vercel secrets match the bucket IDs provided in the environment handshake. 
+                Manual SQL intervention is required only if table health checks return 'Node Missing' or to resolve index redundancy.
+              </p>
+              <div className="flex gap-4 mt-6">
+                <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-indigo-600 flex items-center gap-2 hover:underline">
+                  Supabase Console <ExternalLink size={14} />
+                </a>
+                <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-indigo-600 flex items-center gap-2 hover:underline">
+                  Cloudflare Dashboard <ExternalLink size={14} />
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       )}

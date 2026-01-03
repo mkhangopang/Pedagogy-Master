@@ -1,6 +1,3 @@
-import { supabase } from './supabase';
-import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from './r2';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
 
 export type UploadProgress = (percentage: number, status: string) => void;
 
@@ -13,96 +10,110 @@ interface UploadResult {
   isPublic: boolean;
 }
 
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY = 1500;
+const REQUEST_TIMEOUT = 90000; // 90 seconds to allow for larger files or slow connections
+
 /**
- * Smart Upload Handler
- * Prioritizes R2 if configured, otherwise uses Supabase Storage.
+ * Client-side Document Ingestion Orchestrator with Resilience
+ * Uses XMLHttpRequest for progress tracking and implements retries with exponential backoff.
+ * Communicates with /api/docs/upload which manages R2 vs Supabase storage selection.
  */
 export async function uploadDocument(
   file: File,
   userId: string,
   onProgress: UploadProgress
 ): Promise<UploadResult> {
-  onProgress(5, 'Handshaking with cloud nodes...');
-  
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Auth session expired. Please sign in.');
+  let attempt = 0;
 
-  const timestamp = Date.now();
-  const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const filePath = `${userId}/${timestamp}_${sanitizedName}`;
+  const executeUpload = (): Promise<UploadResult> => {
+    return new Promise((resolve, reject) => {
+      attempt++;
+      const statusPrefix = attempt > 1 ? `[Attempt ${attempt}/${MAX_RETRIES}] ` : '';
+      onProgress(5, `${statusPrefix}Handshaking with cloud nodes...`);
 
-  // OPTION A: CLOUDFLARE R2
-  if (isR2Configured() && r2Client) {
-    onProgress(20, 'Routing to Cloudflare R2 Node...');
+      const xhr = new XMLHttpRequest();
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('userId', userId);
+
+      // Set timeout for the entire request
+      xhr.timeout = REQUEST_TIMEOUT;
+
+      // Track upload progress
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable) {
+          // Calculate overall progress: 10% base + up to 80% upload + 10% server processing
+          const percentage = Math.round((event.loaded / event.total) * 80) + 10;
+          onProgress(percentage, `${statusPrefix}Streaming bits to secure gateway... (${percentage}%)`);
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const result = JSON.parse(xhr.responseText);
+            onProgress(100, 'Handshake Complete!');
+            resolve(result);
+          } catch (e) {
+            reject(new Error('Malformed response from cloud gateway.'));
+          }
+        } else {
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            const msg = errorData.error || `Gateway error (Status: ${xhr.status})`;
+            reject(new Error(msg));
+          } catch (e) {
+            reject(new Error(`The cloud node rejected the upload (Status: ${xhr.status})`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        reject(new Error('Network connectivity failure during curriculum ingestion.'));
+      });
+
+      xhr.addEventListener('timeout', () => {
+        reject(new Error('Ingestion request timed out (Limit: 90s).'));
+      });
+
+      xhr.addEventListener('abort', () => {
+        reject(new Error('Upload operation was aborted by the user.'));
+      });
+
+      xhr.open('POST', '/api/docs/upload');
+      
+      // Note: Supabase session cookies are handled automatically by the browser.
+      xhr.send(formData);
+    });
+  };
+
+  const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+  while (attempt < MAX_RETRIES) {
     try {
-      const buffer = await file.arrayBuffer();
-      onProgress(40, 'Streaming bits to R2 Object Store...');
-      
-      await r2Client.send(
-        new PutObjectCommand({
-          Bucket: R2_BUCKET,
-          Key: filePath,
-          Body: new Uint8Array(buffer),
-          ContentType: file.type,
-        })
-      );
-
-      onProgress(80, 'Finalizing R2 metadata...');
-      const { data, error } = await supabase.from('documents').insert({
-        user_id: userId,
-        name: file.name,
-        file_path: filePath,
-        mime_type: file.type,
-        status: 'ready',
-        storage_type: 'r2',
-        is_public: !!R2_PUBLIC_BASE_URL
-      }).select().single();
-
-      if (error) throw error;
-      onProgress(100, 'Cloudflare R2 Sync Complete!');
-      
-      return {
-        id: data.id,
-        name: data.name,
-        filePath: data.file_path,
-        mimeType: data.mime_type,
-        storage: 'r2',
-        isPublic: !!R2_PUBLIC_BASE_URL
-      };
+      return await executeUpload();
     } catch (err: any) {
-      console.error('R2 Fail, falling back:', err);
-      onProgress(25, 'R2 Interrupted. Falling back to Supabase Core...');
+      // Determine if error is transient and worth retrying
+      const errorMessage = err.message || '';
+      const isTransient = 
+        errorMessage.includes('Network connectivity') || 
+        errorMessage.includes('timed out') || 
+        errorMessage.includes('Status: 502') ||
+        errorMessage.includes('Status: 503') ||
+        errorMessage.includes('Status: 504');
+
+      if (attempt < MAX_RETRIES && isTransient) {
+        const backoff = INITIAL_RETRY_DELAY * Math.pow(2, attempt - 1);
+        onProgress(0, `Transient error: ${errorMessage}. Retrying in ${Math.round(backoff / 1000)}s...`);
+        await delay(backoff);
+      } else {
+        // Log final failure before throwing to UI
+        console.error(`Final Ingestion Failure: ${errorMessage}`, { attempt, fileName: file.name });
+        throw err;
+      }
     }
   }
 
-  // OPTION B: SUPABASE STORAGE (Fallback)
-  onProgress(30, 'Streaming to Supabase Storage...');
-  const { error: storageError } = await supabase.storage
-    .from('documents')
-    .upload(filePath, file);
-
-  if (storageError) throw storageError;
-
-  onProgress(85, 'Registering Supabase metadata...');
-  const { data: dbData, error: dbError } = await supabase.from('documents').insert({
-    user_id: userId,
-    name: file.name,
-    file_path: filePath,
-    mime_type: file.type,
-    status: 'ready',
-    storage_type: 'supabase',
-    is_public: false
-  }).select().single();
-
-  if (dbError) throw dbError;
-
-  onProgress(100, 'Supabase Sync Complete!');
-  return {
-    id: dbData.id,
-    name: dbData.name,
-    filePath: dbData.file_path,
-    mimeType: dbData.mime_type,
-    storage: 'supabase',
-    isPublic: false
-  };
+  throw new Error('Maximum curriculum ingestion retries exceeded.');
 }

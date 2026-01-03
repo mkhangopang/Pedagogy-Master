@@ -8,6 +8,8 @@ const performSystemHandshake = () => {
   if (typeof window === 'undefined') return;
 
   const win = window as any;
+  
+  // Ensure process.env structure exists
   win.process = win.process || { env: {} };
   win.process.env = win.process.env || {};
   
@@ -31,9 +33,22 @@ const performSystemHandshake = () => {
     const value = process.env[key] || win[key] || metaEnv[key] || metaEnv[viteKey] || '';
     
     if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
-      win.process.env[key] = value.trim();
-      // Ensure it's globally available for libraries checking window
-      win[key] = value.trim();
+      const trimmed = value.trim();
+      
+      // 1. Set on window.process.env
+      win.process.env[key] = trimmed;
+      
+      // 2. Set on global process.env (if it exists and is mutable)
+      try {
+        if (typeof process !== 'undefined' && process.env) {
+          (process.env as any)[key] = trimmed;
+        }
+      } catch (e) {
+        // Fallback for strict environments
+      }
+      
+      // 3. Set on window directly for high-level scraping
+      win[key] = trimmed;
     }
   });
 };

@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from "@google/genai";
 import { supabase as anonClient } from '../../../lib/supabase';
@@ -26,35 +25,42 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI({ apiKey });
 
     /**
-     * Dual-Storage Retrieval System
-     * Resolves the physical file from either R2 or Supabase
+     * Unified Document Retrieval
+     * Resolves context from raw base64 or storage paths (R2/Supabase)
      */
     const getDocPart = async () => {
-      if (!doc?.filePath) return null;
-
-      try {
-        const { data: meta } = await anonClient.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
-        let bytes: Uint8Array;
-        
-        if (meta?.storage_type === 'r2' && r2Client) {
-          const response = await r2Client.send(new GetObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: doc.filePath
-          }));
-          const arrayBuffer = await response.Body?.transformToByteArray();
-          if (!arrayBuffer) return null;
-          bytes = arrayBuffer;
-        } else {
-          const { data, error } = await anonClient.storage.from('documents').download(doc.filePath);
-          if (error || !data) return null;
-          bytes = new Uint8Array(await data.arrayBuffer());
-        }
-
-        return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
-      } catch (e) {
-        console.error("Doc retrieval error:", e);
-        return null;
+      // 1. Direct Base64 Input (Priority for extraction tasks)
+      if (doc?.base64) {
+        return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
       }
+
+      // 2. Storage Reference
+      if (doc?.filePath) {
+        try {
+          const { data: meta } = await anonClient.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
+          let bytes: Uint8Array;
+          
+          if (meta?.storage_type === 'r2' && r2Client) {
+            const response = await r2Client.send(new GetObjectCommand({
+              Bucket: R2_BUCKET,
+              Key: doc.filePath
+            }));
+            const arrayBuffer = await response.Body?.transformToByteArray();
+            if (!arrayBuffer) return null;
+            bytes = arrayBuffer;
+          } else {
+            const { data, error } = await anonClient.storage.from('documents').download(doc.filePath);
+            if (error || !data) return null;
+            bytes = new Uint8Array(await data.arrayBuffer());
+          }
+
+          return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
+        } catch (e) {
+          console.error("Doc retrieval error:", e);
+          return null;
+        }
+      }
+      return null;
     };
 
     // TASK 1: SLO EXTRACTION (JSON Mode)
@@ -103,10 +109,17 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
-          for await (const chunk of streamResponse) {
-            if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
+          try {
+            for await (const chunk of (streamResponse as any)) {
+              if (chunk.text) {
+                controller.enqueue(encoder.encode(chunk.text));
+              }
+            }
+          } catch (e) {
+            console.error("Chat Stream Error:", e);
+          } finally {
+            controller.close();
           }
-          controller.close();
         },
       });
       return new Response(stream);
@@ -130,10 +143,17 @@ export async function POST(req: NextRequest) {
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         async start(controller) {
-          for await (const chunk of streamResponse) {
-            if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
+          try {
+            for await (const chunk of (streamResponse as any)) {
+              if (chunk.text) {
+                controller.enqueue(encoder.encode(chunk.text));
+              }
+            }
+          } catch (e) {
+            console.error("Tool Gen Stream Error:", e);
+          } finally {
+            controller.close();
           }
-          controller.close();
         },
       });
       return new Response(stream);
