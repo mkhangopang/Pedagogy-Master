@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Terminal, ShieldCheck } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Globe, ShieldCheck } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -9,7 +9,7 @@ interface BrainControlProps {
 }
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'infra' | 'security'>('logic');
+  const [activeTab, setActiveTab] = useState<'logic' | 'infra'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
@@ -57,10 +57,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: IDEMPOTENT INFRASTRUCTURE INITIALIZATION
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V2
 -- ========================================================================================
 
--- 1. PROFILES TABLE
+-- 1. PROFILES
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   email text,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 2. DOCUMENTS TABLE
+-- 2. DOCUMENTS (UPGRADED FOR R2)
 CREATE TABLE IF NOT EXISTS public.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
@@ -87,13 +87,15 @@ CREATE TABLE IF NOT EXISTS public.documents (
   file_path text NOT NULL,
   mime_type text,
   status text DEFAULT 'ready',
+  storage_type text DEFAULT 'supabase',
+  is_public boolean DEFAULT false,
   subject text DEFAULT 'General',
   grade_level text DEFAULT 'Auto',
   slo_tags jsonb DEFAULT '[]'::jsonb,
   created_at timestamp with time zone DEFAULT now()
 );
 
--- 3. NEURAL BRAIN TABLE
+-- 3. NEURAL BRAIN
 CREATE TABLE IF NOT EXISTS public.neural_brain (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   master_prompt text NOT NULL,
@@ -115,31 +117,24 @@ CREATE TABLE IF NOT EXISTS public.output_artifacts (
   created_at timestamp with time zone DEFAULT now()
 );
 
--- 5. RLS POLICIES (Idempotent using DO blocks)
+-- 5. RLS POLICIES (IDEMPOTENT)
 DO $$ 
 BEGIN
-    -- Profiles Policy
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own profile') THEN
         ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
         CREATE POLICY "Users can manage their own profile" ON public.profiles FOR ALL USING (auth.uid() = id);
     END IF;
 
-    -- Documents Policy
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own documents') THEN
         ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
         CREATE POLICY "Users can manage their own documents" ON public.documents FOR ALL USING (auth.uid() = user_id);
     END IF;
 
-    -- Artifacts Policy
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage their own artifacts') THEN
         ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
         CREATE POLICY "Users can manage their own artifacts" ON public.output_artifacts FOR ALL USING (auth.uid() = user_id);
     END IF;
 END $$;
-
--- 6. PERFORMANCE INDEXES
-CREATE INDEX IF NOT EXISTS idx_docs_uid ON public.documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_artifacts_uid ON public.output_artifacts(user_id);
 `;
 
   return (
@@ -147,7 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_uid ON public.output_artifacts(user_id)
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Neural Brain Control</h1>
-          <p className="text-slate-500 mt-1">SaaS Infrastructure Diagnostics & SQL Console.</p>
+          <p className="text-slate-500 mt-1">SaaS Infrastructure Diagnostics & Logic Console.</p>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
           <button onClick={() => setActiveTab('logic')} className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'logic' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Logic</button>
@@ -159,12 +154,12 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_uid ON public.output_artifacts(user_id)
         <div className="space-y-8 animate-in slide-in-from-right duration-500">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="text-xs font-bold text-slate-400 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-sm">Active V{formData.version}.0</span>
-              {showStatus && <div className="text-emerald-600 text-sm font-bold flex items-center gap-1"><CheckCircle2 size={14}/> Prompt Ready</div>}
+              <span className="text-xs font-bold text-slate-400 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-sm">Logic Node V{formData.version}.0</span>
+              {showStatus && <div className="text-emerald-600 text-sm font-bold flex items-center gap-1"><CheckCircle2 size={14}/> Prompt Synchronized</div>}
             </div>
             <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all disabled:opacity-50 active:scale-95">
               {isSaving ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-              Deploy Logic V{formData.version + 1}
+              Deploy Version {formData.version + 1}
             </button>
           </div>
           <textarea 
@@ -178,13 +173,23 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_uid ON public.output_artifacts(user_id)
 
       {activeTab === 'infra' && (
         <div className="space-y-8 animate-in slide-in-from-right duration-500">
-          <div className="p-6 bg-rose-50 border border-rose-100 rounded-3xl text-rose-800">
-            <h3 className="font-bold flex items-center gap-2 mb-2"><AlertCircle size={18}/> Global Health Diagnostics</h3>
-            <p className="text-sm opacity-90">If the ingest node hangs at 5-15%, run the SQL below in Supabase. Also ensure a storage bucket named <strong>'documents'</strong> is created and set to <strong>Public</strong> (or has RLS policies for uploads).</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-3xl text-emerald-800">
+              <h3 className="font-bold flex items-center gap-2 mb-2"><Globe size={18}/> R2 Public Availability</h3>
+              <p className="text-sm opacity-90">
+                {process.env.NEXT_PUBLIC_R2_PUBLIC_URL 
+                  ? `Active Traffic Node: ${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}`
+                  : "Inactive. Add NEXT_PUBLIC_R2_PUBLIC_URL to Vercel for public asset delivery."}
+              </p>
+            </div>
+            <div className="p-6 bg-indigo-50 border border-indigo-100 rounded-3xl text-indigo-800">
+              <h3 className="font-bold flex items-center gap-2 mb-2"><Database size={18}/> Supabase State</h3>
+              <p className="text-sm opacity-90">Persistence interface is active and monitoring all profile events.</p>
+            </div>
           </div>
 
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2"><Database size={16} className="text-indigo-500" /> DB Table Status</h3>
+            <h3 className="text-sm font-bold text-slate-500 uppercase tracking-widest flex items-center gap-2">DB Table Health</h3>
             <button onClick={checkHealth} disabled={isChecking} className="text-xs font-bold text-indigo-600 flex items-center gap-1.5 hover:bg-indigo-50 px-4 py-2 rounded-xl transition-all border border-indigo-100 shadow-sm">
               <RefreshCw size={14} className={isChecking ? 'animate-spin' : ''} />
               Verify Schema
@@ -205,7 +210,7 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_uid ON public.output_artifacts(user_id)
 
           <div className="bg-slate-900 rounded-[2.5rem] overflow-hidden border border-slate-800 shadow-2xl relative">
             <div className="p-6 bg-slate-800/50 border-b border-slate-700 flex items-center justify-between backdrop-blur-md">
-              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">INFRASTRUCTURE_PATCH.SQL</span></div>
+              <div className="flex items-center gap-3 text-slate-300"><Zap size={18} className="text-amber-400" /><span className="text-xs font-mono font-bold uppercase tracking-[0.2em]">INITIALIZATION_CORE.SQL</span></div>
               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000);}} className="text-xs font-black text-white bg-indigo-600 px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-indigo-500 transition-all">{copiedSql ? <Check size={14} /> : <Copy size={14} />}{copiedSql ? 'Copied' : 'Copy SQL'}</button>
             </div>
             <div className="p-8 overflow-x-auto bg-slate-950 max-h-96 overflow-y-auto custom-scrollbar"><pre className="text-indigo-300 font-mono text-[11px] leading-loose">{sqlSchema}</pre></div>

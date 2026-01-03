@@ -1,6 +1,5 @@
-
 import { supabase } from './supabase';
-import { r2Client, R2_BUCKET, isR2Configured } from './r2';
+import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from './r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 
 export type UploadProgress = (percentage: number, status: string) => void;
@@ -11,6 +10,7 @@ interface UploadResult {
   filePath: string;
   mimeType: string;
   storage: 'r2' | 'supabase';
+  isPublic: boolean;
 }
 
 /**
@@ -33,14 +33,11 @@ export async function uploadDocument(
 
   // OPTION A: CLOUDFLARE R2
   if (isR2Configured() && r2Client) {
-    onProgress(20, 'Routing to Cloudflare R2...');
+    onProgress(20, 'Routing to Cloudflare R2 Node...');
     try {
       const buffer = await file.arrayBuffer();
-      onProgress(40, 'Streaming bits to R2 bucket...');
+      onProgress(40, 'Streaming bits to R2 Object Store...');
       
-      // Note: In a browser environment, we use a slightly different approach for the body
-      // or we handle this via a server-side API to keep keys safe. 
-      // Assuming server-side environment or secure proxy for this logic.
       await r2Client.send(
         new PutObjectCommand({
           Bucket: R2_BUCKET,
@@ -57,7 +54,8 @@ export async function uploadDocument(
         file_path: filePath,
         mime_type: file.type,
         status: 'ready',
-        storage_type: 'r2'
+        storage_type: 'r2',
+        is_public: !!R2_PUBLIC_BASE_URL
       }).select().single();
 
       if (error) throw error;
@@ -68,11 +66,12 @@ export async function uploadDocument(
         name: data.name,
         filePath: data.file_path,
         mimeType: data.mime_type,
-        storage: 'r2'
+        storage: 'r2',
+        isPublic: !!R2_PUBLIC_BASE_URL
       };
     } catch (err: any) {
       console.error('R2 Fail, falling back:', err);
-      onProgress(25, 'R2 Interrupted. Falling back to Supabase...');
+      onProgress(25, 'R2 Interrupted. Falling back to Supabase Core...');
     }
   }
 
@@ -91,7 +90,8 @@ export async function uploadDocument(
     file_path: filePath,
     mime_type: file.type,
     status: 'ready',
-    storage_type: 'supabase'
+    storage_type: 'supabase',
+    is_public: false
   }).select().single();
 
   if (dbError) throw dbError;
@@ -102,6 +102,7 @@ export async function uploadDocument(
     name: dbData.name,
     filePath: dbData.file_path,
     mimeType: dbData.mime_type,
-    storage: 'supabase'
+    storage: 'supabase',
+    isPublic: false
   };
 }
