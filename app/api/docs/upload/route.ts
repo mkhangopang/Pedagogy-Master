@@ -1,7 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '../../../lib/supabase';
-import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../lib/r2';
+import { supabase } from '../../../../lib/supabase';
+import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 
