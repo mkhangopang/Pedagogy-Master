@@ -22,6 +22,12 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
     e.preventDefault();
     if (honeypot) return;
 
+    // Check configuration at the time of action to allow Next.js to load env vars
+    if (!isSupabaseConfigured()) {
+      setError("Infrastructure node not yet initialized. Please check your environment variables (NEXT_PUBLIC_SUPABASE_URL and KEY) and redeploy.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -78,13 +84,6 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
           <p className="text-slate-500 mt-2">Elevating education with Neural AI</p>
         </div>
 
-        {!isSupabaseConfigured() && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-800 animate-pulse">
-            <AlertCircle className="w-5 h-5 mt-0.5 shrink-0" />
-            <p className="text-xs font-medium leading-relaxed">Infrastructure alert: Environment variables not detected. Login may fail until credentials are provided in the environment secrets.</p>
-          </div>
-        )}
-
         <div className="bg-white p-8 rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold">{view === 'login' ? 'Sign In' : view === 'signup' ? 'Create Account' : 'Reset Password'}</h2>
@@ -119,7 +118,12 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
               </div>
             )}
 
-            {error && <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-xl flex items-center gap-2"><AlertCircle size={14} className="shrink-0" /> {error}</div>}
+            {error && (
+              <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-xl flex items-start gap-2">
+                <AlertCircle size={14} className="shrink-0 mt-0.5" /> 
+                <span>{error}</span>
+              </div>
+            )}
 
             <button type="submit" disabled={loading} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
               {loading ? <Loader2 className="animate-spin w-5 h-5" /> : (
