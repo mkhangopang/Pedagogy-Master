@@ -273,13 +273,34 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
+      {/* Desktop Sidebar */}
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
         <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
       </div>
 
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div className="lg:hidden fixed inset-0 z-[500] flex">
+          <div 
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" 
+            onClick={() => setIsSidebarOpen(false)} 
+          />
+          <div className="relative w-[280px] h-full shadow-2xl animate-in slide-in-from-left duration-300">
+            <Sidebar 
+              currentView={currentView} 
+              onViewChange={setCurrentView} 
+              userProfile={userProfile} 
+              isCollapsed={false} 
+              setIsCollapsed={() => {}} 
+              onClose={() => setIsSidebarOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b shadow-sm">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600">
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
             <Menu size={24} />
           </button>
           <span className="font-bold text-indigo-950">{APP_NAME}</span>
@@ -287,7 +308,7 @@ export default function App() {
         </header>
 
         {healthStatus.status !== 'connected' && (
-          <div className="bg-rose-100 border-b border-rose-200 px-4 py-2 flex items-center justify-center gap-3 text-rose-900 text-xs font-bold">
+          <div className="bg-rose-100 border-b border-rose-200 px-4 py-2 flex items-center justify-center gap-3 text-rose-900 text-xs font-bold shrink-0">
             <AlertCircle size={14} />
             <span>Sync Warning: {healthStatus.message}</span>
             <button onClick={checkDb} className="bg-rose-200 hover:bg-rose-300 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
