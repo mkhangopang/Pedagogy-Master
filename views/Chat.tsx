@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, FileText, Check, AlertCircle, Zap, Clock, Copy, RefreshCcw, Save, Loader2, RefreshCw } from 'lucide-react';
+import { Send, User, Bot, FileText, Check, AlertCircle, Zap, Clock, Copy, RefreshCcw, Save, Loader2, RefreshCw, Pencil, X } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -20,6 +20,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editInput, setEditInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
@@ -43,9 +45,16 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleSend = async (overrideInput?: string) => {
+  const handleSend = async (overrideInput?: string, regenerateFromIdx?: number) => {
     const msgContent = overrideInput || input;
     if (!msgContent.trim() || isLoading || cooldown > 0 || !canQuery) return;
+
+    let updatedMessages = [...messages];
+    
+    if (regenerateFromIdx !== undefined) {
+      // Cut off everything from this point
+      updatedMessages = updatedMessages.slice(0, regenerateFromIdx);
+    }
 
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -55,9 +64,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       documentId: selectedDocId || undefined
     };
 
-    if (!overrideInput) {
+    if (regenerateFromIdx === undefined) {
       setMessages(prev => [...prev, userMessage]);
       setInput('');
+      updatedMessages = [...updatedMessages, userMessage];
+    } else {
+      updatedMessages = [...updatedMessages, userMessage];
+      setMessages(updatedMessages);
     }
     
     setIsLoading(true);
@@ -76,7 +89,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     try {
       onQuery();
       let fullContent = '';
-      const chatHistory = messages.map(m => ({ role: m.role, content: m.content }));
+      // Exclude the current AI message being built
+      const chatHistory = updatedMessages.map(m => ({ role: m.role, content: m.content }));
 
       const stream = geminiService.chatWithDocumentStream(
         msgContent,
@@ -104,7 +118,18 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       );
     } finally {
       setIsLoading(false);
+      setEditingMessageId(null);
     }
+  };
+
+  const handleEditMessage = (msg: ChatMessage) => {
+    setEditingMessageId(msg.id);
+    setEditInput(msg.content);
+  };
+
+  const submitEdit = (idx: number) => {
+    if (!editInput.trim()) return;
+    handleSend(editInput, idx);
   };
 
   return (
@@ -151,23 +176,58 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           ) : (
             <div className="divide-y divide-slate-100">
               {messages.map((m, idx) => (
-                <div key={m.id} className={`p-8 md:p-12 ${m.role === 'assistant' ? 'bg-slate-50/20' : 'bg-white'}`}>
+                <div key={m.id} className={`p-8 md:p-12 group ${m.role === 'assistant' ? 'bg-slate-50/20' : 'bg-white'}`}>
                   <div className="max-w-4xl mx-auto flex gap-6">
                     <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center shadow-lg ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>
                       {m.role === 'user' ? <User size={20} /> : <Bot size={20} />}
                     </div>
                     <div className="flex-1 min-w-0 space-y-6">
-                      <div className="text-slate-900 leading-relaxed text-lg font-medium whitespace-pre-wrap">
-                        {m.content || (isLoading && idx === messages.length - 1 ? <Loader2 size={20} className="animate-spin text-indigo-300" /> : "")}
-                      </div>
-                      
-                      {/* ACTIONS AT BOTTOM OF MESSAGE */}
-                      {m.role === 'assistant' && m.content && !isLoading && (
-                        <div className="flex items-center gap-6 pt-4 border-t border-slate-100">
-                          <button onClick={() => handleCopy(m.id, m.content)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
-                            {copiedId === m.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                            {copiedId === m.id ? 'Saved' : 'Copy'}
-                          </button>
+                      {editingMessageId === m.id ? (
+                        <div className="space-y-4">
+                          <textarea 
+                            value={editInput}
+                            onChange={(e) => setEditInput(e.target.value)}
+                            className="w-full p-4 bg-slate-50 border border-indigo-200 rounded-2xl text-lg font-medium outline-none focus:ring-2 focus:ring-indigo-500"
+                            rows={3}
+                          />
+                          <div className="flex items-center gap-3">
+                            <button 
+                              onClick={() => submitEdit(idx)}
+                              className="px-6 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all"
+                            >
+                              Save & Regenerate
+                            </button>
+                            <button 
+                              onClick={() => setEditingMessageId(null)}
+                              className="px-6 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 transition-all flex items-center gap-2"
+                            >
+                              <X size={14} /> Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="relative">
+                          <div className="text-slate-900 leading-relaxed text-lg font-medium whitespace-pre-wrap">
+                            {m.content || (isLoading && idx === messages.length - 1 ? <Loader2 size={20} className="animate-spin text-indigo-300" /> : "")}
+                          </div>
+                          
+                          {/* ACTIONS AT BOTTOM OF MESSAGE */}
+                          <div className="flex items-center gap-6 pt-4 border-t border-slate-100 mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {m.role === 'assistant' ? (
+                              <button onClick={() => handleCopy(m.id, m.content)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+                                {copiedId === m.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                                {copiedId === m.id ? 'Saved' : 'Copy'}
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={() => handleEditMessage(m)}
+                                disabled={isLoading}
+                                className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
+                              >
+                                <Pencil size={14} /> Edit
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
