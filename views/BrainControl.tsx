@@ -90,9 +90,11 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
   const sqlSchema = `-- PEDAGOGY MASTER: RECURSION FIX & BOOTSTRAP V14
 -- ========================================================================================
--- 1. DROP ALL PROBLEMATIC POLICIES FIRST
+-- 1. DROP ALL POTENTIALLY CONFLICTING POLICIES
 DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
 DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
+DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
+DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
 
 -- 2. RE-CREATE SECURITY FUNCTION (Bypass RLS strictly)
 CREATE OR REPLACE FUNCTION public.is_app_admin()
@@ -122,6 +124,8 @@ USING (public.is_app_admin());
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
+DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
+
 CREATE POLICY "Neural brain is viewable by all" ON public.neural_brain 
 FOR SELECT TO authenticated USING (true);
 
