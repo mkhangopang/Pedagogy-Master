@@ -100,7 +100,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       
     } catch (err: any) {
       setMessages(prev => 
-        prev.map(m => m.id === aiMessageId ? { ...m, content: "Neural limit reached. Wait 10s." } : m)
+        prev.map(m => m.id === aiMessageId ? { ...m, content: "Neural sync interrupted. Please wait." } : m)
       );
     } finally {
       setIsLoading(false);
@@ -112,7 +112,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       <div className="w-full md:w-64 flex-shrink-0">
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full flex flex-col">
           <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2 px-2">
-            <Clock size={12} /> Context Library
+            <Clock size={12} /> Knowledge Nodes
           </h2>
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
             <button
@@ -122,7 +122,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
               }`}
             >
               <Zap size={14} className={selectedDocId === null ? 'text-indigo-200' : 'text-slate-400'} />
-              <span className="font-semibold truncate">General Tutor</span>
+              <span className="font-bold truncate">General Brain</span>
             </button>
             {documents.map(doc => (
               <button
@@ -133,7 +133,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                 }`}
               >
                 <FileText size={14} className={selectedDocId === doc.id ? 'text-indigo-200' : 'text-slate-400'} />
-                <span className="truncate font-semibold">{doc.name}</span>
+                <span className="truncate font-bold">{doc.name}</span>
               </button>
             ))}
           </div>
@@ -143,26 +143,28 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
           {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center p-12 text-center max-w-lg mx-auto opacity-50">
-              <Bot size={48} className="text-indigo-600 mb-6" />
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Neural Dialogue Hub</h3>
-              <p className="text-sm">Ask about your documents or request instructional design assistance.</p>
+            <div className="h-full flex flex-col items-center justify-center p-12 text-center max-w-lg mx-auto opacity-30">
+              <Bot size={64} className="text-indigo-600 mb-8" />
+              <h3 className="text-2xl font-bold text-slate-900 mb-2">Neural Dialogue Hub</h3>
+              <p className="text-sm font-medium">Calibrated for adaptive pedagogical support.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
               {messages.map((m, idx) => (
-                <div key={m.id} className={`p-8 md:p-12 ${m.role === 'assistant' ? 'bg-slate-50/30' : 'bg-white'}`}>
+                <div key={m.id} className={`p-8 md:p-12 ${m.role === 'assistant' ? 'bg-slate-50/20' : 'bg-white'}`}>
                   <div className="max-w-4xl mx-auto flex gap-6">
-                    <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>
-                      {m.role === 'user' ? <User size={18} /> : <Bot size={18} />}
+                    <div className={`w-10 h-10 rounded-xl shrink-0 flex items-center justify-center shadow-lg ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>
+                      {m.role === 'user' ? <User size={20} /> : <Bot size={20} />}
                     </div>
-                    <div className="flex-1 min-w-0 space-y-4">
-                      <div className="text-slate-800 leading-relaxed text-base font-medium whitespace-pre-wrap">
-                        {m.content || (isLoading && idx === messages.length - 1 ? <Loader2 size={16} className="animate-spin text-indigo-400" /> : "")}
+                    <div className="flex-1 min-w-0 space-y-6">
+                      <div className="text-slate-900 leading-relaxed text-lg font-medium whitespace-pre-wrap">
+                        {m.content || (isLoading && idx === messages.length - 1 ? <Loader2 size={20} className="animate-spin text-indigo-300" /> : "")}
                       </div>
+                      
+                      {/* ACTIONS AT BOTTOM OF MESSAGE */}
                       {m.role === 'assistant' && m.content && !isLoading && (
-                        <div className="flex items-center gap-4 pt-4">
-                          <button onClick={() => handleCopy(m.id, m.content)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                        <div className="flex items-center gap-6 pt-4 border-t border-slate-100">
+                          <button onClick={() => handleCopy(m.id, m.content)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
                             {copiedId === m.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                             {copiedId === m.id ? 'Saved' : 'Copy'}
                           </button>
@@ -185,14 +187,14 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
                 rows={1}
                 disabled={!canQuery || isLoading || cooldown > 0}
-                placeholder={cooldown > 0 ? "Cooling down..." : "Message AI..."}
-                className="w-full pl-5 pr-14 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-all text-base font-medium resize-none shadow-sm"
+                placeholder={cooldown > 0 ? "Neural Sync in Progress..." : "Compose query..."}
+                className="w-full pl-6 pr-14 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all text-base font-medium resize-none shadow-inner"
               />
-              <button onClick={() => handleSend()} disabled={isLoading || !input.trim() || cooldown > 0} className="absolute right-2.5 bottom-2.5 p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
+              <button onClick={() => handleSend()} disabled={isLoading || !input.trim() || cooldown > 0} className="absolute right-3 bottom-3 p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-all">
                 <Send size={20} />
               </button>
             </div>
-            {cooldown > 0 && <p className="mt-2 text-[10px] font-bold text-amber-600 uppercase tracking-widest text-center">Neural Sync: {cooldown}s</p>}
+            {cooldown > 0 && <p className="mt-2 text-[10px] font-black text-amber-600 uppercase tracking-widest text-center">Engine Sync: {cooldown}s</p>}
           </div>
         </div>
       </div>
