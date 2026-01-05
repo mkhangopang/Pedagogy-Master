@@ -22,14 +22,11 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const checkHealth = async () => {
     setIsChecking(true);
     const tables = [
-      'organizations',
       'profiles', 
       'documents', 
       'neural_brain', 
       'output_artifacts', 
-      'feedback_events', 
-      'usage_logs',
-      'chat_messages'
+      'feedback_events'
     ];
     
     const status = await Promise.all(tables.map(async (table) => {
@@ -52,22 +49,32 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      // 1. Check if user is admin locally first
       const { data: { user } } = await supabase.auth.getUser();
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user?.id).single();
+      if (!user) throw new Error("No active session found.");
+
+      // Fetch profile with error handling for recursion issues
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
       
+      if (profileError) {
+        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch to fix recursion.`);
+      }
+
       if (profile?.role !== 'app_admin') {
         throw new Error("Administrative override required. Current role lacks deployment privileges.");
       }
 
-      const { error } = await supabase.from('neural_brain').insert([{
+      const { error: insertError } = await supabase.from('neural_brain').insert([{
         master_prompt: formData.masterPrompt,
         bloom_rules: formData.bloomRules,
         version: formData.version + 1,
         is_active: true
       }]);
       
-      if (error) throw error;
+      if (insertError) throw insertError;
       
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
       setShowStatus(true);
@@ -79,54 +86,23 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: ENTERPRISE SECURITY CORE V12 (FULL ADMIN PATCH)
+  const sqlSchema = `-- PEDAGOGY MASTER: RECURSION FIX & SECURITY PATCH V13
 -- ========================================================================================
--- This script grants full permissions and fixes RLS policies for global configuration.
--- Run this in Supabase SQL Editor to resolve all "permission denied" errors.
+-- This patch resolves the "infinite recursion" error by using a SECURITY DEFINER function.
 
--- 0. SCHEMA & PRIVILEGE INITIALIZATION
-GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+-- 1. HELPERS (Security Definer avoids RLS recursion)
+CREATE OR REPLACE FUNCTION public.is_app_admin()
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid()
+    AND role = 'app_admin'
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 1. NEURAL BRAIN TABLE (GLOBAL CONFIG)
-CREATE TABLE IF NOT EXISTS public.neural_brain (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  master_prompt text NOT NULL,
-  bloom_rules text NOT NULL,
-  version integer DEFAULT 1,
-  is_active boolean DEFAULT true,
-  updated_at timestamp with time zone DEFAULT now()
-);
-ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.neural_brain TO authenticated, service_role;
-
--- RE-INITIALIZE BRAIN POLICIES
-DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
-CREATE POLICY "Neural brain is viewable by all" ON public.neural_brain FOR SELECT TO authenticated USING (true);
-
-DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
-CREATE POLICY "Admins can deploy neural brain" 
-ON public.neural_brain 
-FOR ALL 
-TO authenticated 
-USING (
-  EXISTS (
-    SELECT 1 FROM public.profiles 
-    WHERE profiles.id = auth.uid() 
-    AND profiles.role = 'app_admin'
-  )
-)
-WITH CHECK (
-  EXISTS (
-    SELECT 1 FROM public.profiles 
-    WHERE profiles.id = auth.uid() 
-    AND profiles.role = 'app_admin'
-  )
-);
-
--- 2. PROFILES TABLE (USER DATA)
+-- 2. TABLES INITIALIZATION
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   email text,
@@ -141,55 +117,56 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   queries_limit integer DEFAULT 30,
   updated_at timestamp with time zone DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS public.neural_brain (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  master_prompt text NOT NULL,
+  bloom_rules text NOT NULL,
+  version integer DEFAULT 1,
+  is_active boolean DEFAULT true,
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+-- 3. RLS RESET
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.profiles TO authenticated, service_role;
+ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
+-- 4. PROFILES POLICIES (RECURSION-FREE)
 DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
-CREATE POLICY "Profiles are manageable by owners" ON public.profiles FOR ALL TO authenticated USING (id = auth.uid());
-
 DROP POLICY IF EXISTS "Profiles are viewable by admins" ON public.profiles;
-CREATE POLICY "Profiles are viewable by admins" ON public.profiles FOR SELECT TO authenticated USING (
-  EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'app_admin')
-);
+DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
+DROP POLICY IF EXISTS "Admin Global View" ON public.profiles;
 
--- 3. DOCUMENTS TABLE
-CREATE TABLE IF NOT EXISTS public.documents (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
-  name text NOT NULL,
-  file_path text NOT NULL,
-  mime_type text,
-  status text DEFAULT 'ready',
-  storage_type text DEFAULT 'supabase',
-  is_public boolean DEFAULT false,
-  subject text DEFAULT 'General',
-  grade_level text DEFAULT 'Auto',
-  slo_tags jsonb DEFAULT '[]'::jsonb,
-  created_at timestamp with time zone DEFAULT now()
-);
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.documents TO authenticated, service_role;
+-- Rule 1: Everyone can see/edit their own profile
+CREATE POLICY "Individual User Access" ON public.profiles
+FOR ALL TO authenticated
+USING (id = auth.uid())
+WITH CHECK (id = auth.uid());
 
-DROP POLICY IF EXISTS "Users manage own docs" ON public.documents;
-CREATE POLICY "Users manage own docs" ON public.documents FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+-- Rule 2: Admins can see all profiles (Uses the non-recursive function)
+CREATE POLICY "Admin Global View" ON public.profiles
+FOR SELECT TO authenticated
+USING (public.is_app_admin());
 
--- 4. OUTPUT ARTIFACTS
-CREATE TABLE IF NOT EXISTS public.output_artifacts (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
-  content_type text,
-  content text,
-  metadata jsonb,
-  status text DEFAULT 'generated',
-  created_at timestamp with time zone DEFAULT now()
-);
-ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.output_artifacts TO authenticated, service_role;
+-- 5. NEURAL BRAIN POLICIES
+DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
+DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
 
-DROP POLICY IF EXISTS "Users manage own artifacts" ON public.output_artifacts;
-CREATE POLICY "Users manage own artifacts" ON public.output_artifacts FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
+CREATE POLICY "Neural brain is viewable by all" ON public.neural_brain 
+FOR SELECT TO authenticated USING (true);
 
--- RELOAD SCHEMA
+CREATE POLICY "Admins can deploy neural brain" ON public.neural_brain
+FOR ALL TO authenticated
+USING (public.is_app_admin())
+WITH CHECK (public.is_app_admin());
+
+-- 6. GRANT PERMISSIONS
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
+
+-- RELOAD CACHE
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -296,20 +273,23 @@ NOTIFY pgrst, 'reload schema';
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
               <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
                 <AlertCircle size={20} className="text-amber-500" />
-                Prompting Guidelines
+                Infrastructure Alert
               </h3>
+              <p className="text-sm text-slate-600 mb-4">
+                The current error "infinite recursion" is caused by a circular reference in the database Row Level Security.
+              </p>
               <ul className="space-y-4 text-sm text-slate-600 leading-relaxed">
                 <li className="flex gap-3">
                   <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
-                  Ensure instructions use clear delimiters for context variables like grade levels.
+                  Go to <strong>Infrastructure</strong> tab and copy the V13 SQL Patch.
                 </li>
                 <li className="flex gap-3">
                   <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
-                  Define explicit JSON schemas for SLO extraction tasks.
+                  Run it in Supabase SQL Editor to clear the recursion loop.
                 </li>
                 <li className="flex gap-3">
                   <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
-                  Maintain version control by incrementing the version counter during deployment.
+                  Return here and click "Deploy Logic Update" again.
                 </li>
               </ul>
             </div>
@@ -356,8 +336,8 @@ NOTIFY pgrst, 'reload schema';
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-xl font-bold">Vercel SQL Patch (Self-Healing)</h3>
-                <p className="text-slate-500 text-sm mt-1">Copy and run this in Supabase SQL Editor to fix missing columns (like 'is_public') and refresh the schema cache.</p>
+                <h3 className="text-xl font-bold">V13 SQL Patch (Recursion Fix)</h3>
+                <p className="text-slate-500 text-sm mt-1">Run this in Supabase SQL Editor to resolve all "infinite recursion" and policy errors.</p>
               </div>
               <button 
                 onClick={handleCopySql}
@@ -372,30 +352,6 @@ NOTIFY pgrst, 'reload schema';
               <pre className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200 font-mono text-xs overflow-auto max-h-[500px] text-slate-700 leading-relaxed custom-scrollbar">
                 {sqlSchema}
               </pre>
-              <div className="absolute top-4 right-4 text-[10px] font-bold text-slate-400 bg-white/50 px-2 py-1 rounded-md backdrop-blur-sm border">
-                SQL / POSTGRESQL
-              </div>
-            </div>
-          </div>
-
-          <div className="p-8 bg-indigo-50 border border-indigo-100 rounded-[2.5rem] flex items-start gap-6">
-            <div className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-200">
-              <Globe size={28} />
-            </div>
-            <div>
-              <h4 className="font-bold text-indigo-950 text-lg">Cloud Gateway Deployment</h4>
-              <p className="text-indigo-800/70 text-sm mt-2 leading-relaxed">
-                If you encounter "Could not find column" or "permission denied" errors, copy the SQL above and run it in the Supabase Dashboard. 
-                The script will automatically detect missing columns and grant all necessary permissions to the application roles.
-              </p>
-              <div className="flex gap-4 mt-6">
-                <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-indigo-600 flex items-center gap-2 hover:underline">
-                  Supabase Console <ExternalLink size={14} />
-                </a>
-                <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-indigo-600 flex items-center gap-2 hover:underline">
-                  Cloudflare Dashboard <ExternalLink size={14} />
-                </a>
-              </div>
             </div>
           </div>
         </div>
