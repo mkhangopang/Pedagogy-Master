@@ -1,4 +1,4 @@
-import { SLO } from '../types';
+import { SLO } from '../../../../types';
 
 /**
  * DOCUMENT METADATA INTERFACE (Supabase Table Schema)
