@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { r2Client, R2_BUCKET } from '../../../lib/r2';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
@@ -8,6 +8,29 @@ import { Buffer } from 'buffer';
 
 function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
+}
+
+async function delay(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Executes an AI task with exponential backoff retry for rate limits.
+ */
+async function withRetry(fn: () => Promise<any>, retries = 2) {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
+      if (isRateLimit && i < retries) {
+        const waitTime = Math.pow(2, i) * 1500; // 1.5s, 3s...
+        await delay(waitTime);
+        continue;
+      }
+      throw error;
+    }
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -27,20 +50,15 @@ export async function POST(req: NextRequest) {
     const ai = new GoogleGenAI({ apiKey });
     const supabase = getSupabaseServerClient(token);
 
-    /**
-     * TTS Task - Multi-speaker support for pedagogical dialogue
-     */
     if (task === 'tts') {
-      const response = await ai.models.generateContent({
+      const response = await withRetry(() => ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Read this educational material clearly and supportively: ${message}` }] }],
+        contents: [{ parts: [{ text: `Read clearly: ${message}` }] }],
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
-          },
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
         },
-      });
+      }));
       const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
       return NextResponse.json({ audioData });
     }
@@ -64,45 +82,25 @@ export async function POST(req: NextRequest) {
       return null;
     };
 
-    if (task === 'chat') {
-      const docPart = await getDocPart();
-      const streamResponse = await ai.models.generateContentStream({
+    const docPart = await getDocPart();
+    const systemInstruction = `${brain.masterPrompt}\n${adaptiveContext || ''}`;
+
+    if (task === 'chat' || task === 'generate-tool') {
+      const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
+      
+      const streamResponse = await withRetry(() => ai.models.generateContentStream({
         model: 'gemini-3-flash-preview',
-        contents: [
-          ...(history || []).map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
-          { role: 'user', parts: [...(docPart ? [docPart] : []), { text: message }] }
-        ],
+        contents: task === 'chat' 
+          ? [
+              ...(history || []).map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
+              { role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }
+            ]
+          : { parts: [...(docPart ? [docPart] : []), { text: promptText }] },
         config: { 
-          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}`,
+          systemInstruction,
           tools: useSearch ? [{ googleSearch: {} }] : []
         },
-      });
-
-      const encoder = new TextEncoder();
-      return new Response(new ReadableStream({
-        async start(controller) {
-          try {
-            for await (const chunk of (streamResponse as any)) {
-              if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
-              // Send source metadata if available
-              const sources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
-              if (sources) controller.enqueue(encoder.encode(`\n\nSOURCES_METADATA:${JSON.stringify(sources)}`));
-            }
-          } finally { controller.close(); }
-        }
       }));
-    }
-
-    if (task === 'generate-tool') {
-      const docPart = await getDocPart();
-      const streamResponse = await ai.models.generateContentStream({
-        model: 'gemini-3-flash-preview',
-        contents: { parts: [...(docPart ? [docPart] : []), { text: `Generate ${toolType}: ${userInput}` }] },
-        config: { 
-          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}`,
-          tools: useSearch ? [{ googleSearch: {} }] : []
-        },
-      });
 
       const encoder = new TextEncoder();
       return new Response(new ReadableStream({
@@ -113,14 +111,22 @@ export async function POST(req: NextRequest) {
               const sources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
               if (sources) controller.enqueue(encoder.encode(`\n\nSOURCES_METADATA:${JSON.stringify(sources)}`));
             }
-          } finally { controller.close(); }
+          } catch (e: any) {
+            const errorMsg = e.message?.includes('429') ? "RATE_LIMIT_HIT" : "STREAM_ERROR";
+            controller.enqueue(encoder.encode(`\n\nERROR:${errorMsg}`));
+          } finally { 
+            controller.close(); 
+          }
         }
       }));
     }
 
     return NextResponse.json({ error: 'Invalid task' }, { status: 400 });
   } catch (error: any) {
-    const status = (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED')) ? 429 : 500;
-    return NextResponse.json({ error: error.message }, { status });
+    const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
+    return NextResponse.json(
+      { error: isRateLimit ? "Neural engine is cooling down. Please wait 10 seconds." : error.message }, 
+      { status: isRateLimit ? 429 : 500 }
+    );
   }
 }

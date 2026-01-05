@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, ArrowRight, Loader2, 
-  Copy, Check, AlertCircle, Volume2, Globe, Send, RefreshCw, Bookmark
+  Copy, Check, AlertCircle, Volume2, Globe, Send, RefreshCw, Bookmark, Zap
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -28,8 +28,16 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [copied, setCopied] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
+
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cooldown]);
 
   const toolDefinitions = [
     { id: 'lesson-plan', name: 'Lesson Plan Generator', icon: BookOpen, desc: 'Create detailed pedagogically-sound lesson structures.', color: 'indigo' },
@@ -37,7 +45,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     { id: 'rubric', name: 'Rubric Creator', icon: Layers, desc: 'Design transparent grading criteria for any activity.', color: 'amber' },
   ];
 
-  const processStreamChunk = (chunk: string, currentFull: string) => {
+  const processStreamChunk = (chunk: string) => {
     if (chunk.includes('SOURCES_METADATA:')) {
       const parts = chunk.split('SOURCES_METADATA:');
       try {
@@ -50,7 +58,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   };
 
   const handleGenerate = async (isRefinement = false) => {
-    if (!activeTool || (isRefinement ? !refinementInput : !userInput) || isGenerating || !canQuery) return;
+    if (!activeTool || (isRefinement ? !refinementInput : !userInput) || isGenerating || !canQuery || cooldown > 0) return;
     setIsGenerating(true);
     if (!isRefinement) {
       setResult('');
@@ -72,7 +80,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       let fullContent = isRefinement ? result + '\n\n---\n\n' : '';
       for await (const chunk of stream) {
         if (chunk) {
-          const text = processStreamChunk(chunk, fullContent);
+          const text = processStreamChunk(chunk);
           fullContent += text;
           setResult(fullContent);
         }
@@ -81,9 +89,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       const artifactId = await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool, docId: selectedDocId });
       setCurrentArtifactId(artifactId);
       setRefinementInput('');
+      setCooldown(8); // Set a cooldown to prevent 429s
 
     } catch (err) {
-      setResult("AI Node Busy: Please wait for rate limits to reset.");
+      setResult("Neural Cooldown Active: The free AI tier has hit a capacity limit. Please wait 15 seconds.");
     } finally {
       setIsGenerating(false);
     }
@@ -107,6 +116,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           <p className="text-slate-500 mt-1">Accelerate teaching workflow with Adaptive Search Grounding.</p>
         </div>
         <div className="flex items-center gap-3">
+          {cooldown > 0 && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold border border-amber-100 animate-pulse">
+              <RefreshCw size={14} className="animate-spin" />
+              Neural Cooldown: {cooldown}s
+            </div>
+          )}
           <button 
             onClick={() => setUseSearch(!useSearch)}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${useSearch ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-white text-slate-500 border-slate-200'}`}
@@ -167,18 +182,18 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <textarea 
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder="Example: Year 9 Biology lesson on cell mitosis with inquiry-based hook..."
+                  placeholder="Example: Year 9 Biology lesson on cell mitosis..."
                   className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none text-sm font-medium"
                 />
               </div>
 
               <button 
                 onClick={() => handleGenerate(false)}
-                disabled={isGenerating || !userInput.trim() || !canQuery}
-                className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
+                disabled={isGenerating || !userInput.trim() || !canQuery || cooldown > 0}
+                className={`w-full py-4 rounded-2xl font-bold shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 ${cooldown > 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
               >
-                {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                Synthesize Tool
+                {isGenerating ? <Loader2 size={18} className="animate-spin" /> : (cooldown > 0 ? <Zap size={18} /> : <Sparkles size={18} />)}
+                {cooldown > 0 ? `Neural Sync in ${cooldown}s` : (isGenerating ? 'Synthesizing...' : 'Synthesize Tool')}
               </button>
             </div>
           </div>
@@ -206,7 +221,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
 
               <div className="flex-1 p-10 overflow-y-auto whitespace-pre-wrap font-serif text-slate-800 leading-relaxed text-lg scroll-smooth">
-                {result || (isGenerating ? 'Engaging Search Grounding nodes. Analyzing direct document context...' : 'Instruction output will populate here. Enable Web Grounding for real-time pedagogical relevance.')}
+                {result || (isGenerating ? 'Engaging Search Grounding nodes. Analyzing direct document context...' : 'Instruction output will populate here.')}
                 
                 {sources.length > 0 && (
                   <div className="mt-12 pt-8 border-t border-slate-100">
@@ -231,13 +246,13 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                       <input 
                         value={refinementInput}
                         onChange={(e) => setRefinementInput(e.target.value)}
-                        placeholder="Refine this artifact (e.g. 'Make it more hands-on')..."
+                        placeholder="Refine this artifact..."
                         className="w-full pl-4 pr-12 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
                         onKeyDown={e => e.key === 'Enter' && handleGenerate(true)}
                       />
                       <button 
                         onClick={() => handleGenerate(true)}
-                        disabled={isGenerating || !refinementInput.trim()}
+                        disabled={isGenerating || !refinementInput.trim() || cooldown > 0}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50"
                       >
                         <Send size={16} />

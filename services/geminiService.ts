@@ -22,6 +22,18 @@ async function decodeAudioData(data: Uint8Array, ctx: AudioContext): Promise<Aud
   return buffer;
 }
 
+function parseAIError(raw: string): string {
+  try {
+    if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED')) {
+      return "Neural Rate Limit: The free AI node is temporarily saturated. Please pause for 15 seconds.";
+    }
+    const parsed = JSON.parse(raw);
+    return parsed.error?.message || "Synthesis interrupted. Please try again.";
+  } catch (e) {
+    return raw.length > 200 ? "Neural Sync Error: The document context is too complex for the current session." : raw;
+  }
+}
+
 export const geminiService = {
   async getAuthToken(): Promise<string | undefined> {
     const { data: { session } } = await supabase.auth.getSession();
@@ -36,7 +48,10 @@ export const geminiService = {
       body: JSON.stringify({ task: 'tts', message: text.substring(0, 5000) })
     });
     
-    if (!response.ok) throw new Error("Voice synth failed");
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || "Voice synth failed");
+    }
     const { audioData } = await response.json();
     
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
@@ -74,7 +89,7 @@ export const geminiService = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      yield `AI Alert: Synthesis failed. ${errorData.error || "Quota reached."}`;
+      yield `AI Alert: ${parseAIError(errorData.error || "Connection timeout")}`;
       return;
     }
 
@@ -85,7 +100,12 @@ export const geminiService = {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      yield decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true });
+      if (chunk.includes('ERROR:RATE_LIMIT_HIT')) {
+        yield "\n\n[System Notification: AI Node saturated. Cooling down...]";
+        break;
+      }
+      yield chunk;
     }
   },
 
@@ -116,7 +136,7 @@ export const geminiService = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      yield `AI Alert: Generation failed. ${errorData.error || "Quota reached."}`;
+      yield `AI Alert: ${parseAIError(errorData.error || "Connection timeout")}`;
       return;
     }
 
@@ -127,7 +147,12 @@ export const geminiService = {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      yield decoder.decode(value, { stream: true });
+      const chunk = decoder.decode(value, { stream: true });
+      if (chunk.includes('ERROR:RATE_LIMIT_HIT')) {
+        yield "\n\n[Neural Alert: Rate limit exceeded during streaming. Cooldown initiated.]";
+        break;
+      }
+      yield chunk;
     }
   }
 };

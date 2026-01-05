@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, FileText, Check, AlertCircle, Zap, Clock, Copy, RefreshCcw, Save, Loader2 } from 'lucide-react';
+import { Send, User, Bot, FileText, Check, AlertCircle, Zap, Clock, Copy, RefreshCcw, Save, Loader2, RefreshCw } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -20,6 +20,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
@@ -29,6 +30,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setTimeout(() => setCooldown(cooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cooldown]);
 
   const handleCopy = async (id: string, text: string) => {
     navigator.clipboard.writeText(text);
@@ -41,7 +49,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   };
 
   const handleRegenerate = async (index: number) => {
-    if (isLoading || messages.length < 2) return;
+    if (isLoading || messages.length < 2 || cooldown > 0) return;
     const userMsg = messages[index - 1];
     if (userMsg.role !== 'user') return;
     
@@ -56,7 +64,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
 
   const handleSend = async (overrideInput?: string) => {
     const msgContent = overrideInput || input;
-    if (!msgContent.trim() || isLoading) return;
+    if (!msgContent.trim() || isLoading || cooldown > 0) return;
     if (!canQuery) return;
 
     const userMessage: ChatMessage = {
@@ -119,13 +127,15 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         { query: msgContent, context: selectedDocId || 'global' }
       );
       setCurrentArtifactId(artifactId);
+      setCooldown(5); // Prevent rapid fire 429s
       
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      const errorText = "The AI engine encountered an error. This can happen with very large documents. Please try a shorter query.";
+      const errorText = "Neural Engine saturated. Cooling down for 10 seconds...";
       setMessages(prev => 
         prev.map(m => m.id === aiMessageId ? { ...m, content: errorText } : m)
       );
+      setCooldown(10);
     } finally {
       setIsLoading(false);
     }
@@ -133,7 +143,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
 
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col md:flex-row gap-6 relative animate-in fade-in duration-500">
-      {/* Context Sidebar */}
       <div className="w-full md:w-64 flex-shrink-0">
         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full overflow-hidden flex flex-col">
           <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2 px-2">
@@ -176,24 +185,15 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
             </div>
           </div>
 
-          {user.successRate > 0 && (
-            <div className="mt-4 p-3 bg-indigo-50 rounded-xl border border-indigo-100">
-              <div className="flex items-center gap-2 text-indigo-600 mb-1">
-                <Zap size={12} />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Engine Precision</span>
-              </div>
-              <div className="h-1.5 w-full bg-indigo-200 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-indigo-600 transition-all duration-1000" 
-                  style={{ width: `${user.successRate * 100}%` }}
-                />
-              </div>
+          {cooldown > 0 && (
+            <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-center gap-2 text-amber-600 animate-pulse">
+              <RefreshCw size={12} className="animate-spin" />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Neural Sync: {cooldown}s</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Chat Interface */}
       <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden relative">
         <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
           {messages.length === 0 && !isLoading ? (
@@ -203,7 +203,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
               </div>
               <h3 className="text-xl font-bold text-slate-900 mb-2">Adaptive AI Tutor</h3>
               <p className="text-slate-500 text-sm">
-                Ask about learning outcomes or pedagogical alignment. I'm currently set to {user.teachingStyle || 'balanced'} mode for {user.gradeLevel || 'general education'}.
+                I handle documents directly for real-time pedagogical synthesis.
               </p>
             </div>
           ) : (
@@ -226,17 +226,11 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                       
                       {m.role === 'assistant' && m.content && !isLoading && (
                         <div className="flex items-center gap-4 pt-2 border-t border-slate-100/50">
-                          <button 
-                            onClick={() => handleCopy(m.id, m.content)} 
-                            className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
-                          >
+                          <button onClick={() => handleCopy(m.id, m.content)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
                             {copiedId === m.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                             {copiedId === m.id ? 'Saved' : 'Copy'}
                           </button>
-                          <button 
-                            onClick={() => handleRegenerate(idx)} 
-                            className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider"
-                          >
+                          <button onClick={() => handleRegenerate(idx)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
                             <RefreshCcw size={14} />
                             Retry
                           </button>
@@ -252,10 +246,10 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
 
         <div className="p-4 md:p-6 bg-white border-t border-slate-100">
           <div className="max-w-3xl mx-auto">
-            {!canQuery && (
-              <div className="mb-3 p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center gap-3 text-rose-700">
+            {cooldown > 0 && (
+              <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-3 text-amber-700">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <p className="text-[10px] font-bold uppercase tracking-wider">Usage limit reached.</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider">Neural Cooldown: {cooldown}s</p>
               </div>
             )}
             <div className="relative group">
@@ -269,13 +263,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                   }
                 }}
                 rows={1}
-                disabled={!canQuery || isLoading}
-                placeholder={!canQuery ? "Quota reached..." : "Enter your query..."}
+                disabled={!canQuery || isLoading || cooldown > 0}
+                placeholder={cooldown > 0 ? "Neural engine cooling down..." : "Enter your query..."}
                 className="w-full pl-5 pr-14 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all disabled:opacity-50 text-base font-medium resize-none shadow-sm max-h-40"
               />
               <button 
                 onClick={() => handleSend()}
-                disabled={isLoading || !input.trim() || !canQuery}
+                disabled={isLoading || !input.trim() || !canQuery || cooldown > 0}
                 className="absolute right-2.5 bottom-2.5 p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-md active:scale-95 flex items-center justify-center"
               >
                 <Send size={18} />
