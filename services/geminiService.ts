@@ -17,41 +17,6 @@ export const geminiService = {
   },
 
   /**
-   * Triggers structural analysis for learning outcome extraction.
-   */
-  async generateSLOTagsFromBase64(
-    base64Data: string, 
-    mimeType: string, 
-    brain: NeuralBrain,
-    user?: UserProfile
-  ): Promise<SLO[]> {
-    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'extraction') : "";
-    const token = await this.getAuthToken();
-
-    const response = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        task: 'extract-slos',
-        doc: { base64: base64Data, mimeType },
-        brain,
-        adaptiveContext
-      })
-    });
-
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'The AI engine could not complete the extraction.');
-    }
-
-    const data = await response.json();
-    return data.text ? JSON.parse(data.text) : [];
-  },
-
-  /**
    * Proxies a multimodal streaming chat request.
    */
   async *chatWithDocumentStream(
@@ -86,7 +51,7 @@ export const geminiService = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      yield `AI Alert: Synthesis failed. ${errorData.error || "The model encountered a context threshold or connectivity error."}`;
+      yield `AI Alert: Synthesis failed. ${errorData.error || "Quota threshold reached. Please wait a moment."}`;
       return;
     }
 
@@ -137,7 +102,7 @@ export const geminiService = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      yield `AI Alert: Synthesis failed. ${errorData.error || "Verify the document library is accessible and try again."}`;
+      yield `AI Alert: Generation failed. ${errorData.error || "Rate limit reached for Flash model."}`;
       return;
     }
 

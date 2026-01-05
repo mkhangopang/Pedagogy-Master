@@ -26,9 +26,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   const toolDefinitions = [
     { id: 'lesson-plan', name: 'Lesson Plan Generator', icon: BookOpen, desc: 'Create detailed pedagogically-sound lesson structures.', color: 'indigo' },
-    { id: 'assessment', name: 'Assessment Maker', icon: ClipboardCheck, desc: 'Generate quizzes and tests aligned with specific SLOs.', color: 'emerald' },
+    { id: 'assessment', name: 'Assessment Maker', icon: ClipboardCheck, desc: 'Generate quizzes and tests aligned with curriculum context.', color: 'emerald' },
     { id: 'rubric', name: 'Rubric Creator', icon: Layers, desc: 'Design transparent grading criteria for any activity.', color: 'amber' },
-    { id: 'slo-tagger', name: 'SLO Auto-Tagger', icon: Sparkles, desc: 'Extract learning outcomes based on Bloom\'s Taxonomy.', color: 'purple' },
   ];
 
   const handleGenerate = async () => {
@@ -63,7 +62,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
     } catch (err) {
       console.error(err);
-      setResult("Engine Timeout: The document is too large to process in one pass. Try a more specific requirement.");
+      setResult("AI Node Busy: Please wait a moment for the free-tier rate limits to reset.");
     } finally {
       setIsGenerating(false);
     }
@@ -84,7 +83,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       <header className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">GenAI Pedagogical Tools</h1>
-          <p className="text-slate-500 mt-1">Accelerate teaching workflow with Adaptive Intelligence.</p>
+          <p className="text-slate-500 mt-1">Accelerate teaching workflow with Direct Document Processing.</p>
         </div>
         {user.successRate > 0 && (
           <div className="bg-emerald-50 text-emerald-700 px-4 py-2 rounded-2xl border border-emerald-100 flex items-center gap-2 text-xs font-bold">
@@ -104,7 +103,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       )}
 
       {!activeTool ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {toolDefinitions.map((tool) => {
             const Icon = tool.icon;
             return (
@@ -151,7 +150,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   onChange={(e) => setSelectedDocId(e.target.value || null)}
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
                 >
-                  <option value="">No context (General)</option>
+                  <option value="">No context (General AI)</option>
                   {documents.map(doc => (
                     <option key={doc.id} value={doc.id}>{doc.name}</option>
                   ))}
@@ -163,7 +162,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <textarea 
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder="Describe your goals..."
+                  placeholder="Describe your pedagogical goals..."
                   className="w-full h-40 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all resize-none text-sm"
                 />
               </div>
@@ -174,7 +173,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
               >
                 {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                {isGenerating ? 'Synthesizing...' : 'Generate Content'}
+                {isGenerating ? 'Synthesizing...' : 'Generate Tool Content'}
               </button>
             </div>
           </div>
@@ -182,7 +181,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           <div className="flex-1 flex flex-col min-h-[600px]">
             <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex-1 flex flex-col overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <span className="text-sm font-bold text-slate-400 tracking-widest uppercase">Adaptive Pedagogical Output</span>
+                <span className="text-sm font-bold text-slate-400 tracking-widest uppercase">Direct AI Analysis Output</span>
                 {result && (
                   <button onClick={copyToClipboard} className="text-xs font-bold text-indigo-600 flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-indigo-50 transition-colors">
                     {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
@@ -191,7 +190,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 )}
               </div>
               <div className="flex-1 p-8 overflow-y-auto whitespace-pre-wrap font-serif text-slate-800 leading-loose text-lg">
-                {result || (isGenerating ? 'Gemini is processing the document on the server...' : 'Results will appear here based on your preferences.')}
+                {result || (isGenerating ? 'Direct processing active. Analysis is streaming from the server...' : 'Output will appear here. Flash AI handles large documents directly without pre-extraction.')}
               </div>
             </div>
           </div>

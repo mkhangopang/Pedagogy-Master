@@ -72,7 +72,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">Curriculum Library</h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium">
             <Database size={18} className="text-indigo-500" />
-            Infrastructure Verified: {isConnected ? 'Online' : 'Read-Only'}
+            Direct Node Processing: {isConnected ? 'Active' : 'Read-Only'}
           </p>
         </div>
         <button 
@@ -130,7 +130,7 @@ const Documents: React.FC<DocumentsProps> = ({
                  <div className="flex items-center gap-3">
                    <div className={`w-2 h-2 rounded-full ${doc.status === 'ready' ? 'bg-emerald-400' : 'bg-amber-400'} shadow-sm`} />
                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">
-                     {doc.storageType === 'r2' ? 'Cloudflare Object Node' : 'Supabase Native Storage'}
+                     {doc.storageType === 'r2' ? 'Direct R2 Node' : 'Native Storage'}
                    </span>
                  </div>
                </div>
@@ -147,7 +147,7 @@ const Documents: React.FC<DocumentsProps> = ({
             </div>
             <h3 className="text-4xl font-black text-slate-800 tracking-tight">Library Nodes Missing</h3>
             <p className="text-slate-400 font-bold mt-4 text-lg max-w-sm">
-              Your pedagogical library is currently empty. Ingest curriculum nodes to begin adaptive analysis.
+              Your pedagogical library is currently empty. Ingest curriculum nodes to begin direct AI processing.
             </p>
           </div>
         )}

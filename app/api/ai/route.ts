@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     
     if (!apiKey) {
       return NextResponse.json({ 
-        error: 'AI key missing. Please ensure GEMINI_API_KEY is set in your environment variables.' 
+        error: 'AI key missing. Please ensure GEMINI_API_KEY is set in your Vercel environment variables.' 
       }, { status: 500 });
     }
 
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
 
     /**
-     * Unified Document Retrieval
+     * Unified Document Retrieval for Direct Processing
      */
     const getDocPart = async () => {
       if (doc?.base64) {
@@ -62,47 +62,20 @@ export async function POST(req: NextRequest) {
 
           return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
         } catch (e) {
-          console.error("Doc retrieval error:", e);
+          console.error("Direct processing error:", e);
           return null;
         }
       }
       return null;
     };
 
-    if (task === 'extract-slos') {
-      const docPart = await getDocPart();
-      if (!docPart) return NextResponse.json({ error: 'Source node missing' }, { status: 400 });
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: { parts: [{ text: "Extract SLO tags from the provided curriculum document." }, docPart] },
-        config: {
-          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}\n${brain.bloomRules}`,
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                id: { type: Type.STRING },
-                content: { type: Type.STRING },
-                bloomLevel: { type: Type.STRING },
-                cognitiveComplexity: { type: Type.NUMBER },
-                keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-                suggestedAssessment: { type: Type.STRING },
-              },
-              required: ["id", "content", "bloomLevel", "cognitiveComplexity", "keywords", "suggestedAssessment"],
-            }
-          }
-        },
-      });
-      return NextResponse.json({ text: response.text });
-    }
-
+    /**
+     * Task: Direct Chat Processing
+     */
     if (task === 'chat') {
       const docPart = await getDocPart();
       const streamResponse = await ai.models.generateContentStream({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: [
           ...(history || []).map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
           { role: 'user', parts: [...(docPart ? [docPart] : []), { text: message }] }
@@ -129,17 +102,20 @@ export async function POST(req: NextRequest) {
       return new Response(stream);
     }
 
+    /**
+     * Task: Direct Tool Generation
+     */
     if (task === 'generate-tool') {
       const docPart = await getDocPart();
-      const prompt = `Task: Generate a ${toolType}.\nUser Requirements: ${userInput}\nReference Document: ${docPart ? 'Provided' : 'Not Provided'}`;
+      const prompt = `Task: Generate a ${toolType}.\nUser Requirements: ${userInput}\nReference Document: ${docPart ? 'Provided for analysis' : 'Not Provided'}`;
       
       const streamResponse = await ai.models.generateContentStream({
-        model: 'gemini-3-pro-preview',
+        model: 'gemini-3-flash-preview',
         contents: { 
           parts: [...(docPart ? [docPart] : []), { text: prompt }] 
         },
         config: { 
-          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}\nFocus specifically on generating a high-quality ${toolType} structure.` 
+          systemInstruction: `${brain.masterPrompt}\n${adaptiveContext || ''}\nFocus on direct document processing to build the ${toolType}.`
         },
       });
 
@@ -162,8 +138,13 @@ export async function POST(req: NextRequest) {
       return new Response(stream);
     }
 
-    return NextResponse.json({ error: 'Unrecognized task' }, { status: 400 });
+    return NextResponse.json({ error: 'Task deprecated or unrecognized' }, { status: 400 });
   } catch (error: any) {
+    if (error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+      return NextResponse.json({ 
+        error: "API Quota Exceeded. The free tier of Gemini Flash has a rate limit of 15 requests per minute. Please pause for 60 seconds." 
+      }, { status: 429 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
