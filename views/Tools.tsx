@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, ArrowRight, Loader2, 
-  Copy, Check, Send, RefreshCw, FileDown, FileSpreadsheet, Trash2, Zap
+  Copy, Check, Send, RefreshCw, FileDown, FileSpreadsheet, Trash2, Zap, Maximize2
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -24,7 +24,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [isGenerating, setIsGenerating] = useState(false);
   const [copied, setCopied] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-  const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
 
   const selectedDoc = documents.find(d => d.id === selectedDocId);
@@ -37,9 +36,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   }, [cooldown]);
 
   const toolDefinitions = [
-    { id: 'lesson-plan', name: 'Lesson Plan Generator', icon: BookOpen, desc: 'Create detailed pedagogically-sound lesson structures.', color: 'indigo' },
-    { id: 'assessment', name: 'Assessment Maker', icon: ClipboardCheck, desc: 'Generate quizzes and tests aligned with curriculum context.', color: 'emerald' },
-    { id: 'rubric', name: 'Rubric Creator', icon: Layers, desc: 'Design transparent grading criteria for any activity.', color: 'amber' },
+    { id: 'lesson-plan', name: 'Lesson Plan', icon: BookOpen, desc: 'Structure standard-aligned instruction.', color: 'indigo' },
+    { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Create quizzes and tests.', color: 'emerald' },
+    { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Design grading criteria.', color: 'amber' },
   ];
 
   const handleGenerate = async (isRefinement = false) => {
@@ -48,7 +47,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     if (!isRefinement) setResult('');
     
     try {
-      const finalInput = isRefinement ? `Context: ${result}\n\nREFINEMENT REQUEST: ${refinementInput}` : userInput;
+      const finalInput = isRefinement ? `PREVIOUS ARTIFACT: ${result}\n\nREFINEMENT REQUEST: ${refinementInput}` : userInput;
       const stream = geminiService.generatePedagogicalToolStream(
         activeTool, 
         finalInput, 
@@ -66,57 +65,67 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         }
       }
 
-      const artifactId = await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool, docId: selectedDocId });
-      setCurrentArtifactId(artifactId);
+      await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool, docId: selectedDocId });
       setRefinementInput('');
-      setCooldown(8);
+      setCooldown(6);
 
     } catch (err) {
-      setResult("Neural Cooldown Active: The free AI tier has hit a capacity limit. Please wait 15 seconds.");
+      setResult("Neural Cooldown: Node saturated. Please wait 15 seconds.");
     } finally {
       setIsGenerating(false);
     }
   };
 
   const exportToWord = () => {
-    const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Pedagogical Artifact</title></head><body>";
+    const header = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><style>body{font-family: Arial, sans-serif; line-height: 1.5; padding: 1in;} h1{color: #1e1b4b;} table{border-collapse: collapse; width: 100%;} th, td{border: 1px solid #ddd; padding: 8px; text-align: left;}</style></head><body>`;
     const footer = "</body></html>";
-    const content = `<h1>${activeTool?.toUpperCase()}</h1><div style="font-family: Arial, sans-serif;">${result.replace(/\n/g, '<br>')}</div>`;
-    const source = header + content + footer;
-    
-    const blob = new Blob(['\ufeff', source], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
+    // Convert markdown tables to basic HTML tables for better Word compatibility
+    let formattedResult = result.replace(/\n/g, '<br>');
+    const content = `<h1>${activeTool?.toUpperCase().replace('-', ' ')}</h1><div>${formattedResult}</div>`;
+    const blob = new Blob(['\ufeff', header + content + footer], { type: 'application/msword' });
     const link = document.createElement('a');
-    link.href = url;
+    link.href = URL.createObjectURL(blob);
     link.download = `${activeTool}-${Date.now()}.doc`;
     link.click();
-    URL.revokeObjectURL(url);
   };
 
   const exportToExcel = () => {
-    // Basic CSV parser for pedagogical lists
-    const lines = result.split('\n');
-    const csvContent = lines.map(line => `"${line.replace(/"/g, '""')}"`).join('\n');
+    // Look for markdown tables specifically
+    const tableRegex = /\|(.+)\|/g;
+    const tableLines = result.match(tableRegex);
+    
+    let csvContent = "";
+    if (tableLines) {
+      csvContent = tableLines.map(line => {
+        return line.split('|')
+          .filter(cell => cell.trim() !== '')
+          .map(cell => `"${cell.trim().replace(/"/g, '""')}"`)
+          .join(',');
+      }).join('\n');
+    } else {
+      // Fallback: entire text to single column CSV
+      csvContent = result.split('\n').map(line => `"${line.replace(/"/g, '""')}"`).join('\n');
+    }
+
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
+    link.href = URL.createObjectURL(blob);
     link.download = `${activeTool}-${Date.now()}.csv`;
     link.click();
-    URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-700 pb-12 h-full flex flex-col">
+      <header className="flex items-center justify-between px-2">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Pedagogical Synthesis</h1>
-          <p className="text-slate-500 mt-1 font-medium">Core AI Generation • Adaptive Learning Nodes</p>
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Pedagogical Workspace</h1>
+          <p className="text-slate-500 text-xs font-medium">Drafting Artifact: {activeTool || 'None'}</p>
         </div>
         {cooldown > 0 && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold border border-amber-100 animate-pulse">
-            <RefreshCw size={14} className="animate-spin" />
-            Neural Cooldown: {cooldown}s
+          <div className="flex items-center gap-2 px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[10px] font-bold border border-amber-100">
+            <RefreshCw size={12} className="animate-spin" />
+            Cooldown: {cooldown}s
           </div>
         )}
       </header>
@@ -129,132 +138,116 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               <button
                 key={tool.id}
                 onClick={() => setActiveTool(tool.id)}
-                className="flex flex-col items-start p-8 bg-white border border-slate-200 rounded-[2.5rem] transition-all group text-left hover:border-indigo-400 hover:shadow-2xl hover:-translate-y-1"
+                className="group flex flex-col items-start p-8 bg-white border border-slate-200 rounded-[2rem] transition-all hover:border-indigo-500 hover:shadow-xl hover:-translate-y-0.5 text-left"
               >
-                <div className={`p-4 rounded-2xl bg-${tool.color}-50 text-${tool.color}-600 group-hover:bg-${tool.color}-600 group-hover:text-white transition-all mb-6`}>
-                  <Icon size={32} />
+                <div className={`p-4 rounded-xl bg-slate-50 text-${tool.color}-600 mb-4 group-hover:bg-indigo-600 group-hover:text-white transition-all`}>
+                  <Icon size={24} />
                 </div>
-                <h3 className="text-xl font-bold text-slate-900 mb-2">{tool.name}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed mb-6 flex-1">{tool.desc}</p>
-                <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs group-hover:gap-4 transition-all">
-                  Initialize Synthesis <ArrowRight size={16} />
-                </div>
+                <h3 className="text-lg font-bold text-slate-900 mb-1">{tool.name}</h3>
+                <p className="text-slate-500 text-xs leading-relaxed mb-4">{tool.desc}</p>
+                <ArrowRight size={16} className="text-indigo-400 group-hover:translate-x-1 transition-transform" />
               </button>
             );
           })}
         </div>
       ) : (
-        <div className="flex flex-col xl:flex-row gap-8">
-          <div className="xl:w-80 space-y-6">
-            <button 
-              onClick={() => { setActiveTool(null); setResult(''); setUserInput(''); }}
-              className="text-xs font-bold text-slate-500 flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full hover:bg-slate-200 transition-colors"
-            >
-              ← Back to Tools
-            </button>
-            
-            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-5">
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Library Node</label>
+        <div className="flex-1 flex flex-col xl:flex-row gap-6 h-full min-h-0">
+          <div className="xl:w-72 flex-shrink-0 space-y-4">
+            <div className="bg-white p-5 rounded-3xl border border-slate-200 space-y-4 shadow-sm">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active Node</label>
                 <select 
                   value={selectedDocId || ''} 
                   onChange={(e) => setSelectedDocId(e.target.value || null)}
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-1 focus:ring-indigo-500 outline-none"
                 >
                   <option value="">Global Brain</option>
                   {documents.map(doc => <option key={doc.id} value={doc.id}>{doc.name}</option>)}
                 </select>
               </div>
-              
-              <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Instructional Focus</label>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Synthesis Instruction</label>
                 <textarea 
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder="e.g. Year 10 Algebra recap focusing on quadratic equations..."
-                  className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none text-sm font-medium"
+                  placeholder="e.g. 5 MCQ quiz on Photosynthesis..."
+                  className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-indigo-500 outline-none text-sm font-medium resize-none"
                 />
               </div>
-
               <button 
                 onClick={() => handleGenerate(false)}
-                disabled={isGenerating || !userInput.trim() || !canQuery || cooldown > 0}
-                className={`w-full py-4 rounded-2xl font-bold shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 ${cooldown > 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                disabled={isGenerating || !userInput.trim() || cooldown > 0}
+                className="w-full py-3.5 bg-indigo-600 text-white rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-indigo-700 disabled:opacity-50 transition-all shadow-lg"
               >
-                {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                {isGenerating ? 'Synthesizing...' : 'Generate Artifact'}
+                {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                Generate
+              </button>
+              <button onClick={() => setActiveTool(null)} className="w-full py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest hover:text-slate-600 transition-colors">
+                Cancel Session
               </button>
             </div>
           </div>
 
-          <div className="flex-1 flex flex-col min-h-[700px]">
-            <div className="bg-white border border-slate-200 rounded-[2.5rem] shadow-sm flex-1 flex flex-col overflow-hidden relative">
-              <div className="px-8 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <div className="flex items-center gap-4">
-                  <span className="text-[10px] font-black text-indigo-600 tracking-widest uppercase flex items-center gap-2">
-                    <Zap size={14} /> Artifact v1
-                  </span>
-                </div>
-                {result && (
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={exportToWord}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-all"
-                    >
-                      <FileDown size={14} /> Word (.doc)
-                    </button>
-                    <button 
-                      onClick={exportToExcel}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 transition-all"
-                    >
-                      <FileSpreadsheet size={14} /> Excel (.csv)
-                    </button>
-                    <button 
-                      onClick={() => {navigator.clipboard.writeText(result); setCopied(true); setTimeout(()=>setCopied(false), 2000)}} 
-                      className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-all text-slate-400"
-                    >
-                      {copied ? <Check size={18} className="text-emerald-500" /> : <Copy size={18} />}
-                    </button>
-                  </div>
-                )}
+          <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-sm relative">
+            <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
+              <div className="flex items-center gap-4">
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Synthesis Output</span>
               </div>
-
-              <div className="flex-1 p-12 overflow-y-auto whitespace-pre-wrap font-serif text-slate-900 leading-[1.8] text-lg scroll-smooth bg-slate-50/30">
-                {result ? (
-                  <div className="max-w-3xl mx-auto bg-white p-12 shadow-2xl rounded-sm border border-slate-100 min-h-full">
-                    {result}
-                  </div>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
-                    <Sparkles size={48} className="mb-4" />
-                    <p className="text-sm font-bold uppercase tracking-widest">Instruction output will populate here</p>
-                  </div>
-                )}
-              </div>
-
               {result && (
-                <div className="p-4 bg-indigo-50/50 border-t border-indigo-100">
-                  <div className="flex items-center gap-3 max-w-2xl mx-auto">
-                    <div className="relative flex-1">
-                      <input 
-                        value={refinementInput}
-                        onChange={(e) => setRefinementInput(e.target.value)}
-                        placeholder="Iterate on this artifact (e.g. 'Add a rubric')..."
-                        className="w-full pl-4 pr-12 py-3 bg-white border border-indigo-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-                        onKeyDown={e => e.key === 'Enter' && handleGenerate(true)}
-                      />
-                      <button 
-                        onClick={() => handleGenerate(true)}
-                        disabled={isGenerating || !refinementInput.trim() || cooldown > 0}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50"
-                      >
-                        <Send size={16} />
-                      </button>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={exportToWord} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition-all">
+                    <FileDown size={14} /> DOCX
+                  </button>
+                  <button onClick={exportToExcel} className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 transition-all">
+                    <FileSpreadsheet size={14} /> EXCEL
+                  </button>
+                  <div className="w-px h-4 bg-slate-200 mx-1" />
+                  <button onClick={() => {navigator.clipboard.writeText(result); setCopied(true); setTimeout(()=>setCopied(false), 2000)}} className="p-2 text-slate-400 hover:text-indigo-600">
+                    {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                  </button>
                 </div>
               )}
             </div>
+
+            <div className="flex-1 overflow-y-auto p-8 md:p-12 custom-scrollbar bg-white">
+              <div className="w-full mx-auto text-slate-800 leading-relaxed font-sans text-base whitespace-pre-wrap">
+                {result || (isGenerating ? (
+                  <div className="flex flex-col items-center justify-center h-64 text-slate-400 space-y-4">
+                    <Loader2 size={32} className="animate-spin text-indigo-200" />
+                    <p className="text-xs font-bold uppercase tracking-widest">Synthesizing Pedagogical Node...</p>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center opacity-20 py-20">
+                    <Maximize2 size={64} className="mb-4" />
+                    <p className="text-sm font-bold uppercase tracking-widest">Waiting for instructional input</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {result && (
+              <div className="p-4 bg-slate-50/80 border-t border-slate-100 backdrop-blur-sm">
+                <div className="max-w-4xl mx-auto flex items-center gap-3">
+                  <div className="relative flex-1">
+                    <input 
+                      value={refinementInput}
+                      onChange={(e) => setRefinementInput(e.target.value)}
+                      placeholder="Ask for changes or add a table..."
+                      className="w-full pl-4 pr-12 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-1 focus:ring-indigo-500 outline-none shadow-sm"
+                      onKeyDown={e => e.key === 'Enter' && handleGenerate(true)}
+                    />
+                    <button 
+                      onClick={() => handleGenerate(true)}
+                      disabled={isGenerating || !refinementInput.trim()}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-all disabled:opacity-50"
+                    >
+                      {isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,8 +1,5 @@
 {
   "name": "Pedagogy Master",
-  "description": "A production-ready EdTech SaaS platform for intelligent curriculum analysis, SLO tagging, and pedagogical tool generation using Gemini AI.",
-  "requestFramePermissions": [
-    "camera",
-    "microphone"
-  ]
+  "description": "A production-ready EdTech SaaS platform for intelligent curriculum analysis and pedagogical tool generation.",
+  "requestFramePermissions": []
 }

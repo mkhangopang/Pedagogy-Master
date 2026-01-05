@@ -19,7 +19,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -42,30 +41,11 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
-
-    if (currentArtifactId) {
-      await adaptiveService.captureEvent(user.id, currentArtifactId, 'accept');
-    }
-  };
-
-  const handleRegenerate = async (index: number) => {
-    if (isLoading || messages.length < 2 || cooldown > 0) return;
-    const userMsg = messages[index - 1];
-    if (userMsg.role !== 'user') return;
-    
-    if (currentArtifactId) {
-      await adaptiveService.captureEvent(user.id, currentArtifactId, 'abandon', { reason: 'regeneration' });
-    }
-
-    setMessages(prev => prev.slice(0, index));
-    setInput(userMsg.content);
-    setTimeout(() => handleSend(userMsg.content), 0);
   };
 
   const handleSend = async (overrideInput?: string) => {
     const msgContent = overrideInput || input;
-    if (!msgContent.trim() || isLoading || cooldown > 0) return;
-    if (!canQuery) return;
+    if (!msgContent.trim() || isLoading || cooldown > 0 || !canQuery) return;
 
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
@@ -96,16 +76,11 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     try {
       onQuery();
       let fullContent = '';
-      
       const chatHistory = messages.map(m => ({ role: m.role, content: m.content }));
 
       const stream = geminiService.chatWithDocumentStream(
         msgContent,
-        {
-          base64: selectedDoc?.base64Data,
-          mimeType: selectedDoc?.mimeType,
-          filePath: selectedDoc?.filePath
-        },
+        { base64: selectedDoc?.base64Data, mimeType: selectedDoc?.mimeType, filePath: selectedDoc?.filePath },
         chatHistory,
         brain,
         user
@@ -120,22 +95,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         }
       }
 
-      const artifactId = await adaptiveService.captureGeneration(
-        user.id, 
-        'chat-response', 
-        fullContent, 
-        { query: msgContent, context: selectedDocId || 'global' }
-      );
-      setCurrentArtifactId(artifactId);
-      setCooldown(5); // Prevent rapid fire 429s
+      await adaptiveService.captureGeneration(user.id, 'chat-response', fullContent, { query: msgContent });
+      setCooldown(4);
       
     } catch (err: any) {
-      console.error(err);
-      const errorText = "Neural Engine saturated. Cooling down for 10 seconds...";
       setMessages(prev => 
-        prev.map(m => m.id === aiMessageId ? { ...m, content: errorText } : m)
+        prev.map(m => m.id === aiMessageId ? { ...m, content: "Neural limit reached. Wait 10s." } : m)
       );
-      setCooldown(10);
     } finally {
       setIsLoading(false);
     }
@@ -144,95 +110,61 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   return (
     <div className="h-[calc(100vh-8rem)] flex flex-col md:flex-row gap-6 relative animate-in fade-in duration-500">
       <div className="w-full md:w-64 flex-shrink-0">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full overflow-hidden flex flex-col">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm h-full flex flex-col">
           <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2 px-2">
-            <Clock className="w-3 h-3" />
-            Active Context
+            <Clock size={12} /> Context Library
           </h2>
           <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
             <button
               onClick={() => setSelectedDocId(null)}
               className={`w-full text-left p-3 rounded-xl border transition-all text-sm flex items-center gap-3 ${
-                selectedDocId === null 
-                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' 
-                  : 'bg-white border-transparent text-slate-700 hover:bg-slate-100'
+                selectedDocId === null ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-transparent text-slate-700 hover:bg-slate-50'
               }`}
             >
-              <Zap className={`w-4 h-4 shrink-0 ${selectedDocId === null ? 'text-indigo-200' : 'text-slate-400'}`} />
-              <span className="font-medium truncate">Global Brain</span>
+              <Zap size={14} className={selectedDocId === null ? 'text-indigo-200' : 'text-slate-400'} />
+              <span className="font-semibold truncate">General Tutor</span>
             </button>
-            
-            <div className="pt-4">
-              <p className="text-[10px] font-bold text-slate-400 uppercase mb-2 px-2 tracking-wider">Curriculum Context</p>
-              {documents.length === 0 ? (
-                <p className="text-[10px] text-slate-400 italic px-2">No files available.</p>
-              ) : (
-                documents.map(doc => (
-                  <button
-                    key={doc.id}
-                    onClick={() => setSelectedDocId(doc.id)}
-                    className={`w-full text-left p-3 rounded-xl border transition-all text-sm mb-1 flex items-center gap-3 ${
-                      selectedDocId === doc.id 
-                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' 
-                        : 'bg-white border-transparent text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <FileText className={`w-4 h-4 shrink-0 ${selectedDocId === doc.id ? 'text-indigo-200' : 'text-slate-400'}`} />
-                    <span className="truncate font-medium">{doc.name}</span>
-                  </button>
-                ))
-              )}
-            </div>
+            {documents.map(doc => (
+              <button
+                key={doc.id}
+                onClick={() => setSelectedDocId(doc.id)}
+                className={`w-full text-left p-3 rounded-xl border transition-all text-sm mb-1 flex items-center gap-3 ${
+                  selectedDocId === doc.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-transparent text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <FileText size={14} className={selectedDocId === doc.id ? 'text-indigo-200' : 'text-slate-400'} />
+                <span className="truncate font-semibold">{doc.name}</span>
+              </button>
+            ))}
           </div>
-
-          {cooldown > 0 && (
-            <div className="mt-4 p-3 bg-amber-50 rounded-xl border border-amber-100 flex items-center gap-2 text-amber-600 animate-pulse">
-              <RefreshCw size={12} className="animate-spin" />
-              <span className="text-[10px] font-bold uppercase tracking-widest">Neural Sync: {cooldown}s</span>
-            </div>
-          )}
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden relative">
+      <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
-          {messages.length === 0 && !isLoading ? (
-            <div className="h-full flex flex-col items-center justify-center p-8 text-center max-w-md mx-auto">
-              <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6">
-                <Bot className="w-8 h-8 text-indigo-600" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Adaptive AI Tutor</h3>
-              <p className="text-slate-500 text-sm">
-                I handle documents directly for real-time pedagogical synthesis.
-              </p>
+          {messages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center p-12 text-center max-w-lg mx-auto opacity-50">
+              <Bot size={48} className="text-indigo-600 mb-6" />
+              <h3 className="text-xl font-bold text-slate-900 mb-2">Neural Dialogue Hub</h3>
+              <p className="text-sm">Ask about your documents or request instructional design assistance.</p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
               {messages.map((m, idx) => (
-                <div key={m.id} className={`p-6 md:p-8 ${m.role === 'assistant' ? 'bg-slate-50/40' : 'bg-white'}`}>
-                  <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
+                <div key={m.id} className={`p-8 md:p-12 ${m.role === 'assistant' ? 'bg-slate-50/30' : 'bg-white'}`}>
+                  <div className="max-w-4xl mx-auto flex gap-6">
                     <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>
                       {m.role === 'user' ? <User size={18} /> : <Bot size={18} />}
                     </div>
                     <div className="flex-1 min-w-0 space-y-4">
-                      <div className={`text-slate-800 leading-relaxed text-base ${m.role === 'assistant' ? 'font-serif' : 'font-medium'} whitespace-pre-wrap`}>
-                        {m.content || (isLoading && idx === messages.length - 1 ? (
-                          <div className="flex items-center gap-2 text-indigo-400">
-                            <Loader2 size={16} className="animate-spin" />
-                            <span className="text-sm italic">Synthesizing...</span>
-                          </div>
-                        ) : "")}
+                      <div className="text-slate-800 leading-relaxed text-base font-medium whitespace-pre-wrap">
+                        {m.content || (isLoading && idx === messages.length - 1 ? <Loader2 size={16} className="animate-spin text-indigo-400" /> : "")}
                       </div>
-                      
                       {m.role === 'assistant' && m.content && !isLoading && (
-                        <div className="flex items-center gap-4 pt-2 border-t border-slate-100/50">
+                        <div className="flex items-center gap-4 pt-4">
                           <button onClick={() => handleCopy(m.id, m.content)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
                             {copiedId === m.id ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
                             {copiedId === m.id ? 'Saved' : 'Copy'}
-                          </button>
-                          <button onClick={() => handleRegenerate(idx)} className="text-slate-400 hover:text-indigo-600 transition-all flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
-                            <RefreshCcw size={14} />
-                            Retry
                           </button>
                         </div>
                       )}
@@ -244,37 +176,23 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           )}
         </div>
 
-        <div className="p-4 md:p-6 bg-white border-t border-slate-100">
-          <div className="max-w-3xl mx-auto">
-            {cooldown > 0 && (
-              <div className="mb-3 p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-3 text-amber-700">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <p className="text-[10px] font-bold uppercase tracking-wider">Neural Cooldown: {cooldown}s</p>
-              </div>
-            )}
-            <div className="relative group">
+        <div className="p-6 bg-white border-t border-slate-100">
+          <div className="max-w-4xl mx-auto">
+            <div className="relative">
               <textarea 
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
+                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
                 rows={1}
                 disabled={!canQuery || isLoading || cooldown > 0}
-                placeholder={cooldown > 0 ? "Neural engine cooling down..." : "Enter your query..."}
-                className="w-full pl-5 pr-14 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all disabled:opacity-50 text-base font-medium resize-none shadow-sm max-h-40"
+                placeholder={cooldown > 0 ? "Cooling down..." : "Message AI..."}
+                className="w-full pl-5 pr-14 py-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-1 focus:ring-indigo-500 focus:outline-none transition-all text-base font-medium resize-none shadow-sm"
               />
-              <button 
-                onClick={() => handleSend()}
-                disabled={isLoading || !input.trim() || !canQuery || cooldown > 0}
-                className="absolute right-2.5 bottom-2.5 p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50 shadow-md active:scale-95 flex items-center justify-center"
-              >
-                <Send size={18} />
+              <button onClick={() => handleSend()} disabled={isLoading || !input.trim() || cooldown > 0} className="absolute right-2.5 bottom-2.5 p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50">
+                <Send size={20} />
               </button>
             </div>
+            {cooldown > 0 && <p className="mt-2 text-[10px] font-bold text-amber-600 uppercase tracking-widest text-center">Neural Sync: {cooldown}s</p>}
           </div>
         </div>
       </div>
