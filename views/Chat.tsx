@@ -113,8 +113,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       }
 
       await adaptiveService.captureGeneration(user.id, 'chat-response', fullContent, { query: msgContent });
-      // Optimized UI cooldown
-      setCooldown(1);
+      // Reverted to stable 4s cooldown
+      setCooldown(4);
       
     } catch (err: any) {
       setMessages(prev => 
@@ -295,7 +295,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
                 rows={1}
                 disabled={!canQuery || isLoading || cooldown > 0}
-                placeholder={cooldown > 0 ? "Synthesizing Neural Signal..." : "Describe a teaching challenge or objective..."}
+                placeholder={cooldown > 0 ? "Neural Engine Syncing..." : "Describe a teaching challenge or objective..."}
                 className="w-full pl-8 pr-20 py-6 bg-slate-50 border border-slate-200 rounded-[2rem] focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none transition-all text-lg font-medium resize-none shadow-inner"
               />
               <button 
@@ -306,7 +306,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                 {isLoading ? <Loader2 size={24} className="animate-spin" /> : <Send size={24} />}
               </button>
             </div>
-            {cooldown > 0 && <p className="mt-4 text-[10px] font-black text-amber-600 uppercase tracking-[0.3em] text-center animate-pulse">Neural Engine Ready</p>}
+            {cooldown > 0 && <p className="mt-4 text-[10px] font-black text-amber-600 uppercase tracking-[0.3em] text-center animate-pulse">Neural Engine Calibrating: {cooldown}s</p>}
           </div>
         </div>
       </div>
