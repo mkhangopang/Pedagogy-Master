@@ -21,7 +21,8 @@ async function withRetry(fn: () => Promise<any>, retries = 2) {
     } catch (error: any) {
       const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
       if (isRateLimit && i < retries) {
-        const waitTime = Math.pow(2, i) * 1500;
+        // Reduced wait time for faster recovery
+        const waitTime = (i + 1) * 500;
         await delay(waitTime);
         continue;
       }
@@ -80,7 +81,11 @@ export async function POST(req: NextRequest) {
               { role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }
             ]
           : { parts: [...(docPart ? [docPart] : []), { text: promptText }] },
-        config: { systemInstruction },
+        config: { 
+          systemInstruction,
+          // Disable thinking for maximum response speed and token efficiency
+          thinkingConfig: { thinkingBudget: 0 }
+        },
       }));
 
       const encoder = new TextEncoder();

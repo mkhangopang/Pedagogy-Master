@@ -79,7 +79,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
       await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool, docId: selectedDocId });
       setRefinementInput('');
-      setCooldown(5);
+      setCooldown(1);
 
     } catch (err) {
       setResult("Neural Cooldown: AI node busy.");
