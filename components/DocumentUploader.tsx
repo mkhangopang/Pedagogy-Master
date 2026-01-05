@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Upload, X, CheckCircle2, AlertCircle, Loader2, FileUp, RefreshCcw } from 'lucide-react';
 import { uploadDocument } from '../lib/upload-handler';
+import { supabase } from '../lib/supabase';
 
 interface DocumentUploaderProps {
   userId: string;
@@ -23,7 +24,15 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     setStatus('Initializing...');
 
     try {
-      const result = await uploadDocument(file, userId, (p, s) => {
+      // Get the active session for the JWT token
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error("Authentication expired. Please sign in again.");
+      }
+
+      const result = await uploadDocument(file, userId, token, (p, s) => {
         setProgress(p);
         setStatus(s);
       });

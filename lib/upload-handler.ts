@@ -1,4 +1,3 @@
-
 export type UploadProgress = (percentage: number, status: string) => void;
 
 interface UploadResult {
@@ -22,6 +21,7 @@ const REQUEST_TIMEOUT = 90000; // 90 seconds to allow for larger files or slow c
 export async function uploadDocument(
   file: File,
   userId: string,
+  authToken: string,
   onProgress: UploadProgress
 ): Promise<UploadResult> {
   let attempt = 0;
@@ -83,7 +83,9 @@ export async function uploadDocument(
 
       xhr.open('POST', '/api/docs/upload');
       
-      // Note: Supabase session cookies are handled automatically by the browser.
+      // Add authentication header for RLS compliance
+      xhr.setRequestHeader('Authorization', `Bearer ${authToken}`);
+      
       xhr.send(formData);
     });
   };

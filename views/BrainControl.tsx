@@ -1,4 +1,3 @@
-
 // Add React to imports to fix "Cannot find namespace 'React'" error when using React.FC.
 import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Globe, ShieldCheck, ExternalLink, Terminal, ShieldAlert } from 'lucide-react';
@@ -69,20 +68,20 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: ENTERPRISE SECURITY CORE V9 (SELF-HEALING)
--- This script initializes the database and adds any missing columns to existing tables.
+  const sqlSchema = `-- PEDAGOGY MASTER: ENTERPRISE SECURITY CORE V11 (ROBUST PERMISSIONS)
 -- ========================================================================================
+-- This script ensures all tables exist, columns are synced, and PERMISSIONS are granted.
+-- Execute this in the Supabase SQL Editor to resolve "permission denied" errors.
 
--- 1. DROP REDUNDANT INDEXES ON PRIMARY KEYS
-DROP INDEX IF EXISTS public.idx_documents_id;
-DROP INDEX IF EXISTS public.idx_output_artifacts_id;
-DROP INDEX IF EXISTS public.idx_usage_logs_id;
-DROP INDEX IF EXISTS public.idx_chat_messages_id;
-DROP INDEX IF EXISTS public.documents_id_idx;
-DROP INDEX IF EXISTS public.output_artifacts_id_idx;
-DROP INDEX IF EXISTS public.usage_logs_id_idx;
-DROP INDEX IF EXISTS public.chat_messages_id_idx;
-DROP INDEX IF EXISTS public.profiles_id_idx;
+-- 0. SCHEMA PERMISSIONS
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
+
+-- 1. ENABLE EXTENSIONS
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- 2. ORGANIZATIONS
 CREATE TABLE IF NOT EXISTS public.organizations (
@@ -93,6 +92,7 @@ CREATE TABLE IF NOT EXISTS public.organizations (
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.organizations TO authenticated, service_role;
 
 -- 3. PROFILES
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -114,7 +114,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
--- Migration: Add missing profile columns if table already existed
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS grade_level text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS subject_area text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS teaching_style text;
@@ -122,8 +121,9 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS pedagogical_approach text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS generation_count integer DEFAULT 0;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS success_rate float DEFAULT 0;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS edit_patterns jsonb DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::jsonb;
+GRANT ALL ON TABLE public.profiles TO authenticated, service_role;
 
--- 4. DOCUMENTS
+-- 4. DOCUMENTS (CRITICAL FIX FOR UPLOADS)
 CREATE TABLE IF NOT EXISTS public.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
@@ -139,13 +139,14 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
--- Migration: Add missing document columns (Fixes "is_public" error)
 ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS storage_type text DEFAULT 'supabase';
 ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS is_public boolean DEFAULT false;
 ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS subject text DEFAULT 'General';
 ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS grade_level text DEFAULT 'Auto';
 ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS slo_tags jsonb DEFAULT '[]'::jsonb;
 
+-- Explicit Grants for Document Operations
+GRANT ALL ON TABLE public.documents TO authenticated, service_role, postgres;
 CREATE INDEX IF NOT EXISTS idx_documents_user_id ON public.documents(user_id);
 
 -- 5. NEURAL BRAIN
@@ -158,6 +159,7 @@ CREATE TABLE IF NOT EXISTS public.neural_brain (
   updated_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.neural_brain TO authenticated, service_role;
 
 -- 6. OUTPUT ARTIFACTS
 CREATE TABLE IF NOT EXISTS public.output_artifacts (
@@ -171,6 +173,7 @@ CREATE TABLE IF NOT EXISTS public.output_artifacts (
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.output_artifacts TO authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_output_artifacts_user_id ON public.output_artifacts(user_id);
 
 -- 7. FEEDBACK EVENTS
@@ -183,6 +186,7 @@ CREATE TABLE IF NOT EXISTS public.feedback_events (
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.feedback_events ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.feedback_events TO authenticated, service_role;
 
 -- 8. USAGE LOGS
 CREATE TABLE IF NOT EXISTS public.usage_logs (
@@ -193,6 +197,7 @@ CREATE TABLE IF NOT EXISTS public.usage_logs (
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.usage_logs ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.usage_logs TO authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id ON public.usage_logs(user_id);
 
 -- 9. CHAT MESSAGES
@@ -205,48 +210,57 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.chat_messages TO authenticated, service_role;
 CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON public.chat_messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_document_id ON public.chat_messages(document_id);
 
 -- ========================================================================================
--- ACCESS CONTROL POLICIES (CLEANED)
+-- ENHANCED ACCESS CONTROL POLICIES (EXPLICIT FOR INSERT/UPDATE)
 -- ========================================================================================
 
 -- ORGANIZATIONS
 DROP POLICY IF EXISTS "Organizations are viewable by authenticated users" ON public.organizations;
-CREATE POLICY "Organizations are viewable by authenticated users" ON public.organizations FOR SELECT USING (true);
+CREATE POLICY "Organizations are viewable by authenticated users" ON public.organizations FOR SELECT TO authenticated USING (true);
 
 -- PROFILES
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
-CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = id);
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
 DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
-CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
 
--- DOCUMENTS
+-- DOCUMENTS (ROBUST PERMISSIONS)
 DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
-CREATE POLICY "Users can manage own documents" ON public.documents FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own documents" 
+ON public.documents 
+FOR ALL 
+TO authenticated 
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
+CREATE POLICY "Users can view own documents" ON public.documents FOR SELECT TO authenticated USING (auth.uid() = user_id);
 
 -- NEURAL BRAIN
 DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
-CREATE POLICY "Neural brain is viewable by authenticated users" ON public.neural_brain FOR SELECT USING (true);
+CREATE POLICY "Neural brain is viewable by authenticated users" ON public.neural_brain FOR SELECT TO authenticated USING (true);
 
 -- OUTPUT ARTIFACTS
 DROP POLICY IF EXISTS "Users can manage own artifacts" ON public.output_artifacts;
-CREATE POLICY "Users can manage own artifacts" ON public.output_artifacts FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own artifacts" ON public.output_artifacts FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- FEEDBACK EVENTS
 DROP POLICY IF EXISTS "Users can manage own feedback" ON public.feedback_events;
-CREATE POLICY "Users can manage own feedback" ON public.feedback_events FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own feedback" ON public.feedback_events FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- USAGE LOGS
 DROP POLICY IF EXISTS "Users can manage own logs" ON public.usage_logs;
-CREATE POLICY "Users can manage own logs" ON public.usage_logs FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own logs" ON public.usage_logs FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- CHAT MESSAGES
 DROP POLICY IF EXISTS "Users can manage own chat" ON public.chat_messages;
-CREATE POLICY "Users can manage own chat" ON public.chat_messages FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Users can manage own chat" ON public.chat_messages FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
 
 -- ========================================================================================
 -- RELOAD SCHEMA CACHE
@@ -446,8 +460,8 @@ NOTIFY pgrst, 'reload schema';
             <div>
               <h4 className="font-bold text-indigo-950 text-lg">Cloud Gateway Deployment</h4>
               <p className="text-indigo-800/70 text-sm mt-2 leading-relaxed">
-                If you encounter "Could not find column" errors, copy the SQL above and run it in the Supabase Dashboard. 
-                The script will automatically detect missing columns and fix your database structure without losing data.
+                If you encounter "Could not find column" or "permission denied" errors, copy the SQL above and run it in the Supabase Dashboard. 
+                The script will automatically detect missing columns and grant all necessary permissions to the application roles.
               </p>
               <div className="flex gap-4 mt-6">
                 <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-indigo-600 flex items-center gap-2 hover:underline">

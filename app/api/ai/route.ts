@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from "@google/genai";
-import { supabase as anonClient } from '../../../lib/supabase';
+import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { r2Client, R2_BUCKET } from '../../../lib/r2';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
     if (!apiKey) return NextResponse.json({ error: 'AI key missing' }, { status: 500 });
 
     const ai = new GoogleGenAI({ apiKey });
+    const supabase = getSupabaseServerClient(token);
 
     /**
      * Unified Document Retrieval
@@ -37,7 +38,8 @@ export async function POST(req: NextRequest) {
       // 2. Storage Reference
       if (doc?.filePath) {
         try {
-          const { data: meta } = await anonClient.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
+          // Use authenticated client to bypass RLS for user's own docs
+          const { data: meta } = await supabase.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
           let bytes: Uint8Array;
           
           if (meta?.storage_type === 'r2' && r2Client) {
@@ -49,7 +51,8 @@ export async function POST(req: NextRequest) {
             if (!arrayBuffer) return null;
             bytes = arrayBuffer;
           } else {
-            const { data, error } = await anonClient.storage.from('documents').download(doc.filePath);
+            // Use authenticated client for storage as well
+            const { data, error } = await supabase.storage.from('documents').download(doc.filePath);
             if (error || !data) return null;
             bytes = new Uint8Array(await data.arrayBuffer());
           }

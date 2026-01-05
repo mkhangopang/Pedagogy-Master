@@ -38,6 +38,24 @@ export const supabase: SupabaseClient = createClient(
 );
 
 /**
+ * Server-Side Authenticated Client
+ * Creates a fresh client instance with the user's JWT for RLS compliance in API routes.
+ */
+export const getSupabaseServerClient = (token: string): SupabaseClient => {
+  return createClient(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    }
+  );
+};
+
+/**
  * Health Diagnostics
  * Performs a round-trip query to verify database connectivity and schema readiness.
  */

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase';
+import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
@@ -10,13 +10,34 @@ import { Buffer } from 'buffer';
  */
 export async function POST(req: NextRequest) {
   try {
+    // 1. Authenticate Request
+    const authHeader = req.headers.get('Authorization');
+    const token = authHeader?.split(' ')[1];
+    if (!token) {
+      return NextResponse.json({ error: 'Authentication required for ingestion' }, { status: 401 });
+    }
+
+    // Verify user identity via Supabase
+    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Invalid session context' }, { status: 401 });
+    }
+
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const userId = formData.get('userId') as string;
 
+    // Security check: Ensure the userId matches the authenticated user
+    if (userId !== user.id) {
+       return NextResponse.json({ error: 'Identity mismatch detected during ingestion' }, { status: 403 });
+    }
+
     if (!file || !userId) {
       return NextResponse.json({ error: 'Missing file or user identity' }, { status: 400 });
     }
+
+    // Initialize authenticated server client for DB sync
+    const supabase = getSupabaseServerClient(token);
 
     const timestamp = Date.now();
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
@@ -39,7 +60,7 @@ export async function POST(req: NextRequest) {
           })
         );
 
-        // Register metadata in Supabase DB for indexing
+        // Register metadata in Supabase DB for indexing using authenticated client
         const { data, error } = await supabase.from('documents').insert({
           user_id: userId,
           name: file.name,
