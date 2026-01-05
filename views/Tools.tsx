@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, ArrowRight, Loader2, 
-  Copy, Check, AlertCircle, Volume2, Globe, Send, RefreshCw, Bookmark, Zap
+  Copy, Check, Send, RefreshCw, FileDown, FileSpreadsheet, Trash2, Zap
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -21,10 +21,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [userInput, setUserInput] = useState('');
   const [refinementInput, setRefinementInput] = useState('');
   const [result, setResult] = useState('');
-  const [sources, setSources] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [useSearch, setUseSearch] = useState(true);
   const [copied, setCopied] = useState(false);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [currentArtifactId, setCurrentArtifactId] = useState<string | null>(null);
@@ -45,25 +42,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     { id: 'rubric', name: 'Rubric Creator', icon: Layers, desc: 'Design transparent grading criteria for any activity.', color: 'amber' },
   ];
 
-  const processStreamChunk = (chunk: string) => {
-    if (chunk.includes('SOURCES_METADATA:')) {
-      const parts = chunk.split('SOURCES_METADATA:');
-      try {
-        const meta = JSON.parse(parts[1]);
-        setSources(prev => [...prev, ...meta]);
-      } catch (e) {}
-      return parts[0];
-    }
-    return chunk;
-  };
-
   const handleGenerate = async (isRefinement = false) => {
     if (!activeTool || (isRefinement ? !refinementInput : !userInput) || isGenerating || !canQuery || cooldown > 0) return;
     setIsGenerating(true);
-    if (!isRefinement) {
-      setResult('');
-      setSources([]);
-    }
+    if (!isRefinement) setResult('');
     
     try {
       const finalInput = isRefinement ? `Context: ${result}\n\nREFINEMENT REQUEST: ${refinementInput}` : userInput;
@@ -72,16 +54,14 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         finalInput, 
         { base64: selectedDoc?.base64Data, mimeType: selectedDoc?.mimeType, filePath: selectedDoc?.filePath }, 
         brain,
-        user,
-        useSearch
+        user
       );
 
       onQuery();
       let fullContent = isRefinement ? result + '\n\n---\n\n' : '';
       for await (const chunk of stream) {
         if (chunk) {
-          const text = processStreamChunk(chunk);
-          fullContent += text;
+          fullContent += chunk;
           setResult(fullContent);
         }
       }
@@ -89,7 +69,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       const artifactId = await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool, docId: selectedDocId });
       setCurrentArtifactId(artifactId);
       setRefinementInput('');
-      setCooldown(8); // Set a cooldown to prevent 429s
+      setCooldown(8);
 
     } catch (err) {
       setResult("Neural Cooldown Active: The free AI tier has hit a capacity limit. Please wait 15 seconds.");
@@ -98,38 +78,47 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     }
   };
 
-  const handleSpeak = async () => {
-    if (isSpeaking || !result) return;
-    setIsSpeaking(true);
-    try {
-      await geminiService.speak(result.replace(/#/g, '').substring(0, 1000));
-    } finally {
-      setIsSpeaking(false);
-    }
+  const exportToWord = () => {
+    const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'><title>Pedagogical Artifact</title></head><body>";
+    const footer = "</body></html>";
+    const content = `<h1>${activeTool?.toUpperCase()}</h1><div style="font-family: Arial, sans-serif;">${result.replace(/\n/g, '<br>')}</div>`;
+    const source = header + content + footer;
+    
+    const blob = new Blob(['\ufeff', source], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeTool}-${Date.now()}.doc`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportToExcel = () => {
+    // Basic CSV parser for pedagogical lists
+    const lines = result.split('\n');
+    const csvContent = lines.map(line => `"${line.replace(/"/g, '""')}"`).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeTool}-${Date.now()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-12">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">GenAI Pedagogical Tools</h1>
-          <p className="text-slate-500 mt-1">Accelerate teaching workflow with Adaptive Search Grounding.</p>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Pedagogical Synthesis</h1>
+          <p className="text-slate-500 mt-1 font-medium">Core AI Generation • Adaptive Learning Nodes</p>
         </div>
-        <div className="flex items-center gap-3">
-          {cooldown > 0 && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold border border-amber-100 animate-pulse">
-              <RefreshCw size={14} className="animate-spin" />
-              Neural Cooldown: {cooldown}s
-            </div>
-          )}
-          <button 
-            onClick={() => setUseSearch(!useSearch)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border ${useSearch ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-600/20' : 'bg-white text-slate-500 border-slate-200'}`}
-          >
-            <Globe size={14} />
-            Web Grounding: {useSearch ? 'ON' : 'OFF'}
-          </button>
-        </div>
+        {cooldown > 0 && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-600 rounded-xl text-xs font-bold border border-amber-100 animate-pulse">
+            <RefreshCw size={14} className="animate-spin" />
+            Neural Cooldown: {cooldown}s
+          </div>
+        )}
       </header>
 
       {!activeTool ? (
@@ -148,7 +137,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <h3 className="text-xl font-bold text-slate-900 mb-2">{tool.name}</h3>
                 <p className="text-slate-500 text-sm leading-relaxed mb-6 flex-1">{tool.desc}</p>
                 <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs group-hover:gap-4 transition-all">
-                  Initialize Node <ArrowRight size={16} />
+                  Initialize Synthesis <ArrowRight size={16} />
                 </div>
               </button>
             );
@@ -158,10 +147,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         <div className="flex flex-col xl:flex-row gap-8">
           <div className="xl:w-80 space-y-6">
             <button 
-              onClick={() => { setActiveTool(null); setResult(''); setUserInput(''); setSources([]); }}
-              className="text-xs font-bold text-indigo-600 flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-full hover:bg-indigo-100 transition-colors"
+              onClick={() => { setActiveTool(null); setResult(''); setUserInput(''); }}
+              className="text-xs font-bold text-slate-500 flex items-center gap-2 bg-slate-100 px-4 py-2 rounded-full hover:bg-slate-200 transition-colors"
             >
-              ← System Menu
+              ← Back to Tools
             </button>
             
             <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-5">
@@ -172,17 +161,17 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   onChange={(e) => setSelectedDocId(e.target.value || null)}
                   className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
                 >
-                  <option value="">Pure Neural Synthesis</option>
+                  <option value="">Global Brain</option>
                   {documents.map(doc => <option key={doc.id} value={doc.id}>{doc.name}</option>)}
                 </select>
               </div>
               
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Instructional Logic</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Instructional Focus</label>
                 <textarea 
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder="Example: Year 9 Biology lesson on cell mitosis..."
+                  placeholder="e.g. Year 10 Algebra recap focusing on quadratic equations..."
                   className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none text-sm font-medium"
                 />
               </div>
@@ -192,8 +181,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 disabled={isGenerating || !userInput.trim() || !canQuery || cooldown > 0}
                 className={`w-full py-4 rounded-2xl font-bold shadow-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95 ${cooldown > 0 ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'}`}
               >
-                {isGenerating ? <Loader2 size={18} className="animate-spin" /> : (cooldown > 0 ? <Zap size={18} /> : <Sparkles size={18} />)}
-                {cooldown > 0 ? `Neural Sync in ${cooldown}s` : (isGenerating ? 'Synthesizing...' : 'Synthesize Tool')}
+                {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                {isGenerating ? 'Synthesizing...' : 'Generate Artifact'}
               </button>
             </div>
           </div>
@@ -202,52 +191,56 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
             <div className="bg-white border border-slate-200 rounded-[2.5rem] shadow-sm flex-1 flex flex-col overflow-hidden relative">
               <div className="px-8 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-4">
-                  <span className="text-[10px] font-black text-slate-400 tracking-widest uppercase">Neural Artifact</span>
-                  {result && (
+                  <span className="text-[10px] font-black text-indigo-600 tracking-widest uppercase flex items-center gap-2">
+                    <Zap size={14} /> Artifact v1
+                  </span>
+                </div>
+                {result && (
+                  <div className="flex items-center gap-2">
                     <button 
-                      onClick={handleSpeak}
-                      className={`flex items-center gap-2 text-indigo-600 text-[10px] font-bold uppercase ${isSpeaking ? 'animate-pulse' : ''}`}
+                      onClick={exportToWord}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:border-indigo-400 hover:text-indigo-600 transition-all"
                     >
-                      <Volume2 size={14} />
-                      {isSpeaking ? 'Synthesizing Audio...' : 'Read Aloud'}
+                      <FileDown size={14} /> Word (.doc)
                     </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => {navigator.clipboard.writeText(result); setCopied(true); setTimeout(()=>setCopied(false), 2000)}} className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-all text-slate-400 hover:text-indigo-600">
-                    {copied ? <Check size={18} className="text-emerald-500" /> : <Copy size={18} />}
-                  </button>
-                </div>
+                    <button 
+                      onClick={exportToExcel}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 hover:border-emerald-400 hover:text-emerald-600 transition-all"
+                    >
+                      <FileSpreadsheet size={14} /> Excel (.csv)
+                    </button>
+                    <button 
+                      onClick={() => {navigator.clipboard.writeText(result); setCopied(true); setTimeout(()=>setCopied(false), 2000)}} 
+                      className="p-2 hover:bg-white rounded-lg border border-transparent hover:border-slate-200 transition-all text-slate-400"
+                    >
+                      {copied ? <Check size={18} className="text-emerald-500" /> : <Copy size={18} />}
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="flex-1 p-10 overflow-y-auto whitespace-pre-wrap font-serif text-slate-800 leading-relaxed text-lg scroll-smooth">
-                {result || (isGenerating ? 'Engaging Search Grounding nodes. Analyzing direct document context...' : 'Instruction output will populate here.')}
-                
-                {sources.length > 0 && (
-                  <div className="mt-12 pt-8 border-t border-slate-100">
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-                      <Bookmark size={12} /> Verification Sources
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {sources.map((src, i) => src.web && (
-                        <a key={i} href={src.web.uri} target="_blank" rel="noreferrer" className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg text-xs font-bold transition-colors truncate max-w-[200px]">
-                          {src.web.title || new URL(src.web.uri).hostname}
-                        </a>
-                      ))}
-                    </div>
+              <div className="flex-1 p-12 overflow-y-auto whitespace-pre-wrap font-serif text-slate-900 leading-[1.8] text-lg scroll-smooth bg-slate-50/30">
+                {result ? (
+                  <div className="max-w-3xl mx-auto bg-white p-12 shadow-2xl rounded-sm border border-slate-100 min-h-full">
+                    {result}
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center opacity-30">
+                    <Sparkles size={48} className="mb-4" />
+                    <p className="text-sm font-bold uppercase tracking-widest">Instruction output will populate here</p>
                   </div>
                 )}
               </div>
 
               {result && (
-                <div className="p-4 bg-slate-50 border-t border-slate-100">
+                <div className="p-4 bg-indigo-50/50 border-t border-indigo-100">
                   <div className="flex items-center gap-3 max-w-2xl mx-auto">
                     <div className="relative flex-1">
                       <input 
                         value={refinementInput}
                         onChange={(e) => setRefinementInput(e.target.value)}
-                        placeholder="Refine this artifact..."
-                        className="w-full pl-4 pr-12 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                        placeholder="Iterate on this artifact (e.g. 'Add a rubric')..."
+                        className="w-full pl-4 pr-12 py-3 bg-white border border-indigo-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
                         onKeyDown={e => e.key === 'Enter' && handleGenerate(true)}
                       />
                       <button 

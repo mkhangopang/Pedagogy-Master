@@ -3,25 +3,6 @@ import { SLO, NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 import { supabase } from "../lib/supabase";
 
-function decodeBase64(base64: string) {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function decodeAudioData(data: Uint8Array, ctx: AudioContext): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer);
-  const buffer = ctx.createBuffer(1, dataInt16.length, 24000);
-  const channelData = buffer.getChannelData(0);
-  for (let i = 0; i < dataInt16.length; i++) {
-    channelData[i] = dataInt16[i] / 32768.0;
-  }
-  return buffer;
-}
-
 function parseAIError(raw: string): string {
   try {
     if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED')) {
@@ -30,7 +11,7 @@ function parseAIError(raw: string): string {
     const parsed = JSON.parse(raw);
     return parsed.error?.message || "Synthesis interrupted. Please try again.";
   } catch (e) {
-    return raw.length > 200 ? "Neural Sync Error: The document context is too complex for the current session." : raw;
+    return raw.length > 200 ? "Neural Sync Error: The document context is too complex." : raw;
   }
 }
 
@@ -40,35 +21,12 @@ export const geminiService = {
     return session?.access_token;
   },
 
-  async speak(text: string) {
-    const token = await this.getAuthToken();
-    const response = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({ task: 'tts', message: text.substring(0, 5000) })
-    });
-    
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || "Voice synth failed");
-    }
-    const { audioData } = await response.json();
-    
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-    const buffer = await decodeAudioData(decodeBase64(audioData), ctx);
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start();
-  },
-
   async *chatWithDocumentStream(
     message: string, 
     doc: { base64?: string; mimeType?: string; filePath?: string }, 
     history: { role: 'user' | 'assistant', content: string }[],
     brain: NeuralBrain,
-    user?: UserProfile,
-    useSearch: boolean = false
+    user?: UserProfile
   ) {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     const token = await this.getAuthToken();
@@ -82,8 +40,7 @@ export const geminiService = {
         doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
         history,
         brain,
-        adaptiveContext,
-        useSearch
+        adaptiveContext
       })
     });
 
@@ -114,8 +71,7 @@ export const geminiService = {
     userInput: string,
     doc: { base64?: string; mimeType?: string; filePath?: string },
     brain: NeuralBrain,
-    user?: UserProfile,
-    useSearch: boolean = false
+    user?: UserProfile
   ) {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
     const token = await this.getAuthToken();
@@ -129,8 +85,7 @@ export const geminiService = {
         userInput,
         doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
         brain,
-        adaptiveContext,
-        useSearch
+        adaptiveContext
       })
     });
 

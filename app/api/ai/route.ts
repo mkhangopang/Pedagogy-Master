@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { r2Client, R2_BUCKET } from '../../../lib/r2';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
@@ -14,9 +14,6 @@ async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Executes an AI task with exponential backoff retry for rate limits.
- */
 async function withRetry(fn: () => Promise<any>, retries = 2) {
   for (let i = 0; i <= retries; i++) {
     try {
@@ -24,7 +21,7 @@ async function withRetry(fn: () => Promise<any>, retries = 2) {
     } catch (error: any) {
       const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
       if (isRateLimit && i < retries) {
-        const waitTime = Math.pow(2, i) * 1500; // 1.5s, 3s...
+        const waitTime = Math.pow(2, i) * 1500;
         await delay(waitTime);
         continue;
       }
@@ -42,26 +39,13 @@ export async function POST(req: NextRequest) {
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const { task, message, doc, brain, adaptiveContext, history, toolType, userInput, useSearch } = await req.json();
+    const { task, message, doc, brain, adaptiveContext, history, toolType, userInput } = await req.json();
     
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: 'AI key missing' }, { status: 500 });
 
     const ai = new GoogleGenAI({ apiKey });
     const supabase = getSupabaseServerClient(token);
-
-    if (task === 'tts') {
-      const response = await withRetry(() => ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `Read clearly: ${message}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } } },
-        },
-      }));
-      const audioData = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      return NextResponse.json({ audioData });
-    }
 
     const getDocPart = async () => {
       if (doc?.base64) return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
@@ -96,10 +80,7 @@ export async function POST(req: NextRequest) {
               { role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }
             ]
           : { parts: [...(docPart ? [docPart] : []), { text: promptText }] },
-        config: { 
-          systemInstruction,
-          tools: useSearch ? [{ googleSearch: {} }] : []
-        },
+        config: { systemInstruction },
       }));
 
       const encoder = new TextEncoder();
@@ -108,15 +89,11 @@ export async function POST(req: NextRequest) {
           try {
             for await (const chunk of (streamResponse as any)) {
               if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
-              const sources = chunk.candidates?.[0]?.groundingMetadata?.groundingChunks;
-              if (sources) controller.enqueue(encoder.encode(`\n\nSOURCES_METADATA:${JSON.stringify(sources)}`));
             }
           } catch (e: any) {
             const errorMsg = e.message?.includes('429') ? "RATE_LIMIT_HIT" : "STREAM_ERROR";
             controller.enqueue(encoder.encode(`\n\nERROR:${errorMsg}`));
-          } finally { 
-            controller.close(); 
-          }
+          } finally { controller.close(); }
         }
       }));
     }
@@ -125,7 +102,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
     return NextResponse.json(
-      { error: isRateLimit ? "Neural engine is cooling down. Please wait 10 seconds." : error.message }, 
+      { error: isRateLimit ? "Neural engine cooling down. Wait 10s." : error.message }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }
