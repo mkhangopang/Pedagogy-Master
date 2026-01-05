@@ -1,9 +1,9 @@
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * RESOLVE ENV VARIABLE
  * Simplified lookup for environment variables.
- * Next.js automatically injects NEXT_PUBLIC_ variables into the client bundle.
  */
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -22,7 +22,6 @@ export const isSupabaseConfigured = (): boolean => {
 
 /**
  * Global Supabase Client Instance
- * Created with resolved values or placeholders to prevent runtime crashes.
  */
 export const supabase: SupabaseClient = createClient(
   supabaseUrl || 'https://placeholder-project.supabase.co',
@@ -39,7 +38,6 @@ export const supabase: SupabaseClient = createClient(
 
 /**
  * Server-Side Authenticated Client
- * Creates a fresh client instance with the user's JWT for RLS compliance in API routes.
  */
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
@@ -56,8 +54,8 @@ export const getSupabaseServerClient = (token: string): SupabaseClient => {
 };
 
 /**
- * Health Diagnostics
- * Performs a round-trip query to verify database connectivity and schema readiness.
+ * Health Diagnostics with Timeout
+ * Ensures the app doesn't hang if the database is unresponsive.
  */
 export const getSupabaseHealth = async () => {
   if (!isSupabaseConfigured()) {
@@ -65,8 +63,15 @@ export const getSupabaseHealth = async () => {
   }
 
   try {
-    // Attempt a light metadata query
-    const { error } = await supabase.from('profiles').select('id').limit(1);
+    // Create a promise that rejects after 5 seconds
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Connection timeout')), 5000)
+    );
+
+    // Attempt a light metadata query with a race against the timeout
+    const queryPromise = supabase.from('profiles').select('id').limit(1);
+
+    const { error } = (await Promise.race([queryPromise, timeoutPromise])) as any;
     
     if (error) {
       if (error.code === '42P01') {
@@ -85,7 +90,7 @@ export const getSupabaseHealth = async () => {
   } catch (err: any) {
     return { 
       status: 'error', 
-      message: err.message || 'Cloud node handshake timeout' 
+      message: err.message === 'Connection timeout' ? 'Cloud node unreachable (Timeout)' : (err.message || 'Cloud node handshake failure')
     };
   }
 };

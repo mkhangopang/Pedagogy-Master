@@ -44,7 +44,7 @@ export default function App() {
   });
 
   const checkDb = useCallback(async () => {
-    if (!isSupabaseConfigured) {
+    if (!isSupabaseConfigured()) {
       setHealthStatus({ status: 'disconnected', message: 'Cloud credentials missing.' });
       return false;
     }
@@ -53,12 +53,15 @@ export default function App() {
     return health.status === 'connected';
   }, []);
 
-  const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined, connected: boolean) => {
-    if (!connected || !supabase) return;
+  const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
+    // Note: We don't block on health status anymore, but we need the client
+    if (!supabase) return;
 
     try {
       const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      
+      // Attempt to fetch profile. If it fails, it might be due to missing schema, handled in UI.
+      const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
       
       let activeProfile: UserProfile;
 
@@ -75,7 +78,9 @@ export default function App() {
           successRate: 0,
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         };
-        await supabase.from('profiles').insert([{
+        
+        // Background insertion, don't block UI if it's a new user
+        supabase.from('profiles').insert([{
           id: userId,
           name: activeProfile.name,
           email: activeProfile.email,
@@ -83,7 +88,9 @@ export default function App() {
           plan: activeProfile.plan,
           queries_used: 0,
           queries_limit: activeProfile.queriesLimit
-        }]);
+        }]).then(({error}) => {
+          if (error && error.code !== '42P01') console.error("Profile creation error:", error);
+        });
       } else {
         activeProfile = {
           id: profile.id,
@@ -105,6 +112,7 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
+      // Fetch documents in background
       const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
       if (docs) {
         setDocuments(docs.map(d => ({
@@ -127,8 +135,8 @@ export default function App() {
     }
   }, []);
 
-  const fetchBrain = useCallback(async (connected: boolean) => {
-    if (!connected || !supabase) return;
+  const fetchBrain = useCallback(async () => {
+    if (!supabase) return;
     try {
       const { data } = await supabase.from('neural_brain').select('*').eq('is_active', true).order('version', { ascending: false }).limit(1).maybeSingle();
       if (data) {
@@ -148,20 +156,31 @@ export default function App() {
     paymentService.init();
     
     const initSession = async () => {
-      setLoading(true);
-      if (!isSupabaseConfigured || !supabase) {
+      // Don't set global loading to true yet if we're just checking
+      if (!isSupabaseConfigured() || !supabase) {
         setLoading(false);
+        setHealthStatus({ status: 'disconnected', message: 'Credentials missing from environment.' });
         return;
       }
 
       try {
-        const isConnected = await checkDb();
+        // Step 1: Immediate Session Check (fastest)
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         
         if (currentSession) {
           setSession(currentSession);
-          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
-          await fetchBrain(isConnected);
+          
+          // Step 2: Parallel Fetching (Background)
+          // We don't await checkDb here to speed up UI appearance
+          checkDb();
+          
+          await Promise.allSettled([
+            fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
+            fetchBrain()
+          ]);
+        } else {
+          // If no session, still check DB in background for health indicator
+          checkDb();
         }
       } catch (err) {
         console.error("Init Session Error:", err);
@@ -173,12 +192,12 @@ export default function App() {
     initSession();
 
     let subscription: any = null;
-    if (isSupabaseConfigured && supabase) {
+    if (isSupabaseConfigured() && supabase) {
       const { data } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
         if (currentSession) {
           setSession(currentSession);
-          const isConnected = await checkDb();
-          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email, isConnected);
+          // If a new session happens (login), refresh data
+          fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
         } else {
           setSession(null);
           setUserProfile(null);
@@ -197,7 +216,7 @@ export default function App() {
     if (!userProfile) return;
     const newCount = userProfile.queriesUsed + 1;
     setUserProfile(prev => prev ? { ...prev, queriesUsed: newCount } : null);
-    if (isActuallyConnected && isSupabaseConfigured && supabase) {
+    if (isActuallyConnected && isSupabaseConfigured() && supabase) {
       await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
     }
   }, [userProfile, isActuallyConnected]);
@@ -219,7 +238,7 @@ export default function App() {
                   onAddDocument={async (doc) => setDocuments(prev => [doc, ...prev])} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-                    if (isActuallyConnected && isSupabaseConfigured && supabase) {
+                    if (isActuallyConnected && isSupabaseConfigured() && supabase) {
                       await supabase.from('documents').update(updates as any).eq('id', id);
                     }
                   }}
@@ -250,7 +269,7 @@ export default function App() {
               return <PricingView currentPlan={userProfile.plan} onUpgrade={(plan) => {
                 const limit = plan === SubscriptionPlan.FREE ? 30 : 1000;
                 setUserProfile(prev => prev ? { ...prev, plan, queriesLimit: limit } : null);
-                if (isActuallyConnected && isSupabaseConfigured && supabase) {
+                if (isActuallyConnected && isSupabaseConfigured() && supabase) {
                   supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
                 }
                 setCurrentView('dashboard');
