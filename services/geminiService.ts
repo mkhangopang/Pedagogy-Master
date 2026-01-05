@@ -53,7 +53,6 @@ export const geminiService = {
 
   /**
    * Proxies a multimodal streaming chat request.
-   * Prefer using filePath to avoid large payload timeouts.
    */
   async *chatWithDocumentStream(
     message: string, 
@@ -75,7 +74,6 @@ export const geminiService = {
         task: 'chat',
         message,
         doc: { 
-          // Only send base64 if filePath is missing
           base64: doc.filePath ? undefined : doc.base64, 
           mimeType: doc.mimeType,
           filePath: doc.filePath 
@@ -87,7 +85,8 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      yield "AI Alert: Synthesis interrupted. The server might be processing a large document. Please wait a moment.";
+      const errorData = await response.json().catch(() => ({}));
+      yield `AI Alert: Synthesis failed. ${errorData.error || "The model encountered a context threshold or connectivity error."}`;
       return;
     }
 
@@ -137,7 +136,8 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      yield "AI Alert: Synthesis interrupted. Please verify the document is still in your library.";
+      const errorData = await response.json().catch(() => ({}));
+      yield `AI Alert: Synthesis failed. ${errorData.error || "Verify the document library is accessible and try again."}`;
       return;
     }
 

@@ -1,3 +1,4 @@
+
 // Add React to imports to fix "Cannot find namespace 'React'" error when using React.FC.
 import React, { useState, useEffect } from 'react';
 import { Save, RefreshCw, AlertCircle, CheckCircle2, Copy, Zap, Check, Database, Globe, ShieldCheck, ExternalLink, Terminal, ShieldAlert } from 'lucide-react';
@@ -51,13 +52,23 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      // 1. Check if user is admin locally first
+      const { data: { user } } = await supabase.auth.getUser();
+      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user?.id).single();
+      
+      if (profile?.role !== 'app_admin') {
+        throw new Error("Administrative override required. Current role lacks deployment privileges.");
+      }
+
       const { error } = await supabase.from('neural_brain').insert([{
         master_prompt: formData.masterPrompt,
         bloom_rules: formData.bloomRules,
         version: formData.version + 1,
         is_active: true
       }]);
+      
       if (error) throw error;
+      
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
       setShowStatus(true);
       setTimeout(() => setShowStatus(false), 3000);
@@ -68,62 +79,80 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: ENTERPRISE SECURITY CORE V11 (ROBUST PERMISSIONS)
+  const sqlSchema = `-- PEDAGOGY MASTER: ENTERPRISE SECURITY CORE V12 (FULL ADMIN PATCH)
 -- ========================================================================================
--- This script ensures all tables exist, columns are synced, and PERMISSIONS are granted.
--- Execute this in the Supabase SQL Editor to resolve "permission denied" errors.
+-- This script grants full permissions and fixes RLS policies for global configuration.
+-- Run this in Supabase SQL Editor to resolve all "permission denied" errors.
 
--- 0. SCHEMA PERMISSIONS
+-- 0. SCHEMA & PRIVILEGE INITIALIZATION
 GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO postgres, anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO postgres, anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO postgres, anon, authenticated, service_role;
 
--- 1. ENABLE EXTENSIONS
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- 2. ORGANIZATIONS
-CREATE TABLE IF NOT EXISTS public.organizations (
+-- 1. NEURAL BRAIN TABLE (GLOBAL CONFIG)
+CREATE TABLE IF NOT EXISTS public.neural_brain (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  name text NOT NULL,
-  slug text UNIQUE,
-  settings jsonb DEFAULT '{}'::jsonb,
-  created_at timestamp with time zone DEFAULT now()
+  master_prompt text NOT NULL,
+  bloom_rules text NOT NULL,
+  version integer DEFAULT 1,
+  is_active boolean DEFAULT true,
+  updated_at timestamp with time zone DEFAULT now()
 );
-ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.organizations TO authenticated, service_role;
+ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
+GRANT ALL ON TABLE public.neural_brain TO authenticated, service_role;
 
--- 3. PROFILES
+-- RE-INITIALIZE BRAIN POLICIES
+DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
+CREATE POLICY "Neural brain is viewable by all" ON public.neural_brain FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
+CREATE POLICY "Admins can deploy neural brain" 
+ON public.neural_brain 
+FOR ALL 
+TO authenticated 
+USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE profiles.id = auth.uid() 
+    AND profiles.role = 'app_admin'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.profiles 
+    WHERE profiles.id = auth.uid() 
+    AND profiles.role = 'app_admin'
+  )
+);
+
+-- 2. PROFILES TABLE (USER DATA)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
   email text,
   name text,
   role text DEFAULT 'teacher',
   plan text DEFAULT 'free',
-  organization_id uuid REFERENCES public.organizations(id),
-  queries_used integer DEFAULT 0,
-  queries_limit integer DEFAULT 30,
   grade_level text,
   subject_area text,
   teaching_style text,
   pedagogical_approach text,
-  generation_count integer DEFAULT 0,
-  success_rate float DEFAULT 0,
-  edit_patterns jsonb DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::jsonb,
+  queries_used integer DEFAULT 0,
+  queries_limit integer DEFAULT 30,
   updated_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS grade_level text;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS subject_area text;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS teaching_style text;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS pedagogical_approach text;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS generation_count integer DEFAULT 0;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS success_rate float DEFAULT 0;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS edit_patterns jsonb DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::jsonb;
 GRANT ALL ON TABLE public.profiles TO authenticated, service_role;
 
--- 4. DOCUMENTS (CRITICAL FIX FOR UPLOADS)
+DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
+CREATE POLICY "Profiles are manageable by owners" ON public.profiles FOR ALL TO authenticated USING (id = auth.uid());
+
+DROP POLICY IF EXISTS "Profiles are viewable by admins" ON public.profiles;
+CREATE POLICY "Profiles are viewable by admins" ON public.profiles FOR SELECT TO authenticated USING (
+  EXISTS (SELECT 1 FROM public.profiles p WHERE p.id = auth.uid() AND p.role = 'app_admin')
+);
+
+-- 3. DOCUMENTS TABLE
 CREATE TABLE IF NOT EXISTS public.documents (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
@@ -139,29 +168,12 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS storage_type text DEFAULT 'supabase';
-ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS is_public boolean DEFAULT false;
-ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS subject text DEFAULT 'General';
-ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS grade_level text DEFAULT 'Auto';
-ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS slo_tags jsonb DEFAULT '[]'::jsonb;
+GRANT ALL ON TABLE public.documents TO authenticated, service_role;
 
--- Explicit Grants for Document Operations
-GRANT ALL ON TABLE public.documents TO authenticated, service_role, postgres;
-CREATE INDEX IF NOT EXISTS idx_documents_user_id ON public.documents(user_id);
+DROP POLICY IF EXISTS "Users manage own docs" ON public.documents;
+CREATE POLICY "Users manage own docs" ON public.documents FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
--- 5. NEURAL BRAIN
-CREATE TABLE IF NOT EXISTS public.neural_brain (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  master_prompt text NOT NULL,
-  bloom_rules text NOT NULL,
-  version integer DEFAULT 1,
-  is_active boolean DEFAULT true,
-  updated_at timestamp with time zone DEFAULT now()
-);
-ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.neural_brain TO authenticated, service_role;
-
--- 6. OUTPUT ARTIFACTS
+-- 4. OUTPUT ARTIFACTS
 CREATE TABLE IF NOT EXISTS public.output_artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid REFERENCES auth.users ON DELETE CASCADE,
@@ -169,102 +181,15 @@ CREATE TABLE IF NOT EXISTS public.output_artifacts (
   content text,
   metadata jsonb,
   status text DEFAULT 'generated',
-  edit_depth integer DEFAULT 0,
   created_at timestamp with time zone DEFAULT now()
 );
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
 GRANT ALL ON TABLE public.output_artifacts TO authenticated, service_role;
-CREATE INDEX IF NOT EXISTS idx_output_artifacts_user_id ON public.output_artifacts(user_id);
 
--- 7. FEEDBACK EVENTS
-CREATE TABLE IF NOT EXISTS public.feedback_events (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
-  artifact_id uuid REFERENCES public.output_artifacts(id) ON DELETE CASCADE,
-  event_type text NOT NULL,
-  event_data jsonb DEFAULT '{}'::jsonb,
-  created_at timestamp with time zone DEFAULT now()
-);
-ALTER TABLE public.feedback_events ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.feedback_events TO authenticated, service_role;
+DROP POLICY IF EXISTS "Users manage own artifacts" ON public.output_artifacts;
+CREATE POLICY "Users manage own artifacts" ON public.output_artifacts FOR ALL TO authenticated USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid());
 
--- 8. USAGE LOGS
-CREATE TABLE IF NOT EXISTS public.usage_logs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
-  action text NOT NULL,
-  metadata jsonb DEFAULT '{}'::jsonb,
-  created_at timestamp with time zone DEFAULT now()
-);
-ALTER TABLE public.usage_logs ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.usage_logs TO authenticated, service_role;
-CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id ON public.usage_logs(user_id);
-
--- 9. CHAT MESSAGES
-CREATE TABLE IF NOT EXISTS public.chat_messages (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users ON DELETE CASCADE,
-  role text NOT NULL,
-  content text NOT NULL,
-  document_id uuid REFERENCES public.documents(id) ON DELETE SET NULL,
-  created_at timestamp with time zone DEFAULT now()
-);
-ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
-GRANT ALL ON TABLE public.chat_messages TO authenticated, service_role;
-CREATE INDEX IF NOT EXISTS idx_chat_messages_user_id ON public.chat_messages(user_id);
-CREATE INDEX IF NOT EXISTS idx_chat_messages_document_id ON public.chat_messages(document_id);
-
--- ========================================================================================
--- ENHANCED ACCESS CONTROL POLICIES (EXPLICIT FOR INSERT/UPDATE)
--- ========================================================================================
-
--- ORGANIZATIONS
-DROP POLICY IF EXISTS "Organizations are viewable by authenticated users" ON public.organizations;
-CREATE POLICY "Organizations are viewable by authenticated users" ON public.organizations FOR SELECT TO authenticated USING (true);
-
--- PROFILES
-DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
-CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = id);
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id) WITH CHECK (auth.uid() = id);
-DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
-CREATE POLICY "Users can insert own profile" ON public.profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
-
--- DOCUMENTS (ROBUST PERMISSIONS)
-DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
-CREATE POLICY "Users can manage own documents" 
-ON public.documents 
-FOR ALL 
-TO authenticated 
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
-
-DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
-CREATE POLICY "Users can view own documents" ON public.documents FOR SELECT TO authenticated USING (auth.uid() = user_id);
-
--- NEURAL BRAIN
-DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
-CREATE POLICY "Neural brain is viewable by authenticated users" ON public.neural_brain FOR SELECT TO authenticated USING (true);
-
--- OUTPUT ARTIFACTS
-DROP POLICY IF EXISTS "Users can manage own artifacts" ON public.output_artifacts;
-CREATE POLICY "Users can manage own artifacts" ON public.output_artifacts FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
--- FEEDBACK EVENTS
-DROP POLICY IF EXISTS "Users can manage own feedback" ON public.feedback_events;
-CREATE POLICY "Users can manage own feedback" ON public.feedback_events FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
--- USAGE LOGS
-DROP POLICY IF EXISTS "Users can manage own logs" ON public.usage_logs;
-CREATE POLICY "Users can manage own logs" ON public.usage_logs FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
--- CHAT MESSAGES
-DROP POLICY IF EXISTS "Users can manage own chat" ON public.chat_messages;
-CREATE POLICY "Users can manage own chat" ON public.chat_messages FOR ALL TO authenticated USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
-
--- ========================================================================================
--- RELOAD SCHEMA CACHE
--- ========================================================================================
+-- RELOAD SCHEMA
 NOTIFY pgrst, 'reload schema';
 `;
 
