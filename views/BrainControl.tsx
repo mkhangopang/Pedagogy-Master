@@ -52,7 +52,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("No active session found.");
 
-      // Fetch profile with error handling for recursion issues
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
@@ -60,7 +59,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         .single();
       
       if (profileError) {
-        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch to fix recursion.`);
+        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch V14.`);
       }
 
       if (profile?.role !== 'app_admin') {
@@ -86,72 +85,50 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RECURSION FIX & SECURITY PATCH V13
+  const sqlSchema = `-- PEDAGOGY MASTER: RECURSION FIX & BOOTSTRAP V14
 -- ========================================================================================
--- This patch resolves the "infinite recursion" error by using a SECURITY DEFINER function.
+-- RUN THIS IN SUPABASE SQL EDITOR TO FIX ALL CURRENT ERRORS.
 
--- 1. HELPERS (Security Definer avoids RLS recursion)
+-- 1. DROP ALL PROBLEMATIC POLICIES FIRST
+DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
+DROP POLICY IF EXISTS "Profiles are viewable by admins" ON public.profiles;
+DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
+DROP POLICY IF EXISTS "Admin Global View" ON public.profiles;
+DROP POLICY IF EXISTS "Admins can see everything" ON public.profiles;
+DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
+
+-- 2. RE-CREATE SECURITY FUNCTION (Bypass RLS strictly)
 CREATE OR REPLACE FUNCTION public.is_app_admin()
 RETURNS boolean AS $$
 BEGIN
+  -- We query profiles directly. SECURITY DEFINER ensures we bypass RLS on the table itself.
+  -- SET search_path = public ensures we are looking at the right table.
   RETURN EXISTS (
     SELECT 1 FROM public.profiles
     WHERE id = auth.uid()
     AND role = 'app_admin'
   );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
--- 2. TABLES INITIALIZATION
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id uuid REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
-  email text,
-  name text,
-  role text DEFAULT 'teacher',
-  plan text DEFAULT 'free',
-  grade_level text,
-  subject_area text,
-  teaching_style text,
-  pedagogical_approach text,
-  queries_used integer DEFAULT 0,
-  queries_limit integer DEFAULT 30,
-  updated_at timestamp with time zone DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.neural_brain (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  master_prompt text NOT NULL,
-  bloom_rules text NOT NULL,
-  version integer DEFAULT 1,
-  is_active boolean DEFAULT true,
-  updated_at timestamp with time zone DEFAULT now()
-);
-
--- 3. RLS RESET
+-- 3. APPLY CLEAN POLICIES
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
--- 4. PROFILES POLICIES (RECURSION-FREE)
-DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
-DROP POLICY IF EXISTS "Profiles are viewable by admins" ON public.profiles;
-DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
-DROP POLICY IF EXISTS "Admin Global View" ON public.profiles;
-
--- Rule 1: Everyone can see/edit their own profile
-CREATE POLICY "Individual User Access" ON public.profiles
+-- Rule 1: Every authenticated user can see and edit their own profile (Non-recursive)
+CREATE POLICY "Manage Own Profile" ON public.profiles
 FOR ALL TO authenticated
 USING (id = auth.uid())
 WITH CHECK (id = auth.uid());
 
--- Rule 2: Admins can see all profiles (Uses the non-recursive function)
-CREATE POLICY "Admin Global View" ON public.profiles
+-- Rule 2: Admins can see all profiles (Uses the SECURITY DEFINER bypass function)
+CREATE POLICY "Admin View All" ON public.profiles
 FOR SELECT TO authenticated
 USING (public.is_app_admin());
 
--- 5. NEURAL BRAIN POLICIES
-DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
-DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
+-- 4. NEURAL BRAIN POLICIES
+ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
 CREATE POLICY "Neural brain is viewable by all" ON public.neural_brain 
 FOR SELECT TO authenticated USING (true);
 
@@ -160,13 +137,19 @@ FOR ALL TO authenticated
 USING (public.is_app_admin())
 WITH CHECK (public.is_app_admin());
 
--- 6. GRANT PERMISSIONS
+-- 5. BOOTSTRAP YOUR ADMIN ACCOUNT
+-- This ensures mkgopang@gmail.com is set to app_admin regardless of current state.
+UPDATE public.profiles 
+SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
+WHERE email = 'mkgopang@gmail.com';
+
+-- 6. ENSURE GRANTS
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
 
--- RELOAD CACHE
+-- RELOAD
 NOTIFY pgrst, 'reload schema';
 `;
 
@@ -273,23 +256,23 @@ NOTIFY pgrst, 'reload schema';
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
               <h3 className="font-bold text-slate-900 mb-6 flex items-center gap-2">
                 <AlertCircle size={20} className="text-amber-500" />
-                Infrastructure Alert
+                V14 Recovery Protocol
               </h3>
               <p className="text-sm text-slate-600 mb-4">
-                The current error "infinite recursion" is caused by a circular reference in the database Row Level Security.
+                The recursion error and API key mismatch are blocking AI synthesis. Follow these steps:
               </p>
               <ul className="space-y-4 text-sm text-slate-600 leading-relaxed">
                 <li className="flex gap-3">
                   <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
-                  Go to <strong>Infrastructure</strong> tab and copy the V13 SQL Patch.
+                  Go to <strong>Infrastructure</strong> tab and copy <strong>V14 SQL Patch</strong>.
                 </li>
                 <li className="flex gap-3">
                   <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
-                  Run it in Supabase SQL Editor to clear the recursion loop.
+                  Run it in Supabase SQL Editor. This forces your role to <strong>app_admin</strong> and clears the policy loop.
                 </li>
                 <li className="flex gap-3">
                   <div className="mt-1.5 w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0" />
-                  Return here and click "Deploy Logic Update" again.
+                  Redeploy the Vercel app to pick up the <strong>next.config.js</strong> changes that map <strong>GEMINI_API_KEY</strong>.
                 </li>
               </ul>
             </div>
@@ -336,15 +319,15 @@ NOTIFY pgrst, 'reload schema';
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-xl font-bold">V13 SQL Patch (Recursion Fix)</h3>
-                <p className="text-slate-500 text-sm mt-1">Run this in Supabase SQL Editor to resolve all "infinite recursion" and policy errors.</p>
+                <h3 className="text-xl font-bold">V14 SQL Patch (Recursion & Admin Fix)</h3>
+                <p className="text-slate-500 text-sm mt-1">This patch fixes the "infinite recursion" error and ensures your account has full privileges.</p>
               </div>
               <button 
                 onClick={handleCopySql}
                 className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center gap-3 hover:bg-indigo-700 transition-all shadow-lg active:scale-95"
               >
                 {copiedSql ? <Check size={18} /> : <Copy size={18} />}
-                {copiedSql ? 'Copied to Clipboard' : 'Copy SQL Schema'}
+                {copiedSql ? 'Copied' : 'Copy SQL V14'}
               </button>
             </div>
 

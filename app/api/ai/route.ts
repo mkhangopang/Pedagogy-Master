@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI, Type } from "@google/genai";
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
@@ -19,26 +20,29 @@ export async function POST(req: NextRequest) {
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
     const { task, message, doc, brain, adaptiveContext, history, toolType, userInput } = await req.json();
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return NextResponse.json({ error: 'AI key missing' }, { status: 500 });
+    
+    // Support both naming conventions for the API Key
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    
+    if (!apiKey) {
+      return NextResponse.json({ 
+        error: 'AI key missing. Please ensure GEMINI_API_KEY is set in your environment variables.' 
+      }, { status: 500 });
+    }
 
     const ai = new GoogleGenAI({ apiKey });
     const supabase = getSupabaseServerClient(token);
 
     /**
      * Unified Document Retrieval
-     * Resolves context from raw base64 or storage paths (R2/Supabase)
      */
     const getDocPart = async () => {
-      // 1. Direct Base64 Input (Priority for extraction tasks)
       if (doc?.base64) {
         return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
       }
 
-      // 2. Storage Reference
       if (doc?.filePath) {
         try {
-          // Use authenticated client to bypass RLS for user's own docs
           const { data: meta } = await supabase.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
           let bytes: Uint8Array;
           
@@ -51,7 +55,6 @@ export async function POST(req: NextRequest) {
             if (!arrayBuffer) return null;
             bytes = arrayBuffer;
           } else {
-            // Use authenticated client for storage as well
             const { data, error } = await supabase.storage.from('documents').download(doc.filePath);
             if (error || !data) return null;
             bytes = new Uint8Array(await data.arrayBuffer());
@@ -66,7 +69,6 @@ export async function POST(req: NextRequest) {
       return null;
     };
 
-    // TASK 1: SLO EXTRACTION (JSON Mode)
     if (task === 'extract-slos') {
       const docPart = await getDocPart();
       if (!docPart) return NextResponse.json({ error: 'Source node missing' }, { status: 400 });
@@ -97,7 +99,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ text: response.text });
     }
 
-    // TASK 2: ADAPTIVE CHAT (Streaming Mode)
     if (task === 'chat') {
       const docPart = await getDocPart();
       const streamResponse = await ai.models.generateContentStream({
@@ -128,7 +129,6 @@ export async function POST(req: NextRequest) {
       return new Response(stream);
     }
 
-    // TASK 3: PEDAGOGICAL TOOL GENERATION (Streaming Mode)
     if (task === 'generate-tool') {
       const docPart = await getDocPart();
       const prompt = `Task: Generate a ${toolType}.\nUser Requirements: ${userInput}\nReference Document: ${docPart ? 'Provided' : 'Not Provided'}`;
