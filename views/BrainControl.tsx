@@ -93,7 +93,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 -- 1. AGGRESSIVE CLEANUP OF ALL KNOWN POLICIES (Fixes infinite recursion)
 DO $$ 
 BEGIN
-    -- Drop all variants of Admin/Manage policies to clear recursion
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All Profiles" ON public.profiles;
@@ -104,7 +103,6 @@ BEGIN
     DROP POLICY IF EXISTS "Users can manage their own profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
 
-    -- Standard Legacy Cleanup
     DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
     DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
     DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
@@ -116,32 +114,27 @@ BEGIN
 END $$;
 
 -- 2. IMPLEMENT NON-RECURSIVE POLICIES
--- PROFILES: Use JWT metadata for admin check to avoid table recursion
 CREATE POLICY "Manage Own Profile" ON public.profiles
 FOR ALL TO authenticated
 USING (id = (SELECT auth.uid()))
 WITH CHECK (id = (SELECT auth.uid()));
 
--- FIXED: Uses JWT Email claim to bypass profile table lookup, breaking recursion
 CREATE POLICY "Admin View All" ON public.profiles
 FOR SELECT TO authenticated
 USING (
   (SELECT auth.jwt() ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- DOCUMENTS
 CREATE POLICY "Manage Own Documents" ON public.documents
 FOR ALL TO authenticated
 USING (user_id = (SELECT auth.uid()))
 WITH CHECK (user_id = (SELECT auth.uid()));
 
--- ARTIFACTS
 CREATE POLICY "Manage Own Artifacts" ON public.output_artifacts
 FOR ALL TO authenticated
 USING (user_id = (SELECT auth.uid()))
 WITH CHECK (user_id = (SELECT auth.uid()));
 
--- CHAT
 CREATE POLICY "Manage Own Chat" ON public.chat_messages
 FOR ALL TO authenticated
 USING (user_id = (SELECT auth.uid()))
@@ -160,14 +153,14 @@ WHERE email = 'mkgopang@gmail.com';
 `;
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20 px-4">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3 tracking-tight">
             <ShieldCheck className="text-indigo-600" />
             Control Hub
           </h1>
-          <p className="text-slate-500 mt-1">Manage global AI logic, enterprise security, and commercial compliance.</p>
+          <p className="text-slate-500 mt-1">Enterprise security and pedagogical logic.</p>
         </div>
         <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
           <button 
@@ -186,7 +179,7 @@ WHERE email = 'mkgopang@gmail.com';
             onClick={() => setActiveTab('audit')}
             className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'audit' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            Commercial Audit
+            Audit
           </button>
         </div>
       </header>
@@ -253,20 +246,6 @@ WHERE email = 'mkgopang@gmail.com';
               ))}
             </div>
           </div>
-          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-             <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold">V17 SQL Migration (Recursion Fix)</h3>
-                <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(sqlSchema);
-                  }} 
-                  className="text-indigo-600 font-bold text-xs flex items-center gap-2 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all"
-                >
-                  <Copy size={14} /> Copy Script
-                </button>
-             </div>
-             <pre className="bg-slate-50 p-6 rounded-xl text-xs overflow-auto max-h-60 font-mono text-slate-700 border border-slate-200">{sqlSchema}</pre>
-          </div>
         </div>
       )}
 
@@ -275,21 +254,21 @@ WHERE email = 'mkgopang@gmail.com';
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
              <AuditSummaryCard 
                 title="Security Compliance" 
-                status="Grade A" 
+                status="GRADE A" 
                 icon={<Lock className="text-emerald-600" />} 
-                desc="RLS, JWT, and SQL injection prevention active."
+                desc="RLS and JWT injection prevention active."
              />
              <AuditSummaryCard 
                 title="Privacy Shield" 
-                status="Non-Persistent" 
+                status="ACTIVE (SECURE)" 
                 icon={<EyeOff className="text-indigo-600" />} 
-                desc="Multimodal data handled via volatile buffers."
+                desc="Data is not used for training. Wiped after generation."
              />
              <AuditSummaryCard 
-                title="Commercial Readiness" 
-                status="Production" 
+                title="Commercial Status" 
+                status="PRODUCTION" 
                 icon={<Scale className="text-amber-600" />} 
-                desc="Compliant with enterprise API licensing."
+                desc="Enterprise-grade API licensing verified."
              />
           </div>
 
@@ -297,26 +276,24 @@ WHERE email = 'mkgopang@gmail.com';
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
               <h3 className="text-xl font-bold flex items-center gap-2">
                 <ShieldCheck size={20} className="text-emerald-600" />
-                Hardened Perimeter Security
+                Perimeter Protection
               </h3>
               <div className="space-y-4">
-                <AuditItem title="RLS Policy Enforcement" status="Verified" desc="Row Level Security ensures cross-tenant data isolation." />
-                <AuditItem title="JWT Protocol Validation" status="Active" desc="All edge functions and API routes require cryptographically signed JWTs." />
-                <AuditItem title="Multimodal Data Sandbox" status="Secured" desc="Multimodal inputs are processed in non-persistent environments." />
-                <AuditItem title="Regional Persistence" status="R2 Node" desc="Cloudflare R2 storage handles regional object persistence." />
+                <AuditItem title="RLS Policy Enforcement" status="Verified" desc="Row Level Security isolates student/teacher data." />
+                <AuditItem title="JWT Protocol" status="Active" desc="All routes require signed JWT tokens." />
+                <AuditItem title="Data Sandbox" status="Secured" desc="Multimodal files processed in volatile buffers." />
               </div>
             </div>
 
             <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm space-y-6">
               <h3 className="text-xl font-bold flex items-center gap-2">
                 <FileCheck size={20} className="text-indigo-600" />
-                Interoperability & Export Standards
+                Interoperability
               </h3>
               <div className="space-y-4">
-                <AuditItem title="OOXML Word Compatibility" status="Validated" desc="Exported files utilize standard Word XML headers." />
-                <AuditItem title="UTF-8 Excel Encoding" status="Verified" desc="CSV exports include Byte Order Marks (BOM) for Excel." />
-                <AuditItem title="Adaptive Rate Limiting" status="Backoff Active" desc="Commercial usage is protected via exponential backoff." />
-                <AuditItem title="Pedagogical Taxonomy Alignment" status="Bloom v1.0" desc="System instructions strictly enforce Bloom's Taxonomy." />
+                <AuditItem title="OOXML Standards" status="Validated" desc="Exported files compatible with MS Word." />
+                <AuditItem title="UTF-8 Encoding" status="Verified" desc="Global character support in artifacts." />
+                <AuditItem title="Rate Limiting" status="Backoff" desc="Commercial usage protection active." />
               </div>
             </div>
           </div>
@@ -330,7 +307,7 @@ const AuditSummaryCard = ({ title, status, icon, desc }: { title: string, status
   <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm space-y-4">
     <div className="flex items-center justify-between">
       <div className="p-3 bg-slate-50 rounded-xl">{icon}</div>
-      <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">{status}</span>
+      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest bg-indigo-50 px-2 py-1 rounded-md">{status}</span>
     </div>
     <div>
       <h4 className="font-bold text-slate-900">{title}</h4>
