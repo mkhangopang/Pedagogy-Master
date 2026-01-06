@@ -62,7 +62,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         .single();
       
       if (profileError) {
-        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch V16.`);
+        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch V17.`);
       }
 
       if (profile?.role !== 'app_admin') {
@@ -88,61 +88,46 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: PERFORMANCE OPTIMIZATION & CLEANUP V16
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE RECOVERY V17
 -- ========================================================================================
--- 1. DROP ALL REDUNDANT AND CONFLICTING POLICIES
+-- 1. AGGRESSIVE CLEANUP OF ALL KNOWN POLICIES (Fixes infinite recursion)
 DO $$ 
 BEGIN
-    -- Drop New Policy Names (to allow re-creation)
+    -- Drop all variants of Admin/Manage policies to clear recursion
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
-    DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
-    DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
-    DROP POLICY IF EXISTS "Manage Own Chat" ON public.chat_messages;
-    DROP POLICY IF EXISTS "Manage Own Feedback" ON public.feedback_events;
-    DROP POLICY IF EXISTS "Manage Own Logs" ON public.usage_logs;
+    DROP POLICY IF EXISTS "Admin View All Profiles" ON public.profiles;
+    DROP POLICY IF EXISTS "Admin View All v16" ON public.profiles;
+    DROP POLICY IF EXISTS "Admin View All v15" ON public.profiles;
+    DROP POLICY IF EXISTS "Manage Own Profile v16" ON public.profiles;
+    DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can manage their own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
 
-    -- Drop Legacy Names from Linter Report
-    DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
-    DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
+    -- Standard Legacy Cleanup
     DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
     DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
     DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
-    DROP POLICY IF EXISTS "Users can manage their own profile" ON public.profiles;
     DROP POLICY IF EXISTS "v56_profiles_access" ON public.profiles;
     DROP POLICY IF EXISTS "v60_profiles_access" ON public.profiles;
-    
-    DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
-    DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
-    DROP POLICY IF EXISTS "Users manage own docs" ON public.documents;
-    DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
-    DROP POLICY IF EXISTS "v56_documents_access" ON public.documents;
-    DROP POLICY IF EXISTS "v60_documents_access" ON public.documents;
-
-    DROP POLICY IF EXISTS "Users can manage own artifacts" ON public.output_artifacts;
-    DROP POLICY IF EXISTS "Users can manage their own artifacts" ON public.output_artifacts;
-    DROP POLICY IF EXISTS "Users manage own artifacts" ON public.output_artifacts;
-
-    DROP POLICY IF EXISTS "Users can manage own chat" ON public.chat_messages;
-    DROP POLICY IF EXISTS "v49_chat_messages_self" ON public.chat_messages;
-
-    DROP POLICY IF EXISTS "Users can manage own feedback" ON public.feedback_events;
-    DROP POLICY IF EXISTS "Users can manage own logs" ON public.usage_logs;
+    DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
+    DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "Manage Own Chat" ON public.chat_messages;
 END $$;
 
--- 2. RE-IMPLEMENT OPTIMIZED POLICIES WITH (select auth.uid())
--- PROFILES
+-- 2. IMPLEMENT NON-RECURSIVE POLICIES
+-- PROFILES: Use JWT metadata for admin check to avoid table recursion
 CREATE POLICY "Manage Own Profile" ON public.profiles
 FOR ALL TO authenticated
 USING (id = (SELECT auth.uid()))
 WITH CHECK (id = (SELECT auth.uid()));
 
+-- FIXED: Uses JWT Email claim to bypass profile table lookup, breaking recursion
 CREATE POLICY "Admin View All" ON public.profiles
 FOR SELECT TO authenticated
-USING (EXISTS (
-  SELECT 1 FROM public.profiles p 
-  WHERE p.id = (SELECT auth.uid()) AND p.role = 'app_admin'
-));
+USING (
+  (SELECT auth.jwt() ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
+);
 
 -- DOCUMENTS
 CREATE POLICY "Manage Own Documents" ON public.documents
@@ -162,37 +147,13 @@ FOR ALL TO authenticated
 USING (user_id = (SELECT auth.uid()))
 WITH CHECK (user_id = (SELECT auth.uid()));
 
--- FEEDBACK & LOGS
-CREATE POLICY "Manage Own Feedback" ON public.feedback_events
-FOR ALL TO authenticated
-USING (user_id = (SELECT auth.uid()))
-WITH CHECK (user_id = (SELECT auth.uid()));
-
-CREATE POLICY "Manage Own Logs" ON public.usage_logs
-FOR ALL TO authenticated
-USING (user_id = (SELECT auth.uid()))
-WITH CHECK (user_id = (SELECT auth.uid()));
-
--- 3. DROP DUPLICATE INDEXES IDENTIFIED IN LINTER
+-- 3. INDEX CONSOLIDATION
 DROP INDEX IF EXISTS idx_v48_chat_messages_doc_id;
-DROP INDEX IF EXISTS idx_v48_chat_messages_user_id;
 DROP INDEX IF EXISTS idx_chat_messages_document_id;
-DROP INDEX IF EXISTS idx_chat_messages_user_id;
-
 DROP INDEX IF EXISTS idx_docs_v60_date;
 DROP INDEX IF EXISTS idx_docs_uid;
-DROP INDEX IF EXISTS idx_docs_v60_uid;
-DROP INDEX IF EXISTS idx_pedagogy_documents_user_id;
-DROP INDEX IF EXISTS idx_documents_user_id;
 
-DROP INDEX IF EXISTS idx_v48_output_artifacts_user_id;
-DROP INDEX IF EXISTS idx_artifacts_uid;
-DROP INDEX IF EXISTS idx_output_artifacts_user_id;
-
-DROP INDEX IF EXISTS idx_v48_usage_logs_user_id;
-DROP INDEX IF EXISTS idx_usage_logs_user_id;
-
--- 4. BOOTSTRAP ADMIN (Ensure high limits)
+-- 4. BOOTSTRAP ADMIN PRIVILEGES
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email = 'mkgopang@gmail.com';
@@ -294,7 +255,7 @@ WHERE email = 'mkgopang@gmail.com';
           </div>
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold">V16 SQL Migration</h3>
+                <h3 className="text-lg font-bold">V17 SQL Migration (Recursion Fix)</h3>
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(sqlSchema);
@@ -339,10 +300,10 @@ WHERE email = 'mkgopang@gmail.com';
                 Hardened Perimeter Security
               </h3>
               <div className="space-y-4">
-                <AuditItem title="RLS Policy Enforcement" status="Verified" desc="Row Level Security ensures cross-tenant data isolation. Users cannot query data outside their auth scope." />
-                <AuditItem title="JWT Protocol Validation" status="Active" desc="All edge functions and API routes require cryptographically signed JSON Web Tokens for execution." />
-                <AuditItem title="Multimodal Data Sandbox" status="Secured" desc="Multimodal inputs (PDF, DOCX) are processed in non-persistent environments. No user files are used for training." />
-                <AuditItem title="Regional Persistence" status="R2 Node" desc="Cloudflare R2 storage handles regional object persistence with bucket-level encryption at rest." />
+                <AuditItem title="RLS Policy Enforcement" status="Verified" desc="Row Level Security ensures cross-tenant data isolation." />
+                <AuditItem title="JWT Protocol Validation" status="Active" desc="All edge functions and API routes require cryptographically signed JWTs." />
+                <AuditItem title="Multimodal Data Sandbox" status="Secured" desc="Multimodal inputs are processed in non-persistent environments." />
+                <AuditItem title="Regional Persistence" status="R2 Node" desc="Cloudflare R2 storage handles regional object persistence." />
               </div>
             </div>
 
@@ -352,25 +313,12 @@ WHERE email = 'mkgopang@gmail.com';
                 Interoperability & Export Standards
               </h3>
               <div className="space-y-4">
-                <AuditItem title="OOXML Word Compatibility" status="Validated" desc="Exported .doc files utilize standard Word XML headers, ensuring seamless rendering in Google Docs and Microsoft 365." />
-                <AuditItem title="UTF-8 Excel Encoding" status="Verified" desc="CSV exports include Byte Order Marks (BOM) to prevent character corruption in Excel and regional spreadsheet tools." />
-                <AuditItem title="Adaptive Rate Limiting" status="Backoff Active" desc="Commercial usage is protected via exponential backoff (429 handling), preventing AI engine saturation." />
-                <AuditItem title="Pedagogical Taxonomy Alignment" status="Bloom v1.0" desc="System instructions strictly enforce Bloom's Revised Taxonomy verbs, ensuring professional educational output." />
+                <AuditItem title="OOXML Word Compatibility" status="Validated" desc="Exported files utilize standard Word XML headers." />
+                <AuditItem title="UTF-8 Excel Encoding" status="Verified" desc="CSV exports include Byte Order Marks (BOM) for Excel." />
+                <AuditItem title="Adaptive Rate Limiting" status="Backoff Active" desc="Commercial usage is protected via exponential backoff." />
+                <AuditItem title="Pedagogical Taxonomy Alignment" status="Bloom v1.0" desc="System instructions strictly enforce Bloom's Taxonomy." />
               </div>
             </div>
-          </div>
-
-          <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-6">
-            <div className="flex items-center gap-4">
-               <div className="p-4 bg-white rounded-2xl shadow-sm"><Info className="text-slate-400" /></div>
-               <div>
-                 <h4 className="font-bold text-slate-900">Commercial Use Compliance</h4>
-                 <p className="text-sm text-slate-500">This instance is configured for professional SaaS operations with standard liability isolation.</p>
-               </div>
-            </div>
-            <button className="px-6 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-all flex items-center gap-2 shadow-sm">
-              <ExternalLink size={14} /> View License Agreement
-            </button>
           </div>
         </div>
       )}

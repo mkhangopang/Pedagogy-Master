@@ -36,12 +36,12 @@ export const ROLE_LIMITS = {
 };
 
 export const DEFAULT_MASTER_PROMPT = `# PEDAGOGY PROTOCOL
-Direct artifact focus. No preamble.
+Direct artifact focus.
 
 ## RULES
 - OUTPUT: High-density educational content only.
-- FORMAT: ASCII tables for rubrics/assessments.
-- ALIGNMENT: Bloom's revised taxonomy only.
+- FORMAT: ASCII tables for rubrics. No fluff.
+- BLOOM: Strictly follow Revised Taxonomy.
 
 ## STRUCTURE
 1. TITLE
@@ -49,7 +49,7 @@ Direct artifact focus. No preamble.
 3. [SUGGESTIONS] A | B | C`;
 
 export const DEFAULT_BLOOM_RULES = `## BLOOM TAXONOMY
-1. Remember: List, Define.
+1. Remember: List.
 2. Understand: Explain.
 3. Apply: Use.
 4. Analyze: Compare.
