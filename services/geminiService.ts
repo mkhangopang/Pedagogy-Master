@@ -4,16 +4,16 @@ import { adaptiveService } from "./adaptiveService";
 import { supabase } from "../lib/supabase";
 
 function parseAIError(errorData: any): string {
-  if (typeof errorData === 'string') {
-    if (errorData.includes('429') || errorData.includes('RESOURCE_EXHAUSTED')) {
-      return "Neural Rate Limit: Processing nodes are busy. Please wait 15 seconds.";
-    }
-    return errorData;
-  }
+  const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
+  const lowerMsg = msg.toLowerCase();
   
-  const msg = errorData?.error || errorData?.message || "Synthesis interrupted. Please try again.";
-  if (msg.includes('429')) return "Neural Rate Limit: Nodes saturated. Please pause for 15s.";
-  return msg;
+  if (lowerMsg.includes('429') || lowerMsg.includes('resource_exhausted')) {
+    return "Neural Rate Limit: Global nodes are busy. Please pause for 15 seconds.";
+  }
+  if (lowerMsg.includes('api_key') || lowerMsg.includes('auth')) {
+    return "Neural Auth Error: The API Key configured in the server environment is missing or invalid.";
+  }
+  return msg || "Synthesis interrupted. Please try again.";
 }
 
 export const geminiService = {
@@ -47,7 +47,7 @@ export const geminiService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Neural gateway connection failed." }));
+        const errorData = await response.json().catch(() => ({ error: "Neural link failed." }));
         yield `AI Alert: ${parseAIError(errorData)}`;
         return;
       }
@@ -61,12 +61,17 @@ export const geminiService = {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
+          
+          if (chunk.includes('ERROR_SIGNAL:AUTH_FAIL')) {
+            yield "\n\n[System Alert: The Neural API Key is invalid or missing from the server environment.]";
+            break;
+          }
           if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            yield "\n\n[System: High load detected. Please pause for 10 seconds.]";
+            yield "\n\n[System: High load detected. Pausing for 10s.]";
             break;
           }
           if (chunk.includes('ERROR_SIGNAL:INTERRUPTED')) {
-            yield "\n\n[System: Neural connection lost. Please try refining your request.]";
+            yield "\n\n[System: Neural stream dropped.]";
             break;
           }
           yield chunk;
@@ -75,7 +80,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield "AI Alert: Neural connection failed. Check your network or VPN.";
+      yield "AI Alert: Neural gateway connection failed.";
     }
   },
 
@@ -104,7 +109,7 @@ export const geminiService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Resource synthesis node offline." }));
+        const errorData = await response.json().catch(() => ({ error: "Synthesis node offline." }));
         yield `AI Alert: ${parseAIError(errorData)}`;
         return;
       }
@@ -118,12 +123,13 @@ export const geminiService = {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
-          if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            yield "\n\n[Neural Alert: Processing capacity reached. Synthesis paused.]";
+          
+          if (chunk.includes('ERROR_SIGNAL:AUTH_FAIL')) {
+            yield "\n\n[Critical: Neural Auth Failure. Check Server Credentials.]";
             break;
           }
-          if (chunk.includes('ERROR_SIGNAL:INTERRUPTED')) {
-            yield "\n\n[Neural Alert: Synthesis engine disconnected.]";
+          if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
+            yield "\n\n[Neural Alert: Processing capacity reached.]";
             break;
           }
           yield chunk;
@@ -132,7 +138,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield "AI Alert: Resource synthesis failed due to a network connection error.";
+      yield "AI Alert: Synthesis failed due to a network error.";
     }
   }
 };
