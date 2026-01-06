@@ -62,7 +62,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         .single();
       
       if (profileError) {
-        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch V14.`);
+        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch V15.`);
       }
 
       if (profile?.role !== 'app_admin') {
@@ -88,53 +88,83 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RECURSION FIX & BOOTSTRAP V14
+  const sqlSchema = `-- PEDAGOGY MASTER: PERFORMANCE OPTIMIZATION & CLEANUP V15
 -- ========================================================================================
--- 1. DROP ALL POTENTIALLY CONFLICTING POLICIES
-DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
-DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
-DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
-DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
-
--- 2. RE-CREATE SECURITY FUNCTION (Bypass RLS strictly)
-CREATE OR REPLACE FUNCTION public.is_app_admin()
-RETURNS boolean AS $$
+-- 1. DROP ALL REDUNDANT POLICIES (Consolidate into single permissive blocks)
+DO $$ 
 BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = auth.uid()
-    AND role = 'app_admin'
-  );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+    -- Profiles
+    DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
+    DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can manage their own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "v56_profiles_access" ON public.profiles;
+    DROP POLICY IF EXISTS "v60_profiles_access" ON public.profiles;
+    
+    -- Documents
+    DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
+    DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
+    DROP POLICY IF EXISTS "Users manage own docs" ON public.documents;
+    DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
+    DROP POLICY IF EXISTS "v56_documents_access" ON public.documents;
+    DROP POLICY IF EXISTS "v60_documents_access" ON public.documents;
 
--- 3. APPLY CLEAN POLICIES
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+    -- Artifacts
+    DROP POLICY IF EXISTS "Users can manage own artifacts" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "Users can manage their own artifacts" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "Users manage own artifacts" ON public.output_artifacts;
 
+    -- Chat
+    DROP POLICY IF EXISTS "Users can manage own chat" ON public.chat_messages;
+    DROP POLICY IF EXISTS "v49_chat_messages_self" ON public.chat_messages;
+END $$;
+
+-- 2. RE-IMPLEMENT OPTIMIZED POLICIES WITH (select auth.uid())
+-- PROFILES
 CREATE POLICY "Manage Own Profile" ON public.profiles
 FOR ALL TO authenticated
-USING (id = auth.uid())
-WITH CHECK (id = auth.uid());
+USING (id = (SELECT auth.uid()))
+WITH CHECK (id = (SELECT auth.uid()));
 
 CREATE POLICY "Admin View All" ON public.profiles
 FOR SELECT TO authenticated
-USING (public.is_app_admin());
+USING (EXISTS (
+  SELECT 1 FROM public.profiles p 
+  WHERE p.id = (SELECT auth.uid()) AND p.role = 'app_admin'
+));
 
--- 4. NEURAL BRAIN POLICIES
-ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
-DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
-
-CREATE POLICY "Neural brain is viewable by all" ON public.neural_brain 
-FOR SELECT TO authenticated USING (true);
-
-CREATE POLICY "Admins can deploy neural brain" ON public.neural_brain
+-- DOCUMENTS
+CREATE POLICY "Manage Own Documents" ON public.documents
 FOR ALL TO authenticated
-USING (public.is_app_admin())
-WITH CHECK (public.is_app_admin());
+USING (user_id = (SELECT auth.uid()))
+WITH CHECK (user_id = (SELECT auth.uid()));
 
--- 5. BOOTSTRAP ADMIN
+-- ARTIFACTS
+CREATE POLICY "Manage Own Artifacts" ON public.output_artifacts
+FOR ALL TO authenticated
+USING (user_id = (SELECT auth.uid()))
+WITH CHECK (user_id = (SELECT auth.uid()));
+
+-- CHAT
+CREATE POLICY "Manage Own Chat" ON public.chat_messages
+FOR ALL TO authenticated
+USING (user_id = (SELECT auth.uid()))
+WITH CHECK (user_id = (SELECT auth.uid()));
+
+-- 3. DROP DUPLICATE INDEXES FOR PERFORMANCE
+DROP INDEX IF EXISTS idx_v48_chat_messages_doc_id;
+DROP INDEX IF EXISTS idx_v48_chat_messages_user_id;
+DROP INDEX IF EXISTS idx_docs_v60_date;
+DROP INDEX IF EXISTS idx_docs_uid;
+DROP INDEX IF EXISTS idx_docs_v60_uid;
+DROP INDEX IF EXISTS idx_pedagogy_documents_user_id;
+DROP INDEX IF EXISTS idx_v48_output_artifacts_user_id;
+DROP INDEX IF EXISTS idx_artifacts_uid;
+DROP INDEX IF EXISTS idx_v48_usage_logs_user_id;
+
+-- 4. BOOTSTRAP ADMIN (Ensure high limits)
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email = 'mkgopang@gmail.com';
@@ -236,7 +266,7 @@ WHERE email = 'mkgopang@gmail.com';
           </div>
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold">V14 SQL Migration</h3>
+                <h3 className="text-lg font-bold">V15 SQL Migration</h3>
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(sqlSchema);
