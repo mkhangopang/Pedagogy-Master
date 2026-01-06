@@ -1,3 +1,4 @@
+
 import './app/globals.css';
 
 /**
@@ -25,29 +26,15 @@ const performSystemHandshake = () => {
     'NEXT_PUBLIC_R2_PUBLIC_URL'
   ];
   
-  // Scrape possible alternative sources if process.env isn't fully populated
   const metaEnv = (import.meta as any).env || {};
 
   keys.forEach(key => {
     const viteKey = `VITE_${key.replace('NEXT_PUBLIC_', '')}`;
-    const value = process.env[key] || win[key] || metaEnv[key] || metaEnv[viteKey] || '';
+    const value = win.process.env[key] || win[key] || metaEnv[key] || metaEnv[viteKey] || '';
     
     if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
       const trimmed = value.trim();
-      
-      // 1. Set on window.process.env
       win.process.env[key] = trimmed;
-      
-      // 2. Set on global process.env (if it exists and is mutable)
-      try {
-        if (typeof process !== 'undefined' && process.env) {
-          (process.env as any)[key] = trimmed;
-        }
-      } catch (e) {
-        // Fallback for strict environments
-      }
-      
-      // 3. Set on window directly for high-level scraping
       win[key] = trimmed;
     }
   });
@@ -61,7 +48,6 @@ import { createRoot } from 'react-dom/client';
 
 const startApp = async () => {
   try {
-    // Dynamic import allows the environment handshake to complete first
     const { default: App } = await import('./app/page');
     const container = document.getElementById('root');
     if (container) {

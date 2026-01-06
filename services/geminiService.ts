@@ -3,39 +3,18 @@ import { SLO, NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 import { supabase } from "../lib/supabase";
 
-function parseAIError(raw: string): string {
-  try {
-    if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED')) {
-      return "Neural Rate Limit: The free AI nodes are saturated. We've tried multiple reconnects, but a manual 15-second pause is recommended.";
-    }
-    const parsed = JSON.parse(raw);
-    return parsed.error?.message || "Synthesis interrupted. Please try again.";
-  } catch (e) {
-    return raw.length > 200 ? "Neural Sync Error: Context window saturated." : raw;
+function parseAIError(raw: any): string {
+  if (typeof raw !== 'string') raw = JSON.stringify(raw);
+  if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED')) {
+    return "Neural Rate Limit: The AI nodes are currently busy. Please wait 10-15 seconds before trying again.";
   }
+  return "Neural Sync Interrupted: The connection was lost or timed out.";
 }
-
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 export const geminiService = {
   async getAuthToken(): Promise<string | undefined> {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token;
-  },
-
-  /**
-   * Performs fetch with client-side retry for 429s
-   */
-  async fetchWithRetry(url: string, options: any, retries = 2): Promise<Response> {
-    for (let i = 0; i <= retries; i++) {
-      const response = await fetch(url, options);
-      if (response.status === 429 && i < retries) {
-        await delay(5000); // Wait 5s before client retry
-        continue;
-      }
-      return response;
-    }
-    return fetch(url, options); // Final fallback
   },
 
   async *chatWithDocumentStream(
@@ -48,38 +27,42 @@ export const geminiService = {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     const token = await this.getAuthToken();
 
-    const response = await this.fetchWithRetry('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({
-        task: 'chat',
-        message,
-        doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
-        history,
-        brain,
-        adaptiveContext
-      })
-    });
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          task: 'chat',
+          message,
+          doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
+          history,
+          brain,
+          adaptiveContext
+        })
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      yield `AI Alert: ${parseAIError(errorData.error || "Neural gateway timeout")}`;
-      return;
-    }
-
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    if (!reader) return;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      if (chunk.includes('ERROR:RATE_LIMIT_HIT')) {
-        yield "\n\n[System: High load detected. Pausing stream to preserve neural stability...]";
-        break;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        yield `AI Alert: ${parseAIError(errorData.error || "Neural gateway timeout")}`;
+        return;
       }
-      yield chunk;
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) return;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk.includes('[Neural Error: RATE_LIMIT]')) {
+          yield "\n\n[System: High load detected. Please pause for 10 seconds.]";
+          break;
+        }
+        yield chunk;
+      }
+    } catch (err) {
+      yield "AI Alert: Neural connection failed. Check your network.";
     }
   },
 
@@ -93,38 +76,42 @@ export const geminiService = {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
     const token = await this.getAuthToken();
 
-    const response = await this.fetchWithRetry('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({
-        task: 'generate-tool',
-        toolType,
-        userInput,
-        doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
-        brain,
-        adaptiveContext
-      })
-    });
+    try {
+      const response = await fetch('/api/ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          task: 'generate-tool',
+          toolType,
+          userInput,
+          doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
+          brain,
+          adaptiveContext
+        })
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      yield `AI Alert: ${parseAIError(errorData.error || "Neural gateway timeout")}`;
-      return;
-    }
-
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    if (!reader) return;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      if (chunk.includes('ERROR:RATE_LIMIT_HIT')) {
-        yield "\n\n[Neural Alert: Burst limit reached. Resource generation paused.]";
-        break;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        yield `AI Alert: ${parseAIError(errorData.error || "Neural gateway timeout")}`;
+        return;
       }
-      yield chunk;
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) return;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk.includes('[Neural Error: RATE_LIMIT]')) {
+          yield "\n\n[Neural Alert: Processing capacity reached. Resource synthesis paused.]";
+          break;
+        }
+        yield chunk;
+      }
+    } catch (err) {
+      yield "AI Alert: Resource synthesis failed due to a connection error.";
     }
   }
 };
