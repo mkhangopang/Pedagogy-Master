@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -16,7 +17,7 @@
   }
 
   * {
-    @apply transition-colors duration-300;
+    @apply transition-colors duration-200;
   }
 }
 
@@ -28,44 +29,50 @@ body {
 
 /* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 5px;
+  width: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
-  border-radius: 10px;
+  @apply bg-slate-200 dark:bg-slate-800 rounded-full;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #cbd5e1;
-}
-
-.dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  @apply bg-slate-300 dark:bg-slate-700;
 }
 
 .glass-panel {
-  background: rgba(255, 255, 255, 0.8);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  @apply bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200 dark:border-slate-800;
 }
 
-.dark .glass-panel {
-  background: rgba(15, 23, 42, 0.8);
-  border: 1px solid rgba(51, 65, 85, 0.8);
+/* Prose (Markdown) Styling */
+.prose {
+  @apply text-slate-700 dark:text-slate-300;
+}
+.prose h1, .prose h2, .prose h3 {
+  @apply font-bold text-slate-900 dark:text-white mt-6 mb-4;
+}
+.prose table {
+  @apply w-full border-collapse my-6;
+}
+.prose th, .prose td {
+  @apply border border-slate-200 dark:border-slate-800 p-3 text-sm;
+}
+.prose th {
+  @apply bg-slate-50 dark:bg-slate-800 font-bold;
+}
+.prose ul {
+  @apply list-disc list-inside space-y-2 my-4;
+}
+.prose ol {
+  @apply list-decimal list-inside space-y-2 my-4;
 }
 
-@keyframes slideInRight {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+@keyframes slideInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
-.animate-slide-in {
-  animation: slideInRight 0.3s ease-out forwards;
-}
-
-/* Responsive fixes */
-@media (max-width: 640px) {
-  h1 { @apply text-2xl; }
+.animate-chat-turn {
+  animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
