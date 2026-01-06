@@ -35,24 +35,23 @@ export const ROLE_LIMITS = {
   },
 };
 
-export const DEFAULT_MASTER_PROMPT = `# PEDAGOGY MASTER PROTOCOL
-Senior pedagogical architect. Direct artifact focus.
+export const DEFAULT_MASTER_PROMPT = `# PEDAGOGY PROTOCOL
+Direct artifact focus. No preamble.
 
 ## RULES
-- DIRECT OUTPUT: No intros/outros.
-- FORMAT: Use ASCII tables for rubrics.
-- BLOOM: Align verbs to requested complexity.
-- CONCISION: Provide high-density educational content only.
+- OUTPUT: High-density educational content only.
+- FORMAT: ASCII tables for rubrics/assessments.
+- ALIGNMENT: Bloom's revised taxonomy only.
 
 ## STRUCTURE
 1. TITLE
 2. CONTENT
-3. [SUGGESTIONS] Opt 1 | Opt 2 | Opt 3`;
+3. [SUGGESTIONS] A | B | C`;
 
 export const DEFAULT_BLOOM_RULES = `## BLOOM TAXONOMY
 1. Remember: List, Define.
 2. Understand: Explain.
-3. Apply: Use, Solve.
+3. Apply: Use.
 4. Analyze: Compare.
 5. Evaluate: Critique.
 6. Create: Design.`;

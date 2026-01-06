@@ -62,7 +62,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         .single();
       
       if (profileError) {
-        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch V15.`);
+        throw new Error(`Cloud Sync Error: ${profileError.message}. Please run the SQL patch V16.`);
       }
 
       if (profile?.role !== 'app_admin') {
@@ -88,12 +88,21 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: PERFORMANCE OPTIMIZATION & CLEANUP V15
+  const sqlSchema = `-- PEDAGOGY MASTER: PERFORMANCE OPTIMIZATION & CLEANUP V16
 -- ========================================================================================
--- 1. DROP ALL REDUNDANT POLICIES (Consolidate into single permissive blocks)
+-- 1. DROP ALL REDUNDANT AND CONFLICTING POLICIES
 DO $$ 
 BEGIN
-    -- Profiles
+    -- Drop New Policy Names (to allow re-creation)
+    DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
+    DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
+    DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "Manage Own Chat" ON public.chat_messages;
+    DROP POLICY IF EXISTS "Manage Own Feedback" ON public.feedback_events;
+    DROP POLICY IF EXISTS "Manage Own Logs" ON public.usage_logs;
+
+    -- Drop Legacy Names from Linter Report
     DROP POLICY IF EXISTS "Profiles are manageable by owners" ON public.profiles;
     DROP POLICY IF EXISTS "Individual User Access" ON public.profiles;
     DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
@@ -103,7 +112,6 @@ BEGIN
     DROP POLICY IF EXISTS "v56_profiles_access" ON public.profiles;
     DROP POLICY IF EXISTS "v60_profiles_access" ON public.profiles;
     
-    -- Documents
     DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
     DROP POLICY IF EXISTS "Users can view own documents" ON public.documents;
     DROP POLICY IF EXISTS "Users manage own docs" ON public.documents;
@@ -111,14 +119,15 @@ BEGIN
     DROP POLICY IF EXISTS "v56_documents_access" ON public.documents;
     DROP POLICY IF EXISTS "v60_documents_access" ON public.documents;
 
-    -- Artifacts
     DROP POLICY IF EXISTS "Users can manage own artifacts" ON public.output_artifacts;
     DROP POLICY IF EXISTS "Users can manage their own artifacts" ON public.output_artifacts;
     DROP POLICY IF EXISTS "Users manage own artifacts" ON public.output_artifacts;
 
-    -- Chat
     DROP POLICY IF EXISTS "Users can manage own chat" ON public.chat_messages;
     DROP POLICY IF EXISTS "v49_chat_messages_self" ON public.chat_messages;
+
+    DROP POLICY IF EXISTS "Users can manage own feedback" ON public.feedback_events;
+    DROP POLICY IF EXISTS "Users can manage own logs" ON public.usage_logs;
 END $$;
 
 -- 2. RE-IMPLEMENT OPTIMIZED POLICIES WITH (select auth.uid())
@@ -153,16 +162,35 @@ FOR ALL TO authenticated
 USING (user_id = (SELECT auth.uid()))
 WITH CHECK (user_id = (SELECT auth.uid()));
 
--- 3. DROP DUPLICATE INDEXES FOR PERFORMANCE
+-- FEEDBACK & LOGS
+CREATE POLICY "Manage Own Feedback" ON public.feedback_events
+FOR ALL TO authenticated
+USING (user_id = (SELECT auth.uid()))
+WITH CHECK (user_id = (SELECT auth.uid()));
+
+CREATE POLICY "Manage Own Logs" ON public.usage_logs
+FOR ALL TO authenticated
+USING (user_id = (SELECT auth.uid()))
+WITH CHECK (user_id = (SELECT auth.uid()));
+
+-- 3. DROP DUPLICATE INDEXES IDENTIFIED IN LINTER
 DROP INDEX IF EXISTS idx_v48_chat_messages_doc_id;
 DROP INDEX IF EXISTS idx_v48_chat_messages_user_id;
+DROP INDEX IF EXISTS idx_chat_messages_document_id;
+DROP INDEX IF EXISTS idx_chat_messages_user_id;
+
 DROP INDEX IF EXISTS idx_docs_v60_date;
 DROP INDEX IF EXISTS idx_docs_uid;
 DROP INDEX IF EXISTS idx_docs_v60_uid;
 DROP INDEX IF EXISTS idx_pedagogy_documents_user_id;
+DROP INDEX IF EXISTS idx_documents_user_id;
+
 DROP INDEX IF EXISTS idx_v48_output_artifacts_user_id;
 DROP INDEX IF EXISTS idx_artifacts_uid;
+DROP INDEX IF EXISTS idx_output_artifacts_user_id;
+
 DROP INDEX IF EXISTS idx_v48_usage_logs_user_id;
+DROP INDEX IF EXISTS idx_usage_logs_user_id;
 
 -- 4. BOOTSTRAP ADMIN (Ensure high limits)
 UPDATE public.profiles 
@@ -266,7 +294,7 @@ WHERE email = 'mkgopang@gmail.com';
           </div>
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-lg font-bold">V15 SQL Migration</h3>
+                <h3 className="text-lg font-bold">V16 SQL Migration</h3>
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(sqlSchema);
