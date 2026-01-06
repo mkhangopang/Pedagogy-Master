@@ -6,7 +6,8 @@ import { r2Client, R2_BUCKET } from '../../../lib/r2';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 
-export const runtime = 'nodejs'; // Use nodejs runtime for better R2/Supabase compatibility
+export const runtime = 'nodejs';
+export const maxDuration = 60; // Increase timeout for document-heavy processing
 
 function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -18,19 +19,29 @@ async function getDocumentPart(doc: any, supabase: any) {
   
   if (doc.filePath) {
     try {
-      const { data: meta } = await supabase.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
+      // Direct metadata check
+      const { data: meta, error: metaErr } = await supabase
+        .from('documents')
+        .select('storage_type')
+        .eq('file_path', doc.filePath)
+        .single();
+        
+      if (metaErr || !meta) return null;
+
       let bytes: Uint8Array;
-      if (meta?.storage_type === 'r2' && r2Client) {
+      if (meta.storage_type === 'r2' && r2Client) {
         const res = await r2Client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: doc.filePath }));
         bytes = await res.Body?.transformToByteArray() || new Uint8Array();
       } else {
-        const { data } = await supabase.storage.from('documents').download(doc.filePath);
-        if (!data) return null;
+        const { data, error: storageErr } = await supabase.storage.from('documents').download(doc.filePath);
+        if (storageErr || !data) return null;
         bytes = new Uint8Array(await data.arrayBuffer());
       }
+      
+      if (bytes.length === 0) return null;
       return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
     } catch (e) {
-      console.error("Doc part retrieval failed:", e);
+      console.error("Critical: Document part extraction failed:", e);
       return null;
     }
   }
@@ -41,26 +52,27 @@ export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Auth required' }, { status: 401 });
+    if (!token) return NextResponse.json({ error: 'Auth session expired' }, { status: 401 });
 
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    if (authError || !user) return NextResponse.json({ error: 'User context lost' }, { status: 401 });
 
-    // CRITICAL: Read API_KEY directly from server environment to bypass Next.js build-time shadowing
-    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    const apiKey = process.env.API_KEY;
     if (!apiKey) {
-      console.error("GEMINI_API_KEY is not configured on the server.");
-      return NextResponse.json({ error: 'AI infrastructure not initialized (Key Missing)' }, { status: 500 });
+      return NextResponse.json({ error: 'System: Neural API Key missing in server environment.' }, { status: 500 });
     }
 
-    const { task, message, doc, brain, adaptiveContext, history, toolType, userInput } = await req.json();
+    const body = await req.json();
+    const { task, message, doc, brain, adaptiveContext, history, toolType, userInput } = body;
+    
     const supabase = getSupabaseServerClient(token);
     const docPart = await getDocumentPart(doc, supabase);
     
     const ai = new GoogleGenAI({ apiKey });
-    const systemInstruction = `${brain.masterPrompt}\n${adaptiveContext || ''}`;
+    const systemInstruction = `${brain?.masterPrompt || ''}\n${adaptiveContext || ''}`;
     const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
 
+    // Use gemini-3-flash-preview for speed and efficiency in EdTech tasks
     const streamResponse = await ai.models.generateContentStream({
       model: 'gemini-3-flash-preview',
       contents: task === 'chat' 
@@ -89,9 +101,9 @@ export async function POST(req: NextRequest) {
             }
           }
         } catch (e: any) {
-          console.error("Streaming error:", e);
-          const errorMsg = JSON.stringify(e).includes('429') ? "RATE_LIMIT" : "STREAM_ERR";
-          controller.enqueue(encoder.encode(`\n\n[Neural Error: ${errorMsg}]`));
+          console.error("Stream Runtime Error:", e);
+          const is429 = JSON.stringify(e).includes('429');
+          controller.enqueue(encoder.encode(`\n\nERROR_SIGNAL:${is429 ? 'RATE_LIMIT' : 'INTERRUPTED'}`));
         } finally {
           controller.close();
         }
@@ -101,10 +113,12 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error('AI Route Fatal Error:', error);
-    const isRateLimit = JSON.stringify(error).includes('429') || error.status === 429;
+    console.error('Fatal AI Route Exception:', error);
+    const errString = JSON.stringify(error).toLowerCase();
+    const isRateLimit = errString.includes('429') || errString.includes('resource_exhausted');
+    
     return NextResponse.json(
-      { error: isRateLimit ? "Neural engine cooling down. Please wait 10s and retry." : error.message || "Unknown neural error" }, 
+      { error: isRateLimit ? "Neural cooling in progress (Rate Limit). Please wait 10s." : (error.message || "The neural gateway encountered an unexpected error.") }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }
