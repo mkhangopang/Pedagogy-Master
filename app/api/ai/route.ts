@@ -14,14 +14,21 @@ async function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function withRetry(fn: () => Promise<any>, retries = 2) {
+/**
+ * Enhanced retry logic for Gemini 429s
+ */
+async function withRetry(fn: () => Promise<any>, retries = 3) {
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
     } catch (error: any) {
-      const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
+      const isRateLimit = error.message?.includes('429') || 
+                          error.message?.includes('RESOURCE_EXHAUSTED') ||
+                          error.status === 429;
+      
       if (isRateLimit && i < retries) {
-        const waitTime = (i + 1) * 1000;
+        // Exponential backoff: 2s, 4s, 8s...
+        const waitTime = Math.pow(2, i + 1) * 1000;
         await delay(waitTime);
         continue;
       }
@@ -82,7 +89,7 @@ export async function POST(req: NextRequest) {
           : { parts: [...(docPart ? [docPart] : []), { text: promptText }] },
         config: { 
           systemInstruction,
-          // Optimization: Disable thinking for speed and token savings
+          temperature: 0.7,
           thinkingConfig: { thinkingBudget: 0 } 
         },
       }));
@@ -106,7 +113,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
     return NextResponse.json(
-      { error: isRateLimit ? "Neural engine cooling down. Wait 10s." : error.message }, 
+      { error: isRateLimit ? "Neural engine cooling down. Our free processing nodes are temporarily busy. Please wait 10-15 seconds and try again." : error.message }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }

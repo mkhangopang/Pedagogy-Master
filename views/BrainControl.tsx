@@ -66,51 +66,81 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V17
--- RUN IN SUPABASE SQL EDITOR TO INITIALIZE DB
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V19
+-- MISSION: RECURSION-FREE SECURITY POLICIES
 -- ========================================================================================
 
--- 1. CLEANUP POLICIES (Fix Recursion)
+-- 1. CLEANUP OLD POLICIES (Stop the infinite recursion loop)
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
 END $$;
 
--- 2. CREATE NON-RECURSIVE ACCESS
+-- 2. CREATE NON-RECURSIVE ACCESS (Relying on JWT instead of self-querying)
+-- Policy for users to manage their own records (Direct ID comparison)
 CREATE POLICY "Manage Own Profile" ON public.profiles
 FOR ALL TO authenticated
 USING (id = auth.uid())
 WITH CHECK (id = auth.uid());
 
+-- Policy for admins to view everything (Using Email from JWT is non-recursive)
 CREATE POLICY "Admin View All" ON public.profiles
 FOR SELECT TO authenticated
 USING (
   (auth.jwt() ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- 3. INITIALIZE ADMIN (Bootstrap)
+-- 3. BOOTSTRAP MASTER ADMIN (Run this after signing up via the UI)
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email = 'mkgopang@gmail.com';
+
+-- 4. APPLY RLS TO OTHER TABLES
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
+END $$;
+
+CREATE POLICY "Users can manage their own documents" ON public.documents
+FOR ALL TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- 5. AI ARTIFACTS STORAGE POLICIES
+ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+
+DO $$ 
+BEGIN
+    DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
+END $$;
+
+CREATE POLICY "Users view own artifacts" ON public.output_artifacts
+FOR ALL TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
 `;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 px-4">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 flex items-center gap-3 tracking-tight">
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3 tracking-tight">
             <ShieldCheck className="text-indigo-600" />
             Control Hub
           </h1>
           <p className="text-slate-500 mt-1 font-medium italic">Production-grade infrastructure monitoring.</p>
         </div>
-        <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200 shadow-inner">
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
           {['logic', 'infra', 'audit'].map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'}`}
             >
               {tab === 'infra' ? 'Stack' : tab}
             </button>
@@ -120,15 +150,15 @@ WHERE email = 'mkgopang@gmail.com';
 
       {activeTab === 'logic' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white p-8 rounded-[3rem] border border-slate-200 shadow-sm space-y-6">
-            <h2 className="text-xl font-bold flex items-center gap-2">
+          <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
+            <h2 className="text-xl font-bold flex items-center gap-2 dark:text-white">
               <Terminal size={20} className="text-indigo-500" />
               Neural Logic (v{formData.version})
             </h2>
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-96 p-8 bg-slate-50 border border-slate-200 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full h-96 p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300"
             />
             <button onClick={handleSave} disabled={isSaving} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
               {isSaving ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20}/>}
@@ -156,14 +186,14 @@ WHERE email = 'mkgopang@gmail.com';
 
       {activeTab === 'infra' && (
         <div className="space-y-8 animate-in slide-in-from-bottom-2">
-          <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-sm">
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="flex items-center justify-between mb-10">
-               <h2 className="text-2xl font-bold flex items-center gap-3"><Database size={24} className="text-indigo-600" /> Database Diagnostic</h2>
-               <button onClick={checkHealth} className="p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-all">{isChecking ? <RefreshCw className="animate-spin" /> : <RefreshCw />}</button>
+               <h2 className="text-2xl font-bold flex items-center gap-3 dark:text-white"><Database size={24} className="text-indigo-600" /> Database Diagnostic</h2>
+               <button onClick={checkHealth} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">{isChecking ? <RefreshCw className="animate-spin" /> : <RefreshCw />}</button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {dbStatus.map((item, idx) => (
-                <div key={idx} className={`p-6 rounded-2xl border flex flex-col gap-3 transition-all ${item.exists ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700 animate-pulse'}`}>
+                <div key={idx} className={`p-6 rounded-2xl border flex flex-col gap-3 transition-all ${item.exists ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-100 dark:border-rose-900 text-rose-700 dark:text-rose-400 animate-pulse'}`}>
                   <span className="text-[10px] font-black uppercase tracking-widest">{item.table}</span>
                   {item.exists ? <CheckCircle2 size={24} /> : <ShieldAlert size={24} />}
                   <span className="font-bold text-sm">{item.exists ? 'READY' : 'OFFLINE'}</span>
@@ -188,7 +218,7 @@ WHERE email = 'mkgopang@gmail.com';
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: If profiles are missing or you see "Infinite Recursion" in the logs, paste this script into the Supabase SQL Editor and run it.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: If you see "Infinite Recursion" error, run this script in Supabase SQL editor to switch to JWT-based admin validation.</p>
             </div>
           </div>
         </div>
@@ -206,13 +236,13 @@ WHERE email = 'mkgopang@gmail.com';
 };
 
 const AuditCard = ({ icon, title, status, desc }: any) => (
-  <div className="bg-white p-10 rounded-[3rem] border border-slate-100 shadow-sm space-y-6 hover:border-indigo-500 transition-all hover:shadow-2xl">
+  <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-6 hover:border-indigo-500 transition-all hover:shadow-2xl">
     <div className="flex justify-between items-center">
-       <div className="p-4 bg-slate-50 rounded-2xl shadow-inner">{icon}</div>
-       <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg uppercase tracking-widest">{status}</span>
+       <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl shadow-inner">{icon}</div>
+       <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg uppercase tracking-widest">{status}</span>
     </div>
-    <h4 className="text-xl font-bold text-slate-900 tracking-tight">{title}</h4>
-    <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
+    <h4 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">{title}</h4>
+    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{desc}</p>
   </div>
 );
 

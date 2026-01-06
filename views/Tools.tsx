@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, ArrowLeft, Send, Loader2, 
-  Copy, Check, FileDown, Bot, Target, Share2
+  Copy, Check, FileDown, Bot, Target, Share2, Download, FileText, User
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -66,7 +67,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   const handleGenerate = async (isRefinement = false, suggestionText?: string) => {
     const finalRefinementText = suggestionText || refinementInput;
-    if (!activeTool || (isRefinement ? !finalRefinementText : !userInput) || isGenerating || !canQuery || cooldown > 0) return;
+    const finalUserInput = isRefinement ? refinementInput : userInput;
+    
+    if (!activeTool || (!isRefinement && !userInput.trim()) || (isRefinement && !finalRefinementText.trim()) || isGenerating || !canQuery || cooldown > 0) return;
+    
     setIsGenerating(true);
     if (!isRefinement) setResult('');
     
@@ -93,7 +97,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       setRefinementInput('');
       setCooldown(3);
     } catch (err) {
-      setResult("Neural sync paused.");
+      setResult("Neural sync paused. Check your connection.");
     } finally {
       setIsGenerating(false);
     }
@@ -109,18 +113,18 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const { text: cleanResult, suggestions } = parseContent(result);
 
   const exportToWord = () => {
-    const header = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>body { font-family: sans-serif; padding: 40px; line-height: 1.6; } table { border-collapse: collapse; width: 100%; border: 1px solid #ddd; } th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }</style></head><body>`;
+    const header = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; line-height: 1.6; color: #334155; } h1, h2, h3 { color: #1e293b; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px; } table { border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin: 20px 0; } th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; } th { background-color: #f8fafc; font-weight: bold; }</style></head><body>`;
     const footer = "</body></html>";
     const htmlBody = cleanResult.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
     const blob = new Blob([header + `<div>${htmlBody}</div>` + footer], { type: 'application/msword' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `pedagogy-artifact-${activeTool}.doc`;
+    link.download = `pedagogy-master-${activeTool}.doc`;
     link.click();
   };
 
   return (
-    <div className="max-w-4xl mx-auto w-full pb-32 px-4">
+    <div className="max-w-4xl mx-auto w-full pb-40 px-4">
       {!activeTool ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
           {toolDefinitions.map((tool) => (
@@ -141,11 +145,14 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         </div>
       ) : (
         <div className="space-y-10 animate-in fade-in">
-          <header className="flex items-center justify-between py-6 bg-white/50 dark:bg-slate-950/50 backdrop-blur-md sticky top-0 z-20">
-            <button onClick={() => {setActiveTool(null); setResult('');}} className="text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-2 text-sm font-black uppercase tracking-widest transition-all"><ArrowLeft size={16} /> Dashboard</button>
-            <div className="flex gap-2 overflow-x-auto scrollbar-hide bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800">
+          <header className="flex items-center justify-between py-6 bg-slate-50/50 dark:bg-slate-950/50 backdrop-blur-md sticky top-0 z-20">
+            <button onClick={() => {setActiveTool(null); setResult('');}} className="text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all">
+              <ArrowLeft size={16} /> Dashboard
+            </button>
+            <div className="flex gap-2 overflow-x-auto scrollbar-hide bg-white dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
                {documents.map(doc => (
-                 <button key={doc.id} onClick={() => setSelectedDocId(selectedDocId === doc.id ? null : doc.id)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${selectedDocId === doc.id ? 'bg-white dark:bg-indigo-600 text-indigo-600 dark:text-white shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                 <button key={doc.id} onClick={() => setSelectedDocId(selectedDocId === doc.id ? null : doc.id)} className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-2 ${selectedDocId === doc.id ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                   <FileText size={12} />
                    {doc.name}
                  </button>
                ))}
@@ -154,18 +161,18 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
           {!result && (
             <div className="space-y-8 animate-in slide-in-from-bottom-8">
-              <div className="bg-white dark:bg-slate-900 p-2 rounded-[3.5rem] border border-slate-100 dark:border-slate-800 shadow-2xl">
+              <div className="bg-white dark:bg-slate-900 p-2 rounded-[3rem] border border-slate-100 dark:border-slate-800 shadow-2xl">
                 <textarea 
                   value={userInput}
                   onChange={(e) => setUserInput(e.target.value)}
-                  placeholder={`Input context for your ${activeTool.replace('-', ' ')}...`}
-                  className="w-full h-72 p-10 bg-transparent outline-none resize-none text-xl text-slate-800 dark:text-slate-200 placeholder:text-slate-200 dark:placeholder:text-slate-700 leading-relaxed"
+                  placeholder={`Describe your requirements for this ${activeTool.replace('-', ' ')}...`}
+                  className="w-full h-80 p-10 bg-transparent outline-none resize-none text-xl text-slate-800 dark:text-slate-200 placeholder:text-slate-200 dark:placeholder:text-slate-700 leading-relaxed font-medium"
                 />
               </div>
               <button 
                 onClick={() => handleGenerate()}
                 disabled={isGenerating || !userInput.trim() || cooldown > 0}
-                className="w-full py-6 bg-slate-900 dark:bg-indigo-600 text-white rounded-[2rem] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-4 disabled:opacity-50 shadow-2xl active:scale-[0.98] transition-all"
+                className="w-full py-6 bg-slate-900 dark:bg-indigo-600 text-white rounded-[2.5rem] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-4 disabled:opacity-50 shadow-2xl active:scale-[0.98] transition-all"
               >
                 {isGenerating ? <Loader2 size={24} className="animate-spin" /> : <Sparkles size={24} />}
                 Synthesize Artifact
@@ -174,46 +181,82 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           )}
 
           {result && (
-            <div className="space-y-10 animate-in fade-in duration-700">
-              <div className="bg-white dark:bg-slate-900 p-10 md:p-16 border border-slate-100 dark:border-slate-800 rounded-[3.5rem] shadow-2xl leading-loose text-slate-800 dark:text-slate-200 text-lg relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none group-hover:opacity-10 transition-opacity"><Bot size={120} /></div>
-                <div className="prose prose-slate dark:prose-invert max-w-none whitespace-pre-wrap relative z-10">
-                  {cleanResult || <div className="flex gap-3 justify-center py-20"><div className="w-3 h-3 bg-indigo-200 rounded-full animate-bounce" /><div className="w-3 h-3 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]" /><div className="w-3 h-3 bg-indigo-600 rounded-full animate-bounce [animation-delay:0.4s]" /></div>}
+            <div className="space-y-12 animate-in fade-in duration-700">
+              {/* Tool User Prompt (Compact) */}
+              <div className="flex justify-end pr-4">
+                <div className="max-w-[80%] bg-indigo-600 text-white p-5 rounded-[2rem] rounded-tr-none shadow-lg text-sm font-medium">
+                  {userInput}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-4 py-10">
-                <button onClick={exportToWord} className="flex items-center gap-3 px-10 py-5 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl text-sm font-black uppercase tracking-widest hover:bg-slate-50 dark:hover:bg-slate-700 hover:border-slate-200 dark:hover:border-slate-600 transition-all shadow-sm">
-                  <FileDown size={20} /> Download DOC
-                </button>
-                <button onClick={() => handleShare(result)} className="flex items-center gap-3 px-10 py-5 bg-indigo-50 dark:bg-indigo-900/30 border-2 border-indigo-100 dark:border-indigo-900/50 rounded-2xl text-sm font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all shadow-sm">
-                  <Share2 size={20} /> Share Artifact
-                </button>
-                <button onClick={() => handleCopy(result)} className="flex items-center gap-3 px-10 py-5 bg-slate-900 dark:bg-indigo-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest shadow-2xl active:scale-95 transition-all">
-                  {copied ? <Check size={20} className="text-emerald-400" /> : <Copy size={20} />} {copied ? 'Copied' : 'Copy Text'}
-                </button>
+              {/* Tool AI Artifact Result */}
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[3.5rem] shadow-2xl overflow-hidden group">
+                {/* Header Actions */}
+                <div className="flex items-center justify-between px-10 py-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20">
+                   <div className="flex items-center gap-3">
+                     <div className="w-10 h-10 bg-indigo-600 text-white rounded-xl flex items-center justify-center shadow-lg"><Bot size={20} /></div>
+                     <div>
+                       <span className="font-black text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400">{activeTool.replace('-', ' ')} generated</span>
+                       <p className="text-xs font-bold text-slate-900 dark:text-white">Neural Synthesis Complete</p>
+                     </div>
+                   </div>
+                   <div className="flex items-center gap-2">
+                     <button onClick={() => handleCopy(result)} className="p-2.5 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all text-slate-400 hover:text-indigo-600 border border-transparent hover:border-slate-200 dark:hover:border-slate-700" title="Copy">
+                       {copied ? <Check size={18} className="text-emerald-500" /> : <Copy size={18} />}
+                     </button>
+                     <button onClick={exportToWord} className="p-2.5 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all text-slate-400 hover:text-indigo-600 border border-transparent hover:border-slate-200 dark:hover:border-slate-700" title="Download">
+                       <Download size={18} />
+                     </button>
+                     <button onClick={() => handleShare(result)} className="p-2.5 hover:bg-white dark:hover:bg-slate-800 rounded-xl transition-all text-slate-400 hover:text-indigo-600 border border-transparent hover:border-slate-200 dark:hover:border-slate-700" title="Share">
+                       <Share2 size={18} />
+                     </button>
+                   </div>
+                </div>
+
+                {/* Content Area */}
+                <div className="p-10 md:p-16 leading-loose text-slate-800 dark:text-slate-200 text-lg">
+                  <div className="prose prose-slate dark:prose-invert max-w-none whitespace-pre-wrap">
+                    {cleanResult || <div className="flex gap-3 justify-center py-20"><div className="w-3 h-3 bg-indigo-200 rounded-full animate-bounce" /><div className="w-3 h-3 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]" /><div className="w-3 h-3 bg-indigo-600 rounded-full animate-bounce [animation-delay:0.4s]" /></div>}
+                  </div>
+                </div>
+
+                {/* Suggestions / Follow-ups */}
+                {suggestions.length > 0 && (
+                  <div className="px-10 pb-10 flex flex-wrap gap-2">
+                    {suggestions.map((s, i) => (
+                      <button key={i} onClick={() => handleGenerate(true, s)} className="px-5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all shadow-sm">
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {suggestions.length > 0 && (
-                <div className="flex flex-wrap justify-center gap-3">
-                  {suggestions.map((s, i) => (
-                    <button key={i} onClick={() => handleGenerate(true, s)} className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-bold text-slate-500 dark:text-slate-400 hover:bg-slate-900 dark:hover:bg-indigo-600 hover:text-white hover:border-slate-900 dark:hover:border-indigo-600 transition-all shadow-sm">{s}</button>
-                  ))}
-                </div>
-              )}
-
-              <div className="max-w-2xl mx-auto pt-10 border-t border-slate-100 dark:border-slate-800">
-                <div className="relative">
-                  <input 
+              {/* Refinement Dock (Sticky matching Chat) */}
+              <div className="fixed bottom-0 left-0 right-0 p-6 md:p-10 bg-gradient-to-t from-slate-50 dark:from-slate-950 via-slate-50/95 dark:via-slate-950/95 to-transparent z-10 pointer-events-none">
+                <div className="max-w-3xl mx-auto relative group pointer-events-auto">
+                  <textarea 
                     value={refinementInput}
                     onChange={(e) => setRefinementInput(e.target.value)}
-                    placeholder="Refine this generation..."
-                    className="w-full p-6 pr-16 bg-slate-50 dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[1.5rem] focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600 outline-none transition-all text-base font-medium text-slate-800 dark:text-slate-200"
-                    onKeyDown={e => e.key === 'Enter' && handleGenerate(true)}
+                    placeholder="Request a refinement or change..."
+                    rows={1}
+                    className="w-full pl-8 pr-16 py-5 md:py-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] shadow-2xl focus:ring-4 focus:ring-indigo-600/5 focus:border-indigo-600 outline-none resize-none text-base transition-all dark:text-white"
+                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleGenerate(true))}
                   />
-                  <button onClick={() => handleGenerate(true)} className="absolute right-4 top-1/2 -translate-y-1/2 p-3 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/50 rounded-xl transition-all">
-                    <Send size={20} />
+                  <button 
+                    onClick={() => handleGenerate(true)} 
+                    disabled={isGenerating || !refinementInput.trim()}
+                    className={`absolute right-4 bottom-4 p-3.5 rounded-2xl transition-all shadow-xl ${
+                      refinementInput.trim() && !isGenerating ? 'bg-indigo-600 text-white scale-100 active:scale-95 hover:bg-indigo-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600'
+                    }`}
+                  >
+                    {isGenerating ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
                   </button>
+                </div>
+                <div className="flex justify-center mt-4">
+                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-600">
+                     {cooldown > 0 ? `Neural Cooldown: ${cooldown}s` : 'Neural Refinement Node Ready'}
+                   </p>
                 </div>
               </div>
             </div>
