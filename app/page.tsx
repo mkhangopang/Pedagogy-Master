@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
@@ -25,12 +24,32 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ 
     status: 'checking', 
     message: 'Verifying systems...' 
   });
 
   const isActuallyConnected = healthStatus.status === 'connected';
+
+  // Theme Sync
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('pm-theme') as 'light' | 'dark' | null;
+    if (savedTheme) {
+      setTheme(savedTheme);
+      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark');
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('pm-theme', newTheme);
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
+  };
 
   const [brain, setBrain] = useState<NeuralBrain>({
     id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
@@ -54,13 +73,10 @@ export default function App() {
   }, []);
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
-    // Note: We don't block on health status anymore, but we need the client
     if (!supabase) return;
 
     try {
       const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
-      
-      // Attempt to fetch profile. If it fails, it might be due to missing schema, handled in UI.
       const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
       
       let activeProfile: UserProfile;
@@ -79,7 +95,6 @@ export default function App() {
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         };
         
-        // Background insertion, don't block UI if it's a new user
         supabase.from('profiles').insert([{
           id: userId,
           name: activeProfile.name,
@@ -112,7 +127,6 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
-      // Fetch documents in background
       const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
       if (docs) {
         setDocuments(docs.map(d => ({
@@ -156,7 +170,6 @@ export default function App() {
     paymentService.init();
     
     const initSession = async () => {
-      // Don't set global loading to true yet if we're just checking
       if (!isSupabaseConfigured() || !supabase) {
         setLoading(false);
         setHealthStatus({ status: 'disconnected', message: 'Credentials missing from environment.' });
@@ -164,22 +177,16 @@ export default function App() {
       }
 
       try {
-        // Step 1: Immediate Session Check (fastest)
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         
         if (currentSession) {
           setSession(currentSession);
-          
-          // Step 2: Parallel Fetching (Background)
-          // We don't await checkDb here to speed up UI appearance
           checkDb();
-          
           await Promise.allSettled([
             fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
             fetchBrain()
           ]);
         } else {
-          // If no session, still check DB in background for health indicator
           checkDb();
         }
       } catch (err) {
@@ -196,7 +203,6 @@ export default function App() {
       const { data } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
         if (currentSession) {
           setSession(currentSession);
-          // If a new session happens (login), refresh data
           fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
         } else {
           setSession(null);
@@ -225,7 +231,7 @@ export default function App() {
     if (!userProfile) return null;
     
     return (
-      <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
+      <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400" size={32} /></div>}>
         {(() => {
           switch (currentView) {
             case 'dashboard':
@@ -282,44 +288,61 @@ export default function App() {
     );
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50"><Loader2 className="animate-spin text-indigo-600" /></div>;
+  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" /></div>;
   if (!session || !userProfile) return <Login onSession={setSession} />;
 
   return (
-    <div className="flex h-screen bg-slate-50 overflow-hidden">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} />
+        <Sidebar 
+          currentView={currentView} 
+          onViewChange={setCurrentView} 
+          userProfile={userProfile} 
+          isCollapsed={isCollapsed} 
+          setIsCollapsed={setIsCollapsed} 
+          theme={theme}
+          toggleTheme={toggleTheme}
+        />
       </div>
 
       {isSidebarOpen && (
         <div className="lg:hidden fixed inset-0 z-[500] flex">
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSidebarOpen(false)} />
+          <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSidebarOpen(false)} />
           <div className="relative w-[280px] h-full shadow-2xl animate-in slide-in-from-left duration-300">
-            <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={false} setIsCollapsed={() => {}} onClose={() => setIsSidebarOpen(false)} />
+            <Sidebar 
+              currentView={currentView} 
+              onViewChange={setCurrentView} 
+              userProfile={userProfile} 
+              isCollapsed={false} 
+              setIsCollapsed={() => {}} 
+              onClose={() => setIsSidebarOpen(false)} 
+              theme={theme}
+              toggleTheme={toggleTheme}
+            />
           </div>
         </div>
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b shadow-sm">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-50 rounded-lg transition-colors">
+        <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm">
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
             <Menu size={24} />
           </button>
-          <span className="font-bold text-indigo-950">{APP_NAME}</span>
+          <span className="font-bold text-indigo-950 dark:text-white">{APP_NAME}</span>
           <div className="w-10" />
         </header>
 
         {healthStatus.status !== 'connected' && (
-          <div className="bg-rose-100 border-b border-rose-200 px-4 py-2 flex items-center justify-center gap-3 text-rose-900 text-xs font-bold shrink-0">
+          <div className="bg-rose-100 dark:bg-rose-900/30 border-b border-rose-200 dark:border-rose-800 px-4 py-2 flex items-center justify-center gap-3 text-rose-900 dark:text-rose-200 text-xs font-bold shrink-0">
             <AlertCircle size={14} />
             <span>Sync Warning: {healthStatus.message}</span>
-            <button onClick={checkDb} className="bg-rose-200 hover:bg-rose-300 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
+            <button onClick={checkDb} className="bg-rose-200 dark:bg-rose-800 hover:bg-rose-300 dark:hover:bg-rose-700 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
               <RefreshCw size={10} /> Re-verify Cloud
             </button>
           </div>
         )}
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           <div className="max-w-6xl mx-auto">{renderView()}</div>
         </main>
       </div>

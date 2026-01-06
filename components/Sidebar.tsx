@@ -14,7 +14,9 @@ import {
   ChevronRight,
   CreditCard,
   Zap,
-  X
+  X,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { UserRole, UserProfile, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
@@ -27,6 +29,8 @@ interface SidebarProps {
   isCollapsed: boolean;
   setIsCollapsed: (v: boolean) => void;
   onClose?: () => void;
+  theme: 'light' | 'dark';
+  toggleTheme: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -35,7 +39,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   userProfile, 
   isCollapsed,
   setIsCollapsed,
-  onClose
+  onClose,
+  theme,
+  toggleTheme
 }) => {
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -67,12 +73,12 @@ const Sidebar: React.FC<SidebarProps> = ({
   const roleInfo = getRoleDisplay();
 
   return (
-    <aside className={`h-full bg-indigo-950 text-white flex flex-col transition-all duration-300 relative w-full`}>
+    <aside className={`h-full bg-indigo-950 dark:bg-slate-950 text-white flex flex-col transition-all duration-300 relative w-full border-r border-transparent dark:border-slate-900`}>
       {/* Desktop Collapse Toggle */}
       {!onClose && (
         <button 
           onClick={(e) => { e.stopPropagation(); setIsCollapsed(!isCollapsed); }}
-          className="absolute -right-3 top-16 w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center border-2 border-indigo-950 hover:bg-indigo-500 z-[60] hidden lg:flex"
+          className="absolute -right-3 top-16 w-6 h-6 bg-indigo-600 dark:bg-slate-800 rounded-full flex items-center justify-center border-2 border-indigo-950 dark:border-slate-950 hover:bg-indigo-500 z-[60] hidden lg:flex"
         >
           {isCollapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
         </button>
@@ -108,7 +114,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 if (onClose) onClose();
               }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                isActive ? 'bg-indigo-600 shadow-lg text-white font-bold' : 'text-indigo-200 hover:bg-indigo-900/50 hover:text-white'
+                isActive ? 'bg-indigo-600 dark:bg-indigo-500 shadow-lg text-white font-bold' : 'text-indigo-200 dark:text-slate-400 hover:bg-indigo-900/50 dark:hover:bg-slate-900/50 hover:text-white'
               } ${isCollapsed ? 'justify-center' : ''}`}
               title={isCollapsed ? item.label : ''}
             >
@@ -120,7 +126,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </nav>
 
       {userProfile.plan === SubscriptionPlan.FREE && !isCollapsed && userProfile.role !== UserRole.APP_ADMIN && (
-        <div className="mx-4 mb-4 p-4 bg-indigo-900/40 rounded-2xl border border-indigo-800">
+        <div className="mx-4 mb-4 p-4 bg-indigo-900/40 dark:bg-slate-900/40 rounded-2xl border border-indigo-800 dark:border-slate-800">
           <div className="flex items-center gap-2 mb-2 text-amber-400">
             <Zap size={14} />
             <span className="text-[10px] font-bold uppercase tracking-widest">Upgrade to Pro</span>
@@ -130,26 +136,36 @@ const Sidebar: React.FC<SidebarProps> = ({
               onViewChange('pricing');
               if (onClose) onClose();
             }}
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-bold rounded-lg transition-colors shadow-lg shadow-indigo-900"
+            className="w-full py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400 text-xs font-bold rounded-lg transition-colors shadow-lg shadow-indigo-900"
           >
             Unlock Full Access
           </button>
         </div>
       )}
 
-      <div className="p-4 border-t border-indigo-900/50">
+      <div className="p-4 border-t border-indigo-900/50 dark:border-slate-900">
+        {/* Theme Toggle */}
+        <button 
+          onClick={toggleTheme}
+          className={`w-full flex items-center gap-3 px-4 py-3 mb-2 text-indigo-300 dark:text-slate-400 hover:text-white rounded-lg transition-colors group ${isCollapsed ? 'justify-center' : ''}`}
+          title={isCollapsed ? (theme === 'light' ? 'Dark Mode' : 'Light Mode') : ''}
+        >
+          {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+          {!isCollapsed && <span className="text-sm font-medium">{theme === 'light' ? 'Night Mode' : 'Day Mode'}</span>}
+        </button>
+
         <div 
-          className={`flex items-center gap-3 p-3 bg-indigo-900/30 rounded-xl mb-2 border border-indigo-800/20 ${isCollapsed ? 'justify-center' : ''}`}
+          className={`flex items-center gap-3 p-3 bg-indigo-900/30 dark:bg-slate-900/30 rounded-xl mb-2 border border-indigo-800/20 dark:border-slate-800/20 ${isCollapsed ? 'justify-center' : ''}`}
         >
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${roleInfo.color} shadow-sm`}>{roleInfo.icon}</div>
           {!isCollapsed && (
             <div className="overflow-hidden">
-              <p className="text-[10px] font-bold uppercase tracking-tighter text-indigo-300">{userProfile.plan} • {roleInfo.label}</p>
+              <p className="text-[10px] font-bold uppercase tracking-tighter text-indigo-300 dark:text-slate-500">{userProfile.plan} • {roleInfo.label}</p>
               <p className="text-xs font-medium truncate opacity-90">{userProfile.email}</p>
             </div>
           )}
         </div>
-        <button onClick={handleSignOut} className={`w-full flex items-center gap-3 px-4 py-3 text-indigo-300 hover:text-white rounded-lg transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
+        <button onClick={handleSignOut} className={`w-full flex items-center gap-3 px-4 py-3 text-indigo-300 dark:text-slate-400 hover:text-white rounded-lg transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
           <LogOut size={18} />
           {!isCollapsed && <span className="text-sm font-medium">Sign Out</span>}
         </button>
