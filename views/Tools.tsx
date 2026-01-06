@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, ArrowLeft, Send, Loader2, 
-  Copy, Check, FileDown, Bot, Target
+  Copy, Check, FileDown, Bot, Target, Download
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -69,46 +69,45 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       }
       await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool });
       setRefinementInput('');
-      setCooldown(4);
+      setCooldown(3);
     } catch (err) {
-      setResult("Cooldown active.");
+      setResult("Neural sync paused.");
     } finally {
       setIsGenerating(false);
     }
   };
 
   const toolDefinitions = [
-    { id: 'lesson-plan', name: 'Lesson Plan', icon: BookOpen, desc: 'Timed activities & objectives' },
-    { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Balanced question sets' },
-    { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Criteria-based evaluation' },
-    { id: 'slo-tagger', name: 'SLO Tagger', icon: Target, desc: 'Extract learning outcomes' },
+    { id: 'lesson-plan', name: 'Lesson Plan', icon: BookOpen, desc: 'Timed activities' },
+    { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Balanced questions' },
+    { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Evaluation criteria' },
+    { id: 'slo-tagger', name: 'SLO Tagger', icon: Target, desc: 'Map learning outcomes' },
   ];
 
   const { text: cleanResult, suggestions } = parseContent(result);
 
   const exportToWord = () => {
-    const header = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Artifact</title><style>body { font-family: 'Segoe UI', sans-serif; padding: 2cm; } h1 { color: #1e3a8a; } table { border-collapse: collapse; width: 100%; border: 1px solid #ddd; } th, td { border: 1px solid #ddd; padding: 8px; }</style></head><body>`;
+    const header = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>body { font-family: sans-serif; padding: 40px; } table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #ccc; padding: 10px; }</style></head><body>`;
     const footer = "</body></html>";
-    let htmlContent = cleanResult.replace(/\n\n/g, '</p><p>').replace(/\n/g, '<br>');
-    const blob = new Blob([header + `<div>${htmlContent}</div>` + footer], { type: 'application/vnd.ms-word' });
+    const blob = new Blob([header + cleanResult.replace(/\n/g, '<br>') + footer], { type: 'application/msword' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `${activeTool}-${Date.now()}.doc`;
+    link.download = `pedagogy-${activeTool}.doc`;
     link.click();
   };
 
   return (
-    <div className="max-w-4xl mx-auto w-full pb-24 px-4">
+    <div className="max-w-4xl mx-auto w-full pb-32 px-4">
       {!activeTool ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
           {toolDefinitions.map((tool) => (
             <button
               key={tool.id}
               onClick={() => setActiveTool(tool.id)}
-              className="p-8 bg-white border border-slate-100 rounded-[2rem] hover:border-slate-900 transition-all text-left flex items-center gap-6 group shadow-sm"
+              className="p-8 bg-white border border-slate-100 rounded-[2.5rem] hover:border-slate-900 transition-all text-left flex items-center gap-6 group shadow-sm hover:shadow-xl"
             >
               <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 group-hover:bg-slate-900 group-hover:text-white transition-all shrink-0">
-                <tool.icon size={28} />
+                <tool.icon size={24} />
               </div>
               <div>
                 <h3 className="font-bold text-lg text-slate-900">{tool.name}</h3>
@@ -118,21 +117,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           ))}
         </div>
       ) : (
-        <div className="space-y-8">
-          <header className="flex items-center justify-between bg-white sticky top-0 py-4 z-10 border-b border-slate-50">
-            <button 
-              onClick={() => setActiveTool(null)}
-              className="text-slate-400 hover:text-slate-900 flex items-center gap-2 text-sm font-bold"
-            >
-              <ArrowLeft size={16} /> Back
-            </button>
+        <div className="space-y-8 animate-in fade-in">
+          <header className="flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 py-4 z-10 border-b border-slate-50">
+            <button onClick={() => setActiveTool(null)} className="text-slate-400 hover:text-slate-900 flex items-center gap-2 text-sm font-bold"><ArrowLeft size={16} /> Back</button>
             <div className="flex gap-2 overflow-x-auto scrollbar-hide">
                {documents.map(doc => (
-                 <button 
-                   key={doc.id}
-                   onClick={() => setSelectedDocId(selectedDocId === doc.id ? null : doc.id)}
-                   className={`px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all shrink-0 ${selectedDocId === doc.id ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}
-                 >
+                 <button key={doc.id} onClick={() => setSelectedDocId(selectedDocId === doc.id ? null : doc.id)} className={`px-3 py-1.5 rounded-full text-[10px] font-bold border transition-all shrink-0 ${selectedDocId === doc.id ? 'bg-slate-900 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-400'}`}>
                    {doc.name}
                  </button>
                ))}
@@ -140,49 +130,49 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </header>
 
           {!result && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="space-y-6 pt-10">
               <textarea 
                 value={userInput}
                 onChange={(e) => setUserInput(e.target.value)}
-                placeholder={`What should the ${activeTool.replace('-', ' ')} focus on?`}
-                className="w-full h-48 p-8 bg-slate-50 border border-slate-100 rounded-[2.5rem] focus:ring-2 focus:ring-slate-900 outline-none resize-none text-lg text-slate-700"
+                placeholder={`Input text or requirements for the ${activeTool.replace('-', ' ')}...`}
+                className="w-full h-56 p-8 bg-slate-50 border border-slate-100 rounded-[3rem] focus:ring-2 focus:ring-slate-900 outline-none resize-none text-lg text-slate-700 placeholder:text-slate-300"
               />
               <button 
                 onClick={() => handleGenerate()}
                 disabled={isGenerating || !userInput.trim() || cooldown > 0}
-                className="w-full py-5 bg-slate-900 text-white rounded-[1.5rem] font-bold flex items-center justify-center gap-3 disabled:opacity-50 shadow-xl shadow-slate-900/10 active:scale-[0.98] transition-all"
+                className="w-full py-5 bg-slate-900 text-white rounded-[1.5rem] font-bold flex items-center justify-center gap-3 disabled:opacity-50 shadow-2xl"
               >
                 {isGenerating ? <Loader2 size={20} className="animate-spin" /> : <Sparkles size={20} />}
-                Generate Artifact
+                Synthesize Artifact
               </button>
             </div>
           )}
 
           {result && (
-            <div className="space-y-8 animate-in fade-in">
+            <div className="space-y-8">
               <div className="prose prose-slate max-w-none bg-white p-8 md:p-14 border border-slate-100 rounded-[3rem] shadow-sm leading-relaxed text-slate-800">
-                {cleanResult || <div className="flex gap-1.5 py-10 justify-center"><div className="w-2 h-2 bg-slate-200 rounded-full animate-bounce" /><div className="w-2 h-2 bg-slate-200 rounded-full animate-bounce [animation-delay:0.2s]" /><div className="w-2 h-2 bg-slate-200 rounded-full animate-bounce [animation-delay:0.4s]" /></div>}
+                {cleanResult || <div className="flex gap-2 justify-center py-20"><div className="w-2 h-2 bg-indigo-200 rounded-full animate-bounce" /><div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]" /><div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:0.4s]" /></div>}
               </div>
 
-              <div className="flex flex-wrap gap-4 items-center justify-center pt-8">
-                <button onClick={exportToWord} className="flex items-center gap-2 px-8 py-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all">
-                  <FileDown size={18} /> DOCX
+              <div className="flex items-center justify-center gap-4 py-6">
+                <button onClick={exportToWord} className="flex items-center gap-2 px-8 py-4 bg-white border border-slate-200 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm">
+                  <Download size={18} /> Save as DOCX
                 </button>
-                <button onClick={() => {navigator.clipboard.writeText(cleanResult); setCopied(true); setTimeout(()=>setCopied(false), 2000)}} className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl text-sm font-bold shadow-xl shadow-slate-900/10 transition-all">
+                <button onClick={() => {navigator.clipboard.writeText(cleanResult); setCopied(true); setTimeout(()=>setCopied(false), 2000)}} className="flex items-center gap-2 px-8 py-4 bg-slate-900 text-white rounded-2xl text-sm font-bold shadow-xl">
                   {copied ? <Check size={18} /> : <Copy size={18} />} {copied ? 'Copied' : 'Copy Text'}
                 </button>
               </div>
 
-              <div className="max-w-2xl mx-auto pt-10">
-                <div className="relative group">
+              <div className="max-w-2xl mx-auto pt-10 border-t border-slate-50">
+                <div className="relative">
                   <input 
                     value={refinementInput}
                     onChange={(e) => setRefinementInput(e.target.value)}
-                    placeholder="Refine this artifact..."
-                    className="w-full p-5 pr-14 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-slate-900 outline-none transition-all group-hover:border-slate-300"
+                    placeholder="Refine or adjust this artifact..."
+                    className="w-full p-5 pr-14 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-slate-900 outline-none transition-all"
                     onKeyDown={e => e.key === 'Enter' && handleGenerate(true)}
                   />
-                  <button onClick={() => handleGenerate(true)} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-900 hover:text-indigo-600">
+                  <button onClick={() => handleGenerate(true)} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 text-slate-900">
                     <Send size={20} />
                   </button>
                 </div>
