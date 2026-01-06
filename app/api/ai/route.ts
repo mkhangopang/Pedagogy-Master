@@ -10,26 +10,34 @@ function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
 }
 
-async function delay(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+/**
+ * Enhanced Backoff Utility
+ * Implements exponential backoff with jitter to avoid retry storms.
+ */
+async function backoff(attempt: number) {
+  const baseDelay = 3000; // Start at 3s
+  const maxDelay = 15000; // Cap at 15s
+  const exponential = Math.pow(2, attempt) * baseDelay;
+  const jitter = Math.random() * 1000;
+  const delay = Math.min(maxDelay, exponential + jitter);
+  return new Promise(resolve => setTimeout(resolve, delay));
 }
 
-/**
- * Enhanced retry logic for Gemini 429s
- */
-async function withRetry(fn: () => Promise<any>, retries = 3) {
+async function withRetry(fn: () => Promise<any>, retries = 4) {
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
     } catch (error: any) {
-      const isRateLimit = error.message?.includes('429') || 
-                          error.message?.includes('RESOURCE_EXHAUSTED') ||
-                          error.status === 429;
+      const errorStr = JSON.stringify(error).toLowerCase();
+      const isRateLimit = 
+        error.status === 429 || 
+        error.message?.includes('429') || 
+        errorStr.includes('429') ||
+        errorStr.includes('resource_exhausted') ||
+        errorStr.includes('too many requests');
       
       if (isRateLimit && i < retries) {
-        // Exponential backoff: 2s, 4s, 8s...
-        const waitTime = Math.pow(2, i + 1) * 1000;
-        await delay(waitTime);
+        await backoff(i);
         continue;
       }
       throw error;
@@ -102,8 +110,8 @@ export async function POST(req: NextRequest) {
               if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
             }
           } catch (e: any) {
-            const errorMsg = e.message?.includes('429') ? "RATE_LIMIT_HIT" : "STREAM_ERROR";
-            controller.enqueue(encoder.encode(`\n\nERROR:${errorMsg}`));
+            const is429 = JSON.stringify(e).includes('429');
+            controller.enqueue(encoder.encode(`\n\nERROR:${is429 ? 'RATE_LIMIT_HIT' : 'STREAM_INTERRUPTED'}`));
           } finally { controller.close(); }
         }
       }));
@@ -111,9 +119,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid task' }, { status: 400 });
   } catch (error: any) {
-    const isRateLimit = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
+    const errorStr = JSON.stringify(error).toLowerCase();
+    const isRateLimit = error.status === 429 || errorStr.includes('429') || errorStr.includes('resource_exhausted');
+    
     return NextResponse.json(
-      { error: isRateLimit ? "Neural engine cooling down. Our free processing nodes are temporarily busy. Please wait 10-15 seconds and try again." : error.message }, 
+      { error: isRateLimit ? "The neural engine is currently cooling down due to high global demand. We are retrying your request. If this persists, please wait 10 seconds." : error.message }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }

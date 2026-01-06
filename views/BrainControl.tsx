@@ -66,11 +66,11 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V19
--- MISSION: RECURSION-FREE SECURITY POLICIES
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V20
+-- MISSION: ELIMINATE RECURSION & SECURE ADMIN NODES
 -- ========================================================================================
 
--- 1. CLEANUP OLD POLICIES (Stop the infinite recursion loop)
+-- 1. CLEANUP POLICIES (Resetting state)
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
@@ -79,28 +79,31 @@ BEGIN
     DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
 END $$;
 
--- 2. CREATE NON-RECURSIVE ACCESS (Relying on JWT instead of self-querying)
--- Policy for users to manage their own records (Direct ID comparison)
+-- 2. CREATE NON-RECURSIVE POLICIES (Crucial: Uses JWT instead of subqueries)
+-- Allow users to see and update only their own profile
 CREATE POLICY "Manage Own Profile" ON public.profiles
 FOR ALL TO authenticated
 USING (id = auth.uid())
 WITH CHECK (id = auth.uid());
 
--- Policy for admins to view everything (Using Email from JWT is non-recursive)
+-- Allow specific admins to view all data (Validated via JWT email payload)
 CREATE POLICY "Admin View All" ON public.profiles
 FOR SELECT TO authenticated
 USING (
   (auth.jwt() ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- 3. BOOTSTRAP MASTER ADMIN (Run this after signing up via the UI)
+-- 3. INITIALIZE ADMIN METADATA
+-- Set these values for your email to gain 'app_admin' view access
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email = 'mkgopang@gmail.com';
 
--- 4. APPLY RLS TO OTHER TABLES
+-- 4. APPLY RLS TO SUBSIDIARY TABLES
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
 
+-- 5. DOCUMENT ACCESS POLICIES
 DO $$ 
 BEGIN
     DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
@@ -110,26 +113,13 @@ CREATE POLICY "Users can manage their own documents" ON public.documents
 FOR ALL TO authenticated
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
-
--- 5. AI ARTIFACTS STORAGE POLICIES
-ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
-
-DO $$ 
-BEGIN
-    DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
-END $$;
-
-CREATE POLICY "Users view own artifacts" ON public.output_artifacts
-FOR ALL TO authenticated
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
 `;
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 px-4">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+      <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-slate-900 dark:text-white">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3 tracking-tight">
+          <h1 className="text-3xl font-bold flex items-center gap-3 tracking-tight">
             <ShieldCheck className="text-indigo-600" />
             Control Hub
           </h1>
@@ -218,7 +208,7 @@ WITH CHECK (auth.uid() = user_id);
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: If you see "Infinite Recursion" error, run this script in Supabase SQL editor to switch to JWT-based admin validation.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: If profiles show recursion errors, copy and run this script in Supabase SQL editor to gain admin view access.</p>
             </div>
           </div>
         </div>
