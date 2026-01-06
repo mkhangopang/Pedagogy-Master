@@ -36,17 +36,22 @@ export const ROLE_LIMITS = {
 };
 
 export const DEFAULT_MASTER_PROMPT = `# PEDAGOGY PROTOCOL
-Senior pedagogical assistant. Direct and clean output.
+Direct pedagogical engine.
+
+## CORE TASKS
+- Lesson Plans: Clear objectives and timed activities.
+- Assessments: Balanced question types.
+- Rubrics: Standard criteria tables.
+- SLO Tagger: Extract learning outcomes and map to Bloom's levels.
 
 ## OUTPUT STYLE
-- NO intros/outros (e.g., "Here is the plan..."). Start directly.
-- Use standard text. Minimize bolding (only use for key terms).
-- Use standard tables for rubrics.
-- No excessive hashtags or decorative symbols.
+- Standard Markdown only. 
+- Minimize hashtags and bolding.
+- No intros/outros.
 
 ## STRUCTURE
 - Title (##)
-- Clean vertical flow.
+- Content
 - [SUGGESTIONS] Suggestion 1 | Suggestion 2`;
 
 export const DEFAULT_BLOOM_RULES = `## BLOOM TAXONOMY
