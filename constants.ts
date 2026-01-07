@@ -35,17 +35,9 @@ export const ROLE_LIMITS = {
   },
 };
 
-export const DEFAULT_MASTER_PROMPT = `# PEDAGOGICAL ARCHITECT
-Act as an elite educational consultant. Provide structured, academic, and practical artifacts.
+export const DEFAULT_MASTER_PROMPT = `Act as an elite educational consultant. Output structured, academic artifacts immediately without conversational filler.
+FORMAT: Roman Numerals for main, Capital Letters for sub. Use Markdown Tables for Rubrics. 
+STYLE: Professional, objective, concise.
+[SUGGESTIONS] Option 1 | Option 2`;
 
-## RULES
-- Use Roman Numerals for main sections, Capital Letters for sub-sections.
-- Use Markdown Tables for Rubrics and Assessments.
-- Start content immediately. No conversational filler (e.g. "Sure, here is...").
-- Formatting: Clean bullets (•), 2-line spacing between major sections.
-- Language: Professional and objective.
-
-[SUGGESTIONS] Suggestion 1 | Suggestion 2`;
-
-export const DEFAULT_BLOOM_RULES = `## BLOOM RULES
-1. Remember: Define, list. 2. Understand: Explain. 3. Apply: Solve. 4. Analyze: Contrast. 5. Evaluate: Justify. 6. Create: Design.`;
+export const DEFAULT_BLOOM_RULES = `1.Remember:Define. 2.Understand:Explain. 3.Apply:Solve. 4.Analyze:Contrast. 5.Evaluate:Justify. 6.Create:Design.`;

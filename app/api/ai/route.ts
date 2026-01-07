@@ -18,7 +18,6 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function getDocumentPart(doc: any, supabase: any) {
   if (!doc || (!doc.base64 && !doc.filePath)) return null;
-  
   if (doc.base64) return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
   
   if (doc.filePath) {
@@ -61,11 +60,7 @@ export async function POST(req: NextRequest) {
     if (authError || !user) return NextResponse.json({ error: 'Auth Verification Failed' }, { status: 401 });
 
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ 
-        error: 'Neural Key Missing' 
-      }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ error: 'Neural Key Missing' }, { status: 500 });
 
     const body = await req.json();
     const { task, message, doc, brain, adaptiveContext, history, toolType, userInput } = body;
@@ -77,35 +72,23 @@ export async function POST(req: NextRequest) {
     const systemInstruction = `${brain?.masterPrompt || ''}\n${adaptiveContext || ''}`;
     const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
 
-    /**
-     * QUOTA OPTIMIZATION:
-     * 1. Limit history to the last 6 messages to keep token count low.
-     * 2. Only send document part in the most recent user turn if history is long.
-     */
     let contents: any[];
     if (task === 'chat') {
-      const MAX_HISTORY = 6;
-      const recentHistory = (history || []).slice(-MAX_HISTORY);
-      
-      contents = recentHistory.map((h: any, idx: number) => ({
+      const recentHistory = (history || []).slice(-4);
+      contents = recentHistory.map((h: any) => ({
         role: h.role === 'user' ? 'user' : 'model',
         parts: [{ text: h.content }]
       }));
-
-      // Attach doc to the current prompt only to ensure it's "fresh" for the model turn
-      // while keeping historical turns lean.
       const currentParts: any[] = [{ text: promptText }];
       if (docPart) currentParts.unshift(docPart);
-
       contents.push({ role: 'user', parts: currentParts });
     } else {
       contents = [{ role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }];
     }
 
-    // ROBUST RETRY: Exponential backoff + Jitter to survive 15 RPM limits
     let streamResponse;
     let attempts = 0;
-    const maxAttempts = 6;
+    const maxAttempts = 3;
 
     while (attempts < maxAttempts) {
       try {
@@ -115,7 +98,7 @@ export async function POST(req: NextRequest) {
           config: { 
             systemInstruction,
             temperature: 0.7,
-            thinkingConfig: { thinkingBudget: 0 } // Disabling thinking to save on complexity/rate-limits
+            thinkingConfig: { thinkingBudget: 0 } 
           },
         });
         break; 
@@ -125,9 +108,8 @@ export async function POST(req: NextRequest) {
         const isRateLimited = errStr.includes('429') || errStr.includes('resource_exhausted') || errStr.includes('503');
         
         if (isRateLimited && attempts < maxAttempts) {
-          // Increase wait: 2s, 4s, 8s, 16s...
-          const backoff = (Math.pow(2, attempts) * 1000) + (Math.random() * 500);
-          console.warn(`[AI Engine] Rate Limit. Backoff ${Math.round(backoff)}ms. Attempt ${attempts}/${maxAttempts}`);
+          const backoff = (attempts * 5000) + (Math.random() * 1000); // 5s, 10s...
+          console.warn(`[AI] Rate Limit hit. Retry ${attempts} after ${Math.round(backoff)}ms`);
           await sleep(backoff);
           continue;
         }
@@ -142,9 +124,7 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         try {
           for await (const chunk of streamResponse) {
-            if (chunk.text) {
-              controller.enqueue(encoder.encode(chunk.text));
-            }
+            if (chunk.text) controller.enqueue(encoder.encode(chunk.text));
           }
         } catch (e: any) {
           console.error("Stream Error:", e);
@@ -163,7 +143,7 @@ export async function POST(req: NextRequest) {
     const isRateLimit = errStr.includes('429') || errStr.includes('resource_exhausted');
     
     return NextResponse.json(
-      { error: isRateLimit ? "Neural cooling in progress. The Gemini free tier is under high load. Please wait 20s and try again." : (error.message || "Synthesis interrupted.") }, 
+      { error: isRateLimit ? "Neural cooling in progress. Please wait 20 seconds." : (error.message || "Synthesis interrupted.") }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }
