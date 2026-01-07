@@ -8,12 +8,12 @@ function parseAIError(errorData: any): string {
   const lowerMsg = msg.toLowerCase();
   
   if (lowerMsg.includes('429') || lowerMsg.includes('resource_exhausted') || lowerMsg.includes('saturated')) {
-    return "Neural Capacity Reached: The Gemini Free Tier has a momentary limit on requests per minute. Please wait 15-30 seconds and try your request again.";
+    return "Neural Capacity Reached: Gemini Free Tier is temporarily busy. Please wait 20 seconds for the RPM bucket to refill.";
   }
   if (lowerMsg.includes('api_key') || lowerMsg.includes('auth')) {
-    return "Neural Handshake Failed: The API key is invalid or has not been configured in the production environment.";
+    return "Neural Key Error: The API key is invalid or hasn't propagated to the cloud environment.";
   }
-  return msg || "Neural link interrupted. Please verify your connection and retry.";
+  return msg || "Synthesis interrupted. Please retry in a moment.";
 }
 
 export const geminiService = {
@@ -32,47 +32,61 @@ export const geminiService = {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     const token = await this.getAuthToken();
 
-    try {
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          task: 'chat',
-          message,
-          doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
-          history,
-          brain,
-          adaptiveContext
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Neural link lost." }));
-        yield `AI Alert: ${parseAIError(errorData)}`;
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) return;
-
+    let response: Response | null = null;
+    let attempts = 0;
+    
+    // Client-side transient retry wrapper
+    while (attempts < 2) {
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          
-          if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            yield "\n\n[System Alert: Neural capacity exceeded. Synthesis paused. Please wait 15s.]";
-            break;
-          }
-          yield chunk;
+        response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            task: 'chat',
+            message,
+            doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
+            history,
+            brain,
+            adaptiveContext
+          })
+        });
+        if (response.status === 429 && attempts < 1) {
+          attempts++;
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
         }
-      } finally {
-        reader.releaseLock();
+        break;
+      } catch (e) {
+        if (attempts >= 1) break;
+        attempts++;
+        await new Promise(r => setTimeout(r, 1000));
       }
-    } catch (err) {
-      yield "AI Alert: Neural synthesis gateway timed out.";
+    }
+
+    if (!response || !response.ok) {
+      const errorData = await response?.json().catch(() => ({ error: "Neural link lost." }));
+      yield `AI Alert: ${parseAIError(errorData || "Gateway timeout.")}`;
+      return;
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) return;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        
+        if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
+          yield "\n\n[System Alert: Neural capacity exceeded. Please pause for 20s.]";
+          break;
+        }
+        yield chunk;
+      }
+    } finally {
+      reader.releaseLock();
     }
   },
 
@@ -86,47 +100,60 @@ export const geminiService = {
     const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
     const token = await this.getAuthToken();
 
-    try {
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          task: 'generate-tool',
-          toolType,
-          userInput,
-          doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
-          brain,
-          adaptiveContext
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Synthesis node busy." }));
-        yield `AI Alert: ${parseAIError(errorData)}`;
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) return;
-
+    let response: Response | null = null;
+    let attempts = 0;
+    
+    while (attempts < 2) {
       try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          
-          if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            yield "\n\n[Neural Alert: Synthesis paused due to quota limit. Please wait 15s.]";
-            break;
-          }
-          yield chunk;
+        response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({
+            task: 'generate-tool',
+            toolType,
+            userInput,
+            doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
+            brain,
+            adaptiveContext
+          })
+        });
+        if (response.status === 429 && attempts < 1) {
+          attempts++;
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
         }
-      } finally {
-        reader.releaseLock();
+        break;
+      } catch (e) {
+        if (attempts >= 1) break;
+        attempts++;
+        await new Promise(r => setTimeout(r, 1000));
       }
-    } catch (err) {
-      yield "AI Alert: Physical synthesis failed. Check network.";
+    }
+
+    if (!response || !response.ok) {
+      const errorData = await response?.json().catch(() => ({ error: "Synthesis node busy." }));
+      yield `AI Alert: ${parseAIError(errorData || "Gateway timeout.")}`;
+      return;
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    if (!reader) return;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        
+        if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
+          yield "\n\n[Neural Alert: Synthesis paused due to quota limit. Please wait 20s.]";
+          break;
+        }
+        yield chunk;
+      }
+    } finally {
+      reader.releaseLock();
     }
   }
 };
