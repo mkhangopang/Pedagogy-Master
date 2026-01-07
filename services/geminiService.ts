@@ -8,12 +8,12 @@ function parseAIError(errorData: any): string {
   const lowerMsg = msg.toLowerCase();
   
   if (lowerMsg.includes('429') || lowerMsg.includes('resource_exhausted')) {
-    return "Neural Capacity Reached: You've hit the Gemini Free Tier limit. Please wait 15 seconds for nodes to reset.";
+    return "Neural Quota Exceeded: The Gemini free tier has a temporary limit. Please pause for 15s before your next request.";
   }
   if (lowerMsg.includes('api_key') || lowerMsg.includes('auth')) {
-    return "Neural Auth Error: The Gemini API Key is invalid or missing in Vercel environment variables.";
+    return "Neural Key Error: The server's API key is invalid or not yet propagated in Vercel.";
   }
-  return msg || "Synthesis interrupted by network. Please try again.";
+  return msg || "Neural link interrupted. Please retry in a moment.";
 }
 
 export const geminiService = {
@@ -47,7 +47,7 @@ export const geminiService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Neural link dropped." }));
+        const errorData = await response.json().catch(() => ({ error: "Neural link lost." }));
         yield `AI Alert: ${parseAIError(errorData)}`;
         return;
       }
@@ -63,11 +63,11 @@ export const geminiService = {
           const chunk = decoder.decode(value, { stream: true });
           
           if (chunk.includes('ERROR_SIGNAL:AUTH_FAIL')) {
-            yield "\n\n[System Alert: Neural API Key Verification Failed.]";
+            yield "\n\n[System Alert: API Key verification failed.]";
             break;
           }
           if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            yield "\n\n[System Alert: High load on Free Tier nodes. Automatic retrying is active, but please pause for 10s if this persists.]";
+            yield "\n\n[System Alert: Free tier rate limit reached. Auto-retries failed. Please pause for 10s.]";
             break;
           }
           yield chunk;
@@ -76,7 +76,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield "AI Alert: Neural gateway connection failed. Check your network status.";
+      yield "AI Alert: Synthesis gateway timed out.";
     }
   },
 
@@ -105,7 +105,7 @@ export const geminiService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Synthesis node timeout." }));
+        const errorData = await response.json().catch(() => ({ error: "Synthesis node busy." }));
         yield `AI Alert: ${parseAIError(errorData)}`;
         return;
       }
@@ -125,7 +125,7 @@ export const geminiService = {
             break;
           }
           if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            yield "\n\n[Neural Alert: Quota Limit hit. Synthesis paused.]";
+            yield "\n\n[Neural Alert: Synthesis paused due to quota limit. Please wait 10s.]";
             break;
           }
           yield chunk;
@@ -134,7 +134,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield "AI Alert: Resource synthesis failed due to a physical network interruption.";
+      yield "AI Alert: Physical synthesis failed. Check network.";
     }
   }
 };

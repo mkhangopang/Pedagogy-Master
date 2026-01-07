@@ -8,7 +8,7 @@ import { Buffer } from 'buffer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Max allowed on Vercel Pro; Hobby is 10s
+export const maxDuration = 60;
 
 function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -18,7 +18,7 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function getDocumentPart(doc: any, supabase: any) {
   if (!doc) return null;
-  // If we already have the base64, use it directly (Direct Processing)
+  // Use provided base64 directly to avoid extra fetches/processing (Quota efficient)
   if (doc.base64) return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
   
   if (doc.filePath) {
@@ -42,10 +42,9 @@ async function getDocumentPart(doc: any, supabase: any) {
       }
       
       if (bytes.length === 0) return null;
-      // Pass the raw data directly to Gemini for efficient multimodal analysis
       return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
     } catch (e) {
-      console.error("Direct Processing Error: File retrieval failed:", e);
+      console.error("Neural Doc Retrieval Failure:", e);
       return null;
     }
   }
@@ -56,16 +55,16 @@ export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Neural context lost: Session required' }, { status: 401 });
+    if (!token) return NextResponse.json({ error: 'Session required' }, { status: 401 });
 
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Auth Verification Failed' }, { status: 401 });
 
-    // Multi-key detection for Vercel/Studio environments
+    // Ensure we catch the Vercel-configured Gemini key
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ 
-        error: 'System Alert: Neural API Key missing. Please set API_KEY or GEMINI_API_KEY in Vercel settings.' 
+        error: 'Neural Key Missing: Please verify the API_KEY or GEMINI_API_KEY environment variable is set.' 
       }, { status: 500 });
     }
 
@@ -89,15 +88,15 @@ export async function POST(req: NextRequest) {
         ]
       : { parts: [...(docPart ? [docPart] : []), { text: promptText }] };
 
-    // SERVER-SIDE RESILIENCE: Retry 429/503 internally before failing
+    // AGGRESSIVE RETRY LOOP FOR FREE TIER (RPM/TPM 429s)
     let streamResponse;
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 4; // Total 5 tries
 
     while (attempts < maxAttempts) {
       try {
         streamResponse = await ai.models.generateContentStream({
-          model: 'gemini-3-flash-preview', // Quota efficient model for EdTech
+          model: 'gemini-3-flash-preview', 
           contents,
           config: { 
             systemInstruction,
@@ -109,18 +108,21 @@ export async function POST(req: NextRequest) {
       } catch (e: any) {
         attempts++;
         const errStr = JSON.stringify(e).toLowerCase();
-        const isRetryable = errStr.includes('429') || errStr.includes('503') || errStr.includes('resource_exhausted');
+        const isRateLimited = errStr.includes('429') || errStr.includes('resource_exhausted') || errStr.includes('503');
         
-        if (isRetryable && attempts < maxAttempts) {
-          console.warn(`Neural Node Saturated. Retrying attempt ${attempts}/${maxAttempts}...`);
-          await sleep(1500 * attempts); // Gradual backoff
+        if (isRateLimited && attempts < maxAttempts) {
+          // Wait longer each time to let the RPM bucket refill
+          // (3s, 6s, 9s...)
+          const waitTime = 3000 * attempts;
+          console.warn(`[AI Engine] Rate Limit hit. Retrying in ${waitTime}ms... (Attempt ${attempts}/${maxAttempts})`);
+          await sleep(waitTime);
           continue;
         }
-        throw e; // Non-retryable
+        throw e; // Non-retryable or too many attempts
       }
     }
 
-    if (!streamResponse) throw new Error("Could not initialize Neural Stream.");
+    if (!streamResponse) throw new Error("Synthesis Initialization Failed.");
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
@@ -152,7 +154,7 @@ export async function POST(req: NextRequest) {
     const isRateLimit = errStr.includes('429') || errStr.includes('resource_exhausted');
     
     return NextResponse.json(
-      { error: isRateLimit ? "Neural cooling in progress. Please pause for 10s." : (error.message || "Neural gateway timeout.") }, 
+      { error: isRateLimit ? "Neural engine is saturated. Please wait 15 seconds and try again." : (error.message || "Neural gateway timeout.") }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }
