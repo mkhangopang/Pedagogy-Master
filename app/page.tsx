@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
@@ -5,6 +6,7 @@ import { supabase, isSupabaseConfigured, getSupabaseHealth } from '../lib/supaba
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
+import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { paymentService } from '../services/paymentService';
@@ -32,7 +34,6 @@ export default function App() {
 
   const isActuallyConnected = healthStatus.status === 'connected';
 
-  // Theme Sync
   useEffect(() => {
     const savedTheme = localStorage.getItem('pm-theme') as 'light' | 'dark' | null;
     if (savedTheme) {
@@ -77,7 +78,7 @@ export default function App() {
 
     try {
       const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
-      const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
       
       let activeProfile: UserProfile;
 
@@ -103,9 +104,7 @@ export default function App() {
           plan: activeProfile.plan,
           queries_used: 0,
           queries_limit: activeProfile.queriesLimit
-        }]).then(({error}) => {
-          if (error && error.code !== '42P01') console.error("Profile creation error:", error);
-        });
+        }]);
       } else {
         activeProfile = {
           id: profile.id,
@@ -144,9 +143,7 @@ export default function App() {
           createdAt: d.created_at
         })));
       }
-    } catch (e: any) {
-      console.error("Profile Fetch Failure:", e.message);
-    }
+    } catch (e: any) {}
   }, []);
 
   const fetchBrain = useCallback(async () => {
@@ -172,13 +169,11 @@ export default function App() {
     const initSession = async () => {
       if (!isSupabaseConfigured() || !supabase) {
         setLoading(false);
-        setHealthStatus({ status: 'disconnected', message: 'Credentials missing from environment.' });
         return;
       }
 
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
-        
         if (currentSession) {
           setSession(currentSession);
           checkDb();
@@ -190,7 +185,6 @@ export default function App() {
           checkDb();
         }
       } catch (err) {
-        console.error("Init Session Error:", err);
       } finally {
         setLoading(false);
       }
@@ -324,6 +318,7 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <ProviderStatusBar />
         <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
             <Menu size={24} />
