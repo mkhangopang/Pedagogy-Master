@@ -8,14 +8,17 @@ import { Buffer } from 'buffer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+export const maxDuration = 60; // Max allowed on Vercel Pro; Hobby is 10s
 
 function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
 }
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function getDocumentPart(doc: any, supabase: any) {
   if (!doc) return null;
+  // If we already have the base64, use it directly (Direct Processing)
   if (doc.base64) return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
   
   if (doc.filePath) {
@@ -39,9 +42,10 @@ async function getDocumentPart(doc: any, supabase: any) {
       }
       
       if (bytes.length === 0) return null;
+      // Pass the raw data directly to Gemini for efficient multimodal analysis
       return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
     } catch (e) {
-      console.error("Doc Extraction Failed:", e);
+      console.error("Direct Processing Error: File retrieval failed:", e);
       return null;
     }
   }
@@ -52,16 +56,16 @@ export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Session required' }, { status: 401 });
+    if (!token) return NextResponse.json({ error: 'Neural context lost: Session required' }, { status: 401 });
 
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    if (authError || !user) return NextResponse.json({ error: 'Invalid user' }, { status: 401 });
+    if (authError || !user) return NextResponse.json({ error: 'Auth Verification Failed' }, { status: 401 });
 
-    // Priority: API_KEY (Standard) -> GEMINI_API_KEY (Vercel Default)
+    // Multi-key detection for Vercel/Studio environments
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ 
-        error: 'AI Node Offline: API_KEY environment variable is not detected on the server. Please verify your Vercel/Environment settings.' 
+        error: 'System Alert: Neural API Key missing. Please set API_KEY or GEMINI_API_KEY in Vercel settings.' 
       }, { status: 500 });
     }
 
@@ -75,23 +79,48 @@ export async function POST(req: NextRequest) {
     const systemInstruction = `${brain?.masterPrompt || ''}\n${adaptiveContext || ''}`;
     const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
 
-    const streamResponse = await ai.models.generateContentStream({
-      model: 'gemini-3-flash-preview',
-      contents: task === 'chat' 
-        ? [
-            ...(history || []).map((h: any) => ({ 
-              role: h.role === 'user' ? 'user' : 'model', 
-              parts: [{ text: h.content }] 
-            })),
-            { role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }
-          ]
-        : { parts: [...(docPart ? [docPart] : []), { text: promptText }] },
-      config: { 
-        systemInstruction,
-        temperature: 0.7,
-        thinkingConfig: { thinkingBudget: 0 } 
-      },
-    });
+    const contents = task === 'chat' 
+      ? [
+          ...(history || []).map((h: any) => ({ 
+            role: h.role === 'user' ? 'user' : 'model', 
+            parts: [{ text: h.content }] 
+          })),
+          { role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }
+        ]
+      : { parts: [...(docPart ? [docPart] : []), { text: promptText }] };
+
+    // SERVER-SIDE RESILIENCE: Retry 429/503 internally before failing
+    let streamResponse;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      try {
+        streamResponse = await ai.models.generateContentStream({
+          model: 'gemini-3-flash-preview', // Quota efficient model for EdTech
+          contents,
+          config: { 
+            systemInstruction,
+            temperature: 0.7,
+            thinkingConfig: { thinkingBudget: 0 } 
+          },
+        });
+        break; // Success
+      } catch (e: any) {
+        attempts++;
+        const errStr = JSON.stringify(e).toLowerCase();
+        const isRetryable = errStr.includes('429') || errStr.includes('503') || errStr.includes('resource_exhausted');
+        
+        if (isRetryable && attempts < maxAttempts) {
+          console.warn(`Neural Node Saturated. Retrying attempt ${attempts}/${maxAttempts}...`);
+          await sleep(1500 * attempts); // Gradual backoff
+          continue;
+        }
+        throw e; // Non-retryable
+      }
+    }
+
+    if (!streamResponse) throw new Error("Could not initialize Neural Stream.");
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
@@ -103,10 +132,11 @@ export async function POST(req: NextRequest) {
             }
           }
         } catch (e: any) {
+          console.error("Neural Stream Interrupted:", e);
           const errStr = JSON.stringify(e).toLowerCase();
           let signal = 'STREAM_ERR';
           if (errStr.includes('429')) signal = 'RATE_LIMIT';
-          if (errStr.includes('403') || errStr.includes('api_key_invalid')) signal = 'AUTH_FAIL';
+          if (errStr.includes('403')) signal = 'AUTH_FAIL';
           controller.enqueue(encoder.encode(`\n\nERROR_SIGNAL:${signal}`));
         } finally {
           controller.close();
@@ -118,9 +148,11 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('AI Route Fatal:', error);
-    const isRateLimit = JSON.stringify(error).includes('429');
+    const errStr = JSON.stringify(error).toLowerCase();
+    const isRateLimit = errStr.includes('429') || errStr.includes('resource_exhausted');
+    
     return NextResponse.json(
-      { error: isRateLimit ? "Neural engine cooling down (429). Retry in 10s." : (error.message || "Neural gateway timeout.") }, 
+      { error: isRateLimit ? "Neural cooling in progress. Please pause for 10s." : (error.message || "Neural gateway timeout.") }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }
