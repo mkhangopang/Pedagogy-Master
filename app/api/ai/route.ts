@@ -17,8 +17,9 @@ function encodeBase64(bytes: Uint8Array): string {
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function getDocumentPart(doc: any, supabase: any) {
-  if (!doc) return null;
-  // Use provided base64 directly to avoid extra fetches/processing (Quota efficient)
+  if (!doc || (!doc.base64 && !doc.filePath)) return null;
+  
+  // Quota efficiency: Use provided base64 if available
   if (doc.base64) return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
   
   if (doc.filePath) {
@@ -60,11 +61,10 @@ export async function POST(req: NextRequest) {
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Auth Verification Failed' }, { status: 401 });
 
-    // Ensure we catch the Vercel-configured Gemini key
     const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ 
-        error: 'Neural Key Missing: Please verify the API_KEY or GEMINI_API_KEY environment variable is set.' 
+        error: 'Neural Key Missing: Please verify the API_KEY environment variable.' 
       }, { status: 500 });
     }
 
@@ -78,20 +78,35 @@ export async function POST(req: NextRequest) {
     const systemInstruction = `${brain?.masterPrompt || ''}\n${adaptiveContext || ''}`;
     const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
 
-    const contents = task === 'chat' 
-      ? [
-          ...(history || []).map((h: any) => ({ 
-            role: h.role === 'user' ? 'user' : 'model', 
-            parts: [{ text: h.content }] 
-          })),
-          { role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }
-        ]
-      : { parts: [...(docPart ? [docPart] : []), { text: promptText }] };
+    /**
+     * QUOTA EFFICIENCY: Context Construction
+     * We only attach the document part ONCE in the conversation history to save tokens.
+     * If history exists, we attach it to the first message.
+     */
+    let contents: any[];
+    if (task === 'chat') {
+      const mappedHistory = (history || []).map((h: any, idx: number) => {
+        const parts: any[] = [{ text: h.content }];
+        // Only attach doc to the very first message of the conversation to avoid token multiplication
+        if (idx === 0 && docPart) parts.unshift(docPart);
+        return { role: h.role === 'user' ? 'user' : 'model', parts };
+      });
 
-    // AGGRESSIVE RETRY LOOP FOR FREE TIER (RPM/TPM 429s)
+      const currentParts: any[] = [{ text: promptText }];
+      // If there was no history, the current message is the first one
+      if (mappedHistory.length === 0 && docPart) {
+        currentParts.unshift(docPart);
+      }
+
+      contents = [...mappedHistory, { role: 'user', parts: currentParts }];
+    } else {
+      contents = [{ role: 'user', parts: [...(docPart ? [docPart] : []), { text: promptText }] }];
+    }
+
+    // ROBUST RETRY LOOP with Exponential Backoff + Jitter
     let streamResponse;
     let attempts = 0;
-    const maxAttempts = 4; // Total 5 tries
+    const maxAttempts = 5;
 
     while (attempts < maxAttempts) {
       try {
@@ -104,21 +119,20 @@ export async function POST(req: NextRequest) {
             thinkingConfig: { thinkingBudget: 0 } 
           },
         });
-        break; // Success
+        break; 
       } catch (e: any) {
         attempts++;
         const errStr = JSON.stringify(e).toLowerCase();
         const isRateLimited = errStr.includes('429') || errStr.includes('resource_exhausted') || errStr.includes('503');
         
         if (isRateLimited && attempts < maxAttempts) {
-          // Wait longer each time to let the RPM bucket refill
-          // (3s, 6s, 9s...)
-          const waitTime = 3000 * attempts;
-          console.warn(`[AI Engine] Rate Limit hit. Retrying in ${waitTime}ms... (Attempt ${attempts}/${maxAttempts})`);
-          await sleep(waitTime);
+          // Exponential Backoff with Jitter: (2^attempts * 1000) + random
+          const backoff = (Math.pow(2, attempts) * 1000) + (Math.random() * 1000);
+          console.warn(`[AI Engine] Node Saturated. Backing off ${Math.round(backoff)}ms... (${attempts}/${maxAttempts})`);
+          await sleep(backoff);
           continue;
         }
-        throw e; // Non-retryable or too many attempts
+        throw e;
       }
     }
 
@@ -138,7 +152,6 @@ export async function POST(req: NextRequest) {
           const errStr = JSON.stringify(e).toLowerCase();
           let signal = 'STREAM_ERR';
           if (errStr.includes('429')) signal = 'RATE_LIMIT';
-          if (errStr.includes('403')) signal = 'AUTH_FAIL';
           controller.enqueue(encoder.encode(`\n\nERROR_SIGNAL:${signal}`));
         } finally {
           controller.close();
@@ -154,7 +167,7 @@ export async function POST(req: NextRequest) {
     const isRateLimit = errStr.includes('429') || errStr.includes('resource_exhausted');
     
     return NextResponse.json(
-      { error: isRateLimit ? "Neural engine is saturated. Please wait 15 seconds and try again." : (error.message || "Neural gateway timeout.") }, 
+      { error: isRateLimit ? "The neural engine is currently saturated due to Free Tier limits. Please wait 15 seconds." : (error.message || "Neural gateway timeout.") }, 
       { status: isRateLimit ? 429 : 500 }
     );
   }
