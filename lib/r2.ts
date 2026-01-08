@@ -1,4 +1,5 @@
-import { S3Client } from '@aws-sdk/client-s3';
+
+import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 
 const accountId = process.env.R2_ACCOUNT_ID;
 const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -31,6 +32,28 @@ export const R2_BUCKET = bucketName;
 export const R2_PUBLIC_BASE_URL = publicUrl;
 
 /**
+ * Fetches the text content of an object from R2.
+ */
+export async function getObjectText(key: string): Promise<string> {
+  if (!r2Client) throw new Error("R2 client not configured");
+  try {
+    const command = new GetObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: key,
+    });
+    const response = await r2Client.send(command);
+    
+    if (!response.Body) return "";
+    
+    // transformToString() is available in newer @aws-sdk/client-s3 versions
+    return await response.Body.transformToString() || "";
+  } catch (e) {
+    console.error(`[R2 Fetch Error] Failed to get ${key}:`, e);
+    return "";
+  }
+}
+
+/**
  * Generates a public URL for a file stored in R2
  */
 export const getR2PublicUrl = (filePath: string): string | null => {
@@ -38,13 +61,3 @@ export const getR2PublicUrl = (filePath: string): string | null => {
   const baseUrl = R2_PUBLIC_BASE_URL.endsWith('/') ? R2_PUBLIC_BASE_URL : `${R2_PUBLIC_BASE_URL}/`;
   return `${baseUrl}${filePath}`;
 };
-
-if (typeof window === 'undefined') {
-  console.log(isR2Configured() 
-    ? `✅ Cloudflare R2: Client Initialized (Bucket: ${R2_BUCKET})` 
-    : 'ℹ️ Cloudflare R2: Credentials missing, using Supabase fallback'
-  );
-  if (R2_PUBLIC_BASE_URL) {
-    console.log(`🌐 Cloudflare R2: Public URL identified: ${R2_PUBLIC_BASE_URL}`);
-  }
-}

@@ -66,92 +66,60 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V24
--- MISSION: RESOLVE PERFORMANCE LINT (0003) & ELIMINATE DUPLICATE POLICIES (0006)
+  const sqlSchema = `-- PEDAGOGY MASTER: R2-AWARE INFRASTRUCTURE CORE V26
+-- MISSION: ENABLE DOCUMENT-AWARE AI & RESOLVE PERFORMANCE LINT (0003/0006)
 -- ========================================================================================
 
--- 1. AGGRESSIVE CLEANUP OF ALL LEGACY POLICY NAMES (Resolves multiple_permissive_policies)
+-- 1. CLEANUP ALL LEGACY POLICIES
 DO $$ 
 BEGIN
-    -- Profiles table policies
-    DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
-    DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
-    DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
-    DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
-    DROP POLICY IF EXISTS "Profile Master Access" ON public.profiles;
-    DROP POLICY IF EXISTS "Admin Global View" ON public.profiles;
-    
-    -- Documents table policies
-    DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
-    DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
-    DROP POLICY IF EXISTS "Document Master Access" ON public.documents;
-    
-    -- Output Artifacts table policies
-    DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
-    DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
-    DROP POLICY IF EXISTS "Artifact Master Access" ON public.output_artifacts;
-    
-    -- Neural Brain table policies
-    DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Neural Brain Shared Access" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Neural Brain Admin Deployment" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Neural brain access" ON public.neural_brain;
+    DROP POLICY IF EXISTS "profiles_owner_access" ON public.profiles;
+    DROP POLICY IF EXISTS "profiles_admin_global_read" ON public.profiles;
+    DROP POLICY IF EXISTS "documents_owner_access" ON public.documents;
+    DROP POLICY IF EXISTS "artifacts_owner_access" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "neural_brain_read_all" ON public.neural_brain;
+    DROP POLICY IF EXISTS "neural_brain_admin_write" ON public.neural_brain;
 END $$;
 
--- 2. PERFORMANCE OPTIMIZED RLS (Resolves 0003_auth_rls_initplan)
--- Wrapping auth.uid() and auth.jwt() in subqueries (select auth.uid()) 
--- tells Postgres to evaluate the value ONCE per query, not once per row.
+-- 2. SCHEMA UPDATE: R2 ENHANCEMENTS
+ALTER TABLE IF EXISTS public.documents 
+ADD COLUMN IF NOT EXISTS r2_key TEXT,
+ADD COLUMN IF NOT EXISTS r2_bucket TEXT DEFAULT 'pedagogy-master-documents',
+ADD COLUMN IF NOT EXISTS extracted_text_r2_key TEXT,
+ADD COLUMN IF NOT EXISTS content_cached BOOLEAN DEFAULT false;
 
--- PROFILES
-CREATE POLICY "profiles_owner_access" ON public.profiles
-FOR ALL TO authenticated
-USING (id = (select auth.uid()))
-WITH CHECK (id = (select auth.uid()));
+CREATE INDEX IF NOT EXISTS idx_documents_r2_key ON public.documents(r2_key);
+CREATE INDEX IF NOT EXISTS idx_documents_selected ON public.documents(user_id, is_selected);
 
-CREATE POLICY "profiles_admin_global_read" ON public.profiles
-FOR SELECT TO authenticated
-USING (
-  ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
-);
+-- 3. OPTIMIZED RLS POLICIES (Linter 0003 Fix)
+-- Using subqueries for auth.uid() and auth.jwt() improves query performance significantly.
 
--- DOCUMENTS
-CREATE POLICY "documents_owner_access" ON public.documents
-FOR ALL TO authenticated
-USING (user_id = (select auth.uid()))
-WITH CHECK (user_id = (select auth.uid()));
+CREATE POLICY "profiles_owner_access" ON public.profiles FOR ALL TO authenticated
+USING (id = (select auth.uid())) WITH CHECK (id = (select auth.uid()));
 
--- OUTPUT ARTIFACTS
-CREATE POLICY "artifacts_owner_access" ON public.output_artifacts
-FOR ALL TO authenticated
-USING (user_id = (select auth.uid()))
-WITH CHECK (user_id = (select auth.uid()));
+CREATE POLICY "profiles_admin_global_read" ON public.profiles FOR SELECT TO authenticated
+USING (((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com'));
 
--- NEURAL BRAIN
-CREATE POLICY "neural_brain_read_all" ON public.neural_brain
-FOR SELECT TO authenticated
-USING (true);
+CREATE POLICY "documents_owner_access" ON public.documents FOR ALL TO authenticated
+USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()));
 
-CREATE POLICY "neural_brain_admin_write" ON public.neural_brain
-FOR INSERT TO authenticated
-WITH CHECK (
-  ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
-);
+CREATE POLICY "artifacts_owner_access" ON public.output_artifacts FOR ALL TO authenticated
+USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()));
 
--- 3. ENSURE RLS IS ACTIVE
+CREATE POLICY "neural_brain_read_all" ON public.neural_brain FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "neural_brain_admin_write" ON public.neural_brain FOR INSERT TO authenticated
+WITH CHECK (((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com'));
+
+-- 4. SYSTEM ADMIN SYNC
+UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
+WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
+
+-- 5. ENFORCEMENT
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
-
--- 4. SYSTEM ADMIN PRIVILEGE SYNC
-UPDATE public.profiles 
-SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
-WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
-
--- 5. NEURAL SCHEMA REFINEMENT
-ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
 `;
 
   return (
@@ -247,7 +215,7 @@ ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch fixes performance warnings and duplicate policies by utilizing subqueries for auth functions.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch enables R2-aware document context and optimizes performance using auth subqueries.</p>
             </div>
           </div>
         </div>

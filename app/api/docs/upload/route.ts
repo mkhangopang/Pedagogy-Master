@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../../lib/r2';
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File;
     const userId = formData.get('userId') as string;
 
-    // Security check: Ensure the userId matches the authenticated user
+    // Security check
     if (userId !== user.id) {
        return NextResponse.json({ error: 'Identity mismatch detected during ingestion' }, { status: 403 });
     }
@@ -36,15 +37,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing file or user identity' }, { status: 400 });
     }
 
-    // Initialize authenticated server client for DB sync
     const supabase = getSupabaseServerClient(token);
-
     const timestamp = Date.now();
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const filePath = `${userId}/${timestamp}_${sanitizedName}`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // --- STRATEGY A: CLOUDFLARE R2 (Primary Institutional Storage) ---
+    // --- STRATEGY: CLOUDFLARE R2 (Primary Institutional Storage) ---
     if (isR2Configured() && r2Client) {
       try {
         await r2Client.send(
@@ -60,21 +59,22 @@ export async function POST(req: NextRequest) {
           })
         );
 
-        // Register metadata in Supabase DB for indexing using authenticated client
+        // Register metadata in Supabase DB
         const { data, error } = await supabase.from('documents').insert({
           user_id: userId,
           name: file.name,
           file_path: filePath,
+          r2_key: filePath,
+          r2_bucket: R2_BUCKET,
           mime_type: file.type,
           status: 'ready',
           storage_type: 'r2',
-          is_public: !!R2_PUBLIC_BASE_URL
+          is_public: !!R2_PUBLIC_BASE_URL,
+          is_selected: true,
+          content_cached: false
         }).select().single();
 
-        if (error) {
-          console.error("Supabase Metadata Sync Error:", error);
-          throw new Error(`R2 Success but Database Sync Failed: ${error.message}`);
-        }
+        if (error) throw error;
 
         return NextResponse.json({
           id: data.id,
@@ -82,66 +82,49 @@ export async function POST(req: NextRequest) {
           filePath: data.file_path,
           mimeType: data.mime_type,
           storage: 'r2',
-          isPublic: !!R2_PUBLIC_BASE_URL
+          isPublic: data.is_public
         });
-      } catch (r2Error: any) {
-        console.error("Critical R2 Infrastructure Failure:", r2Error);
-        // If R2 metadata registration fails specifically, we shouldn't attempt fallback
-        if (r2Error.message.includes('Sync Failed')) {
-           return NextResponse.json({ error: r2Error.message }, { status: 500 });
-        }
-        console.warn("R2 Node Failed. Attempting Supabase Fallback...");
+      } catch (err: any) {
+        console.error("R2 Upload Error:", err);
+        return NextResponse.json({ error: `R2 Node Error: ${err.message}` }, { status: 502 });
       }
     }
 
-    // --- STRATEGY B: SUPABASE STORAGE (Native Fallback) ---
-    try {
-      const { error: storageError } = await supabase.storage
-        .from('documents')
-        .upload(filePath, buffer, { 
-          contentType: file.type,
-          upsert: true
-        });
-
-      if (storageError) {
-        console.error("Supabase Storage Fallback Failure:", storageError);
-        throw new Error(`Supabase Storage Rejected Payload: ${storageError.message}`);
-      }
-
-      const { data: dbData, error: dbError } = await supabase.from('documents').insert({
-        user_id: userId,
-        name: file.name,
-        file_path: filePath,
-        mime_type: file.type,
-        status: 'ready',
-        storage_type: 'supabase',
-        is_public: false
-      }).select().single();
-
-      if (dbError) {
-        console.error("Supabase Final DB Sync Failure:", dbError);
-        throw new Error(`Storage Success but DB Indexing Failed: ${dbError.message}`);
-      }
-
-      return NextResponse.json({
-        id: dbData.id,
-        name: dbData.name,
-        filePath: dbData.file_path,
-        mimeType: dbData.mime_type,
-        storage: 'supabase',
-        isPublic: false
+    // --- FALLBACK: SUPABASE STORAGE ---
+    const { data: storageData, error: storageError } = await supabase.storage
+      .from('documents')
+      .upload(filePath, buffer, {
+        contentType: file.type,
+        upsert: true
       });
-    } catch (supabaseError: any) {
-      console.error("Supabase Primary Failure:", supabaseError);
-      return NextResponse.json({ 
-        error: `Institutional Storage Unavailable: ${supabaseError.message}` 
-      }, { status: 500 });
-    }
+
+    if (storageError) throw storageError;
+
+    const { data, error } = await supabase.from('documents').insert({
+      user_id: userId,
+      name: file.name,
+      file_path: filePath,
+      mime_type: file.type,
+      status: 'ready',
+      storage_type: 'supabase',
+      is_public: false,
+      is_selected: true,
+      content_cached: false
+    }).select().single();
+
+    if (error) throw error;
+
+    return NextResponse.json({
+      id: data.id,
+      name: data.name,
+      filePath: data.file_path,
+      mimeType: data.mime_type,
+      storage: 'supabase',
+      isPublic: false
+    });
 
   } catch (error: any) {
-    console.error('Unified Upload Gateway Error:', error);
-    return NextResponse.json({ 
-      error: error.message || 'The neural gateway encountered a physical ingestion error.' 
-    }, { status: 500 });
+    console.error('❌ Document upload error:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
