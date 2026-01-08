@@ -66,83 +66,81 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V21
--- MISSION: RESOLVE RLS LINT WARNINGS & OPTIMIZE AUTH PERFORMANCE
+  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V22
+-- MISSION: RESOLVE PERFORMANCE LINT (0003) & CONSOLIDATE POLICIES (0006)
 -- ========================================================================================
 
--- 1. CLEANUP ALL LEGACY POLICIES (Resolves multiple_permissive_policies warning)
+-- 1. CLEANUP ALL LEGACY/DUPLICATE POLICIES
 DO $$ 
 BEGIN
-    -- Profiles cleanup
+    -- Drop all specific variations found in logs to prevent "multiple permissive policies"
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
-    DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
-    DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
+    DROP POLICY IF EXISTS "Users view their own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Admins view all profiles" ON public.profiles;
     
-    -- Documents cleanup
     DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
     DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
     
-    -- Output Artifacts cleanup
     DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
     DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
     
-    -- Neural Brain cleanup
-    DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
     DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Neural brain access" ON public.neural_brain;
     DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
 END $$;
 
--- 2. OPTIMIZED RLS POLICIES (Resolves auth_rls_initplan performance warning)
--- Uses (select auth.uid()) to avoid per-row re-evaluation of auth functions.
+-- 2. OPTIMIZED RLS POLICIES (Using subquery selection for performance)
+-- This satisfies Linter 0003_auth_rls_initplan by avoiding per-row re-evaluation.
 
--- PROFILES
-CREATE POLICY "Manage Own Profile" ON public.profiles
+-- PROFILES: Unified Access Control
+CREATE POLICY "Profile Master Access" ON public.profiles
 FOR ALL TO authenticated
 USING (id = (select auth.uid()))
 WITH CHECK (id = (select auth.uid()));
 
-CREATE POLICY "Admin View All" ON public.profiles
+CREATE POLICY "Admin Global View" ON public.profiles
 FOR SELECT TO authenticated
 USING (
   ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- DOCUMENTS
-CREATE POLICY "Manage Own Documents" ON public.documents
+-- DOCUMENTS: Optimized Ownership
+CREATE POLICY "Document Master Access" ON public.documents
 FOR ALL TO authenticated
 USING (user_id = (select auth.uid()))
 WITH CHECK (user_id = (select auth.uid()));
 
--- OUTPUT ARTIFACTS
-CREATE POLICY "Manage Own Artifacts" ON public.output_artifacts
+-- OUTPUT ARTIFACTS: Optimized Ownership
+CREATE POLICY "Artifact Master Access" ON public.output_artifacts
 FOR ALL TO authenticated
 USING (user_id = (select auth.uid()))
 WITH CHECK (user_id = (select auth.uid()));
 
--- NEURAL BRAIN
-CREATE POLICY "Neural brain access" ON public.neural_brain
+-- NEURAL BRAIN: Consolidated Global Read
+CREATE POLICY "Neural Brain Shared Access" ON public.neural_brain
 FOR SELECT TO authenticated
 USING (true);
 
-CREATE POLICY "Admins deploy neural brain" ON public.neural_brain
+CREATE POLICY "Neural Brain Admin Deployment" ON public.neural_brain
 FOR INSERT TO authenticated
 WITH CHECK (
   ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- 3. ADMINISTRATIVE ROLE UPDATE
+-- 3. ADMINISTRATIVE PRIVILEGE SYNC
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
 
--- 4. ENSURE RLS IS ENABLED
+-- 4. FINAL ROW LEVEL SECURITY ENFORCEMENT
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
--- 5. NEURAL BRAIN TABLE REFINEMENT
+-- 5. SCHEMA REFINEMENT (Fix null value constraint)
 ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
 `;
 
@@ -239,7 +237,7 @@ ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: If profiles show recursion errors, copy and run this script in Supabase SQL editor to fix the performance and duplicate policy warnings.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch consolidates multiple policies and implements the (select auth.uid()) optimization recommended for Supabase performance.</p>
             </div>
           </div>
         </div>
