@@ -11,7 +11,7 @@ import { DEFAULT_MASTER_PROMPT } from '../../constants';
 const PROVIDERS: ProviderConfig[] = [
   { name: 'groq', rpm: 28, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
   { name: 'openrouter', rpm: 45, rpd: 200, enabled: !!process.env.OPENROUTER_API_KEY },
-  // Gemini is enabled if the official API_KEY or GEMINI_API_KEY alias is present
+  // Recognize both standard and Vercel-prefixed Gemini keys
   { name: 'gemini', rpm: 12, rpd: 1400, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
 ];
 
@@ -30,20 +30,28 @@ export async function getSystemPrompt(): Promise<string> {
   }
 }
 
+/**
+ * Builds a rich text context from selected documents so text-only models (Groq) 
+ * can respond to document-specific queries.
+ */
 export async function buildDocumentContext(userId: string): Promise<string> {
   try {
     const { data: docs } = await supabase
       .from('documents')
-      .select('name, file_path, subject, grade_level')
+      .select('name, subject, grade_level, extracted_text')
       .eq('user_id', userId)
       .eq('is_selected', true)
       .limit(3);
 
     if (!docs || docs.length === 0) return "";
 
-    return `\n### ACTIVE CURRICULUM CONTEXT\nThe educator has selected the following documents for this synthesis:
-${docs.map(d => `- ${d.name} (Subject: ${d.subject}, Grade: ${d.grade_level})`).join('\n')}
-Reference the pedagogical markers found in these specific curriculum nodes.`;
+    let context = `\n### ACTIVE CURRICULUM CONTEXT (KNOWLEDGE BASE)\nThe user has selected ${docs.length} documents for this session. Your response must align with these materials:\n`;
+    
+    docs.forEach(d => {
+      context += `\nDOCUMENT: ${d.name}\nSUBJECT: ${d.subject}\nGRADE: ${d.grade_level}\nCONTENT SNIPPET: ${d.extracted_text?.substring(0, 3000) || "Text not extracted yet."}\n---`;
+    });
+
+    return context;
   } catch (e) {
     return "";
   }
@@ -65,6 +73,7 @@ export async function generateAIResponse(
     getSystemPrompt()
   ]);
 
+  // Merge everything into a unified system instruction for all providers
   const finalInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}\n${docContext}`;
 
   return await requestQueue.add(async () => {
@@ -74,9 +83,10 @@ export async function generateAIResponse(
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
-        console.log(`[Neural Router] Attempting ${config.name}`);
+        console.log(`[Neural Router] Attempting ${config.name} with document context awareness.`);
         let response = "";
         
+        // Pass the finalInstruction (which now contains doc text) to ALL providers
         if (config.name === 'groq') response = await callGroq(prompt, history, finalInstruction);
         else if (config.name === 'openrouter') response = await callOpenRouter(prompt, history, finalInstruction);
         else if (config.name === 'gemini') response = await callGemini(prompt, history, finalInstruction, docPart);
@@ -94,9 +104,6 @@ export async function generateAIResponse(
   });
 }
 
-/**
- * Returns the current health and quota status of all AI nodes.
- */
 export function getProviderStatus() {
   return PROVIDERS.map(config => ({
     name: config.name,

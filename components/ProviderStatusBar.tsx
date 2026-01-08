@@ -33,7 +33,7 @@ export const ProviderStatusBar: React.FC = () => {
             const isThrottled = p.enabled && p.remaining.minute <= 0;
 
             return (
-              <div key={p.name} className="flex items-center gap-2" title={isUnconfigured ? "Key missing in environment" : ""}>
+              <div key={p.name} className="flex items-center gap-2" title={isUnconfigured ? "Key missing (Checked API_KEY/GEMINI_API_KEY)" : ""}>
                 <div className={`w-1.5 h-1.5 rounded-full ${
                   isOperational ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 
                   isThrottled ? 'bg-amber-500' : 'bg-rose-500'

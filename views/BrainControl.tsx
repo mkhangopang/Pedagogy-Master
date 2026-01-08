@@ -66,14 +66,14 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V23
+  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V24
 -- MISSION: RESOLVE PERFORMANCE LINT (0003) & ELIMINATE DUPLICATE POLICIES (0006)
 -- ========================================================================================
 
--- 1. AGGRESSIVE CLEANUP OF ALL LEGACY POLICY NAMES
+-- 1. AGGRESSIVE CLEANUP OF ALL LEGACY POLICY NAMES (Resolves multiple_permissive_policies)
 DO $$ 
 BEGIN
-    -- Profiles cleanup
+    -- Profiles table policies
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
     DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
@@ -81,17 +81,17 @@ BEGIN
     DROP POLICY IF EXISTS "Profile Master Access" ON public.profiles;
     DROP POLICY IF EXISTS "Admin Global View" ON public.profiles;
     
-    -- Documents cleanup
+    -- Documents table policies
     DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
     DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
     DROP POLICY IF EXISTS "Document Master Access" ON public.documents;
     
-    -- Output Artifacts cleanup
+    -- Output Artifacts table policies
     DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
     DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
     DROP POLICY IF EXISTS "Artifact Master Access" ON public.output_artifacts;
     
-    -- Neural Brain cleanup
+    -- Neural Brain table policies
     DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
     DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
     DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
@@ -100,11 +100,11 @@ BEGIN
     DROP POLICY IF EXISTS "Neural brain access" ON public.neural_brain;
 END $$;
 
--- 2. PERFORMANCE OPTIMIZED RLS (Linter 0003 Fix)
--- Using (select auth.uid()) and (select auth.jwt()) subqueries ensures auth context
--- is only evaluated once per query instead of once per row.
+-- 2. PERFORMANCE OPTIMIZED RLS (Resolves 0003_auth_rls_initplan)
+-- Wrapping auth.uid() and auth.jwt() in subqueries (select auth.uid()) 
+-- tells Postgres to evaluate the value ONCE per query, not once per row.
 
--- PROFILES: Single unified access policy
+-- PROFILES
 CREATE POLICY "profiles_owner_access" ON public.profiles
 FOR ALL TO authenticated
 USING (id = (select auth.uid()))
@@ -116,19 +116,19 @@ USING (
   ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- DOCUMENTS: Single unified ownership policy
+-- DOCUMENTS
 CREATE POLICY "documents_owner_access" ON public.documents
 FOR ALL TO authenticated
 USING (user_id = (select auth.uid()))
 WITH CHECK (user_id = (select auth.uid()));
 
--- OUTPUT ARTIFACTS: Single unified ownership policy
+-- OUTPUT ARTIFACTS
 CREATE POLICY "artifacts_owner_access" ON public.output_artifacts
 FOR ALL TO authenticated
 USING (user_id = (select auth.uid()))
 WITH CHECK (user_id = (select auth.uid()));
 
--- NEURAL BRAIN: Single unified read & admin write
+-- NEURAL BRAIN
 CREATE POLICY "neural_brain_read_all" ON public.neural_brain
 FOR SELECT TO authenticated
 USING (true);
@@ -145,7 +145,7 @@ ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
--- 4. SYSTEM ADMIN SYNC
+-- 4. SYSTEM ADMIN PRIVILEGE SYNC
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
@@ -247,7 +247,7 @@ ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch aggressively cleans up duplicate RLS policies and optimizes auth performance using subquery selections.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch fixes performance warnings and duplicate policies by utilizing subqueries for auth functions.</p>
             </div>
           </div>
         </div>
