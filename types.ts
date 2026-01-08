@@ -45,6 +45,7 @@ export interface UserProfile {
   name: string;
   gradeLevel?: string;
   subjectArea?: string;
+  activeDocId?: string;
   teachingStyle?: 'concise' | 'balanced' | 'comprehensive';
   pedagogicalApproach?: 'inquiry-based' | 'direct-instruction' | 'flipped-classroom';
   preferredFramework?: 'madeline_hunter' | '5e' | 'ubd' | 'none';

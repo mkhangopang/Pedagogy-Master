@@ -27,6 +27,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
   const [profileForm, setProfileForm] = useState({
     gradeLevel: user.gradeLevel || 'High School',
     subjectArea: user.subjectArea || 'Science',
+    activeDocId: user.activeDocId || '',
     teachingStyle: user.teachingStyle || 'balanced',
     pedagogicalApproach: user.pedagogicalApproach || 'direct-instruction'
   });
@@ -41,6 +42,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
     const { error } = await supabase.from('profiles').update({
       grade_level: profileForm.gradeLevel,
       subject_area: profileForm.subjectArea,
+      active_doc_id: profileForm.activeDocId,
       teaching_style: profileForm.teachingStyle,
       pedagogical_approach: profileForm.pedagogicalApproach
     }).eq('id', user.id);
@@ -144,8 +146,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
 
       <section className="bg-indigo-950 text-white rounded-3xl p-8 relative overflow-hidden shadow-2xl">
         <div className="absolute top-0 right-0 p-8 opacity-10"><Brain size={120} /></div>
-        <div className="relative z-10 flex flex-col lg:flex-row gap-8">
-          <div className="lg:w-1/3">
+        <div className="relative z-10 flex flex-col gap-8">
+          <div className="max-w-xl">
             <h2 className="text-xl font-bold flex items-center gap-2 mb-2">
               <Sparkles className="text-amber-400" />
               AI Adaptive Profile
@@ -155,10 +157,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
             </p>
           </div>
           
-          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Target Grade Level</label>
-              <select value={profileForm.gradeLevel} onChange={e => setProfileForm({...profileForm, gradeLevel: e.target.value})} className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none">
+              <select 
+                value={profileForm.gradeLevel} 
+                onChange={e => setProfileForm({...profileForm, gradeLevel: e.target.value})} 
+                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              >
                 <option>Elementary</option>
                 <option>Middle School</option>
                 <option>High School</option>
@@ -167,13 +173,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
             </div>
             <div className="space-y-2">
               <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Default Subject Area</label>
-              <input value={profileForm.subjectArea} onChange={e => setProfileForm({...profileForm, subjectArea: e.target.value})} placeholder="e.g. STEM" className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-2 text-sm focus:outline-none" />
+              <input 
+                value={profileForm.subjectArea} 
+                onChange={e => setProfileForm({...profileForm, subjectArea: e.target.value})} 
+                placeholder="e.g. STEM" 
+                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Active Curriculum Context</label>
+              <select 
+                value={profileForm.activeDocId} 
+                onChange={e => setProfileForm({...profileForm, activeDocId: e.target.value})} 
+                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+              >
+                <option value="">No context selected</option>
+                {documents.map(doc => (
+                  <option key={doc.id} value={doc.id}>{doc.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div className="flex items-end">
-            <button onClick={handleSaveProfile} disabled={isSaving || !isConnected} className="w-full lg:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-400 text-white rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-xl disabled:opacity-50">
-              {isSaving ? <Activity className="animate-spin" size={18}/> : (showSaved ? <CheckCircle size={18}/> : <Save size={18}/>)}
+          <div className="flex items-center pt-2">
+            <button onClick={handleSaveProfile} disabled={isSaving || !isConnected} className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-400 text-white rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl disabled:opacity-50 active:scale-95">
+              {isSaving ? <Activity className="animate-spin" size={20}/> : (showSaved ? <CheckCircle size={20}/> : <Save size={20}/>)}
               {showSaved ? 'Updated' : 'Save Profile'}
             </button>
           </div>

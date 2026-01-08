@@ -66,36 +66,32 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: R2-AWARE INFRASTRUCTURE CORE V28
--- MISSION: FIX 'is_selected' & ELIMINATE MULTIPLE_PERMISSIVE_POLICIES (0006)
+  const sqlSchema = `-- PEDAGOGY MASTER: R2-AWARE INFRASTRUCTURE CORE V29
+-- MISSION: ADD 'active_doc_id' & OPTIMIZE PROFILE SCHEMA
 -- ========================================================================================
 
--- 1. AGGRESSIVE CLEANUP OF ALL LEGACY POLICIES (Fixes multiple_permissive_policies)
+-- 1. AGGRESSIVE CLEANUP OF ALL LEGACY POLICIES
 DO $$ 
 BEGIN
     -- profiles
-    DROP POLICY IF EXISTS "profiles_owner_access" ON public.profiles;
-    DROP POLICY IF EXISTS "profiles_admin_global_read" ON public.profiles;
-    DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
-    DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
+    DROP POLICY IF EXISTS "profiles_owner_access_v2" ON public.profiles;
+    DROP POLICY IF EXISTS "profiles_admin_global_read_v2" ON public.profiles;
     
     -- documents
-    DROP POLICY IF EXISTS "documents_owner_access" ON public.documents;
-    DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
+    DROP POLICY IF EXISTS "documents_owner_access_v2" ON public.documents;
     
     -- artifacts
-    DROP POLICY IF EXISTS "artifacts_owner_access" ON public.output_artifacts;
-    DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "artifacts_owner_access_v2" ON public.output_artifacts;
     
     -- neural_brain
-    DROP POLICY IF EXISTS "neural_brain_read_all" ON public.neural_brain;
-    DROP POLICY IF EXISTS "neural_brain_admin_write" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Admins deploy neural brain" ON public.neural_brain;
+    DROP POLICY IF EXISTS "neural_brain_read_all_v2" ON public.neural_brain;
+    DROP POLICY IF EXISTS "neural_brain_admin_write_v2" ON public.neural_brain;
 END $$;
 
--- 2. SCHEMA UPDATE: R2 ENHANCEMENTS & MISSING COLUMNS
+-- 2. SCHEMA UPDATE: PROFILES ENHANCEMENTS
+ALTER TABLE IF EXISTS public.profiles 
+ADD COLUMN IF NOT EXISTS active_doc_id UUID;
+
 ALTER TABLE IF EXISTS public.documents 
 ADD COLUMN IF NOT EXISTS r2_key TEXT,
 ADD COLUMN IF NOT EXISTS r2_bucket TEXT DEFAULT 'pedagogy-master-documents',
@@ -109,24 +105,22 @@ CREATE INDEX IF NOT EXISTS idx_documents_r2_key ON public.documents(r2_key);
 CREATE INDEX IF NOT EXISTS idx_documents_selected ON public.documents(user_id, is_selected);
 
 -- 3. OPTIMIZED RLS POLICIES (Fixes auth_rls_initplan 0003)
--- Subqueries (select auth.uid()) ensure the value is evaluated once per query.
-
-CREATE POLICY "profiles_owner_access_v2" ON public.profiles FOR ALL TO authenticated
+CREATE POLICY "profiles_owner_access_v3" ON public.profiles FOR ALL TO authenticated
 USING (id = (select auth.uid())) WITH CHECK (id = (select auth.uid()));
 
-CREATE POLICY "profiles_admin_global_read_v2" ON public.profiles FOR SELECT TO authenticated
+CREATE POLICY "profiles_admin_global_read_v3" ON public.profiles FOR SELECT TO authenticated
 USING (((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com'));
 
-CREATE POLICY "documents_owner_access_v2" ON public.documents FOR ALL TO authenticated
+CREATE POLICY "documents_owner_access_v3" ON public.documents FOR ALL TO authenticated
 USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()));
 
-CREATE POLICY "artifacts_owner_access_v2" ON public.output_artifacts FOR ALL TO authenticated
+CREATE POLICY "artifacts_owner_access_v3" ON public.output_artifacts FOR ALL TO authenticated
 USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()));
 
-CREATE POLICY "neural_brain_read_all_v2" ON public.neural_brain FOR SELECT TO authenticated 
+CREATE POLICY "neural_brain_read_all_v3" ON public.neural_brain FOR SELECT TO authenticated 
 USING (true);
 
-CREATE POLICY "neural_brain_admin_write_v2" ON public.neural_brain FOR INSERT TO authenticated
+CREATE POLICY "neural_brain_admin_write_v3" ON public.neural_brain FOR INSERT TO authenticated
 WITH CHECK (((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com'));
 
 -- 4. SYSTEM ADMIN SYNC
@@ -233,7 +227,7 @@ ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch resolves 'multiple_permissive_policies' (0006) and missing 'is_selected' column errors.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch adds support for persistent curriculum context in teacher profiles.</p>
             </div>
           </div>
         </div>
