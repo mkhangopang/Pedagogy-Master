@@ -66,8 +66,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: R2-AWARE INFRASTRUCTURE CORE V26
--- MISSION: ENABLE DOCUMENT-AWARE AI & RESOLVE PERFORMANCE LINT (0003/0006)
+  const sqlSchema = `-- PEDAGOGY MASTER: R2-AWARE INFRASTRUCTURE CORE V27
+-- MISSION: FIX 'is_selected' MISSING COLUMN & ENABLE DOCUMENT-AWARE AI
 -- ========================================================================================
 
 -- 1. CLEANUP ALL LEGACY POLICIES
@@ -81,12 +81,14 @@ BEGIN
     DROP POLICY IF EXISTS "neural_brain_admin_write" ON public.neural_brain;
 END $$;
 
--- 2. SCHEMA UPDATE: R2 ENHANCEMENTS
+-- 2. SCHEMA UPDATE: R2 ENHANCEMENTS & MISSING COLUMNS
 ALTER TABLE IF EXISTS public.documents 
 ADD COLUMN IF NOT EXISTS r2_key TEXT,
 ADD COLUMN IF NOT EXISTS r2_bucket TEXT DEFAULT 'pedagogy-master-documents',
 ADD COLUMN IF NOT EXISTS extracted_text_r2_key TEXT,
-ADD COLUMN IF NOT EXISTS content_cached BOOLEAN DEFAULT false;
+ADD COLUMN IF NOT EXISTS content_cached BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT true,
+ADD COLUMN IF NOT EXISTS extracted_text TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_documents_r2_key ON public.documents(r2_key);
 CREATE INDEX IF NOT EXISTS idx_documents_selected ON public.documents(user_id, is_selected);
@@ -215,7 +217,7 @@ ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch enables R2-aware document context and optimizes performance using auth subqueries.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch fixes the missing 'is_selected' column error and enables R2-aware document context retrieval for AI models.</p>
             </div>
           </div>
         </div>

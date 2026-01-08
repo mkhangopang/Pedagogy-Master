@@ -55,6 +55,7 @@ export async function generateAIResponse(
   ]);
 
   // Merge context into the final system instruction for ALL providers
+  // This ensures Groq and OpenRouter are just as aware of the documents as Gemini
   const finalInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}\n${docContext}`;
 
   return await requestQueue.add(async () => {
@@ -67,6 +68,7 @@ export async function generateAIResponse(
         console.log(`[Neural Router] Attempting ${config.name} with R2 context awareness.`);
         let response = "";
         
+        // All models receive the docContext in their system prompt
         if (config.name === 'groq') response = await callGroq(prompt, history, finalInstruction);
         else if (config.name === 'openrouter') response = await callOpenRouter(prompt, history, finalInstruction);
         else if (config.name === 'gemini') response = await callGemini(prompt, history, finalInstruction, docPart);
