@@ -51,7 +51,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
       const { error } = await supabase.from('neural_brain').insert([{
         master_prompt: formData.masterPrompt,
-        bloom_rules: formData.bloomRules,
+        bloom_rules: formData.bloomRules || '', // Ensure no NULL is sent to the DB
         version: formData.version + 1,
         is_active: true
       }]);
@@ -113,6 +113,16 @@ CREATE POLICY "Users can manage their own documents" ON public.documents
 FOR ALL TO authenticated
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
+
+-- 6. NEURAL BRAIN TABLE (Explicitly allowing NULL bloom_rules)
+CREATE TABLE IF NOT EXISTS neural_brain (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  version INTEGER NOT NULL,
+  master_prompt TEXT NOT NULL,
+  bloom_rules TEXT,
+  is_active BOOLEAN DEFAULT false,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 `;
 
   return (

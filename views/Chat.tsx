@@ -149,10 +149,18 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       let fullContent = '';
       const selectedDoc = localDocs.find(d => d.isSelected);
 
+      // HISTORY MAPPING: Filter out 'system' roles and cast to strictly 'user' | 'assistant'
+      const history = messages
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .map(m => ({ 
+          role: m.role as 'user' | 'assistant', 
+          content: m.content 
+        }));
+
       const stream = geminiService.chatWithDocumentStream(
         msgContent,
         { base64: selectedDoc?.base64Data, mimeType: selectedDoc?.mimeType, filePath: selectedDoc?.filePath },
-        messages.map(m => ({ role: m.role, content: m.content })),
+        history,
         brain,
         user
       );
