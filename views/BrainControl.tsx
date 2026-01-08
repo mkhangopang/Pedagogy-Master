@@ -123,6 +123,9 @@ CREATE TABLE IF NOT EXISTS neural_brain (
   is_active BOOLEAN DEFAULT false,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- FIX: Remove potential NOT NULL constraints from previous schema versions
+ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
 `;
 
   return (

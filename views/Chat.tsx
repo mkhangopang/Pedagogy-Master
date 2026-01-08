@@ -237,11 +237,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
               </div>
             ) : (
               <div className="space-y-2 pb-20">
-                {messages.map((m, idx) => (
+                {messages
+                  .filter(m => m.role !== 'system')
+                  .map((m, idx) => (
                   <MessageItem 
                     key={m.id} 
                     id={m.id} 
-                    role={m.role} 
+                    role={m.role as 'user' | 'assistant'} 
                     content={m.content} 
                     timestamp={m.timestamp} 
                     isLatest={idx === messages.length - 1} 

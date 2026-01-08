@@ -114,10 +114,10 @@ export default function App() {
           plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
           queriesUsed: profile.queries_used || 0,
           queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
-          gradeLevel: profile.grade_level,
-          subjectArea: profile.subject_area,
-          teachingStyle: profile.teaching_style,
-          pedagogicalApproach: profile.pedagogical_approach,
+          gradeLevel: profile.grade_level || 'High School',
+          subjectArea: profile.subject_area || 'General',
+          teachingStyle: profile.teaching_style || 'balanced',
+          pedagogicalApproach: profile.pedagogical_approach || 'direct-instruction',
           generationCount: profile.generation_count || 0,
           successRate: profile.success_rate || 0,
           editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
@@ -137,8 +137,8 @@ export default function App() {
           status: d.status as any,
           storageType: d.storage_type,
           isPublic: d.is_public,
-          subject: d.subject,
-          gradeLevel: d.grade_level,
+          subject: d.subject || 'General',
+          gradeLevel: d.grade_level || 'Auto',
           sloTags: d.slo_tags || [],
           createdAt: d.created_at
         })));
@@ -153,11 +153,11 @@ export default function App() {
       if (data) {
         setBrain({
           id: data.id,
-          masterPrompt: data.master_prompt,
-          bloomRules: data.bloom_rules, 
-          version: data.version,
-          isActive: data.is_active,
-          updatedAt: data.updated_at
+          masterPrompt: data.master_prompt || DEFAULT_MASTER_PROMPT,
+          bloomRules: data.bloom_rules || DEFAULT_BLOOM_RULES, 
+          version: data.version || 1,
+          isActive: data.is_active ?? true,
+          updatedAt: data.updated_at || new Date().toISOString()
         });
       }
     } catch (e) {}
