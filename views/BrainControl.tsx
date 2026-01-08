@@ -51,7 +51,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
       const { error } = await supabase.from('neural_brain').insert([{
         master_prompt: formData.masterPrompt,
-        bloom_rules: formData.bloomRules || '', // Ensure no NULL is sent to the DB
+        bloom_rules: formData.bloomRules || '',
         version: formData.version + 1,
         is_active: true
       }]);
@@ -66,65 +66,83 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V20
--- MISSION: ELIMINATE RECURSION & SECURE ADMIN NODES
+  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V21
+-- MISSION: RESOLVE RLS LINT WARNINGS & OPTIMIZE AUTH PERFORMANCE
 -- ========================================================================================
 
--- 1. CLEANUP POLICIES (Resetting state)
+-- 1. CLEANUP ALL LEGACY POLICIES (Resolves multiple_permissive_policies warning)
 DO $$ 
 BEGIN
+    -- Profiles cleanup
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
     DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
+    
+    -- Documents cleanup
+    DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
+    DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
+    
+    -- Output Artifacts cleanup
+    DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
+    
+    -- Neural Brain cleanup
+    DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
 END $$;
 
--- 2. CREATE NON-RECURSIVE POLICIES (Crucial: Uses JWT instead of subqueries)
--- Allow users to see and update only their own profile
+-- 2. OPTIMIZED RLS POLICIES (Resolves auth_rls_initplan performance warning)
+-- Uses (select auth.uid()) to avoid per-row re-evaluation of auth functions.
+
+-- PROFILES
 CREATE POLICY "Manage Own Profile" ON public.profiles
 FOR ALL TO authenticated
-USING (id = auth.uid())
-WITH CHECK (id = auth.uid());
+USING (id = (select auth.uid()))
+WITH CHECK (id = (select auth.uid()));
 
--- Allow specific admins to view all data (Validated via JWT email payload)
 CREATE POLICY "Admin View All" ON public.profiles
 FOR SELECT TO authenticated
 USING (
-  (auth.jwt() ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
+  ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- 3. INITIALIZE ADMIN METADATA
--- Set these values for your email to gain 'app_admin' view access
+-- DOCUMENTS
+CREATE POLICY "Manage Own Documents" ON public.documents
+FOR ALL TO authenticated
+USING (user_id = (select auth.uid()))
+WITH CHECK (user_id = (select auth.uid()));
+
+-- OUTPUT ARTIFACTS
+CREATE POLICY "Manage Own Artifacts" ON public.output_artifacts
+FOR ALL TO authenticated
+USING (user_id = (select auth.uid()))
+WITH CHECK (user_id = (select auth.uid()));
+
+-- NEURAL BRAIN
+CREATE POLICY "Neural brain access" ON public.neural_brain
+FOR SELECT TO authenticated
+USING (true);
+
+CREATE POLICY "Admins deploy neural brain" ON public.neural_brain
+FOR INSERT TO authenticated
+WITH CHECK (
+  ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
+);
+
+-- 3. ADMINISTRATIVE ROLE UPDATE
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
-WHERE email = 'mkgopang@gmail.com';
+WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
 
--- 4. APPLY RLS TO SUBSIDIARY TABLES
+-- 4. ENSURE RLS IS ENABLED
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
--- 5. DOCUMENT ACCESS POLICIES
-DO $$ 
-BEGIN
-    DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
-END $$;
-
-CREATE POLICY "Users can manage their own documents" ON public.documents
-FOR ALL TO authenticated
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
-
--- 6. NEURAL BRAIN TABLE (Explicitly allowing NULL bloom_rules)
-CREATE TABLE IF NOT EXISTS neural_brain (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  version INTEGER NOT NULL,
-  master_prompt TEXT NOT NULL,
-  bloom_rules TEXT,
-  is_active BOOLEAN DEFAULT false,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- FIX: Remove potential NOT NULL constraints from previous schema versions
+-- 5. NEURAL BRAIN TABLE REFINEMENT
 ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
 `;
 
@@ -221,7 +239,7 @@ ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: If profiles show recursion errors, copy and run this script in Supabase SQL editor to gain admin view access.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: If profiles show recursion errors, copy and run this script in Supabase SQL editor to fix the performance and duplicate policy warnings.</p>
             </div>
           </div>
         </div>

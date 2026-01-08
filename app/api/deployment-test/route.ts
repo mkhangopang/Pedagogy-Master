@@ -11,6 +11,7 @@ type TestResult = {
   status: 'pass' | 'fail' | 'warning';
   message: string;
   details?: any;
+  fix?: string;
 };
 
 export async function GET(request: NextRequest) {
@@ -40,7 +41,8 @@ export async function GET(request: NextRequest) {
       name: 'Cloud Infrastructure Keys',
       status: (envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.geminiKey) ? 'pass' : 'fail',
       message: 'Critical environment variables detected.',
-      details: envCheck
+      details: envCheck,
+      fix: !envCheck.geminiKey ? 'Missing API_KEY in environment variables. Gemini will be disabled.' : undefined
     });
 
     // 2. R2 Handshake
@@ -94,20 +96,28 @@ export async function GET(request: NextRequest) {
     }
 
     // 4. AI Engine Handshake
-    try {
-      // Create a new instance right before making the API call as per best practices
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: 'Ping connectivity test'
-      });
+    if (!process.env.API_KEY) {
       results.push({
         name: 'Gemini AI Synthesis Engine',
-        status: response.text ? 'pass' : 'warning',
-        message: 'AI Handshake successful. Semantic engine is operational.'
+        status: 'fail',
+        message: 'API Key is missing from process.env.API_KEY.',
+        fix: 'Add your Gemini API Key to your environment variables to enable the AI engine.'
       });
-    } catch (e: any) {
-      results.push({ name: 'Gemini AI Synthesis Engine', status: 'fail', message: `Engine offline: ${e.message}` });
+    } else {
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: 'Ping connectivity test'
+        });
+        results.push({
+          name: 'Gemini AI Synthesis Engine',
+          status: response.text ? 'pass' : 'warning',
+          message: 'AI Handshake successful. Semantic engine is operational.'
+        });
+      } catch (e: any) {
+        results.push({ name: 'Gemini AI Synthesis Engine', status: 'fail', message: `Engine offline: ${e.message}` });
+      }
     }
 
     const passedCount = results.filter(r => r.status === 'pass').length;
@@ -127,7 +137,7 @@ export async function GET(request: NextRequest) {
       tests: results,
       recommendations: failedCount === 0 
         ? ["Infrastructure is fully validated for production."] 
-        : ["Address failing modules or provide missing R2 credentials."]
+        : ["Address failing modules or provide missing R2 credentials or AI API keys."]
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
