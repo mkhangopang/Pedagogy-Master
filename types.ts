@@ -11,6 +11,13 @@ export enum SubscriptionPlan {
   ENTERPRISE = 'enterprise'
 }
 
+export interface PedagogySettings {
+  preferredFramework: 'madeline_hunter' | '5e' | 'ubd' | 'none';
+  enableAutoValidation: boolean;
+  defaultBloomLevel: string;
+  differentiationEnabled: boolean;
+}
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -30,6 +37,7 @@ export interface UserProfile {
     examplesCount: number;
     structureModifications: number;
   };
+  pedagogySettings?: PedagogySettings;
 }
 
 export interface OutputArtifact {
@@ -83,4 +91,5 @@ export interface ChatMessage {
   content: string;
   timestamp: string;
   documentId?: string;
+  pedagogyScore?: number;
 }
