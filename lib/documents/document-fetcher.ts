@@ -4,11 +4,12 @@ import { getObjectText } from '../r2';
 
 export interface DocumentContent {
   id: string;
-  name: string;
+  filename: string;
   extractedText: string;
   subject: string | null;
   gradeLevel: string | null;
   sloTags: any[];
+  wordCount: number;
 }
 
 /**
@@ -19,13 +20,14 @@ export async function getSelectedDocumentsWithContent(
 ): Promise<DocumentContent[]> {
   try {
     // 1. Get selected document metadata from Supabase
+    // Using a limit of 3 to stay within common context window constraints
     const { data: documents, error } = await supabase
       .from('documents')
       .select('*')
       .eq('user_id', userId)
       .eq('is_selected', true)
       .order('created_at', { ascending: false })
-      .limit(3); // Context window limit
+      .limit(3);
 
     if (error) {
       console.error('Error fetching document metadata:', error);
@@ -41,14 +43,15 @@ export async function getSelectedDocumentsWithContent(
       try {
         let extractedText = '';
 
-        // Check if text is cached in Supabase
-        if (doc.content_cached && doc.extracted_text) {
+        // Strategy 1: Use cached content in Supabase if available
+        if (doc.extracted_text) {
           extractedText = doc.extracted_text;
         }
-        // Fetch from R2 using extracted_text_r2_key or main r2_key
+        // Strategy 2: Fetch from R2 using specific text key or main file path
         else {
           const key = doc.extracted_text_r2_key || doc.r2_key || doc.file_path;
           if (key) {
+            console.log(`🌐 Fetching content from R2 for: ${doc.name || doc.filename}`);
             extractedText = await getObjectText(key);
           }
         }
@@ -59,13 +62,14 @@ export async function getSelectedDocumentsWithContent(
           
           documentsWithContent.push({
             id: doc.id,
-            name: doc.name || doc.filename,
+            filename: doc.name || doc.filename,
             extractedText: extractedText.length > 5000 
               ? truncatedText + '\n\n[Document truncated - showing first 5000 characters]'
               : truncatedText,
             subject: doc.subject,
             gradeLevel: doc.grade_level,
-            sloTags: doc.slo_tags || []
+            sloTags: doc.slo_tags || [],
+            wordCount: doc.word_count || 0
           });
         }
       } catch (docError) {
@@ -90,7 +94,7 @@ export function buildDocumentContextString(documents: DocumentContent[]): string
 
   for (const doc of documents) {
     context += `
-📄 DOCUMENT: ${doc.name}
+📄 DOCUMENT: ${doc.filename}
 SUBJECT AREA: ${doc.subject || 'Not specified'}
 GRADE LEVEL: ${doc.gradeLevel || 'Not specified'}
 SLO TAGS: ${doc.sloTags.length > 0 ? JSON.stringify(doc.sloTags) : 'None extracted'}
@@ -103,10 +107,10 @@ ${doc.extractedText}
 
   context += `
 🔴 CRITICAL INSTRUCTIONS FOR DOCUMENT-AWARE RESPONSES:
-1. Analyze the document content provided above.
-2. Reference specific information (SLO codes, outcomes) directly from these documents.
+1. Analyze the document content provided above to formulate your response.
+2. Reference specific information (SLO codes, learning outcomes) directly from these documents.
 3. Quote relevant sections when answering curriculum-specific questions.
-4. Use the format: "According to [document name], ..."
+4. Use the format: "According to [document name], ..." when referencing these assets.
 5. If information is NOT found in the documents, clearly state: "This information is not in the selected curriculum documents."
 ===========================================
 `;

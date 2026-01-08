@@ -1,5 +1,5 @@
 
-import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 
 const accountId = process.env.R2_ACCOUNT_ID;
 const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -46,6 +46,7 @@ export async function getObjectText(key: string): Promise<string> {
     if (!response.Body) return "";
     
     // transformToString() is available in newer @aws-sdk/client-s3 versions
+    // For older environments, we'd use a stream reader
     return await response.Body.transformToString() || "";
   } catch (e) {
     console.error(`[R2 Fetch Error] Failed to get ${key}:`, e);

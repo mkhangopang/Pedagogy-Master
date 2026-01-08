@@ -15,26 +15,24 @@ export async function POST(req: NextRequest) {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
     if (!token) {
-      return NextResponse.json({ error: 'Authentication required for ingestion' }, { status: 401 });
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
     }
 
-    // Verify user identity via Supabase
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) {
-      return NextResponse.json({ error: 'Invalid session context' }, { status: 401 });
+      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const userId = formData.get('userId') as string;
 
-    // Security check
     if (userId !== user.id) {
-       return NextResponse.json({ error: 'Identity mismatch detected during ingestion' }, { status: 403 });
+       return NextResponse.json({ error: 'Identity mismatch' }, { status: 403 });
     }
 
     if (!file || !userId) {
-      return NextResponse.json({ error: 'Missing file or user identity' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing file or identity' }, { status: 400 });
     }
 
     const supabase = getSupabaseServerClient(token);
@@ -43,7 +41,7 @@ export async function POST(req: NextRequest) {
     const filePath = `${userId}/${timestamp}_${sanitizedName}`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // --- STRATEGY: CLOUDFLARE R2 (Primary Institutional Storage) ---
+    // --- STRATEGY: CLOUDFLARE R2 (Primary Storage) ---
     if (isR2Configured() && r2Client) {
       try {
         await r2Client.send(
@@ -59,6 +57,20 @@ export async function POST(req: NextRequest) {
           })
         );
 
+        // For simple text-based files, we also store the text content in R2 for easy AI fetching
+        let extractedTextR2Key = null;
+        if (file.type === 'text/plain' || file.type === 'text/csv' || file.type === 'application/json') {
+          extractedTextR2Key = `${filePath}.txt`;
+          await r2Client.send(
+            new PutObjectCommand({
+              Bucket: R2_BUCKET,
+              Key: extractedTextR2Key,
+              Body: buffer.toString('utf-8'),
+              ContentType: 'text/plain',
+            })
+          );
+        }
+
         // Register metadata in Supabase DB
         const { data, error } = await supabase.from('documents').insert({
           user_id: userId,
@@ -66,6 +78,7 @@ export async function POST(req: NextRequest) {
           file_path: filePath,
           r2_key: filePath,
           r2_bucket: R2_BUCKET,
+          extracted_text_r2_key: extractedTextR2Key,
           mime_type: file.type,
           status: 'ready',
           storage_type: 'r2',
@@ -81,8 +94,7 @@ export async function POST(req: NextRequest) {
           name: data.name,
           filePath: data.file_path,
           mimeType: data.mime_type,
-          storage: 'r2',
-          isPublic: data.is_public
+          storage: 'r2'
         });
       } catch (err: any) {
         console.error("R2 Upload Error:", err);
@@ -91,12 +103,9 @@ export async function POST(req: NextRequest) {
     }
 
     // --- FALLBACK: SUPABASE STORAGE ---
-    const { data: storageData, error: storageError } = await supabase.storage
+    const { error: storageError } = await supabase.storage
       .from('documents')
-      .upload(filePath, buffer, {
-        contentType: file.type,
-        upsert: true
-      });
+      .upload(filePath, buffer, { contentType: file.type, upsert: true });
 
     if (storageError) throw storageError;
 
@@ -107,9 +116,7 @@ export async function POST(req: NextRequest) {
       mime_type: file.type,
       status: 'ready',
       storage_type: 'supabase',
-      is_public: false,
-      is_selected: true,
-      content_cached: false
+      is_selected: true
     }).select().single();
 
     if (error) throw error;
@@ -119,12 +126,11 @@ export async function POST(req: NextRequest) {
       name: data.name,
       filePath: data.file_path,
       mimeType: data.mime_type,
-      storage: 'supabase',
-      isPublic: false
+      storage: 'supabase'
     });
 
   } catch (error: any) {
-    console.error('❌ Document upload error:', error);
+    console.error('❌ Upload error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
