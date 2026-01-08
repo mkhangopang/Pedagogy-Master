@@ -51,10 +51,16 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     const docPart = await getDocumentPart(doc, supabase);
     
-    const systemInstruction = `${brain?.masterPrompt || ''}\n${adaptiveContext || ''}`;
+    const systemInstruction = `${adaptiveContext || ''}`;
     const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
 
-    const { text, provider } = await generateAIResponse(promptText, history || [], systemInstruction, docPart);
+    const { text, provider } = await generateAIResponse(
+      promptText, 
+      history || [], 
+      user.id, 
+      systemInstruction, 
+      docPart
+    );
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({

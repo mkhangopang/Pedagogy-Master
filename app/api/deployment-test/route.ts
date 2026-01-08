@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
@@ -94,7 +95,8 @@ export async function GET(request: NextRequest) {
 
     // 4. AI Engine Handshake
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+      // Create a new instance right before making the API call as per best practices
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: 'Ping connectivity test'

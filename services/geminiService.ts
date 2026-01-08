@@ -1,5 +1,5 @@
 
-import { SLO, NeuralBrain, UserProfile } from "../types";
+import { NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 import { supabase } from "../lib/supabase";
 

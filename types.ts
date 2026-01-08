@@ -11,11 +11,28 @@ export enum SubscriptionPlan {
   ENTERPRISE = 'enterprise'
 }
 
-export interface PedagogySettings {
-  preferredFramework: 'madeline_hunter' | '5e' | 'ubd' | 'none';
-  enableAutoValidation: boolean;
-  defaultBloomLevel: string;
-  differentiationEnabled: boolean;
+/**
+ * Student Learning Objective interface
+ */
+export interface SLO {
+  id: string;
+  code: string;
+  description: string;
+  level?: string;
+}
+
+/**
+ * Output artifact interface for tracking AI generated content and feedback
+ */
+export interface OutputArtifact {
+  id: string;
+  userId: string;
+  contentType: string;
+  content: string;
+  metadata: any;
+  status: 'generated' | 'exported' | 'accepted' | 'abandoned' | 'edited';
+  editDepth: number;
+  createdAt: string;
 }
 
 export interface UserProfile {
@@ -30,6 +47,8 @@ export interface UserProfile {
   subjectArea?: string;
   teachingStyle?: 'concise' | 'balanced' | 'comprehensive';
   pedagogicalApproach?: 'inquiry-based' | 'direct-instruction' | 'flipped-classroom';
+  preferredFramework?: 'madeline_hunter' | '5e' | 'ubd' | 'none';
+  boardCurriculum?: string;
   generationCount: number;
   successRate: number;
   editPatterns: {
@@ -37,27 +56,6 @@ export interface UserProfile {
     examplesCount: number;
     structureModifications: number;
   };
-  pedagogySettings?: PedagogySettings;
-}
-
-export interface OutputArtifact {
-  id: string;
-  userId: string;
-  contentType: string;
-  content: string;
-  metadata: any;
-  status: 'generated' | 'accepted' | 'edited' | 'exported' | 'abandoned';
-  editDepth: number;
-  createdAt: string;
-}
-
-export interface SLO {
-  id: string;
-  content: string;
-  bloomLevel: string;
-  cognitiveComplexity: number;
-  keywords: string[];
-  suggestedAssessment: string;
 }
 
 export interface Document {
@@ -70,10 +68,23 @@ export interface Document {
   status: 'processing' | 'completed' | 'failed' | 'uploading' | 'ready';
   storageType?: 'r2' | 'supabase';
   isPublic?: boolean;
+  isSelected?: boolean;
   subject: string;
   gradeLevel: string;
+  extractedText?: string;
+  // Use defined SLO interface instead of any
   sloTags: SLO[];
   createdAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  aiProvider?: string;
+  documentIds?: string[];
+  pedagogyScore?: number;
 }
 
 export interface NeuralBrain {
@@ -83,13 +94,4 @@ export interface NeuralBrain {
   version: number;
   isActive: boolean;
   updatedAt: string;
-}
-
-export interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: string;
-  documentId?: string;
-  pedagogyScore?: number;
 }
