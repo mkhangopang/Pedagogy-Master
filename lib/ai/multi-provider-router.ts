@@ -11,8 +11,8 @@ import { DEFAULT_MASTER_PROMPT } from '../../constants';
 const PROVIDERS: ProviderConfig[] = [
   { name: 'groq', rpm: 28, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
   { name: 'openrouter', rpm: 45, rpd: 200, enabled: !!process.env.OPENROUTER_API_KEY },
-  // Gemini is enabled if the official API_KEY is present
-  { name: 'gemini', rpm: 12, rpd: 1400, enabled: !!process.env.API_KEY },
+  // Gemini is enabled if the official API_KEY or GEMINI_API_KEY alias is present
+  { name: 'gemini', rpm: 12, rpd: 1400, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
 ];
 
 export async function getSystemPrompt(): Promise<string> {

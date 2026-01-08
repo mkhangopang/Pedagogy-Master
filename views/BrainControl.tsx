@@ -66,81 +66,91 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V22
--- MISSION: RESOLVE PERFORMANCE LINT (0003) & CONSOLIDATE POLICIES (0006)
+  const sqlSchema = `-- PEDAGOGY MASTER: OPTIMIZED INFRASTRUCTURE CORE V23
+-- MISSION: RESOLVE PERFORMANCE LINT (0003) & ELIMINATE DUPLICATE POLICIES (0006)
 -- ========================================================================================
 
--- 1. CLEANUP ALL LEGACY/DUPLICATE POLICIES
+-- 1. AGGRESSIVE CLEANUP OF ALL LEGACY POLICY NAMES
 DO $$ 
 BEGIN
-    -- Drop all specific variations found in logs to prevent "multiple permissive policies"
+    -- Profiles cleanup
     DROP POLICY IF EXISTS "Manage Own Profile" ON public.profiles;
     DROP POLICY IF EXISTS "Admin View All" ON public.profiles;
-    DROP POLICY IF EXISTS "Users view their own profile" ON public.profiles;
-    DROP POLICY IF EXISTS "Admins view all profiles" ON public.profiles;
+    DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
+    DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
+    DROP POLICY IF EXISTS "Profile Master Access" ON public.profiles;
+    DROP POLICY IF EXISTS "Admin Global View" ON public.profiles;
     
+    -- Documents cleanup
     DROP POLICY IF EXISTS "Manage Own Documents" ON public.documents;
     DROP POLICY IF EXISTS "Users can manage their own documents" ON public.documents;
+    DROP POLICY IF EXISTS "Document Master Access" ON public.documents;
     
+    -- Output Artifacts cleanup
     DROP POLICY IF EXISTS "Manage Own Artifacts" ON public.output_artifacts;
     DROP POLICY IF EXISTS "Users view own artifacts" ON public.output_artifacts;
+    DROP POLICY IF EXISTS "Artifact Master Access" ON public.output_artifacts;
     
-    DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
+    -- Neural Brain cleanup
     DROP POLICY IF EXISTS "Admins can deploy neural brain" ON public.neural_brain;
-    DROP POLICY IF EXISTS "Neural brain access" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Neural brain is viewable by all" ON public.neural_brain;
     DROP POLICY IF EXISTS "Neural brain is viewable by authenticated users" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Neural Brain Shared Access" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Neural Brain Admin Deployment" ON public.neural_brain;
+    DROP POLICY IF EXISTS "Neural brain access" ON public.neural_brain;
 END $$;
 
--- 2. OPTIMIZED RLS POLICIES (Using subquery selection for performance)
--- This satisfies Linter 0003_auth_rls_initplan by avoiding per-row re-evaluation.
+-- 2. PERFORMANCE OPTIMIZED RLS (Linter 0003 Fix)
+-- Using (select auth.uid()) and (select auth.jwt()) subqueries ensures auth context
+-- is only evaluated once per query instead of once per row.
 
--- PROFILES: Unified Access Control
-CREATE POLICY "Profile Master Access" ON public.profiles
+-- PROFILES: Single unified access policy
+CREATE POLICY "profiles_owner_access" ON public.profiles
 FOR ALL TO authenticated
 USING (id = (select auth.uid()))
 WITH CHECK (id = (select auth.uid()));
 
-CREATE POLICY "Admin Global View" ON public.profiles
+CREATE POLICY "profiles_admin_global_read" ON public.profiles
 FOR SELECT TO authenticated
 USING (
   ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- DOCUMENTS: Optimized Ownership
-CREATE POLICY "Document Master Access" ON public.documents
+-- DOCUMENTS: Single unified ownership policy
+CREATE POLICY "documents_owner_access" ON public.documents
 FOR ALL TO authenticated
 USING (user_id = (select auth.uid()))
 WITH CHECK (user_id = (select auth.uid()));
 
--- OUTPUT ARTIFACTS: Optimized Ownership
-CREATE POLICY "Artifact Master Access" ON public.output_artifacts
+-- OUTPUT ARTIFACTS: Single unified ownership policy
+CREATE POLICY "artifacts_owner_access" ON public.output_artifacts
 FOR ALL TO authenticated
 USING (user_id = (select auth.uid()))
 WITH CHECK (user_id = (select auth.uid()));
 
--- NEURAL BRAIN: Consolidated Global Read
-CREATE POLICY "Neural Brain Shared Access" ON public.neural_brain
+-- NEURAL BRAIN: Single unified read & admin write
+CREATE POLICY "neural_brain_read_all" ON public.neural_brain
 FOR SELECT TO authenticated
 USING (true);
 
-CREATE POLICY "Neural Brain Admin Deployment" ON public.neural_brain
+CREATE POLICY "neural_brain_admin_write" ON public.neural_brain
 FOR INSERT TO authenticated
 WITH CHECK (
   ((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 );
 
--- 3. ADMINISTRATIVE PRIVILEGE SYNC
-UPDATE public.profiles 
-SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
-WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
-
--- 4. FINAL ROW LEVEL SECURITY ENFORCEMENT
+-- 3. ENSURE RLS IS ACTIVE
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 
--- 5. SCHEMA REFINEMENT (Fix null value constraint)
+-- 4. SYSTEM ADMIN SYNC
+UPDATE public.profiles 
+SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
+WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
+
+-- 5. NEURAL SCHEMA REFINEMENT
 ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
 `;
 
@@ -237,7 +247,7 @@ ALTER TABLE IF EXISTS neural_brain ALTER COLUMN bloom_rules DROP NOT NULL;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch consolidates multiple policies and implements the (select auth.uid()) optimization recommended for Supabase performance.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch aggressively cleans up duplicate RLS policies and optimizes auth performance using subquery selections.</p>
             </div>
           </div>
         </div>

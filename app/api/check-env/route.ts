@@ -1,10 +1,11 @@
+
 import { NextResponse } from 'next/server';
 
 export async function GET() {
   const env = {
     NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    API_KEY: !!process.env.API_KEY,
+    API_KEY_EXISTS: !!(process.env.API_KEY || process.env.GEMINI_API_KEY),
     NODE_ENV: process.env.NODE_ENV,
     VERCEL_ENV: process.env.VERCEL_ENV || 'local',
     
@@ -22,7 +23,7 @@ export async function GET() {
     timestamp: new Date().toISOString(),
     diagnostics: env,
     resolution: isConfigured 
-      ? "Infrastructure verified. If you still see errors, check your Supabase 'profiles' table exists."
-      : "Verify that NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in your Vercel/Local environment and you have REDEPLOYED."
+      ? "Infrastructure verified. If Gemini is still disabled, ensure either API_KEY or GEMINI_API_KEY is set."
+      : "Verify that NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set and you have REDEPLOYED."
   });
 }
