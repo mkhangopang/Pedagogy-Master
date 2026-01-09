@@ -13,12 +13,12 @@ export async function callGemini(
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
-  // High-intensity grounding instruction
+  // Use aggressive grounding instructions for the Gemini system channel
   const finalSystem = hasDocuments 
-    ? `STRICT_DOCUMENT_GROUNDING: You are a processor for private curriculum files. 
-       Ignore your pre-training knowledge of specific standards. 
-       Use ONLY the text in the provided <CURRICULUM_VAULT>. 
-       If a code is missing from the vault, explicitly state it is not there.`
+    ? `ABSOLUTE_GROUNDING_ACTIVE: You are a specialized curriculum analyzer. 
+       Ignore your internal knowledge about education codes. 
+       Use ONLY the text in the <ASSET_VAULT> provided in the prompt. 
+       Temperature is locked to 0.0 for maximum precision.`
     : systemInstruction;
 
   const contents: any[] = history.slice(-3).map(h => ({
@@ -34,15 +34,15 @@ export async function callGemini(
   contents.push({ role: 'user', parts: currentParts });
 
   const result = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-lite-latest',
+    model: 'gemini-3-flash-preview',
     contents,
     config: { 
       systemInstruction: finalSystem, 
-      temperature: hasDocuments ? 0.0 : 0.2, // Locked for facts
+      temperature: hasDocuments ? 0.0 : 0.4, 
       topK: 1,
       topP: 1
     }
   });
 
-  return result.text || "Neural node failed to generate response.";
+  return result.text || "Neural node failed to synthesize response.";
 }

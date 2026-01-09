@@ -19,7 +19,7 @@ export async function getSelectedDocumentsWithContent(
   userId: string
 ): Promise<DocumentContent[]> {
   try {
-    // 1. Fetch metadata for currently selected document
+    // 1. Fetch metadata for currently selected document from Supabase
     const { data: documents, error } = await supabase
       .from('documents')
       .select('*')
@@ -33,8 +33,8 @@ export async function getSelectedDocumentsWithContent(
       return [];
     }
 
+    // 2. Fallback check for active_doc_id in user profile if no doc is explicitly selected
     if (!documents || documents.length === 0) {
-      // Fallback: check profile active_doc_id
       const { data: profile } = await supabase.from('profiles').select('active_doc_id').eq('id', userId).single();
       if (profile?.active_doc_id) {
         const { data: altDoc } = await supabase.from('documents').select('*').eq('id', profile.active_doc_id).single();
@@ -50,11 +50,11 @@ export async function getSelectedDocumentsWithContent(
       try {
         let extractedText = '';
 
-        // Prioritize extracted_text column (faster)
+        // Prioritize Supabase 'extracted_text' cache
         if (doc.extracted_text && doc.extracted_text.trim().length > 0) {
           extractedText = doc.extracted_text;
         } else {
-          // Fallback to Cloudflare R2 fetch
+          // Fallback to direct fetch from Cloudflare R2
           const key = doc.extracted_text_r2_key || doc.r2_key || doc.file_path;
           if (key) {
             extractedText = await getObjectText(key);
@@ -62,7 +62,7 @@ export async function getSelectedDocumentsWithContent(
         }
 
         if (extractedText && extractedText.trim().length > 0) {
-          // Truncate to stay within Llama/Gemini safe context windows
+          // Truncate to safe context size for models (approx 15k chars)
           const truncatedText = extractedText.substring(0, 15000);
           
           documentsWithContent.push({
@@ -76,30 +76,32 @@ export async function getSelectedDocumentsWithContent(
           });
         }
       } catch (docError) {
-        console.error(`❌ Synthesis Node failed to read file: ${doc.name}`, docError);
+        console.error(`❌ Ingestion Failure for Asset: ${doc.name}`, docError);
       }
     }
 
     return documentsWithContent;
   } catch (error) {
-    console.error('Document Fetcher System Error:', error);
+    console.error('Critical Fetcher Error:', error);
     return [];
   }
 }
 
 /**
- * Formats document content into an immutable context block for the AI.
+ * Build deterministic context string for AI from documents and Supabase metadata.
  */
 export function buildDocumentContextString(documents: DocumentContent[]): string {
-  if (documents.length === 0) return '[NO_DOCUMENT_SELECTED]';
+  if (documents.length === 0) return '[STATUS_EMPTY: NO_ASSETS_MOUNTED]';
 
   return documents.map(doc => `
---- BEGIN VAULT ASSET: ${doc.filename} ---
-SUBJECT: ${doc.subject || 'N/A'}
-GRADE: ${doc.gradeLevel || 'N/A'}
+--- START ASSET: ${doc.filename} ---
+METADATA:
+- Subject: ${doc.subject || 'Not Set'}
+- Grade Level: ${doc.gradeLevel || 'Not Set'}
+- SLO Mappings: ${JSON.stringify(doc.sloTags)}
 
-CONTENT:
+TEXT_CONTENT:
 ${doc.extractedText}
---- END VAULT ASSET: ${doc.filename} ---
+--- END ASSET: ${doc.filename} ---
 `).join('\n\n');
 }

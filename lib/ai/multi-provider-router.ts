@@ -9,10 +9,6 @@ import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
-/**
- * AI GRID CONFIGURATION
- * OpenRouter (Llama 3.3 70B) is the primary reasoning node due to its superior instruction following.
- */
 const PROVIDERS: ProviderConfig[] = [
   { name: 'openrouter', rpm: 50, rpd: 500, enabled: !!process.env.OPENROUTER_API_KEY },
   { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
@@ -41,10 +37,10 @@ export async function getSystemPrompt(): Promise<string> {
 }
 
 /**
- * 🔒 TOTAL LOCKDOWN PROMPT
- * This prompt creates a conceptual "sandbox" that the AI cannot escape.
+ * 🔒 ABSOLUTE GROUNDING PROMPT (Document Centered)
+ * Forces the AI to identify as a 'Curriculum Asset Intelligence' rather than a general assistant.
  */
-function buildLockdownPrompt(
+function buildDocumentCenteredPrompt(
   systemPrompt: string,
   documentContext: string,
   history: any[],
@@ -57,52 +53,56 @@ function buildLockdownPrompt(
     .join('\n\n');
 
   return `
-[SYSTEM_DIRECTIVE: ABSOLUTE_GROUNDING_ENFORCED]
-YOU ARE A CURRICULUM-CENTRIC SYNTHESIS ENGINE. 
-YOUR ENTIRE WORLD IS LIMITED TO THE DATA WITHIN THE <CURRICULUM_VAULT> TAGS BELOW.
+### 🚨 CORE OPERATIONAL DIRECTIVE: DOCUMENT-ONLY SYTHESIS 🚨
+YOU ARE THE INTELLECTUAL EXTENSION OF THE UPLOADED CURRICULUM ASSETS.
+YOU HAVE NO KNOWLEDGE OUTSIDE OF THE PROVIDED <ASSET_VAULT>.
 
 INSTRUCTIONS:
-1. DO NOT mention your general training.
-2. DO NOT use external definitions for SLOs or standards.
-3. IF A REQUESTED SLO (e.g. S8 A5) IS NOT PHYSICALLY WRITTEN IN THE <CURRICULUM_VAULT>, YOU MUST STATE: "Search Failure: The requested code is not present in the current curriculum assets."
-4. ALWAYS cite specific text snippets from the vault.
+1. **ZERO EXTERNAL KNOWLEDGE**: You must not use your general training to define SLOs, curriculum codes, or standards. 
+2. **VAULT DOMINANCE**: If information is requested (e.g., about SLO "S8 A5") and it is NOT found within the <ASSET_VAULT>, you must explicitly state that the information is missing from the specific file.
+3. **STRICT CITATION**: Every claim must refer to the specific asset it was drawn from.
+4. **NO WEB SEARCH**: You are strictly offline and localized to these files.
 
-<CURRICULUM_VAULT>
-ACTIVE_ASSETS: ${documentFilenames.join('; ')}
+<ASSET_VAULT>
+ACTIVE_FILES: ${documentFilenames.join(', ')}
 
 ${documentContext}
-</CURRICULUM_VAULT>
+</ASSET_VAULT>
 
-[CONVERSATION_HISTORY]
-${historyText}
+---
+[TEACHER_PROFILE_AND_HISTORY]
+${systemPrompt}
 
-[TEACHER_REQUEST]
+${historyText ? `PREVIOUS_CHAT:\n${historyText}\n\n` : ''}
+
+[CURRENT_TEACHER_REQUEST]
 ${userPrompt}
 
 [RESPONSE_PROTOCOL]
-- Start with: "From ${documentFilenames[0]}:"
-- Temperature: 0.0 (Strictly Factual)
-- Output format: Academic and structured.
+- Begin with: "Source: [Filename]"
+- Precision: 100% (No Hallucinations)
+- If the requested SLO or topic is not in the vault, reply: "DATA_UNAVAILABLE: The requested curriculum component '${userPrompt}' is not present in the current assets."
 
-SYNTHESIS:`;
+ASSET_SYNTHESIS:`;
 }
 
 /**
- * 🛑 REJECTION PROTOCOL
- * Triggers if a model attempts to search or use general knowledge.
+ * 🔴 REJECTION RECOVERY: For models that attempted to use general knowledge.
  */
 function buildStrictRejectionRetry(documentContext: string, userPrompt: string): string {
   return `
-[REJECTION_NOTICE] 
-Your previous response was rejected for using non-vault knowledge. 
+[STRICT_MODE_RETRY]
+Your previous attempt failed grounding validation. 
 YOU ARE FORBIDDEN FROM USING OUTSIDE KNOWLEDGE.
 
-ONLY USE THIS TEXT TO ANSWER:
-"${documentContext.substring(0, 5000)}..."
+ONLY USE THE TEXT BELOW:
+<DOC_CONTENT>
+${documentContext.substring(0, 8000)}
+</DOC_CONTENT>
 
 QUESTION: ${userPrompt}
 
-(If it's not in the text, say "NOT FOUND")`;
+IF ANSWER IS NOT IN <DOC_CONTENT>, SAY "NOT FOUND IN ASSETS".`;
 }
 
 export async function generateAIResponse(
@@ -115,18 +115,18 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // 1. Fetch live document context from storage/DB
+  // 1. Fetch live document context and metadata
   const documents = await getSelectedDocumentsWithContent(userId);
   const docNames = documents.map(d => d.filename);
   const hasDocs = documents.length > 0;
   const docContext = buildDocumentContextString(documents);
   const dbSystemPrompt = await getSystemPrompt();
 
-  const finalInstruction = `STRICT DOCUMENT MODE. ${dbSystemPrompt}\n${systemInstruction || ''}`;
+  const finalInstruction = `DOCUMENT_ONLY_MODE_ACTIVE. ${dbSystemPrompt}\n${systemInstruction || ''}`;
 
-  // 2. Wrap request in the Lockdown Prompt if documents are selected
+  // 2. Wrap request in the Document-Centered Prompt
   const finalPrompt = hasDocs 
-    ? buildLockdownPrompt(finalInstruction, docContext, history, prompt, docNames)
+    ? buildDocumentCenteredPrompt(finalInstruction, docContext, history, prompt, docNames)
     : prompt;
 
   return await requestQueue.add(async () => {
@@ -136,23 +136,23 @@ export async function generateAIResponse(
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
-        console.log(`[Neural Link] Routing to ${config.name} (Context: ${hasDocs ? 'DOC_ACTIVE' : 'GENERAL'})`);
+        console.log(`[Neural Router] Routing to ${config.name} (Grounded: ${hasDocs})`);
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         
         let response = await callFunction(finalPrompt, history, finalInstruction, hasDocs, docPart);
 
-        // 3. Hallucination Guard: Reject search-engine behavior
+        // 3. Grounding Validation
         if (hasDocs) {
           const lowerRes = response.toLowerCase();
-          const breachDetected = [
-            "don't have access", "can't see that document", "let me search", 
-            "based on general knowledge", "search results indicate", "as an ai model"
+          const breachSignals = [
+            "don't have access", "can't see the document", "let me search", 
+            "based on my general training", "as an ai model", "search results"
           ].some(signal => lowerRes.includes(signal));
 
-          if (breachDetected) {
-            console.warn(`[Neural Link] ${config.name} breached vault. Retrying with emergency rejection.`);
-            const rejectionPrompt = buildStrictRejectionRetry(docContext, prompt);
-            response = await callFunction(rejectionPrompt, [], finalInstruction, true);
+          if (breachSignals) {
+            console.warn(`[Neural Router] ${config.name} failed grounding check. Retrying...`);
+            const retryPrompt = buildStrictRejectionRetry(docContext, prompt);
+            response = await callFunction(retryPrompt, [], finalInstruction, true);
           }
         }
 
@@ -160,12 +160,12 @@ export async function generateAIResponse(
         responseCache.set(prompt, history, response, config.name);
         return { text: response, provider: config.name };
       } catch (e: any) {
-        console.error(`[Neural Link] Node ${config.name} disconnected:`, e.message);
+        console.error(`[Neural Router] Node failure (${config.name}):`, e.message);
         lastError = e;
       }
     }
 
-    throw lastError || new Error("The Neural Synthesis Grid is currently unreachable.");
+    throw lastError || new Error("The AI synthesis grid is currently disconnected.");
   });
 }
 
