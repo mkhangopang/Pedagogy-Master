@@ -13,13 +13,13 @@ export interface DocumentContent {
 }
 
 /**
- * Fetch selected documents for a user WITH actual content from R2
+ * Fetch selected documents for a user WITH actual content from R2/Supabase
  */
 export async function getSelectedDocumentsWithContent(
   userId: string
 ): Promise<DocumentContent[]> {
   try {
-    // We prioritize the single document explicitly marked as 'is_selected'
+    // 1. Fetch metadata for currently selected document
     const { data: documents, error } = await supabase
       .from('documents')
       .select('*')
@@ -33,6 +33,15 @@ export async function getSelectedDocumentsWithContent(
       return [];
     }
 
+    if (!documents || documents.length === 0) {
+      // Fallback: check profile active_doc_id
+      const { data: profile } = await supabase.from('profiles').select('active_doc_id').eq('id', userId).single();
+      if (profile?.active_doc_id) {
+        const { data: altDoc } = await supabase.from('documents').select('*').eq('id', profile.active_doc_id).single();
+        if (altDoc) documents.push(altDoc);
+      }
+    }
+
     if (!documents || documents.length === 0) return [];
 
     const documentsWithContent: DocumentContent[] = [];
@@ -41,11 +50,11 @@ export async function getSelectedDocumentsWithContent(
       try {
         let extractedText = '';
 
-        // Prioritize the actual 'extracted_text' column in Supabase if populated
+        // Prioritize extracted_text column (faster)
         if (doc.extracted_text && doc.extracted_text.trim().length > 0) {
           extractedText = doc.extracted_text;
         } else {
-          // Fallback to fetching from R2
+          // Fallback to Cloudflare R2 fetch
           const key = doc.extracted_text_r2_key || doc.r2_key || doc.file_path;
           if (key) {
             extractedText = await getObjectText(key);
@@ -53,8 +62,8 @@ export async function getSelectedDocumentsWithContent(
         }
 
         if (extractedText && extractedText.trim().length > 0) {
-          // Truncate to a safe context window for Llama/Groq (approx 12k chars)
-          const truncatedText = extractedText.substring(0, 12000);
+          // Truncate to stay within Llama/Gemini safe context windows
+          const truncatedText = extractedText.substring(0, 15000);
           
           documentsWithContent.push({
             id: doc.id,
@@ -67,33 +76,30 @@ export async function getSelectedDocumentsWithContent(
           });
         }
       } catch (docError) {
-        console.error(`❌ Failed to load content for ${doc.name || doc.filename}:`, docError);
+        console.error(`❌ Synthesis Node failed to read file: ${doc.name}`, docError);
       }
     }
 
     return documentsWithContent;
   } catch (error) {
-    console.error('Error in getSelectedDocumentsWithContent:', error);
+    console.error('Document Fetcher System Error:', error);
     return [];
   }
 }
 
 /**
- * Build formatted context string for AI from documents
+ * Formats document content into an immutable context block for the AI.
  */
 export function buildDocumentContextString(documents: DocumentContent[]): string {
-  if (documents.length === 0) return '';
+  if (documents.length === 0) return '[NO_DOCUMENT_SELECTED]';
 
-  const doc = documents[0];
-  return `
---- START OF CURRICULUM SOURCE: ${doc.filename} ---
+  return documents.map(doc => `
+--- BEGIN VAULT ASSET: ${doc.filename} ---
+SUBJECT: ${doc.subject || 'N/A'}
+GRADE: ${doc.gradeLevel || 'N/A'}
+
+CONTENT:
 ${doc.extractedText}
---- END OF CURRICULUM SOURCE: ${doc.filename} ---
-
-### MANDATORY COMPLIANCE RULES:
-1. THE TEXT ABOVE IS YOUR ONLY ALLOWED KNOWLEDGE BASE.
-2. IF A CODE (e.g. "S8 A5") IS REQUESTED, YOU MUST FIND THE EXACT MATCH IN THE TEXT ABOVE.
-3. IF YOU CANNOT FIND THE EXACT CODE IN THE TEXT, YOU MUST SAY: "I apologize, but ${doc.filename} does not contain an entry for that specific code."
-4. DO NOT SEARCH THE INTERNET. DO NOT USE PRE-TRAINED DATA FOR CURRICULUM CODES.
-`;
+--- END VAULT ASSET: ${doc.filename} ---
+`).join('\n\n');
 }

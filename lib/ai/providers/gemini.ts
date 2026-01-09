@@ -13,8 +13,12 @@ export async function callGemini(
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
+  // High-intensity grounding instruction
   const finalSystem = hasDocuments 
-    ? `STRICT CURRICULUM GROUNDING: You are analyzing curriculum files. Use ONLY the provided content. Disregard general knowledge for specific SLO/standard codes. Temperature is 0.0.`
+    ? `STRICT_DOCUMENT_GROUNDING: You are a processor for private curriculum files. 
+       Ignore your pre-training knowledge of specific standards. 
+       Use ONLY the text in the provided <CURRICULUM_VAULT>. 
+       If a code is missing from the vault, explicitly state it is not there.`
     : systemInstruction;
 
   const contents: any[] = history.slice(-3).map(h => ({
@@ -34,11 +38,11 @@ export async function callGemini(
     contents,
     config: { 
       systemInstruction: finalSystem, 
-      temperature: 0.0, // FORCED DETERMINISM
+      temperature: hasDocuments ? 0.0 : 0.2, // Locked for facts
       topK: 1,
       topP: 1
     }
   });
 
-  return result.text || "Synthesis node failed to generate a response.";
+  return result.text || "Neural node failed to generate response.";
 }

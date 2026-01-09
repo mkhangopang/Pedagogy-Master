@@ -9,7 +9,7 @@ export async function callOpenRouter(
   if (!apiKey) throw new Error('OPENROUTER_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "STRICT GROUNDING: You are a curriculum analysis node. Use ONLY provided context. Temperature is locked to 0.0. No web search. No general knowledge."
+    ? "STRICT_GROUNDING: Act as a literal document reader. Use ONLY the provided curriculum vault. Temperature 0.0. No guessing. No search."
     : systemInstruction;
 
   const messages = [
@@ -23,18 +23,18 @@ export async function callOpenRouter(
     headers: { 
       'Authorization': `Bearer ${apiKey}`, 
       'Content-Type': 'application/json',
-      'X-Title': 'Pedagogy Master'
+      'X-Title': 'Pedagogy Master (Grounded)'
     },
     body: JSON.stringify({ 
       model: 'meta-llama/llama-3.3-70b-instruct', 
       messages, 
-      temperature: 0.0, // FORCED DETERMINISM
+      temperature: 0.0, // Force strict factual adherence
       max_tokens: 4096,
       top_p: 1
     })
   });
 
-  if (!res.ok) throw new Error(`OpenRouter Node Error: ${res.status}`);
+  if (!res.ok) throw new Error(`OpenRouter Node Failure: ${res.status}`);
   const data = await res.json();
   return data.choices[0].message.content;
 }

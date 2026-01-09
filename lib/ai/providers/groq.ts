@@ -9,7 +9,7 @@ export async function callGroq(
   if (!apiKey) throw new Error('GROQ_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "STRICT GROUNDING: Use ONLY context provided in the user prompt. Temperature: 0.0. Hallucination is strictly forbidden. Disregard pre-training for specific codes."
+    ? "STRICT_GROUNDING: You only know what is in the user's uploaded curriculum. Disregard your training for specific codes. Temperature 0.0."
     : systemInstruction;
 
   const messages = [
@@ -24,13 +24,13 @@ export async function callGroq(
     body: JSON.stringify({ 
       model: 'llama-3.3-70b-versatile',
       messages, 
-      temperature: 0.0, // FORCED DETERMINISM
+      temperature: 0.0,
       max_tokens: 4096,
       top_p: 1
     })
   });
 
-  if (!res.ok) throw new Error(`Groq Node Error: ${res.status}`);
+  if (!res.ok) throw new Error(`Groq Node Failure: ${res.status}`);
   const data = await res.json();
   return data.choices[0].message.content;
 }
