@@ -9,7 +9,7 @@ export async function callGroq(
   if (!apiKey) throw new Error('GROQ_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "STRICT_GROUNDING: You only know what is in the user's uploaded curriculum. Disregard your training for specific codes. Temperature 0.0."
+    ? "STRICT_DOCUMENT_GROUNDING: You are a curriculum document database. Use ONLY the provided assets. No web search. No general training knowledge. Temperature 0.0."
     : systemInstruction;
 
   const messages = [
@@ -24,7 +24,7 @@ export async function callGroq(
     body: JSON.stringify({ 
       model: 'llama-3.3-70b-versatile',
       messages, 
-      temperature: 0.0,
+      temperature: hasDocuments ? 0.0 : 0.7,
       max_tokens: 4096,
       top_p: 1
     })

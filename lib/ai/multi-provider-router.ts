@@ -10,8 +10,8 @@ import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
+  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!process.env.API_KEY },
   { name: 'openrouter', rpm: 50, rpd: 500, enabled: !!process.env.OPENROUTER_API_KEY },
-  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
   { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
 ];
 
@@ -53,15 +53,17 @@ function buildDocumentCenteredPrompt(
     .join('\n\n');
 
   return `
-### 🚨 CORE OPERATIONAL DIRECTIVE: DOCUMENT-ONLY SYTHESIS 🚨
+🚨🚨🚨 MANDATORY: CORE OPERATIONAL DIRECTIVE - DOCUMENT-ONLY SYNTHESIS 🚨🚨🚨
+
 YOU ARE THE INTELLECTUAL EXTENSION OF THE UPLOADED CURRICULUM ASSETS.
 YOU HAVE NO KNOWLEDGE OUTSIDE OF THE PROVIDED <ASSET_VAULT>.
 
 INSTRUCTIONS:
 1. **ZERO EXTERNAL KNOWLEDGE**: You must not use your general training to define SLOs, curriculum codes, or standards. 
-2. **VAULT DOMINANCE**: If information is requested (e.g., about SLO "S8 A5") and it is NOT found within the <ASSET_VAULT>, you must explicitly state that the information is missing from the specific file.
-3. **STRICT CITATION**: Every claim must refer to the specific asset it was drawn from.
-4. **NO WEB SEARCH**: You are strictly offline and localized to these files.
+2. **VAULT DOMINANCE**: Use ONLY the text provided in the <ASSET_VAULT> below.
+3. **NO WEB SEARCH**: Do not suggest searching the web. Do not use external data.
+4. **STRICT CITATION**: Every claim must refer to the specific asset it was drawn from (e.g., "Source: [Filename]").
+5. **MISSING DATA**: If information is NOT found within the <ASSET_VAULT>, explicitly state: "DATA_UNAVAILABLE: The requested curriculum component is not present in the current assets."
 
 <ASSET_VAULT>
 ACTIVE_FILES: ${documentFilenames.join(', ')}
@@ -80,8 +82,8 @@ ${userPrompt}
 
 [RESPONSE_PROTOCOL]
 - Begin with: "Source: [Filename]"
-- Precision: 100% (No Hallucinations)
-- If the requested SLO or topic is not in the vault, reply: "DATA_UNAVAILABLE: The requested curriculum component '${userPrompt}' is not present in the current assets."
+- Precision: 100% (Strict adherence to vault text)
+- If the requested SLO or topic is not in the vault, reply: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
 
 ASSET_SYNTHESIS:`;
 }
@@ -92,17 +94,17 @@ ASSET_SYNTHESIS:`;
 function buildStrictRejectionRetry(documentContext: string, userPrompt: string): string {
   return `
 [STRICT_MODE_RETRY]
-Your previous attempt failed grounding validation. 
-YOU ARE FORBIDDEN FROM USING OUTSIDE KNOWLEDGE.
+Your previous attempt failed grounding validation. YOU IGNORED THE DOCUMENTS.
+YOU ARE FORBIDDEN FROM USING OUTSIDE KNOWLEDGE OR WEB SEARCH.
 
 ONLY USE THE TEXT BELOW:
 <DOC_CONTENT>
-${documentContext.substring(0, 8000)}
+${documentContext.substring(0, 15000)}
 </DOC_CONTENT>
 
 QUESTION: ${userPrompt}
 
-IF ANSWER IS NOT IN <DOC_CONTENT>, SAY "NOT FOUND IN ASSETS".`;
+IF ANSWER IS NOT IN <DOC_CONTENT>, SAY "DATA_UNAVAILABLE: NOT FOUND IN ASSETS".`;
 }
 
 export async function generateAIResponse(
@@ -122,17 +124,26 @@ export async function generateAIResponse(
   const docContext = buildDocumentContextString(documents);
   const dbSystemPrompt = await getSystemPrompt();
 
-  const finalInstruction = `DOCUMENT_ONLY_MODE_ACTIVE. ${dbSystemPrompt}\n${systemInstruction || ''}`;
+  const finalInstruction = hasDocs 
+    ? `DOCUMENT_ONLY_MODE_ACTIVE. You are a specialized curriculum analyzer. Disregard general training. Use only provided assets.`
+    : dbSystemPrompt;
 
   // 2. Wrap request in the Document-Centered Prompt
   const finalPrompt = hasDocs 
-    ? buildDocumentCenteredPrompt(finalInstruction, docContext, history, prompt, docNames)
+    ? buildDocumentCenteredPrompt(dbSystemPrompt + "\n" + (systemInstruction || ''), docContext, history, prompt, docNames)
     : prompt;
 
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
 
-    for (const config of PROVIDERS.filter(p => p.enabled)) {
+    // Sort PROVIDERS so Gemini is checked first for document tasks
+    const sortedProviders = [...PROVIDERS].sort((a, b) => {
+      if (hasDocs && a.name === 'gemini') return -1;
+      if (hasDocs && b.name === 'gemini') return 1;
+      return 0;
+    });
+
+    for (const config of sortedProviders.filter(p => p.enabled)) {
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
@@ -146,13 +157,14 @@ export async function generateAIResponse(
           const lowerRes = response.toLowerCase();
           const breachSignals = [
             "don't have access", "can't see the document", "let me search", 
-            "based on my general training", "as an ai model", "search results"
+            "based on my general training", "as an ai model", "search results",
+            "i cannot access the file", "could not read the file"
           ].some(signal => lowerRes.includes(signal));
 
           if (breachSignals) {
-            console.warn(`[Neural Router] ${config.name} failed grounding check. Retrying...`);
+            console.warn(`[Neural Router] ${config.name} failed grounding check. Retrying with Strict Mode...`);
             const retryPrompt = buildStrictRejectionRetry(docContext, prompt);
-            response = await callFunction(retryPrompt, [], finalInstruction, true);
+            response = await callFunction(retryPrompt, [], "STRICT_DOCUMENT_GROUNDING: Use provided text only.", true);
           }
         }
 

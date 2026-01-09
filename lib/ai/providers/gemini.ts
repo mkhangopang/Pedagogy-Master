@@ -8,17 +8,16 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
-  const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing');
+  const geminiKey = process.env.API_KEY;
+  if (!geminiKey) throw new Error('Gemini API Key missing (Checked process.env.API_KEY)');
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
-  // Use aggressive grounding instructions for the Gemini system channel
+  // Strict system instructions for grounding
   const finalSystem = hasDocuments 
     ? `ABSOLUTE_GROUNDING_ACTIVE: You are a specialized curriculum analyzer. 
-       Ignore your internal knowledge about education codes. 
-       Use ONLY the text in the <ASSET_VAULT> provided in the prompt. 
-       Temperature is locked to 0.0 for maximum precision.`
+       Ignore your internal knowledge. Use ONLY the text in the provided vault. 
+       Temperature 0.0 for precision. Do not search web.`
     : systemInstruction;
 
   const contents: any[] = history.slice(-3).map(h => ({
@@ -26,23 +25,24 @@ export async function callGemini(
     parts: [{ text: h.content }]
   }));
 
-  const currentParts: any[] = [{ text: fullPrompt }];
+  const currentParts: any[] = [];
   if (docPart) {
-    currentParts.unshift(docPart);
+    currentParts.push(docPart);
   }
+  currentParts.push({ text: fullPrompt });
   
   contents.push({ role: 'user', parts: currentParts });
 
-  const result = await ai.models.generateContent({
+  const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
     contents,
     config: { 
       systemInstruction: finalSystem, 
-      temperature: hasDocuments ? 0.0 : 0.4, 
+      temperature: hasDocuments ? 0 : 0.7, 
       topK: 1,
       topP: 1
     }
   });
 
-  return result.text || "Neural node failed to synthesize response.";
+  return response.text || "Neural node failed to synthesize response.";
 }
