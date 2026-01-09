@@ -30,9 +30,6 @@ export async function getSystemPrompt(): Promise<string> {
   }
 }
 
-/**
- * Builds document context by fetching actual content from Cloudflare R2.
- */
 export async function buildDocumentContext(userId: string): Promise<string> {
   const documents = await getSelectedDocumentsWithContent(userId);
   return buildDocumentContextString(documents);
@@ -48,15 +45,17 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // Fetch updated system prompt and actual document content from R2
+  // Fetch context
   const [docContext, dbSystemPrompt] = await Promise.all([
     buildDocumentContext(userId),
     getSystemPrompt()
   ]);
 
-  // Merge context into the final system instruction for ALL providers
-  // This ensures Groq and OpenRouter are just as aware of the documents as Gemini
-  const finalInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}\n${docContext}`;
+  const finalInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}`;
+  
+  // For models like Llama 3 (Groq), prepending the context to the user's prompt 
+  // is often more effective than putting it in a long system prompt.
+  const promptWithContext = docContext ? `${docContext}\n\nUSER_QUERY: ${prompt}` : prompt;
 
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
@@ -65,13 +64,12 @@ export async function generateAIResponse(
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
-        console.log(`[Neural Router] Attempting ${config.name} with R2 context awareness.`);
+        console.log(`[Neural Router] Routing to ${config.name} (Context: ${!!docContext})`);
         let response = "";
         
-        // All models receive the docContext in their system prompt
-        if (config.name === 'groq') response = await callGroq(prompt, history, finalInstruction);
-        else if (config.name === 'openrouter') response = await callOpenRouter(prompt, history, finalInstruction);
-        else if (config.name === 'gemini') response = await callGemini(prompt, history, finalInstruction, docPart);
+        if (config.name === 'groq') response = await callGroq(promptWithContext, history, finalInstruction);
+        else if (config.name === 'openrouter') response = await callOpenRouter(promptWithContext, history, finalInstruction);
+        else if (config.name === 'gemini') response = await callGemini(prompt, history, `${finalInstruction}\n${docContext}`, docPart);
 
         rateLimiter.trackRequest(config.name);
         responseCache.set(prompt, history, response, config.name);

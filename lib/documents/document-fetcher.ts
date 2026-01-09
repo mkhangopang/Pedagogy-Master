@@ -19,7 +19,6 @@ export async function getSelectedDocumentsWithContent(
   userId: string
 ): Promise<DocumentContent[]> {
   try {
-    // 1. Get selected document metadata from Supabase
     // We prioritize the single document explicitly marked as 'is_selected'
     const { data: documents, error } = await supabase
       .from('documents')
@@ -27,7 +26,7 @@ export async function getSelectedDocumentsWithContent(
       .eq('user_id', userId)
       .eq('is_selected', true)
       .order('updated_at', { ascending: false })
-      .limit(1); // Usually one primary context document is best for focus
+      .limit(1);
 
     if (error) {
       console.error('Error fetching document metadata:', error);
@@ -42,25 +41,25 @@ export async function getSelectedDocumentsWithContent(
       try {
         let extractedText = '';
 
-        if (doc.extracted_text) {
+        // Prioritize the actual 'extracted_text' column in Supabase if populated
+        if (doc.extracted_text && doc.extracted_text.trim().length > 0) {
           extractedText = doc.extracted_text;
         } else {
+          // Fallback to fetching from R2
           const key = doc.extracted_text_r2_key || doc.r2_key || doc.file_path;
           if (key) {
             extractedText = await getObjectText(key);
           }
         }
 
-        if (extractedText) {
-          // Truncate to avoid context overflow (max 7000 chars)
-          const truncatedText = extractedText.substring(0, 7000);
+        if (extractedText && extractedText.trim().length > 0) {
+          // Truncate to a safe context window for Llama/Groq (approx 10k chars)
+          const truncatedText = extractedText.substring(0, 10000);
           
           documentsWithContent.push({
             id: doc.id,
             filename: doc.name || doc.filename,
-            extractedText: extractedText.length > 7000 
-              ? truncatedText + '\n\n[Document truncated for context space]'
-              : truncatedText,
+            extractedText: truncatedText,
             subject: doc.subject,
             gradeLevel: doc.grade_level,
             sloTags: doc.slo_tags || [],
@@ -85,27 +84,19 @@ export async function getSelectedDocumentsWithContent(
 export function buildDocumentContextString(documents: DocumentContent[]): string {
   if (documents.length === 0) return '';
 
-  let context = "\n### MANDATORY SOURCE MATERIAL: CURRICULUM CONTEXT ###\n";
-  context += "The user has provided the following curriculum document. You MUST base your response strictly on this information if it is relevant. Ignore general information that contradicts this source.\n";
-
-  for (const doc of documents) {
-    context += `
---- DOCUMENT START: ${doc.filename} ---
-SUBJECT: ${doc.subject || 'N/A'}
-GRADE: ${doc.gradeLevel || 'N/A'}
-CONTENT:
+  const doc = documents[0];
+  return `
+### THE ONLY ALLOWED SOURCE MATERIAL ###
+DOCUMENT_NAME: ${doc.filename}
+CONTENT_START:
 ${doc.extractedText}
---- DOCUMENT END ---
-`;
-  }
+CONTENT_END
 
-  context += `
-INSTRUCTION:
-1. Your response MUST be strictly aligned with the provided curriculum content above.
-2. If the user asks for a lesson plan or tool, use the SLOs, terminology, and standards found in the document.
-3. If the provided document does not contain the answer, say "The current document doesn't provide this specific information," and then offer a general pedagogical suggestion based on best practices.
-4. Use the document name "${documents[0]?.filename}" as a reference in your response.
+### MANDATORY BEHAVIORAL CONSTRAINTS ###
+1. Your response MUST be 100% based on the "CONTENT" provided above.
+2. If the user refers to an SLO code (e.g., "S8 A7") that is NOT explicitly found in the text above, you MUST say: "The selected document (${doc.filename}) does not contain information on [code]. I cannot generate a specific plan for it using this curriculum."
+3. DO NOT use your general knowledge to guess what an SLO code means if it is not in the text.
+4. If the document is about Science, and the user asks a question that sounds like Math, verify if the Science document supports it. If not, reject the query based on the document's content.
+5. Explicitly mention "${doc.filename}" in the first sentence of your response.
 `;
-
-  return context;
 }
