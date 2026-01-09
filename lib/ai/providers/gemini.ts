@@ -8,9 +8,10 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
-  const geminiKey = process.env.API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing (Checked process.env.API_KEY)');
+  const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  if (!geminiKey) throw new Error('Gemini API Key missing (Checked API_KEY and GEMINI_API_KEY environment variables)');
 
+  // Strictly follow the SDK initialization rules
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
   // Strict system instructions for grounding

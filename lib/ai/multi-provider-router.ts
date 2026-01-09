@@ -10,7 +10,7 @@ import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
-  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!process.env.API_KEY },
+  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
   { name: 'openrouter', rpm: 50, rpd: 500, enabled: !!process.env.OPENROUTER_API_KEY },
   { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
 ];
