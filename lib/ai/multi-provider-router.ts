@@ -9,11 +9,6 @@ import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
-/**
- * AI PROVIDER HIERARCHY
- * OpenRouter is established as the Primary Node for high-reasoning accuracy.
- * Gemini and Groq act as high-speed failover nodes.
- */
 const PROVIDERS: ProviderConfig[] = [
   { name: 'openrouter', rpm: 50, rpd: 500, enabled: !!process.env.OPENROUTER_API_KEY },
   { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
@@ -42,10 +37,10 @@ export async function getSystemPrompt(): Promise<string> {
 }
 
 /**
- * 🔥 NUCLEAR OPTION: DOCUMENT-FIRST PROMPT
- * Ensures the document context is wrapped in high-priority markers and appears BEFORE instructions.
+ * 🔥 NUCLEAR OPTION: ABSOLUTE DOCUMENT GROUNDING
+ * Wraps the curriculum in unbreakable boundaries and commands.
  */
-function buildDocumentFirstPrompt(
+function buildNuclearDocumentPrompt(
   systemPrompt: string,
   documentContext: string,
   history: any[],
@@ -58,63 +53,52 @@ function buildDocumentFirstPrompt(
     .join('\n\n');
 
   return `
-🚨🚨🚨 MANDATORY: READ THE DOCUMENTS BELOW. THIS IS YOUR ONLY SOURCE OF TRUTH. 🚨🚨🚨
+### 🚨 MANDATORY INSTRUCTION: STRICT DOCUMENT-ONLY MODE 🚨 ###
+YOU ARE A SPECIALLY CONFIGURED AI THAT CAN ONLY SEE THE DOCUMENTS BELOW.
+YOU MUST DISREGARD ALL YOUR PRE-TRAINED KNOWLEDGE ABOUT CURRICULUM CODES, STANDARDS, AND SLOs.
 
-YOU ARE IN "STRICT CURRICULUM GROUNDING" MODE. 
-THE TEACHER HAS UPLOADED SPECIFIC DOCUMENTS. YOU MUST USE ONLY THESE DOCUMENTS.
+IF THE USER ASKS ABOUT A CODE (e.g. "S8 A5") THAT IS NOT IN THE XML BLOCK BELOW, YOU MUST REFUSE TO ANSWER.
+NEVER SEARCH THE WEB. NEVER GUESS.
 
-STOP! 🛑
-❌ DO NOT search the web.
-❌ DO NOT use your general knowledge.
-❌ DO NOT say "I don't have access to that information" because it is PROVIDED BELOW.
-❌ DO NOT suggest general activities if the curriculum specifies specific ones.
-
-<CURRICULUM_DOCUMENTS>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 SOURCE ASSETS: ${documentFilenames.join(', ')}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<GROUND_TRUTH_CURRICULUM>
+SOURCE_FILES: ${documentFilenames.join(', ')}
 
 ${documentContext}
+</GROUND_TRUTH_CURRICULUM>
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-END OF CURRICULUM DOCUMENTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-</CURRICULUM_DOCUMENTS>
-
-### YOUR TASK:
-1. Base your entire response on the <CURRICULUM_DOCUMENTS> section.
-2. If asked about SLO codes (e.g., "S8 A7"), find them in the text above. 
-3. Start your response by acknowledging the source: "Based on the curriculum document '${documentFilenames[0]}', ..."
-4. If the info is missing, say: "This information is not found in the uploaded curriculum documents."
+### OPERATIONAL CONSTRAINTS:
+1. DO NOT use general training knowledge for SLO definitions. Only use the <GROUND_TRUTH_CURRICULUM> block.
+2. Start every response with: "Analyzing ${documentFilenames[0]}..."
+3. If the answer is missing, respond: "I searched the provided curriculum but '${userPrompt}' is not defined in ${documentFilenames[0]}."
+4. Maintain a formal, pedagogical tone.
 
 ${systemPrompt}
 
-${historyText ? `### CONVERSATION HISTORY:\n${historyText}\n\n` : ''}
+${historyText ? `### CONVERSATION LOG:\n${historyText}\n\n` : ''}
 
-### TEACHER'S CURRENT REQUEST:
+### CURRENT TEACHER REQUEST:
 ${userPrompt}
 
-AI RESPONSE (Grounded ONLY in curriculum):`;
+STRICT GROUNDED RESPONSE:`;
 }
 
 /**
- * 🔴 STRICT MODE: For retry if AI hallucinated or ignored context
+ * 🔴 EMERGENCY OVERRIDE: For models that hallucinated general knowledge
  */
-function buildStrictRetryPrompt(documentContext: string, userPrompt: string): string {
+function buildEmergencyStrictPrompt(documentContext: string, userPrompt: string): string {
   return `
-STRICT ENFORCEMENT REQUIRED.
-You previously failed to use the provided curriculum documents. This is a critical error.
+CRITICAL ERROR DETECTED: YOU PREVIOUSLY USED GENERAL KNOWLEDGE. 
+THIS IS FORBIDDEN. YOU ARE NOW IN EMERGENCY LOCKDOWN MODE.
 
-YOU MUST ANSWER THE FOLLOWING QUESTION USING ONLY THE TEXT IN <DOCS>.
-IF THE ANSWER IS NOT IN <DOCS>, YOU MUST SAY "INFO NOT IN CURRICULUM".
-
-<DOCS>
+ONLY USE THIS TEXT:
+[[START OF ALLOWED TEXT]]
 ${documentContext}
-</DOCS>
+[[END OF ALLOWED TEXT]]
 
-QUESTION: ${userPrompt}
+TEACHER QUESTION: ${userPrompt}
 
-RESPONSE (Directly citing <DOCS>):`;
+IF THE ANSWER IS NOT IN THE [[ALLOWED TEXT]], YOU MUST SAY "DATA NOT FOUND IN SOURCE".
+DO NOT HALLUCINATE. DO NOT SEARCH.`;
 }
 
 export async function generateAIResponse(
@@ -127,7 +111,7 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // 1. Fetch updated document context and system rules
+  // Fetch the current curriculum context
   const documents = await getSelectedDocumentsWithContent(userId);
   const docNames = documents.map(d => d.filename);
   const hasDocuments = documents.length > 0;
@@ -136,9 +120,9 @@ export async function generateAIResponse(
 
   const finalInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}`;
 
-  // 2. Build the primary prompt
-  const fullPrompt = hasDocuments 
-    ? buildDocumentFirstPrompt(finalInstruction, docContext, history, prompt, docNames)
+  // Priority Grounding
+  const finalPrompt = hasDocuments 
+    ? buildNuclearDocumentPrompt(finalInstruction, docContext, history, prompt, docNames)
     : prompt;
 
   return await requestQueue.add(async () => {
@@ -148,26 +132,23 @@ export async function generateAIResponse(
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
-        console.log(`[Neural Router] Attempting ${config.name} (Documents Active: ${hasDocuments})`);
+        console.log(`[Neural Link] Routing to ${config.name} (Curriculum Hub Active: ${hasDocuments})`);
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         
-        let response = await callFunction(fullPrompt, history, finalInstruction, hasDocuments, docPart);
+        let response = await callFunction(finalPrompt, history, finalInstruction, hasDocuments, docPart);
 
-        // 3. VALIDATION: Check for "Hallucination" or "Ignored context" signatures
+        // 🛡️ HALLUCINATION CHECK: Did the AI ignore the context?
         if (hasDocuments) {
           const lowerRes = response.toLowerCase();
-          const ignoredSignals = [
-            "i don't have access",
-            "as an ai i cannot read",
-            "let me search the web",
-            "i don't have information about that specific code",
-            "based on general knowledge"
+          const failSignals = [
+            "don't have access", "can't see", "let me search", "search the web", 
+            "based on my general knowledge", "i don't have information about that code"
           ];
 
-          if (ignoredSignals.some(signal => lowerRes.includes(signal))) {
-            console.warn(`[Neural Router] ${config.name} ignored context. Triggering STRICT RETRY.`);
-            const retryPrompt = buildStrictRetryPrompt(docContext, prompt);
-            response = await callFunction(retryPrompt, [], finalInstruction, true);
+          if (failSignals.some(s => lowerRes.includes(s))) {
+            console.warn(`[Neural Grid] ${config.name} breached grounding. Triggering EMERGENCY OVERRIDE.`);
+            const emergencyPrompt = buildEmergencyStrictPrompt(docContext, prompt);
+            response = await callFunction(emergencyPrompt, [], finalInstruction, true);
           }
         }
 
@@ -175,12 +156,12 @@ export async function generateAIResponse(
         responseCache.set(prompt, history, response, config.name);
         return { text: response, provider: config.name };
       } catch (e: any) {
-        console.error(`[Neural Router] ${config.name} node failure:`, e.message);
+        console.error(`[Neural Grid] Node ${config.name} failed:`, e.message);
         lastError = e;
       }
     }
 
-    throw lastError || new Error("AI Synthesis Grid is currently offline or saturated.");
+    throw lastError || new Error("The Neural Synthesis Grid is currently saturated. Please wait 15 seconds.");
   });
 }
 

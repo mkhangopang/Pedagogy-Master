@@ -53,8 +53,8 @@ export async function getSelectedDocumentsWithContent(
         }
 
         if (extractedText && extractedText.trim().length > 0) {
-          // Truncate to a safe context window for Llama/Groq (approx 10k chars)
-          const truncatedText = extractedText.substring(0, 10000);
+          // Truncate to a safe context window for Llama/Groq (approx 12k chars)
+          const truncatedText = extractedText.substring(0, 12000);
           
           documentsWithContent.push({
             id: doc.id,
@@ -86,17 +86,14 @@ export function buildDocumentContextString(documents: DocumentContent[]): string
 
   const doc = documents[0];
   return `
-### THE ONLY ALLOWED SOURCE MATERIAL ###
-DOCUMENT_NAME: ${doc.filename}
-CONTENT_START:
+--- START OF CURRICULUM SOURCE: ${doc.filename} ---
 ${doc.extractedText}
-CONTENT_END
+--- END OF CURRICULUM SOURCE: ${doc.filename} ---
 
-### MANDATORY BEHAVIORAL CONSTRAINTS ###
-1. Your response MUST be 100% based on the "CONTENT" provided above.
-2. If the user refers to an SLO code (e.g., "S8 A7") that is NOT explicitly found in the text above, you MUST say: "The selected document (${doc.filename}) does not contain information on [code]. I cannot generate a specific plan for it using this curriculum."
-3. DO NOT use your general knowledge to guess what an SLO code means if it is not in the text.
-4. If the document is about Science, and the user asks a question that sounds like Math, verify if the Science document supports it. If not, reject the query based on the document's content.
-5. Explicitly mention "${doc.filename}" in the first sentence of your response.
+### MANDATORY COMPLIANCE RULES:
+1. THE TEXT ABOVE IS YOUR ONLY ALLOWED KNOWLEDGE BASE.
+2. IF A CODE (e.g. "S8 A5") IS REQUESTED, YOU MUST FIND THE EXACT MATCH IN THE TEXT ABOVE.
+3. IF YOU CANNOT FIND THE EXACT CODE IN THE TEXT, YOU MUST SAY: "I apologize, but ${doc.filename} does not contain an entry for that specific code."
+4. DO NOT SEARCH THE INTERNET. DO NOT USE PRE-TRAINED DATA FOR CURRICULUM CODES.
 `;
 }

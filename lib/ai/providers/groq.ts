@@ -9,7 +9,7 @@ export async function callGroq(
   if (!apiKey) throw new Error('GROQ_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "You are a curriculum-aware AI tutor. You have access to uploaded curriculum documents provided in the user prompt. Use ONLY that text. DO NOT search the web. DO NOT use general knowledge. Be precise and literal."
+    ? "STRICT GROUNDING: Use ONLY context provided in the user prompt. Temperature: 0.0. Hallucination is strictly forbidden. Disregard pre-training for specific codes."
     : systemInstruction;
 
   const messages = [
@@ -22,9 +22,9 @@ export async function callGroq(
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ 
-      model: 'llama-3.3-70b-versatile', // Upgraded to more capable model for reasoning
+      model: 'llama-3.3-70b-versatile',
       messages, 
-      temperature: 0.1, // Near zero for strict grounding
+      temperature: 0.0, // FORCED DETERMINISM
       max_tokens: 4096,
       top_p: 1
     })
