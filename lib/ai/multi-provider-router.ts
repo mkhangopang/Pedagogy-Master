@@ -9,16 +9,21 @@ import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
+/**
+ * AI PROVIDER HIERARCHY
+ * OpenRouter is established as the Primary Node for high-reasoning accuracy.
+ * Gemini and Groq act as high-speed failover nodes.
+ */
 const PROVIDERS: ProviderConfig[] = [
-  { name: 'groq', rpm: 28, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
-  { name: 'openrouter', rpm: 45, rpd: 200, enabled: !!process.env.OPENROUTER_API_KEY },
-  { name: 'gemini', rpm: 12, rpd: 1400, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
+  { name: 'openrouter', rpm: 50, rpd: 500, enabled: !!process.env.OPENROUTER_API_KEY },
+  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
+  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
 ];
 
 const PROVIDER_FUNCTIONS = {
-  groq: callGroq,
   openrouter: callOpenRouter,
   gemini: callGemini,
+  groq: callGroq,
 };
 
 export async function getSystemPrompt(): Promise<string> {
