@@ -3,13 +3,13 @@
 
 import React, { useState } from 'react';
 import { 
-  FileText, MessageSquare, Zap, Target, TrendingUp, 
-  BarChart3, Brain, Sparkles, Save, CheckCircle, 
-  ShieldCheck, Users, Activity, GraduationCap,
-  Database, AlertCircle, RefreshCw, Server
+  FileText, MessageSquare, Zap, Target, 
+  Brain, Sparkles, Save, CheckCircle, 
+  Activity, GraduationCap,
+  RefreshCw, Server
 } from 'lucide-react';
 import { UserProfile, Document, UserRole } from '../types';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, Tooltip } from 'recharts';
 import { supabase } from '../lib/supabase';
 
 interface DashboardProps {
@@ -26,10 +26,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
   const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
   const [profileForm, setProfileForm] = useState({
     gradeLevel: user.gradeLevel || 'High School',
-    subjectArea: user.subjectArea || 'Science',
+    subjectArea: user.subjectArea || 'General',
     activeDocId: user.activeDocId || '',
-    teachingStyle: user.teachingStyle || 'balanced',
-    pedagogicalApproach: user.pedagogicalApproach || 'direct-instruction'
   });
 
   const usagePercentage = (user.queriesUsed / user.queriesLimit) * 100;
@@ -39,19 +37,32 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
 
   const handleSaveProfile = async () => {
     setIsSaving(true);
-    const { error } = await supabase.from('profiles').update({
+    
+    // 1. Update Profile
+    const { error: profileError } = await supabase.from('profiles').update({
       grade_level: profileForm.gradeLevel,
       subject_area: profileForm.subjectArea,
       active_doc_id: profileForm.activeDocId,
-      teaching_style: profileForm.teachingStyle,
-      pedagogical_approach: profileForm.pedagogicalApproach
     }).eq('id', user.id);
 
-    if (!error) {
-      onProfileUpdate({ ...user, ...profileForm });
-      setShowSaved(true);
-      setTimeout(() => setShowSaved(false), 2000);
+    if (profileError) {
+      console.error("Profile update error", profileError);
+      setIsSaving(false);
+      return;
     }
+
+    // 2. Synchronize 'is_selected' in documents table
+    // Deselect all user's documents first
+    await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+    
+    // Select the chosen document if one is provided
+    if (profileForm.activeDocId) {
+      await supabase.from('documents').update({ is_selected: true }).eq('id', profileForm.activeDocId);
+    }
+
+    onProfileUpdate({ ...user, ...profileForm });
+    setShowSaved(true);
+    setTimeout(() => setShowSaved(false), 2000);
     setIsSaving(false);
   };
 
@@ -74,7 +85,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Educator Workspace</h1>
-          <p className="text-slate-500 mt-1">Welcome back, {displayName}. Your pedagogical brain is online.</p>
+          <p className="text-slate-500 mt-1">Welcome back, {displayName}. Your curriculum brain is online.</p>
         </div>
         <button 
           onClick={handleRefreshHealth}
@@ -104,10 +115,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
               </div>
             </div>
           </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Bloom's Distribution</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Cognitive Distribution</p>
               <div className="h-40">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={bloomData}>
@@ -117,26 +127,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
                 </ResponsiveContainer>
               </div>
             </div>
-            <div className="space-y-4">
-              <div className="bg-white p-4 rounded-xl border border-slate-100 flex items-center gap-4">
-                <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center"><Users size={20}/></div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">Active Teachers</p>
-                  <p className="text-lg font-bold">142</p>
-                </div>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-100 flex items-center gap-4">
-                <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center"><Target size={20}/></div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase">SLO Compliance</p>
-                  <p className="text-lg font-bold">94.2%</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-indigo-900 text-white p-6 rounded-2xl relative overflow-hidden">
+            <div className="bg-indigo-900 text-white p-6 rounded-2xl relative overflow-hidden flex flex-col justify-center">
               <div className="relative z-10">
                 <h3 className="font-bold mb-2">Institutional RAG</h3>
-                <p className="text-xs text-indigo-200 leading-relaxed mb-4">Departmental insights prevents teaching silos.</p>
+                <p className="text-xs text-indigo-200 leading-relaxed mb-4">Deep curriculum insights prevent teaching silos and ensure standard alignment.</p>
+                <div className="flex gap-4">
+                   <div className="bg-white/10 px-3 py-1.5 rounded-lg"><span className="text-xs font-bold">142 Teachers</span></div>
+                   <div className="bg-white/10 px-3 py-1.5 rounded-lg"><span className="text-xs font-bold">94% Align</span></div>
+                </div>
               </div>
               <GraduationCap className="absolute -bottom-4 -right-4 w-24 h-24 opacity-10 rotate-12" />
             </div>
@@ -144,61 +142,61 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
         </section>
       )}
 
-      <section className="bg-indigo-950 text-white rounded-3xl p-8 relative overflow-hidden shadow-2xl">
-        <div className="absolute top-0 right-0 p-8 opacity-10"><Brain size={120} /></div>
+      <section className="bg-indigo-950 text-white rounded-[3rem] p-10 relative overflow-hidden shadow-2xl">
+        <div className="absolute top-0 right-0 p-8 opacity-10"><Brain size={140} /></div>
         <div className="relative z-10 flex flex-col gap-8">
           <div className="max-w-xl">
-            <h2 className="text-xl font-bold flex items-center gap-2 mb-2">
+            <h2 className="text-2xl font-bold flex items-center gap-3 mb-2 tracking-tight">
               <Sparkles className="text-amber-400" />
-              AI Adaptive Profile
+              AI Curriculum Intelligence
             </h2>
-            <p className="text-indigo-200 text-sm leading-relaxed">
-              Gemini learns your pedagogical style. Updates recalibrate the neural engine.
+            <p className="text-indigo-200 text-sm leading-relaxed font-medium">
+              Select your primary curriculum document to ground all AI responses in your specific content.
             </p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Target Grade Level</label>
-              <select 
-                value={profileForm.gradeLevel} 
-                onChange={e => setProfileForm({...profileForm, gradeLevel: e.target.value})} 
-                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-              >
-                <option>Elementary</option>
-                <option>Middle School</option>
-                <option>High School</option>
-                <option>Higher Education</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Default Subject Area</label>
-              <input 
-                value={profileForm.subjectArea} 
-                onChange={e => setProfileForm({...profileForm, subjectArea: e.target.value})} 
-                placeholder="e.g. STEM" 
-                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-[10px] font-bold uppercase tracking-widest text-indigo-400">Active Curriculum Context</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400 ml-1">Contextual Document</label>
               <select 
                 value={profileForm.activeDocId} 
                 onChange={e => setProfileForm({...profileForm, activeDocId: e.target.value})} 
-                className="w-full bg-indigo-900/50 border border-indigo-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold appearance-none cursor-pointer"
               >
-                <option value="">No context selected</option>
+                <option value="" className="bg-indigo-950 text-white">General Knowledge (No doc)</option>
                 {documents.map(doc => (
-                  <option key={doc.id} value={doc.id}>{doc.name}</option>
+                  <option key={doc.id} value={doc.id} className="bg-indigo-950 text-white">{doc.name}</option>
                 ))}
               </select>
+            </div>
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400 ml-1">Grade Level</label>
+              <select 
+                value={profileForm.gradeLevel} 
+                onChange={e => setProfileForm({...profileForm, gradeLevel: e.target.value})} 
+                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold appearance-none cursor-pointer"
+              >
+                <option className="bg-indigo-950">Elementary</option>
+                <option className="bg-indigo-950">Middle School</option>
+                <option className="bg-indigo-950">High School</option>
+                <option className="bg-indigo-950">Higher Education</option>
+              </select>
+            </div>
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-indigo-400 ml-1">Subject Area</label>
+              <input 
+                value={profileForm.subjectArea} 
+                onChange={e => setProfileForm({...profileForm, subjectArea: e.target.value})} 
+                placeholder="e.g. Physics" 
+                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold" 
+              />
             </div>
           </div>
 
           <div className="flex items-center pt-2">
-            <button onClick={handleSaveProfile} disabled={isSaving || !isConnected} className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-400 text-white rounded-2xl font-bold flex items-center justify-center gap-3 transition-all shadow-xl disabled:opacity-50 active:scale-95">
-              {isSaving ? <Activity className="animate-spin" size={20}/> : (showSaved ? <CheckCircle size={20}/> : <Save size={20}/>)}
-              {showSaved ? 'Updated' : 'Save Profile'}
+            <button onClick={handleSaveProfile} disabled={isSaving || !isConnected} className="w-full md:w-auto px-12 py-5 bg-indigo-500 hover:bg-indigo-400 text-white rounded-3xl font-black flex items-center justify-center gap-3 transition-all shadow-2xl disabled:opacity-50 active:scale-95">
+              {isSaving ? <RefreshCw className="animate-spin" size={20}/> : (showSaved ? <CheckCircle size={20}/> : <Save size={20}/>)}
+              {showSaved ? 'System Calibrated' : 'Save Curriculum Context'}
             </button>
           </div>
         </div>
@@ -208,30 +206,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, onProfileUpdate,
         <StatCard title="Library Size" value={documents.length.toString()} icon={<FileText className="w-6 h-6 text-indigo-600" />} trend="Docs Uploaded" color="indigo" />
         <StatCard title="AI Quota" value={`${user.queriesUsed}/${user.queriesLimit}`} icon={<Zap className="w-6 h-6 text-emerald-600" />} trend={`${Math.round(usagePercentage)}% utilized`} color="emerald" />
         <StatCard title="SLO Points" value={totalSLOs.toString()} icon={<Target className="w-6 h-6 text-amber-600" />} trend="Items mapped" color="amber" />
-        <StatCard title="Session Plan" value={user.plan.toUpperCase()} icon={<ShieldCheck className="w-6 h-6 text-purple-600" />} trend="Active Subscription" color="purple" />
+        <StatCard title="Plan" value={user.plan.toUpperCase()} icon={<GraduationCap className="w-6 h-6 text-purple-600" />} trend="Active License" color="purple" />
       </div>
-
-      {!isConnected && (
-        <div className="p-6 bg-rose-50 border border-rose-100 rounded-3xl flex items-center gap-4 text-rose-800 animate-pulse">
-          <AlertCircle size={24} className="text-rose-600" />
-          <div>
-            <h3 className="font-bold text-sm">Critical Connectivity Error</h3>
-            <p className="text-xs opacity-75">Persistence is disabled. Your workspace documents will be erased on refresh until SQL tables are corrected.</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 const StatCard = ({ title, value, icon, trend, color }: { title: string, value: string, icon: React.ReactNode, trend: string, color: string }) => (
-  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col gap-4 hover:shadow-md transition-all">
+  <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col gap-4 hover:shadow-xl transition-all">
     <div className="flex items-center justify-between">
-      <div className={`p-2 bg-${color}-50 rounded-lg`}>{icon}</div>
-      <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{title}</span>
+      <div className={`p-3 bg-${color}-50 rounded-2xl`}>{icon}</div>
+      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</span>
     </div>
     <div>
-      <div className="text-2xl font-bold text-slate-900">{value}</div>
+      <div className="text-3xl font-black text-slate-900 tracking-tight">{value}</div>
       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tight mt-1">{trend}</div>
     </div>
   </div>

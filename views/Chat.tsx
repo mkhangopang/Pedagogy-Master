@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, FileText, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, RefreshCcw } from 'lucide-react';
+import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -54,11 +54,20 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
-    const updated = localDocs.map(d => d.id === docId ? { ...d, isSelected: !d.isSelected } : d);
+    // 1. Deselect others in DB and UI for a single focused context
+    const updated = localDocs.map(d => ({ ...d, isSelected: d.id === docId ? !d.isSelected : false }));
     setLocalDocs(updated);
-    const doc = updated.find(d => d.id === docId);
-    if (doc) {
-      await supabase.from('documents').update({ is_selected: doc.isSelected }).eq('id', docId);
+    
+    const targetDoc = updated.find(d => d.id === docId);
+    
+    // 2. Database Sync
+    await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+    if (targetDoc?.isSelected) {
+      await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+      // Update profile record as well for consistency
+      await supabase.from('profiles').update({ active_doc_id: docId }).eq('id', user.id);
+    } else {
+      await supabase.from('profiles').update({ active_doc_id: null }).eq('id', user.id);
     }
   };
 
@@ -149,7 +158,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       let fullContent = '';
       const selectedDoc = localDocs.find(d => d.isSelected);
 
-      // HISTORY MAPPING: Filter out 'system' roles and cast to strictly 'user' | 'assistant'
       const history = messages
         .filter(m => m.role === 'user' || m.role === 'assistant')
         .map(m => ({ 
@@ -188,14 +196,14 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       <div className={`transition-all duration-300 border-r border-slate-200 dark:border-white/5 bg-white/40 dark:bg-white/5 backdrop-blur-md hidden md:block ${showSidebar ? 'w-64 opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
         <div className="p-4 space-y-6">
           <div className="flex items-center justify-between">
-             <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Neural Context</h3>
+             <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Curriculum Context</h3>
              <Sparkles size={14} className="text-indigo-400" />
           </div>
           <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />
           
           <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
             <p className="text-[10px] text-indigo-400 font-bold leading-relaxed">
-              Active curriculum nodes are fused into the current neural session.
+              Curriculum context ensures the AI uses your specific documents as its primary knowledge base.
             </p>
           </div>
         </div>
@@ -228,8 +236,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                   <div className="absolute inset-0 bg-indigo-600 rounded-[24px] blur-2xl opacity-20 -z-10 animate-pulse" />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Pedagogy Master Neural v2.0</h2>
-                  <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm">
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Pedagogy Master Neural</h2>
+                  <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
                     Ready for curriculum-aligned synthesis. How can I assist your teaching today?
                   </p>
                 </div>
