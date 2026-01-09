@@ -15,6 +15,12 @@ const PROVIDERS: ProviderConfig[] = [
   { name: 'gemini', rpm: 12, rpd: 1400, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
 ];
 
+const PROVIDER_FUNCTIONS = {
+  groq: callGroq,
+  openrouter: callOpenRouter,
+  gemini: callGemini,
+};
+
 export async function getSystemPrompt(): Promise<string> {
   try {
     const { data } = await supabase
@@ -30,9 +36,61 @@ export async function getSystemPrompt(): Promise<string> {
   }
 }
 
-export async function buildDocumentContext(userId: string): Promise<string> {
-  const documents = await getSelectedDocumentsWithContent(userId);
-  return buildDocumentContextString(documents);
+/**
+ * Nuclear Fix: Force-grounding prompt builder
+ */
+function buildDocumentFirstPrompt(
+  systemPrompt: string,
+  docContext: string,
+  history: any[],
+  userPrompt: string,
+  docNames: string[]
+): string {
+  const historyText = history
+    .slice(-4)
+    .map(m => `${m.role === 'user' ? 'Teacher' : 'AI'}: ${m.content}`)
+    .join('\n\n');
+
+  return `
+🚨 MANDATORY INSTRUCTION: USE ONLY UPLOADED CURRICULUM DOCUMENTS 🚨
+
+THE TEACHER HAS PROVIDED SPECIFIC CURRICULUM CONTEXT BELOW. 
+YOU MUST ANALYZE THESE DOCUMENTS FIRST. DO NOT USE GENERAL TRAINING KNOWLEDGE IF IT CONTRADICTS THESE DOCUMENTS.
+
+<CURRICULUM_DOCUMENTS>
+PRIMARY SOURCE ASSETS: ${docNames.join(', ')}
+
+${docContext}
+</CURRICULUM_DOCUMENTS>
+
+### BEHAVIORAL PROTOCOL:
+1. ALWAYS reference "${docNames[0]}" in your response.
+2. If asked about SLO codes (e.g. S8 A7), LOCATE them in the XML block above.
+3. If information is NOT in the documents, state: "This is not in the curriculum documents." 
+4. DO NOT search the web or hallucinate general facts.
+
+${systemPrompt}
+
+${historyText ? `### PREVIOUS CONVERSATION:\n${historyText}\n\n` : ''}
+### CURRENT TEACHER REQUEST:
+${userPrompt}
+
+AI TUTOR RESPONSE (Grounded in Curriculum):`;
+}
+
+function buildStrictDocumentPrompt(docContext: string, userPrompt: string, docNames: string[]): string {
+  return `
+🔴 STRICT MODE: YOU PREVIOUSLY IGNORED THE CURRICULUM DOCUMENTS.
+YOUR TASK IS TO ANSWER THE QUESTION BELOW USING *ONLY* THE TEXT IN THESE TAGS:
+
+<DOCS>
+${docContext}
+</DOCS>
+
+TEACHER QUESTION: ${userPrompt}
+
+YOU MUST START YOUR RESPONSE WITH: "According to the ${docNames[0]} document..."
+DO NOT USE ANY OTHER KNOWLEDGE.`;
 }
 
 export async function generateAIResponse(
@@ -45,17 +103,17 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // Fetch context
-  const [docContext, dbSystemPrompt] = await Promise.all([
-    buildDocumentContext(userId),
-    getSystemPrompt()
-  ]);
+  // Fetch updated context
+  const documents = await getSelectedDocumentsWithContent(userId);
+  const docNames = documents.map(d => d.filename);
+  const hasDocuments = documents.length > 0;
+  const docContext = buildDocumentContextString(documents);
+  const dbSystemPrompt = await getSystemPrompt();
 
-  const finalInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}`;
-  
-  // For models like Llama 3 (Groq), prepending the context to the user's prompt 
-  // is often more effective than putting it in a long system prompt.
-  const promptWithContext = docContext ? `${docContext}\n\nUSER_QUERY: ${prompt}` : prompt;
+  const finalSystemInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}`;
+  const nuclearPrompt = hasDocuments 
+    ? buildDocumentFirstPrompt(finalSystemInstruction, docContext, history, prompt, docNames)
+    : prompt;
 
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
@@ -64,16 +122,28 @@ export async function generateAIResponse(
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
-        console.log(`[Neural Router] Routing to ${config.name} (Context: ${!!docContext})`);
-        let response = "";
+        console.log(`[Neural Router] Routing to ${config.name} (Grounded: ${hasDocuments})`);
+        const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         
-        if (config.name === 'groq') response = await callGroq(promptWithContext, history, finalInstruction);
-        else if (config.name === 'openrouter') response = await callOpenRouter(promptWithContext, history, finalInstruction);
-        else if (config.name === 'gemini') response = await callGemini(prompt, history, `${finalInstruction}\n${docContext}`, docPart);
+        let responseText = await callFunction(nuclearPrompt, history, finalSystemInstruction, hasDocuments, docPart);
+
+        // Validation: Check if AI ignored documents (Hallucination detection)
+        if (hasDocuments) {
+          const ignored = 
+            responseText.toLowerCase().includes("i don't have access") || 
+            responseText.toLowerCase().includes("i can't see the document") ||
+            responseText.toLowerCase().includes("let me search");
+
+          if (ignored) {
+            console.warn(`[Neural Router] ${config.name} ignored documents. Retrying with STRICT mode.`);
+            const strictPrompt = buildStrictDocumentPrompt(docContext, prompt, docNames);
+            responseText = await callFunction(strictPrompt, [], finalSystemInstruction, true);
+          }
+        }
 
         rateLimiter.trackRequest(config.name);
-        responseCache.set(prompt, history, response, config.name);
-        return { text: response, provider: config.name };
+        responseCache.set(prompt, history, responseText, config.name);
+        return { text: responseText, provider: config.name };
       } catch (e: any) {
         console.error(`[Neural Router] ${config.name} failure:`, e.message);
         lastError = e;
