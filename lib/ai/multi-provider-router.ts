@@ -37,60 +37,79 @@ export async function getSystemPrompt(): Promise<string> {
 }
 
 /**
- * Nuclear Fix: Force-grounding prompt builder
+ * 🔥 NUCLEAR OPTION: DOCUMENT-FIRST PROMPT
+ * Ensures the document context is wrapped in high-priority markers and appears BEFORE instructions.
  */
 function buildDocumentFirstPrompt(
   systemPrompt: string,
-  docContext: string,
+  documentContext: string,
   history: any[],
   userPrompt: string,
-  docNames: string[]
+  documentFilenames: string[]
 ): string {
   const historyText = history
-    .slice(-4)
+    .slice(-3)
     .map(m => `${m.role === 'user' ? 'Teacher' : 'AI'}: ${m.content}`)
     .join('\n\n');
 
   return `
-🚨 MANDATORY INSTRUCTION: USE ONLY UPLOADED CURRICULUM DOCUMENTS 🚨
+🚨🚨🚨 MANDATORY: READ THE DOCUMENTS BELOW. THIS IS YOUR ONLY SOURCE OF TRUTH. 🚨🚨🚨
 
-THE TEACHER HAS PROVIDED SPECIFIC CURRICULUM CONTEXT BELOW. 
-YOU MUST ANALYZE THESE DOCUMENTS FIRST. DO NOT USE GENERAL TRAINING KNOWLEDGE IF IT CONTRADICTS THESE DOCUMENTS.
+YOU ARE IN "STRICT CURRICULUM GROUNDING" MODE. 
+THE TEACHER HAS UPLOADED SPECIFIC DOCUMENTS. YOU MUST USE ONLY THESE DOCUMENTS.
+
+STOP! 🛑
+❌ DO NOT search the web.
+❌ DO NOT use your general knowledge.
+❌ DO NOT say "I don't have access to that information" because it is PROVIDED BELOW.
+❌ DO NOT suggest general activities if the curriculum specifies specific ones.
 
 <CURRICULUM_DOCUMENTS>
-PRIMARY SOURCE ASSETS: ${docNames.join(', ')}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 SOURCE ASSETS: ${documentFilenames.join(', ')}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${docContext}
+${documentContext}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+END OF CURRICULUM DOCUMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 </CURRICULUM_DOCUMENTS>
 
-### BEHAVIORAL PROTOCOL:
-1. ALWAYS reference "${docNames[0]}" in your response.
-2. If asked about SLO codes (e.g. S8 A7), LOCATE them in the XML block above.
-3. If information is NOT in the documents, state: "This is not in the curriculum documents." 
-4. DO NOT search the web or hallucinate general facts.
+### YOUR TASK:
+1. Base your entire response on the <CURRICULUM_DOCUMENTS> section.
+2. If asked about SLO codes (e.g., "S8 A7"), find them in the text above. 
+3. Start your response by acknowledging the source: "Based on the curriculum document '${documentFilenames[0]}', ..."
+4. If the info is missing, say: "This information is not found in the uploaded curriculum documents."
 
 ${systemPrompt}
 
-${historyText ? `### PREVIOUS CONVERSATION:\n${historyText}\n\n` : ''}
-### CURRENT TEACHER REQUEST:
+${historyText ? `### CONVERSATION HISTORY:\n${historyText}\n\n` : ''}
+
+### TEACHER'S CURRENT REQUEST:
 ${userPrompt}
 
-AI TUTOR RESPONSE (Grounded in Curriculum):`;
+AI RESPONSE (Grounded ONLY in curriculum):`;
 }
 
-function buildStrictDocumentPrompt(docContext: string, userPrompt: string, docNames: string[]): string {
+/**
+ * 🔴 STRICT MODE: For retry if AI hallucinated or ignored context
+ */
+function buildStrictRetryPrompt(documentContext: string, userPrompt: string): string {
   return `
-🔴 STRICT MODE: YOU PREVIOUSLY IGNORED THE CURRICULUM DOCUMENTS.
-YOUR TASK IS TO ANSWER THE QUESTION BELOW USING *ONLY* THE TEXT IN THESE TAGS:
+STRICT ENFORCEMENT REQUIRED.
+You previously failed to use the provided curriculum documents. This is a critical error.
+
+YOU MUST ANSWER THE FOLLOWING QUESTION USING ONLY THE TEXT IN <DOCS>.
+IF THE ANSWER IS NOT IN <DOCS>, YOU MUST SAY "INFO NOT IN CURRICULUM".
 
 <DOCS>
-${docContext}
+${documentContext}
 </DOCS>
 
-TEACHER QUESTION: ${userPrompt}
+QUESTION: ${userPrompt}
 
-YOU MUST START YOUR RESPONSE WITH: "According to the ${docNames[0]} document..."
-DO NOT USE ANY OTHER KNOWLEDGE.`;
+RESPONSE (Directly citing <DOCS>):`;
 }
 
 export async function generateAIResponse(
@@ -103,16 +122,18 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // Fetch updated context
+  // 1. Fetch updated document context and system rules
   const documents = await getSelectedDocumentsWithContent(userId);
   const docNames = documents.map(d => d.filename);
   const hasDocuments = documents.length > 0;
   const docContext = buildDocumentContextString(documents);
   const dbSystemPrompt = await getSystemPrompt();
 
-  const finalSystemInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}`;
-  const nuclearPrompt = hasDocuments 
-    ? buildDocumentFirstPrompt(finalSystemInstruction, docContext, history, prompt, docNames)
+  const finalInstruction = `${dbSystemPrompt}\n${systemInstruction || ''}`;
+
+  // 2. Build the primary prompt
+  const fullPrompt = hasDocuments 
+    ? buildDocumentFirstPrompt(finalInstruction, docContext, history, prompt, docNames)
     : prompt;
 
   return await requestQueue.add(async () => {
@@ -122,35 +143,39 @@ export async function generateAIResponse(
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
-        console.log(`[Neural Router] Routing to ${config.name} (Grounded: ${hasDocuments})`);
+        console.log(`[Neural Router] Attempting ${config.name} (Documents Active: ${hasDocuments})`);
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         
-        let responseText = await callFunction(nuclearPrompt, history, finalSystemInstruction, hasDocuments, docPart);
+        let response = await callFunction(fullPrompt, history, finalInstruction, hasDocuments, docPart);
 
-        // Validation: Check if AI ignored documents (Hallucination detection)
+        // 3. VALIDATION: Check for "Hallucination" or "Ignored context" signatures
         if (hasDocuments) {
-          const ignored = 
-            responseText.toLowerCase().includes("i don't have access") || 
-            responseText.toLowerCase().includes("i can't see the document") ||
-            responseText.toLowerCase().includes("let me search");
+          const lowerRes = response.toLowerCase();
+          const ignoredSignals = [
+            "i don't have access",
+            "as an ai i cannot read",
+            "let me search the web",
+            "i don't have information about that specific code",
+            "based on general knowledge"
+          ];
 
-          if (ignored) {
-            console.warn(`[Neural Router] ${config.name} ignored documents. Retrying with STRICT mode.`);
-            const strictPrompt = buildStrictDocumentPrompt(docContext, prompt, docNames);
-            responseText = await callFunction(strictPrompt, [], finalSystemInstruction, true);
+          if (ignoredSignals.some(signal => lowerRes.includes(signal))) {
+            console.warn(`[Neural Router] ${config.name} ignored context. Triggering STRICT RETRY.`);
+            const retryPrompt = buildStrictRetryPrompt(docContext, prompt);
+            response = await callFunction(retryPrompt, [], finalInstruction, true);
           }
         }
 
         rateLimiter.trackRequest(config.name);
-        responseCache.set(prompt, history, responseText, config.name);
-        return { text: responseText, provider: config.name };
+        responseCache.set(prompt, history, response, config.name);
+        return { text: response, provider: config.name };
       } catch (e: any) {
-        console.error(`[Neural Router] ${config.name} failure:`, e.message);
+        console.error(`[Neural Router] ${config.name} node failure:`, e.message);
         lastError = e;
       }
     }
 
-    throw lastError || new Error("All AI nodes currently saturated.");
+    throw lastError || new Error("AI Synthesis Grid is currently offline or saturated.");
   });
 }
 

@@ -1,6 +1,6 @@
 
 export async function callGroq(
-  prompt: string, 
+  fullPrompt: string, 
   history: any[], 
   systemInstruction: string, 
   hasDocuments: boolean = false
@@ -9,13 +9,13 @@ export async function callGroq(
   if (!apiKey) throw new Error('GROQ_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? `MANDATORY: You are a document-analysis AI. Use ONLY the curriculum context provided in the user prompt. DO NOT use general knowledge or search tools. ${systemInstruction}`
+    ? "You are a curriculum-aware AI tutor. You have access to uploaded curriculum documents provided in the user prompt. Use ONLY that text. DO NOT search the web. DO NOT use general knowledge. Be precise and literal."
     : systemInstruction;
 
   const messages = [
     { role: 'system', content: finalSystem },
-    ...history.slice(-3).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-    { role: 'user', content: prompt }
+    ...history.slice(-2).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+    { role: 'user', content: fullPrompt }
   ];
 
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -24,12 +24,13 @@ export async function callGroq(
     body: JSON.stringify({ 
       model: 'llama-3.3-70b-versatile', // Upgraded to more capable model for reasoning
       messages, 
-      temperature: 0.1, // Lower temperature for higher grounding accuracy
-      max_tokens: 4096
+      temperature: 0.1, // Near zero for strict grounding
+      max_tokens: 4096,
+      top_p: 1
     })
   });
 
-  if (!res.ok) throw new Error(`Groq Fail: ${res.status}`);
+  if (!res.ok) throw new Error(`Groq Node Error: ${res.status}`);
   const data = await res.json();
   return data.choices[0].message.content;
 }
