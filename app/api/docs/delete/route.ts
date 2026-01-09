@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '../../../../lib/supabase';
+import { supabase as anonClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET } from '../../../../lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 
@@ -10,23 +10,40 @@ export async function DELETE(request: NextRequest) {
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Auth required' }, { status: 401 });
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: 'Doc ID required' }, { status: 400 });
 
-    // 1. Fetch metadata to determine storage type and path
-    const { data: doc, error: fetchError } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', user.id)
+    // 1. Fetch user profile to check plan/role
+    const { data: profile } = await anonClient
+      .from('profiles')
+      .select('role, plan')
+      .eq('id', user.id)
       .single();
 
-    if (fetchError || !doc) return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+    const isAdmin = profile?.role === 'app_admin';
+    const isFreeTier = profile?.plan === 'free';
 
-    // 2. Physical File Deletion
+    // Free tier lockout
+    if (isFreeTier && !isAdmin) {
+      return NextResponse.json({ error: 'Tier Restriction: Free educators cannot delete curriculum assets.' }, { status: 403 });
+    }
+
+    // 2. Fetch document metadata
+    // Admins can bypass the user_id check if they are managing the system, 
+    // but typically they are managing their own assets in the UI.
+    const query = anonClient.from('documents').select('*').eq('id', id);
+    if (!isAdmin) {
+      query.eq('user_id', user.id);
+    }
+    
+    const { data: doc, error: fetchError } = await query.single();
+
+    if (fetchError || !doc) return NextResponse.json({ error: 'Document not found or unauthorized.' }, { status: 404 });
+
+    // 3. Physical File Deletion
     if (doc.storage_type === 'r2' && r2Client) {
       try {
         await r2Client.send(new DeleteObjectCommand({
@@ -38,11 +55,11 @@ export async function DELETE(request: NextRequest) {
       }
     } else {
       // Supabase storage delete
-      await supabase.storage.from('documents').remove([doc.file_path]);
+      await anonClient.storage.from('documents').remove([doc.file_path]);
     }
 
-    // 3. Database record deletion
-    const { error: deleteError } = await supabase
+    // 4. Database record deletion
+    const { error: deleteError } = await anonClient
       .from('documents')
       .delete()
       .eq('id', id);

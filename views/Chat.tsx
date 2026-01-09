@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -40,8 +40,16 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [assessmentResult, setAssessmentResult] = useState<Assessment | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
 
-  const [showSidebar, setShowSidebar] = useState(true);
+  // showSidebar is true by default on desktop, false on mobile
+  const [showSidebar, setShowSidebar] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Initialize sidebar state based on screen size
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth >= 768) {
+      setShowSidebar(true);
+    }
+  }, []);
 
   useEffect(() => {
     setLocalDocs(documents);
@@ -54,17 +62,14 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
-    // 1. Deselect others in DB and UI for a single focused context
     const updated = localDocs.map(d => ({ ...d, isSelected: d.id === docId ? !d.isSelected : false }));
     setLocalDocs(updated);
     
     const targetDoc = updated.find(d => d.id === docId);
     
-    // 2. Database Sync
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
     if (targetDoc?.isSelected) {
       await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
-      // Update profile record as well for consistency
       await supabase.from('profiles').update({ active_doc_id: docId }).eq('id', user.id);
     } else {
       await supabase.from('profiles').update({ active_doc_id: null }).eq('id', user.id);
@@ -193,11 +198,30 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
 
   return (
     <div className="flex h-[calc(100vh-100px)] lg:h-[calc(100vh-40px)] bg-slate-50 dark:bg-[#0a0a0a] relative overflow-hidden">
-      <div className={`transition-all duration-300 border-r border-slate-200 dark:border-white/5 bg-white/40 dark:bg-white/5 backdrop-blur-md hidden md:block ${showSidebar ? 'w-64 opacity-100' : 'w-0 opacity-0 overflow-hidden'}`}>
+      {/* Mobile Backdrop */}
+      {showSidebar && (
+        <div 
+          className="fixed inset-0 z-[40] bg-black/20 backdrop-blur-sm md:hidden" 
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+
+      {/* Curriculum Context Sidebar */}
+      <div className={`
+        fixed md:relative inset-y-0 left-0 z-[50] md:z-10
+        transition-all duration-300 border-r border-slate-200 dark:border-white/5 
+        bg-white dark:bg-[#0d0d0d] md:bg-white/40 md:dark:bg-white/5 md:backdrop-blur-md
+        ${showSidebar ? 'w-72 md:w-64 translate-x-0 opacity-100' : '-translate-x-full md:translate-x-0 md:w-0 md:opacity-0 overflow-hidden'}
+      `}>
         <div className="p-4 space-y-6">
           <div className="flex items-center justify-between">
              <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Curriculum Context</h3>
-             <Sparkles size={14} className="text-indigo-400" />
+             <div className="flex items-center gap-2">
+               <Sparkles size={14} className="text-indigo-400" />
+               <button onClick={() => setShowSidebar(false)} className="md:hidden p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg">
+                 <X size={16} />
+               </button>
+             </div>
           </div>
           <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />
           
@@ -210,9 +234,15 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       </div>
 
       <div className="flex-1 flex flex-col min-w-0 relative">
+        {/* Toggle Button Positioned Adaptively */}
         <button 
           onClick={() => setShowSidebar(!showSidebar)}
-          className="absolute left-0 top-1/2 -translate-y-1/2 z-30 p-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-r-xl shadow-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all hidden md:block"
+          className={`
+            absolute left-0 top-1/2 -translate-y-1/2 z-30 
+            p-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 
+            rounded-r-xl shadow-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all
+            ${showSidebar ? 'opacity-0 md:opacity-100' : 'opacity-100'}
+          `}
         >
           {showSidebar ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
         </button>
@@ -236,7 +266,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                   <div className="absolute inset-0 bg-indigo-600 rounded-[24px] blur-2xl opacity-20 -z-10 animate-pulse" />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Pedagogy Master Neural</h2>
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight text-center">Pedagogy Master Neural</h2>
                   <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
                     Ready for curriculum-aligned synthesis. How can I assist your teaching today?
                   </p>

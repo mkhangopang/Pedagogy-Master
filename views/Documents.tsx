@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, X,
   Database, Check, Trash2, ExternalLink, Globe
 } from 'lucide-react';
-import { Document, SubscriptionPlan, UserProfile } from '../types';
+import { Document, SubscriptionPlan, UserProfile, UserRole } from '../types';
 import { ROLE_LIMITS } from '../constants';
 import DocumentUploader from '../components/DocumentUploader';
 import { getR2PublicUrl } from '../lib/r2';
@@ -30,6 +30,9 @@ const Documents: React.FC<DocumentsProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const docLimit = ROLE_LIMITS[userProfile.plan].docs;
   const limitReached = documents.length >= docLimit;
+  
+  // Free tier cannot delete curriculum assets once uploaded
+  const canDelete = userProfile.role === UserRole.APP_ADMIN || userProfile.plan !== SubscriptionPlan.FREE;
 
   const handleUploadComplete = async (doc: any) => {
     await onAddDocument({
@@ -45,6 +48,8 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   const handleDelete = async (id: string) => {
+    if (!canDelete) return;
+    
     if (window.confirm('This will permanently erase the physical file from the cloud node. Continue?')) {
       setDeletingId(id);
       try {
@@ -61,6 +66,7 @@ const Documents: React.FC<DocumentsProps> = ({
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl">
           <DocumentUploader 
             userId={userProfile.id} 
+            userPlan={userProfile.plan}
             onComplete={handleUploadComplete}
             onCancel={() => setShowUploader(false)}
           />
@@ -115,13 +121,15 @@ const Documents: React.FC<DocumentsProps> = ({
                         <ExternalLink size={20} />
                       </a>
                     )}
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }}
-                      className="p-3 bg-rose-50 text-rose-500 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all transform hover:scale-110"
-                      title="Erase Forever"
-                    >
-                      {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
-                    </button>
+                    {canDelete && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }}
+                        className="p-3 bg-rose-50 text-rose-500 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-all transform hover:scale-110"
+                        title="Erase Forever"
+                      >
+                        {isDeleting ? <Loader2 size={20} className="animate-spin" /> : <Trash2 size={20} />}
+                      </button>
+                    )}
                   </div>
                </div>
                

@@ -1,30 +1,41 @@
+
 import React, { useState, useRef } from 'react';
 import { Upload, X, CheckCircle2, AlertCircle, Loader2, FileUp, RefreshCcw } from 'lucide-react';
 import { uploadDocument } from '../lib/upload-handler';
 import { supabase } from '../lib/supabase';
+import { SubscriptionPlan } from '../types';
 
 interface DocumentUploaderProps {
   userId: string;
+  userPlan: SubscriptionPlan;
   onComplete: (doc: any) => void;
   onCancel: () => void;
 }
 
-export default function DocumentUploader({ userId, onComplete, onCancel }: DocumentUploaderProps) {
+export default function DocumentUploader({ userId, userPlan, onComplete, onCancel }: DocumentUploaderProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [status, setStatus] = useState('Select file (Max 10MB)');
+  const [status, setStatus] = useState(userPlan === SubscriptionPlan.FREE ? 'Free Limit: Max 5MB' : 'Select file (Max 10MB)');
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const startUpload = async (file: File) => {
-    setIsUploading(true);
     setError(null);
+    setIsUploading(true);
+
+    // Enforce 5MB limit for FREE tier
+    const maxSize = userPlan === SubscriptionPlan.FREE ? 5 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setError(`Neural Overload: File exceeds the ${userPlan === SubscriptionPlan.FREE ? '5MB' : '10MB'} tier limit.`);
+      setIsUploading(false);
+      return;
+    }
+
     setProgress(5);
     setStatus('Initializing...');
 
     try {
-      // Get the active session for the JWT token
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
