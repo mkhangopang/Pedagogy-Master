@@ -48,13 +48,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
   const renderedHtml = useMemo(() => {
     if (!body) return '';
     try {
-      const html = marked.parse(body, {
+      // Configure marked for professional output
+      marked.setOptions({
         gfm: true,
-        breaks: true
-      }) as string;
+        breaks: true,
+      });
+
+      const html = marked.parse(body) as string;
       
       // Wrap tables in a responsive container to prevent layout overflow on mobile
-      return html.replace(/<table>/g, '<div class="table-container"><table>').replace(/<\/table>/g, '</table></div>');
+      // This regex identifies <table> and ensures it's wrapped in our custom container
+      return html
+        .replace(/<table>/g, '<div class="table-container"><table>')
+        .replace(/<\/table>/g, '</table></div>');
     } catch (e) {
       console.error("Markdown parse error:", e);
       return body;
@@ -78,7 +84,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
               : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
           }`}>
             <div 
-              className="prose dark:prose-invert max-w-none overflow-x-hidden"
+              className="prose dark:prose-invert max-w-none"
               dangerouslySetInnerHTML={{ __html: renderedHtml || (isAi ? '<div class="flex gap-1.5 py-2"><div class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></div><div class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.1s]"></div><div class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]"></div></div>' : '') }}
             />
           </div>

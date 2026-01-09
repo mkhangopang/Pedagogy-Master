@@ -45,32 +45,42 @@ body {
   @apply bg-white/80 dark:bg-[#1a1a1a]/80 backdrop-blur-xl border border-slate-200 dark:border-white/5;
 }
 
-/* Prose (Markdown) Styling */
+/* Prose (Markdown) Styling - Professional GPT-Style */
 .prose {
-  @apply text-slate-700 dark:text-slate-300 leading-relaxed;
+  @apply text-slate-700 dark:text-slate-300 leading-relaxed max-w-none;
 }
 .prose h1, .prose h2, .prose h3 {
-  @apply font-bold text-slate-900 dark:text-white mt-6 mb-3 tracking-tight;
+  @apply font-bold text-slate-900 dark:text-white mt-8 mb-4 tracking-tight;
 }
-.prose h1 { @apply text-2xl border-b border-slate-100 dark:border-white/5 pb-2; }
-.prose h2 { @apply text-xl; }
+.prose h1 { @apply text-2xl border-b border-slate-100 dark:border-white/5 pb-3; }
+.prose h2 { @apply text-xl border-b border-slate-50 dark:border-white/5 pb-2; }
 .prose h3 { @apply text-lg; }
 
+.prose p {
+  @apply mb-5 last:mb-0;
+}
+
+/* Professional Table Styling */
+.prose .table-container {
+  @apply w-full overflow-x-auto my-8 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm bg-white dark:bg-white/[0.02];
+}
+
 .prose table {
-  @apply w-full border-collapse my-6 rounded-2xl overflow-hidden shadow-sm border border-slate-200 dark:border-white/10;
+  @apply w-full border-collapse text-left text-sm;
   display: table;
 }
 
 .prose thead {
-  @apply bg-slate-50 dark:bg-white/5;
+  @apply bg-slate-50/50 dark:bg-white/5;
 }
 
 .prose th {
-  @apply p-4 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-white/10 text-left;
+  @apply p-4 font-bold text-slate-900 dark:text-white border-b border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-slate-900/50;
+  white-space: nowrap;
 }
 
 .prose td {
-  @apply p-4 text-sm text-slate-600 dark:text-slate-400 border-b border-slate-100 dark:border-white/5 align-top;
+  @apply p-4 text-slate-600 dark:text-slate-400 border-b border-slate-100 dark:border-white/5 align-top;
 }
 
 .prose tr:last-child td {
@@ -78,31 +88,29 @@ body {
 }
 
 .prose tr:nth-child(even) {
-  @apply bg-slate-50/30 dark:bg-white/[0.02];
+  @apply bg-slate-50/30 dark:bg-white/[0.01];
+}
+
+.prose tr:hover td {
+  @apply bg-indigo-50/20 dark:bg-indigo-500/[0.02] transition-colors;
 }
 
 .prose ul {
-  @apply list-disc list-inside space-y-2 my-4;
+  @apply list-disc list-inside space-y-2.5 my-5 pl-2;
 }
 .prose ol {
-  @apply list-decimal list-inside space-y-2 my-4;
+  @apply list-decimal list-inside space-y-2.5 my-5 pl-2;
 }
-.prose p {
-  @apply mb-4;
-}
+
 .prose code {
-  @apply bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs text-indigo-600 dark:text-indigo-400;
+  @apply bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs text-indigo-600 dark:text-indigo-400 font-semibold;
 }
 
-/* Container for responsive tables */
-.prose .table-container {
-  @apply w-full overflow-x-auto my-6 rounded-2xl border border-slate-200 dark:border-white/10 scrollbar-hide;
+.prose blockquote {
+  @apply border-l-4 border-indigo-500 pl-6 py-1 my-6 italic text-slate-600 dark:text-slate-400 bg-indigo-50/30 dark:bg-indigo-500/5 rounded-r-xl;
 }
 
-.prose .table-container table {
-  @apply my-0 border-none rounded-none;
-}
-
+/* Animations */
 @keyframes slideInUp {
   from { transform: translateY(10px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
