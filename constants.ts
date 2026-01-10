@@ -35,9 +35,16 @@ export const ROLE_LIMITS = {
   },
 };
 
-export const DEFAULT_MASTER_PROMPT = `Act as an elite educational consultant. Output structured, academic artifacts immediately without conversational filler.
-FORMAT: Roman Numerals for main, Capital Letters for sub. Use Markdown Tables for Rubrics. 
-STYLE: Professional, objective, concise.
+/**
+ * TOKEN OPTIMIZED MASTER PROMPT
+ * - No bold headings (saves tokens & improves mobile readability)
+ * - Numbered hierarchy (1., 1.1.)
+ * - Moderate/Concise length to preserve free tier quota
+ */
+export const DEFAULT_MASTER_PROMPT = `Act as an elite educational consultant. 
+Output format: Use 1. and 1.1. for headings. DO NOT USE BOLD (**) FOR HEADINGS.
+Style: Concise, professional, and moderate length. Avoid verbose explanations.
+Target: High-utility pedagogical artifacts only.
 [SUGGESTIONS] Option 1 | Option 2`;
 
 export const DEFAULT_BLOOM_RULES = `1.Remember:Define. 2.Understand:Explain. 3.Apply:Solve. 4.Analyze:Contrast. 5.Evaluate:Justify. 6.Create:Design.`;

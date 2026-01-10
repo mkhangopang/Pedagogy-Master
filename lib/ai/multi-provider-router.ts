@@ -7,7 +7,7 @@ import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { responseCache } from './response-cache';
 import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
-import { DEFAULT_MASTER_PROMPT } from '../../constants';
+import { DEFAULT_MASTER_PROMPT, APP_NAME } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
   { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
@@ -38,18 +38,19 @@ export async function getSystemPrompt(): Promise<string> {
 
 /**
  * 🔒 SPECIALIZED TOOL PROMPT FACTORY
- * Ensures each tool remains restricted to its core mission.
+ * Ensures each tool remains restricted to its core mission and optimized for tokens.
  */
-function buildSpecializedToolPrompt(toolType: string, userInput: string, documentContext: string): string {
+function buildSpecializedToolPrompt(toolType: string, userInput: string, documentContext: string, basePrompt: string): string {
   const toolMission = {
     'lesson-plan': "Strictly generate a high-quality pedagogical lesson plan. DO NOT include rubrics, quizzes, or assessments unless they are explicitly part of the instructional flow. Focus on: Hook, Input, Guided Practice, and Closure.",
-    'assessment': "Strictly generate assessment items (MCQs, CRQs, or Short Answers). DO NOT generate lesson plans or long-form teaching materials. Focus on alignment with SLOs and cognitive rigor.",
+    'assessment': "Strictly generate assessment items (MCQs, CRQs, or Short Answers). DO NOT generate lesson plans or long-form teaching materials. Focus on alignment with SLOs and cognitive rigor. For CRQs (Constructed Response Questions), focus on synthesis.",
     'rubric': "Strictly generate a grading rubric with clear criteria and level descriptors. DO NOT generate lesson content or quizzes.",
     'slo-tagger': "Strictly identify and extract Student Learning Objectives (SLOs) and curriculum codes. Map them to Bloom's levels. DO NOT generate lessons or assessments."
   }[toolType] || "Generate the requested educational artifact.";
 
   return `
 ### SPECIALIZED NEURAL TASK: ${toolType.toUpperCase()}
+SYSTEM: ${basePrompt}
 MISSION: ${toolMission}
 
 VAULT_CONTEXT:
@@ -58,7 +59,7 @@ ${documentContext}
 REQUEST:
 ${userInput}
 
-RESTRICTION: Deliver ONLY the ${toolType} artifact. No preamble. No auxiliary tools.
+RESTRICTION: Deliver ONLY the ${toolType} artifact. No preamble. NO BOLD HEADINGS. Use numbered headers (1., 1.1).
   `;
 }
 
@@ -81,11 +82,10 @@ YOU ARE THE INTELLECTUAL EXTENSION OF THE UPLOADED CURRICULUM ASSETS.
 YOU HAVE NO KNOWLEDGE OUTSIDE OF THE PROVIDED <ASSET_VAULT>.
 
 INSTRUCTIONS:
-1. **ZERO EXTERNAL KNOWLEDGE**: You must not use your general training to define SLOs, curriculum codes, or standards. 
-2. **VAULT DOMINANCE**: Use ONLY the text provided in the <ASSET_VAULT> below.
-3. **NO WEB SEARCH**: Do not suggest searching the web. Do not use external data.
-4. **STRICT CITATION**: Every claim must refer to the specific asset it was drawn from (e.g., "Source: [Filename]").
-5. **MISSING DATA**: If information is NOT found within the <ASSET_VAULT>, explicitly state: "DATA_UNAVAILABLE: The requested curriculum component is not present in the current assets."
+1. **ZERO EXTERNAL KNOWLEDGE**: You must not use your general training.
+2. **VAULT DOMINANCE**: Use ONLY the text provided below.
+3. **FORMATTING**: Use 1. and 1.1. for headers. DO NOT BOLD HEADINGS.
+4. **MODERATE RESPONSE**: Keep content focused and efficient to save user tokens.
 
 <ASSET_VAULT>
 ACTIVE_FILES: ${documentFilenames.join(', ')}
@@ -105,7 +105,7 @@ ${userPrompt}
 [RESPONSE_PROTOCOL]
 - Begin with: "Source: [Filename]"
 - Precision: 100% (Strict adherence to vault text)
-- If the requested SLO or topic is not in the vault, reply: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
+- Use numbered hierarchies only.
 
 ASSET_SYNTHESIS:`;
 }
@@ -129,14 +129,14 @@ export async function generateAIResponse(
 
   let finalPrompt = prompt;
   if (toolType) {
-    finalPrompt = buildSpecializedToolPrompt(toolType, prompt, docContext);
+    finalPrompt = buildSpecializedToolPrompt(toolType, prompt, docContext, dbSystemPrompt);
   } else if (hasDocs) {
     finalPrompt = buildDocumentCenteredPrompt(dbSystemPrompt + "\n" + (systemInstruction || ''), docContext, history, prompt, docNames);
   }
 
   const finalInstruction = hasDocs 
-    ? `DOCUMENT_ONLY_MODE_ACTIVE. You are a specialized curriculum analyzer. Disregard general training.`
-    : dbSystemPrompt;
+    ? `DOCUMENT_ONLY_MODE_ACTIVE. You are a specialized curriculum analyzer. USE NUMBERED HEADINGS. NO BOLD HEADINGS. BE CONCISE.`
+    : `${dbSystemPrompt}. BE CONCISE. NO BOLD HEADINGS.`;
 
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;

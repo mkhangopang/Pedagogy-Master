@@ -2,8 +2,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { User, Bot, Copy, Check, Download, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
+import { User, Bot, Copy, Check, Share2, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
 import { marked } from 'marked';
+import { APP_NAME } from '../../constants';
 
 interface MessageItemProps {
   role: 'user' | 'assistant';
@@ -25,39 +26,40 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownload = () => {
+  const handleShare = async () => {
     const cleanText = content.split('--- Synthesis by Node:')[0].trim();
-    const blob = new Blob([cleanText], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `synthesis-${id.substring(0, 8)}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${APP_NAME} Synthesis`,
+          text: cleanText,
+          url: window.location.href
+        });
+      } catch (err) {
+        console.log('Share failed', err);
+        handleCopy();
+      }
+    } else {
+      handleCopy();
+    }
   };
 
-  const { body, provider } = useMemo(() => {
+  const { body } = useMemo(() => {
     const parts = content.split('--- Synthesis by Node:');
     return { 
-      body: parts[0].trim(), 
-      provider: parts[1]?.trim() 
+      body: parts[0].trim()
     };
   }, [content]);
 
-  // Safely parse markdown to HTML with GFM (GitHub Flavored Markdown) support for tables
   const renderedHtml = useMemo(() => {
     if (!body) return '';
     try {
-      // Configure marked for professional output
       marked.setOptions({
         gfm: true,
         breaks: true,
       });
 
       const html = marked.parse(body) as string;
-      
-      // Wrap tables in a responsive container to prevent layout overflow on mobile
-      // This regex identifies <table> and ensures it's wrapped in our custom container
       return html
         .replace(/<table>/g, '<div class="table-container"><table>')
         .replace(/<\/table>/g, '</table></div>');
@@ -77,7 +79,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
         </div>
         
         <div className={`flex flex-col gap-4 ${isAi ? 'items-start' : 'items-end'}`}>
-          {/* Message Bubble */}
           <div className={`px-6 py-5 rounded-[2rem] text-[15px] leading-relaxed shadow-sm border ${
             isAi 
               ? 'bg-white dark:bg-[#1a1a1a] text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/5 rounded-tl-none' 
@@ -89,7 +90,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
             />
           </div>
           
-          {/* Action Row */}
           {isAi && body && (
             <div className="flex flex-wrap items-center gap-4 px-2 w-full">
               <div className="flex items-center gap-2">
@@ -102,20 +102,18 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
                 </button>
                 
                 <button 
-                  onClick={handleDownload}
+                  onClick={handleShare}
                   className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 transition-all shadow-sm active:scale-95"
                 >
-                  <Download size={12} />
-                  Download
+                  <Share2 size={12} />
+                  Share
                 </button>
               </div>
 
-              {provider && (
-                <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10">
-                  <Sparkles size={10} className="text-amber-500" />
-                  {provider}
-                </div>
-              )}
+              <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10">
+                <Sparkles size={10} className="text-indigo-500" />
+                {APP_NAME} Synthesis
+              </div>
 
               <div className="flex items-center gap-1 ml-auto">
                 <button 

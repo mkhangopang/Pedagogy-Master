@@ -5,6 +5,7 @@ import { r2Client, R2_BUCKET } from '../../../lib/r2';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
+import { APP_NAME } from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -59,14 +60,16 @@ export async function POST(req: NextRequest) {
       history || [], 
       user.id, 
       systemInstruction, 
-      docPart
+      docPart,
+      toolType
     );
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis by Node: ${provider.toUpperCase()}*`));
+        // Using APP_NAME instead of individual node provider to maintain branding
+        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis by Node: ${APP_NAME}*`));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
