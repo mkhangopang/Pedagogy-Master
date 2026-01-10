@@ -1,5 +1,5 @@
 
-import { supabase } from '../supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { callGroq } from './providers/groq';
 import { callOpenRouter } from './providers/openrouter';
 import { callGemini } from './providers/gemini';
@@ -7,7 +7,7 @@ import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { responseCache } from './response-cache';
 import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
-import { DEFAULT_MASTER_PROMPT, APP_NAME } from '../../constants';
+import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
   { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
@@ -21,7 +21,7 @@ const PROVIDER_FUNCTIONS = {
   groq: callGroq,
 };
 
-export async function getSystemPrompt(): Promise<string> {
+export async function getSystemPrompt(supabase: SupabaseClient): Promise<string> {
   try {
     const { data } = await supabase
       .from('neural_brain')
@@ -38,33 +38,30 @@ export async function getSystemPrompt(): Promise<string> {
 
 /**
  * 🔒 SPECIALIZED TOOL PROMPT FACTORY
- * Ensures each tool remains restricted to its core mission and optimized for tokens.
  */
-function buildSpecializedToolPrompt(toolType: string, userInput: string, documentContext: string, basePrompt: string): string {
+function buildSpecializedToolPrompt(toolType: string, userInput: string, documentContext: string): string {
   const toolMission = {
-    'lesson-plan': "Strictly generate a high-quality pedagogical lesson plan. DO NOT include rubrics, quizzes, or assessments unless they are explicitly part of the instructional flow. Focus on: Hook, Input, Guided Practice, and Closure.",
-    'assessment': "Strictly generate assessment items (MCQs, CRQs, or Short Answers). DO NOT generate lesson plans or long-form teaching materials. Focus on alignment with SLOs and cognitive rigor. For CRQs (Constructed Response Questions), focus on synthesis.",
-    'rubric': "Strictly generate a grading rubric with clear criteria and level descriptors. DO NOT generate lesson content or quizzes.",
-    'slo-tagger': "Strictly identify and extract Student Learning Objectives (SLOs) and curriculum codes. Map them to Bloom's levels. DO NOT generate lessons or assessments."
-  }[toolType] || "Generate the requested educational artifact.";
+    'lesson-plan': "Generate a strict pedagogical lesson plan based ONLY on the provided vault.",
+    'assessment': "Generate assessment items (MCQs/CRQs) based ONLY on the provided vault.",
+    'rubric': "Generate a grading rubric based ONLY on the provided vault content.",
+    'slo-tagger': "Extract SLOs from the provided vault."
+  }[toolType] || "Process the request using the provided vault.";
 
   return `
 ### SPECIALIZED NEURAL TASK: ${toolType.toUpperCase()}
-SYSTEM: ${basePrompt}
 MISSION: ${toolMission}
 
 VAULT_CONTEXT:
-${documentContext}
+${documentContext || '[NO_VAULT_ATTACHED: USE_GENERAL_KNOWLEDGE]'}
 
 REQUEST:
 ${userInput}
 
-RESTRICTION: Deliver ONLY the ${toolType} artifact. No preamble. NO BOLD HEADINGS. Use numbered headers (1., 1.1).
+RESTRICTION: Use 1. and 1.1. headings. DO NOT BOLD HEADINGS.
   `;
 }
 
 function buildDocumentCenteredPrompt(
-  systemPrompt: string,
   documentContext: string,
   history: any[],
   userPrompt: string,
@@ -77,35 +74,25 @@ function buildDocumentCenteredPrompt(
 
   return `
 🚨🚨🚨 MANDATORY: CORE OPERATIONAL DIRECTIVE - DOCUMENT-ONLY SYNTHESIS 🚨🚨🚨
-
 YOU ARE THE INTELLECTUAL EXTENSION OF THE UPLOADED CURRICULUM ASSETS.
 YOU HAVE NO KNOWLEDGE OUTSIDE OF THE PROVIDED <ASSET_VAULT>.
 
 INSTRUCTIONS:
-1. **ZERO EXTERNAL KNOWLEDGE**: You must not use your general training.
-2. **VAULT DOMINANCE**: Use ONLY the text provided below.
-3. **FORMATTING**: Use 1. and 1.1. for headers. DO NOT BOLD HEADINGS.
-4. **MODERATE RESPONSE**: Keep content focused and efficient to save user tokens.
+1. USE ONLY the text in <ASSET_VAULT>.
+2. If info is missing, say: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
+3. Cite sources: "Source: [Filename]".
 
 <ASSET_VAULT>
 ACTIVE_FILES: ${documentFilenames.join(', ')}
-
 ${documentContext}
 </ASSET_VAULT>
 
 ---
-[TEACHER_PROFILE_AND_HISTORY]
-${systemPrompt}
-
-${historyText ? `PREVIOUS_CHAT:\n${historyText}\n\n` : ''}
+[PREVIOUS_CHAT]
+${historyText}
 
 [CURRENT_TEACHER_REQUEST]
 ${userPrompt}
-
-[RESPONSE_PROTOCOL]
-- Begin with: "Source: [Filename]"
-- Precision: 100% (Strict adherence to vault text)
-- Use numbered hierarchies only.
 
 ASSET_SYNTHESIS:`;
 }
@@ -114,35 +101,41 @@ export async function generateAIResponse(
   prompt: string,
   history: any[],
   userId: string,
-  systemInstruction?: string,
+  supabase: SupabaseClient,
+  adaptiveContext?: string,
   docPart?: any,
   toolType?: string
 ): Promise<{ text: string; provider: string }> {
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  const documents = await getSelectedDocumentsWithContent(userId);
+  // CRITICAL: Fetch documents using the authenticated supabase client
+  const documents = await getSelectedDocumentsWithContent(supabase, userId);
   const docNames = documents.map(d => d.filename);
   const hasDocs = documents.length > 0;
   const docContext = buildDocumentContextString(documents);
-  const dbSystemPrompt = await getSystemPrompt();
+  const dbSystemPrompt = await getSystemPrompt(supabase);
+
+  // Strength the Master identity & formatting rules
+  const baseInstruction = `${dbSystemPrompt}\n${adaptiveContext || ''}\nRESTRICTION: 1. and 1.1. for headers. NO BOLD HEADINGS. BE CONCISE.`;
 
   let finalPrompt = prompt;
-  if (toolType) {
-    finalPrompt = buildSpecializedToolPrompt(toolType, prompt, docContext, dbSystemPrompt);
-  } else if (hasDocs) {
-    finalPrompt = buildDocumentCenteredPrompt(dbSystemPrompt + "\n" + (systemInstruction || ''), docContext, history, prompt, docNames);
-  }
+  let finalInstruction = baseInstruction;
 
-  const finalInstruction = hasDocs 
-    ? `DOCUMENT_ONLY_MODE_ACTIVE. You are a specialized curriculum analyzer. USE NUMBERED HEADINGS. NO BOLD HEADINGS. BE CONCISE.`
-    : `${dbSystemPrompt}. BE CONCISE. NO BOLD HEADINGS.`;
+  if (toolType) {
+    finalPrompt = buildSpecializedToolPrompt(toolType, prompt, docContext);
+    if (hasDocs) {
+      finalInstruction = `STRICT_DOCUMENT_GROUNDING_ACTIVE. ${baseInstruction}`;
+    }
+  } else if (hasDocs) {
+    finalPrompt = buildDocumentCenteredPrompt(docContext, history, prompt, docNames);
+    finalInstruction = `ABSOLUTE_GROUNDING_PROTOCOL_ACTIVE. Use ONLY the <ASSET_VAULT> provided in the message. Disregard general knowledge. ${baseInstruction}`;
+  }
 
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
     const sortedProviders = [...PROVIDERS].sort((a, b) => {
       if (hasDocs && a.name === 'gemini') return -1;
-      if (hasDocs && b.name === 'gemini') return 1;
       return 0;
     });
 

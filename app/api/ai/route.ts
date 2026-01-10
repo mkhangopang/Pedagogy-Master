@@ -47,19 +47,20 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const body = await req.json();
-    const { task, message, doc, brain, adaptiveContext, history, toolType, userInput } = body;
+    const { task, message, doc, adaptiveContext, history, toolType, userInput } = body;
     
+    // AUTHENTICATED CLIENT: Crucial for RLS compatibility in document-fetcher
     const supabase = getSupabaseServerClient(token);
     const docPart = await getDocumentPart(doc, supabase);
     
-    const systemInstruction = `${adaptiveContext || ''}`;
     const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
 
     const { text, provider } = await generateAIResponse(
       promptText, 
       history || [], 
       user.id, 
-      systemInstruction, 
+      supabase, // Pass the authenticated client
+      adaptiveContext, 
       docPart,
       toolType
     );
@@ -68,13 +69,13 @@ export async function POST(req: NextRequest) {
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        // Using APP_NAME instead of individual node provider to maintain branding
         controller.enqueue(encoder.encode(`\n\n---\n*Synthesis by Node: ${APP_NAME}*`));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
+    console.error("AI ROUTE ERROR:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

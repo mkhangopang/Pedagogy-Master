@@ -1,5 +1,5 @@
 
-import { supabase } from '../supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { getObjectText } from '../r2';
 
 export interface DocumentContent {
@@ -13,13 +13,16 @@ export interface DocumentContent {
 }
 
 /**
- * Fetch selected documents for a user WITH actual content from R2/Supabase
+ * Fetch selected documents for a user WITH actual content from R2/Supabase.
+ * REQUIRED: Must use an authenticated Supabase client to bypass RLS.
  */
 export async function getSelectedDocumentsWithContent(
+  supabase: SupabaseClient,
   userId: string
 ): Promise<DocumentContent[]> {
   try {
-    // 1. Fetch metadata for currently selected document from Supabase
+    // 1. Fetch metadata for currently selected document
+    // We check both the 'is_selected' flag and the user's 'active_doc_id' for redundancy
     const { data: documents, error } = await supabase
       .from('documents')
       .select('*')
@@ -33,7 +36,7 @@ export async function getSelectedDocumentsWithContent(
       return [];
     }
 
-    // 2. Fallback check for active_doc_id in user profile if no doc is explicitly selected
+    // 2. Fallback check for active_doc_id in user profile if no doc is explicitly marked is_selected
     if (!documents || documents.length === 0) {
       const { data: profile } = await supabase.from('profiles').select('active_doc_id').eq('id', userId).single();
       if (profile?.active_doc_id) {
@@ -61,9 +64,10 @@ export async function getSelectedDocumentsWithContent(
           }
         }
 
+        // If we still have no text, we can't ground a text-only model
         if (extractedText && extractedText.trim().length > 0) {
-          // Truncate to safe context size for models (approx 15k chars)
-          const truncatedText = extractedText.substring(0, 15000);
+          // Truncate to safe context size for models (approx 15k chars to stay in free limits)
+          const truncatedText = extractedText.substring(0, 18000);
           
           documentsWithContent.push({
             id: doc.id,
@@ -91,7 +95,7 @@ export async function getSelectedDocumentsWithContent(
  * Build deterministic context string for AI from documents and Supabase metadata.
  */
 export function buildDocumentContextString(documents: DocumentContent[]): string {
-  if (documents.length === 0) return '[STATUS_EMPTY: NO_ASSETS_MOUNTED]';
+  if (documents.length === 0) return '';
 
   return documents.map(doc => `
 --- START ASSET: ${doc.filename} ---
