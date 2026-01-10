@@ -9,6 +9,7 @@ import { APP_NAME } from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Extend Vercel timeout to 60s for curriculum analysis
 
 function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -32,7 +33,10 @@ async function getDocumentPart(doc: any, supabase: any) {
         bytes = new Uint8Array(await data.arrayBuffer());
       }
       return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
-    } catch (e) { return null; }
+    } catch (e) { 
+      console.error("Doc part retrieval failed:", e);
+      return null; 
+    }
   }
   return null;
 }
@@ -49,7 +53,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { task, message, doc, adaptiveContext, history, toolType, userInput } = body;
     
-    // AUTHENTICATED CLIENT: Crucial for RLS compatibility in document-fetcher
     const supabase = getSupabaseServerClient(token);
     const docPart = await getDocumentPart(doc, supabase);
     
@@ -59,7 +62,7 @@ export async function POST(req: NextRequest) {
       promptText, 
       history || [], 
       user.id, 
-      supabase, // Pass the authenticated client
+      supabase,
       adaptiveContext, 
       docPart,
       toolType
@@ -69,13 +72,15 @@ export async function POST(req: NextRequest) {
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis by Node: ${APP_NAME}*`));
+        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis by Node: ${provider}*`));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
     console.error("AI ROUTE ERROR:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      error: error.message || "Synthesis grid encountered a fatal exception." 
+    }, { status: 500 });
   }
 }

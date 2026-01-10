@@ -6,7 +6,7 @@ class RequestQueue {
     reject: (error: any) => void;
   }> = [];
   private processing = false;
-  private readonly MIN_DELAY = 1500;
+  private readonly MIN_DELAY = 500; // Reduced from 1500 to prevent gateway timeouts
 
   async add<T>(fn: () => Promise<T>): Promise<T> {
     return new Promise((resolve, reject) => {

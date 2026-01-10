@@ -9,22 +9,20 @@ export async function callGemini(
   docPart?: any
 ): Promise<string> {
   const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing (Verify process.env.API_KEY or process.env.GEMINI_API_KEY)');
+  if (!geminiKey) throw new Error('Gemini API Key missing');
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
-  // Enhanced dynamic instructions
   const finalSystem = hasDocuments 
-    ? `STRICT_CURRICULUM_ANALYZER_ACTIVE: You are grounded in the <ASSET_VAULT>. 
-       Use ONLY provided curriculum text or multimodal input. 
-       Ignore general knowledge. If information is missing, say DATA_UNAVAILABLE.
-       Formatting: Numbered headers (1., 1.1). NO BOLD HEADINGS.`
+    ? `STRICT_CURRICULUM_ANALYZER: Ground your responses EXCLUSIVELY in the <ASSET_VAULT>. 
+       Use ONLY provided text. Ignore general training. 
+       Format using numbered headers (1., 1.1). NO BOLD HEADINGS.`
     : systemInstruction;
 
   const contents: any[] = [];
   
-  // Map history to standard Gemini parts
-  history.slice(-3).forEach(h => {
+  // Keep history minimal to stay within edge function limits
+  history.slice(-2).forEach(h => {
     contents.push({
       role: h.role === 'user' ? 'user' : 'model',
       parts: [{ text: h.content }]
@@ -32,7 +30,6 @@ export async function callGemini(
   });
 
   const currentParts: any[] = [];
-  // Native multimodal support: Gemini parses the PDF/Image bytes directly if available
   if (docPart) {
     currentParts.push(docPart);
   }
@@ -41,13 +38,12 @@ export async function callGemini(
   contents.push({ role: 'user', parts: currentParts });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-3-flash-preview', // Using Flash for speed to avoid timeouts
     contents,
     config: { 
       systemInstruction: finalSystem, 
-      temperature: hasDocuments ? 0.0 : 0.7, 
-      topK: 1,
-      topP: 1
+      temperature: hasDocuments ? 0.0 : 0.7,
+      thinkingConfig: { thinkingBudget: 0 } // Disable thinking for extraction/speed
     }
   });
 
