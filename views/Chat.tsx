@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X } from 'lucide-react';
+import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X, ShieldCheck, Database } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -42,6 +42,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [showSidebar, setShowSidebar] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const selectedDocsCount = localDocs.filter(d => d.isSelected).length;
+
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth >= 768) {
       setShowSidebar(true);
@@ -59,7 +61,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
-    // Multi-select implementation
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : d.isSelected 
@@ -67,8 +68,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     setLocalDocs(updated);
     
     const targetDoc = updated.find(d => d.id === docId);
-    
-    // Persist selection to database for server-side RAG
     await supabase.from('documents')
       .update({ is_selected: targetDoc?.isSelected || false })
       .eq('id', docId);
@@ -167,10 +166,9 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           content: m.content 
         }));
 
-      // In multi-doc mode, the backend fetches all selected docs based on userId
       const stream = geminiService.chatWithDocumentStream(
         msgContent,
-        {}, // docPart handled by server-side RAG from is_selected state
+        {},
         history,
         brain,
         user
@@ -243,9 +241,17 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         </button>
 
         <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-white/5 shrink-0 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md sticky top-0 z-20">
-          <div className="flex items-center gap-2">
-            <Layout size={16} className="text-slate-400" />
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Synthesis Hub</span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Layout size={16} className="text-slate-400" />
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Synthesis Hub</span>
+            </div>
+            {selectedDocsCount > 0 && (
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full animate-pulse">
+                <ShieldCheck size={12} className="text-emerald-500" />
+                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Strict Grounding Active</span>
+              </div>
+            )}
           </div>
           <PedagogyToolbar onToolSelect={handleToolSelect} activeTool={activeTool} />
         </div>
@@ -263,7 +269,9 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                 <div className="space-y-2">
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight text-center">Pedagogy Master Neural</h2>
                   <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
-                    Ready for curriculum-aligned synthesis. How can I assist your teaching today?
+                    {selectedDocsCount > 0 
+                      ? `Locked to ${selectedDocsCount} curriculum assets. All responses will be grounded in your documents.`
+                      : 'Ready for curriculum-aligned synthesis. How can I assist your teaching today?'}
                   </p>
                 </div>
                 <SuggestedPrompts onSelect={handleSend} />

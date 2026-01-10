@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
@@ -17,7 +16,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const body = await req.json();
-    const { task, message, adaptiveContext, history, toolType, userInput } = body;
+    const { task, message, adaptiveContext, history, toolType, userInput, brain } = body;
     
     const supabase = getSupabaseServerClient(token);
     
@@ -26,15 +25,18 @@ export async function POST(req: NextRequest) {
       ? `GENERATE_${toolType.toUpperCase().replace('-', '_')}: ${userInput}`
       : message;
 
-    // generateAIResponse now internally handles fetching all selected docs for the user
+    // We now pass the custom master prompt if available in the brain object
+    const customSystem = brain?.masterPrompt;
+
     const { text, provider } = await generateAIResponse(
       promptText, 
       history || [], 
       user.id, 
       supabase,
       adaptiveContext, 
-      undefined, // Router now fetches docParts directly from R2/Supabase
-      toolType
+      undefined, 
+      toolType,
+      customSystem
     );
 
     const encoder = new TextEncoder();

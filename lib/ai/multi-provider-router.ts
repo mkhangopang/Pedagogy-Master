@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { rateLimiter } from './rate-limiter';
 import { responseCache } from './response-cache';
@@ -11,50 +10,9 @@ import { generateLearningPath } from './learning-path';
 import { synthesize, PROVIDERS, MODEL_SPECIALIZATION } from './synthesizer-core';
 import { getObjectBuffer } from '../r2';
 
-function buildInstantSLOResponse(sloData: any): string {
-  return `
-**SLO ${sloData.slo_code}:**
-"${sloData.slo_full_text}"
-
-**Pedagogical Context:**
-This objective maps to the **${sloData.bloom_level}** cognitive level (${sloData.cognitive_complexity || 'Standard'} complexity).
-
-**Core Concepts:**
-${sloData.keywords?.slice(0, 5).map((k: string) => `- ${k}`).join('\n') || '- Refer to curriculum documentation.'}
-
-${sloData.prerequisite_concepts && sloData.prerequisite_concepts.length > 0 ? `
-**Prerequisites:**
-${sloData.prerequisite_concepts.map((p: string) => `- ${p}`).join('\n')}
-` : ''}
-
-${sloData.common_misconceptions && sloData.common_misconceptions.length > 0 ? `
-**Misconception Alerts:**
-${sloData.common_misconceptions.map((m: string) => `- ${m}`).join('\n')}
-` : ''}
-
-*Options: [Generate Lesson Plan] | [Strategies] | [Quiz]*
-`;
-}
-
-function buildEnhancedContextWithSLOData(sloData: any): string {
-  return `
---- HIGH-PRECISION SLO METADATA FOUND ---
-CODE: ${sloData.slo_code}
-CONTENT: ${sloData.slo_full_text}
-BLOOM LEVEL: ${sloData.bloom_level}
-COMPLEXITY: ${sloData.cognitive_complexity || 'Medium'}
-TEACHING STRATEGIES: ${sloData.teaching_strategies?.join(', ') || 'N/A'}
-ASSESSMENT IDEAS: ${sloData.assessment_ideas?.join(', ') || 'N/A'}
-PREREQUISITES: ${sloData.prerequisite_concepts?.join(', ') || 'N/A'}
-MISCONCEPTIONS: ${sloData.common_misconceptions?.join(', ') || 'N/A'}
---- END STRUCTURED DATA ---
-`;
-}
-
 /**
  * ASSET VAULT SYNCHRONIZER
- * Fetches selected documents from R2 for multimodal synthesis.
- * Only includes MIME types natively supported by Gemini vision/PDF parsing.
+ * Fetches raw assets from R2 for multimodal grounding.
  */
 async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) {
   const { data: selectedDocs } = await supabase
@@ -66,10 +24,9 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
 
   if (!selectedDocs || selectedDocs.length === 0) return [];
 
-  // Gemini supported multimodal types for curriculum ingestion
   const supportedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-
   const parts = [];
+
   for (const doc of selectedDocs) {
     if (!supportedTypes.includes(doc.mime_type)) continue;
     
@@ -84,7 +41,7 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
         });
       }
     } catch (e) {
-      console.warn(`[Vault Sync Warning] Failed to ingest ${doc.name}:`, e);
+      console.warn(`[Vault Warning] Skipping asset ${doc.name}`);
     }
   }
   return parts;
@@ -97,7 +54,8 @@ export async function generateAIResponse(
   supabase: SupabaseClient,
   adaptiveContext?: string,
   overrideDocPart?: any, 
-  toolType?: string
+  toolType?: string,
+  customSystem?: string
 ): Promise<{ text: string; provider: string }> {
   const cached = responseCache.get(userPrompt, history);
   if (cached) return { text: cached, provider: 'cache' };
@@ -105,80 +63,67 @@ export async function generateAIResponse(
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const preferredProvider = MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'groq';
 
-  let structuredContext = '';
-  if (queryAnalysis.extractedSLO) {
-    const { data: sloData } = await supabase
-      .from('slo_database')
-      .select('*, documents!inner(user_id)')
-      .eq('slo_code', queryAnalysis.extractedSLO)
-      .eq('documents.user_id', userId)
-      .maybeSingle();
-
-    if (sloData) {
-      if (queryAnalysis.queryType === 'lookup') {
-        const instantResponse = buildInstantSLOResponse(sloData);
-        responseCache.set(userPrompt, history, instantResponse, 'database-cache');
-        return { text: instantResponse, provider: 'database-cache' };
-      }
-
-      const cacheableTypes = ['lesson_plan', 'teaching', 'assessment'];
-      if (cacheableTypes.includes(queryAnalysis.queryType)) {
-        const cacheType = queryAnalysis.queryType === 'teaching' ? 'teaching_strategies' : queryAnalysis.queryType;
-        try {
-          const cachedContent = await getCachedOrGenerate(queryAnalysis.extractedSLO, cacheType as any, userId);
-          return { text: cachedContent, provider: 'intelligent-cache' };
-        } catch (e) {
-          console.warn("Artifact Cache miss, synthesizing fresh...");
-        }
-      }
-      
-      structuredContext = buildEnhancedContextWithSLOData(sloData);
-    }
-  }
-
-  if (toolType === 'learning-path' && queryAnalysis.extractedSLO) {
-    const path = await generateLearningPath(queryAnalysis.extractedSLO, userId);
-    const pathText = `**Prerequisite Learning Chain for ${queryAnalysis.extractedSLO}:**\n\n${path.map((code, i) => `${i + 1}. **${code}**`).join(' → ')}\n\n*Mastery of preceding concepts is recommended for instructional success.*`;
-    return { text: pathText, provider: 'curriculum-graph' };
-  }
-
-  // CORE RAG FLOW
+  // CORE RAG FETCHING
   const documentIndex = await fetchAndIndexDocuments(userId);
   const docParts = await fetchMultimodalContext(userId, supabase);
-  const hasDocs = documentIndex.documentCount > 0 || docParts.length > 0 || !!structuredContext;
+  
+  // Fetch detailed metadata from DB for selected docs
+  const { data: docMetadata } = await supabase
+    .from('documents')
+    .select('name, document_summary, difficulty_level, key_topics')
+    .eq('user_id', userId)
+    .eq('is_selected', true);
+
+  const hasDocs = documentIndex.documentCount > 0 || docParts.length > 0;
   
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
   const { prompt: enhancedPrompt } = buildDocumentAwarePrompt(userPrompt, documentIndex);
 
-  let documentContext = structuredContext;
+  // CONTEXT ASSEMBLY
+  let documentContext = "";
+  if (docMetadata && docMetadata.length > 0) {
+    documentContext = "📚 <ASSET_VAULT_INTELLIGENCE>\n";
+    docMetadata.forEach(meta => {
+      documentContext += `FILE: ${meta.name}\nSUMMARY: ${meta.document_summary || 'Not audited yet'}\nTOPICS: ${meta.key_topics?.join(', ') || 'N/A'}\nLEVEL: ${meta.difficulty_level || 'N/A'}\n\n`;
+    });
+    documentContext += "</ASSET_VAULT_INTELLIGENCE>\n";
+  }
+
   if (documentIndex.documentCount > 0) {
-    documentContext += documentIndex.documents.map(d => `\nSOURCE: ${d.filename}\n${d.content}`).join('\n');
+    documentContext += "📖 <RAW_EXTRACTS>\n" + 
+      documentIndex.documents.map(d => `SOURCE: ${d.filename}\n${d.content}`).join('\n\n') +
+      "\n</RAW_EXTRACTS>";
   }
 
   const finalPrompt = `
-${SYSTEM_PERSONALITY}
-${hasDocs ? `🔴 ASSET_VAULT ACTIVE\n${documentContext}` : '⚠️ GENERAL MODE - NO LOCAL CONTEXT'}
+${hasDocs ? `🔴 ATTACHED_DOCUMENTS_PRESENT\n${documentContext}` : '⚠️ NO_LOCAL_DOCUMENTS_DETECTED'}
 ---
-Teacher Query: ${enhancedPrompt}
+TEACHER_QUERY: ${enhancedPrompt}
 ---
-Instruction: Ground your response strictly in the provided ASSET_VAULT if applicable.
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 `;
 
-  const result = await synthesize(finalPrompt, history, hasDocs, docParts, preferredProvider);
+  // Merge personality with custom master prompt from Brain settings
+  const finalSystemInstruction = `${SYSTEM_PERSONALITY}\n\n${customSystem || ''}`;
+
+  const result = await synthesize(finalPrompt, history, hasDocs, docParts, preferredProvider, finalSystemInstruction);
   responseCache.set(userPrompt, history, result.text, result.provider);
   return result;
 }
 
+/**
+ * GET PROVIDER STATUS
+ * Returns the current health and rate limit status of all configured AI providers.
+ */
 export function getProviderStatus() {
   return PROVIDERS.map(config => ({
     name: config.name,
     enabled: config.enabled,
-    limits: { rpm: config.rpm, rpd: config.rpd },
-    remaining: rateLimiter.getRemainingRequests(config.name, config)
+    remaining: rateLimiter.getRemainingRequests(config.name, config),
+    limits: { rpm: config.rpm, rpd: config.rpd }
   }));
 }

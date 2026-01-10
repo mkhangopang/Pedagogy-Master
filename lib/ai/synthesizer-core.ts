@@ -8,7 +8,7 @@ import { callSambaNova } from './providers/sambanova';
 import { callHyperbolic } from './providers/hyperbolic';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { requestQueue } from './request-queue';
-import { SYSTEM_PERSONALITY } from '../config/ai-personality';
+import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 export const PROVIDERS: ProviderConfig[] = [
   { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
@@ -51,14 +51,14 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, providerNa
 
 /**
  * CORE SYNTHESIS LOOP
- * Executes the provider fallback logic with prioritization.
  */
 export async function synthesize(
   prompt: string,
   history: any[],
   hasDocs: boolean,
   docParts: any[] = [],
-  preferredProvider?: string
+  preferredProvider?: string,
+  systemInstruction: string = DEFAULT_MASTER_PROMPT
 ): Promise<{ text: string; provider: string }> {
   return await requestQueue.add<{ text: string; provider: string }>(async () => {
     const sortedProviders = [...PROVIDERS]
@@ -66,15 +66,10 @@ export async function synthesize(
       .sort((a, b) => {
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
+        // Prioritize Gemini if multimodal assets exist
         if (docParts.length > 0) {
           if (a.name === 'gemini') return -1;
           if (b.name === 'gemini') return 1;
-        }
-        if (hasDocs) {
-          if (a.name === 'gemini') return -1;
-          if (b.name === 'gemini') return 1;
-          if (a.name === 'deepseek') return -1;
-          if (b.name === 'deepseek') return 1;
         }
         return 0;
       });
@@ -84,16 +79,16 @@ export async function synthesize(
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         const response = await withTimeout<string>(
-          (callFunction as any)(prompt, history, SYSTEM_PERSONALITY, hasDocs, docParts),
+          (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts),
           35000,
           config.name
         );
         rateLimiter.trackRequest(config.name);
         return { text: response, provider: config.name };
       } catch (e) { 
-        console.error(`Synthesis Node Failure: ${config.name}`, e); 
+        console.error(`Node failure: ${config.name}`); 
       }
     }
-    throw new Error("Neural Grid Exhausted: All available synthesis nodes failed.");
+    throw new Error("Neural Grid Exhausted.");
   });
 }

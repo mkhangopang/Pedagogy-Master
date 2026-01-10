@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 export async function callGemini(
@@ -8,28 +7,31 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docParts: any[] = []
 ): Promise<string> {
-  // Support both standard API_KEY and Vercel-specific GEMINI_API_KEY
   const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing (process.env.API_KEY or GEMINI_API_KEY required)');
+  if (!geminiKey) throw new Error('Gemini API Key missing');
 
-  // MANDATORY: Create instance right before API call
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
+  // STRICT GROUNDING PROTOCOL
+  // We prioritize the asset vault when documents are present
   const finalSystem = hasDocuments 
-    ? `STRICT_CURRICULUM_ANALYZER: Ground your responses EXCLUSIVELY in the provided <ASSET_VAULT>. 
-       Do not use general training. If data is missing from vault, say DATA_UNAVAILABLE.
-       Formatting: Numbered headers (1., 1.1). NO BOLD HEADINGS.`
+    ? `### ROLE: CURRICULUM_INTELLIGENCE_NODE
+### MANDATE: STRICT_GROUNDING
+1. You are LOCKED to the provided <ASSET_VAULT_INTELLIGENCE> and <RAW_EXTRACTS>.
+2. Respond based ONLY on the selected curriculum assets. 
+3. If information is not in the vault, state: "DATA_UNAVAILABLE: This objective/topic is not present in your current curriculum library."
+4. DO NOT use external pedagogical training for curriculum-specific lookups.
+5. Formatting: Use 1. and 1.1 headings. NO BOLD HEADINGS.
+6. Reference files by name.
+
+${systemInstruction}`
     : systemInstruction;
 
   const contents: any[] = [];
   
-  /**
-   * ROLE ALTERNATION LOGIC
-   * Gemini requires alternating 'user' and 'model' roles.
-   * We ensure the sequence ends with a 'model' turn before adding the current 'user' message.
-   */
-  let lastRole = 'model'; // Initial state assuming first turn will be user
-  const processedHistory = history.slice(-6); // Limit history for speed/cost
+  // Clean history for token efficiency
+  let lastRole = 'model';
+  const processedHistory = history.slice(-6);
   
   processedHistory.forEach(h => {
     const role = h.role === 'user' ? 'user' : 'model';
@@ -42,14 +44,13 @@ export async function callGemini(
     }
   });
 
-  // If the last history message was a user message, we remove it to allow the new prompt
   if (lastRole === 'user') {
     contents.pop();
   }
 
   const currentParts: any[] = [];
   
-  // Support multiple documents (multimodal)
+  // Multimodal Ingestion
   if (docParts && docParts.length > 0) {
     docParts.forEach(part => {
       if (part.inlineData) {
@@ -59,22 +60,19 @@ export async function callGemini(
   }
   
   currentParts.push({ text: fullPrompt });
-  
   contents.push({ role: 'user', parts: currentParts });
 
-  // Use recommended gemini-3-flash-preview for speed and efficiency
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview', 
     contents,
     config: { 
       systemInstruction: finalSystem, 
-      temperature: hasDocuments ? 0.0 : 0.7,
+      temperature: hasDocuments ? 0.0 : 0.7, // Zero temperature for strict grounding
       topK: 1,
       topP: 1,
-      thinkingConfig: { thinkingBudget: 0 } // High-speed synthesis mode
+      thinkingConfig: { thinkingBudget: 0 }
     }
   });
 
-  // Use property access for .text
-  return response.text || "Neural node failed to synthesize response.";
+  return response.text || "Synthesis node timed out.";
 }
