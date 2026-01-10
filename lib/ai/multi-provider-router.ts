@@ -9,6 +9,7 @@ import { fetchAndIndexDocuments, buildDocumentAwarePrompt } from '../documents/d
 import { getCachedOrGenerate } from './intelligent-cache';
 import { generateLearningPath } from './learning-path';
 import { synthesize, PROVIDERS, MODEL_SPECIALIZATION } from './synthesizer-core';
+import { getObjectBuffer } from '../r2';
 
 function buildInstantSLOResponse(sloData: any): string {
   return `
@@ -50,13 +51,42 @@ MISCONCEPTIONS: ${sloData.common_misconceptions?.join(', ') || 'N/A'}
 `;
 }
 
+/**
+ * ASSET VAULT SYNCHRONIZER
+ * Fetches selected documents from R2 for multimodal synthesis.
+ */
+async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) {
+  const { data: selectedDocs } = await supabase
+    .from('documents')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_selected', true)
+    .limit(5);
+
+  if (!selectedDocs || selectedDocs.length === 0) return [];
+
+  const parts = [];
+  for (const doc of selectedDocs) {
+    const buffer = await getObjectBuffer(doc.file_path);
+    if (buffer) {
+      parts.push({
+        inlineData: {
+          mimeType: doc.mime_type,
+          data: buffer.toString('base64')
+        }
+      });
+    }
+  }
+  return parts;
+}
+
 export async function generateAIResponse(
   userPrompt: string,
   history: any[],
   userId: string,
   supabase: SupabaseClient,
   adaptiveContext?: string,
-  docPart?: any,
+  overrideDocPart?: any, // Deprecated in favor of multi-doc R2 logic
   toolType?: string
 ): Promise<{ text: string; provider: string }> {
   const cached = responseCache.get(userPrompt, history);
@@ -102,8 +132,10 @@ export async function generateAIResponse(
     return { text: pathText, provider: 'curriculum-graph' };
   }
 
+  // CORE RAG FLOW
   const documentIndex = await fetchAndIndexDocuments(userId);
-  const hasDocs = documentIndex.documentCount > 0 || !!structuredContext || !!docPart;
+  const docParts = await fetchMultimodalContext(userId, supabase);
+  const hasDocs = documentIndex.documentCount > 0 || docParts.length > 0 || !!structuredContext;
   
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
@@ -127,7 +159,7 @@ ${responseInstructions}
 ${lengthGuideline}
 `;
 
-  const result = await synthesize(finalPrompt, history, hasDocs, docPart, preferredProvider);
+  const result = await synthesize(finalPrompt, history, hasDocs, docParts, preferredProvider);
   responseCache.set(userPrompt, history, result.text, result.provider);
   return result;
 }

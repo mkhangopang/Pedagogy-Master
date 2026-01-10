@@ -1,44 +1,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { r2Client, R2_BUCKET } from '../../../lib/r2';
-import { GetObjectCommand } from '@aws-sdk/client-s3';
-import { Buffer } from 'buffer';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // Extended for deep curriculum analysis
-
-function encodeBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64");
-}
-
-async function getDocumentPart(doc: any, supabase: any) {
-  if (!doc || (!doc.base64 && !doc.filePath)) return null;
-  if (doc.base64) return { inlineData: { mimeType: doc.mimeType, data: doc.base64 } };
-  
-  if (doc.filePath) {
-    try {
-      const { data: meta } = await supabase.from('documents').select('storage_type').eq('file_path', doc.filePath).single();
-      if (!meta) return null;
-      let bytes: Uint8Array;
-      if (meta.storage_type === 'r2' && r2Client) {
-        const res = await r2Client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: doc.filePath }));
-        bytes = await res.Body?.transformToByteArray() || new Uint8Array();
-      } else {
-        const { data } = await supabase.storage.from('documents').download(doc.filePath);
-        if (!data) return null;
-        bytes = new Uint8Array(await data.arrayBuffer());
-      }
-      return { inlineData: { mimeType: doc.mimeType, data: encodeBase64(bytes) } };
-    } catch (e) { 
-      console.error("Doc part retrieval failed:", e);
-      return null; 
-    }
-  }
-  return null;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -50,23 +17,23 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const body = await req.json();
-    const { task, message, doc, adaptiveContext, history, toolType, userInput } = body;
+    const { task, message, adaptiveContext, history, toolType, userInput } = body;
     
     const supabase = getSupabaseServerClient(token);
-    const docPart = await getDocumentPart(doc, supabase);
     
     // Determine the prompt based on task type
     const promptText = task === 'generate-tool' 
       ? `GENERATE_${toolType.toUpperCase().replace('-', '_')}: ${userInput}`
       : message;
 
+    // generateAIResponse now internally handles fetching all selected docs for the user
     const { text, provider } = await generateAIResponse(
       promptText, 
       history || [], 
       user.id, 
       supabase,
       adaptiveContext, 
-      docPart,
+      undefined, // Router now fetches docParts directly from R2/Supabase
       toolType
     );
 

@@ -6,7 +6,7 @@ export async function callGemini(
   history: any[], 
   systemInstruction: string, 
   hasDocuments: boolean = false,
-  docPart?: any
+  docParts: any[] = []
 ): Promise<string> {
   // Support both standard API_KEY and Vercel-specific GEMINI_API_KEY
   const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
@@ -32,9 +32,16 @@ export async function callGemini(
   });
 
   const currentParts: any[] = [];
-  if (docPart) {
-    currentParts.push(docPart);
+  
+  // Support multiple documents (multimodal)
+  if (docParts && docParts.length > 0) {
+    docParts.forEach(part => {
+      if (part.inlineData) {
+        currentParts.push(part);
+      }
+    });
   }
+  
   currentParts.push({ text: fullPrompt });
   
   contents.push({ role: 'user', parts: currentParts });

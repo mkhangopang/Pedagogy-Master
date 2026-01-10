@@ -57,7 +57,7 @@ export async function synthesize(
   prompt: string,
   history: any[],
   hasDocs: boolean,
-  docPart?: any,
+  docParts: any[] = [],
   preferredProvider?: string
 ): Promise<{ text: string; provider: string }> {
   return await requestQueue.add<{ text: string; provider: string }>(async () => {
@@ -66,7 +66,7 @@ export async function synthesize(
       .sort((a, b) => {
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
-        if (docPart) {
+        if (docParts.length > 0) {
           if (a.name === 'gemini') return -1;
           if (b.name === 'gemini') return 1;
         }
@@ -84,7 +84,7 @@ export async function synthesize(
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         const response = await withTimeout<string>(
-          (callFunction as any)(prompt, history, SYSTEM_PERSONALITY, hasDocs, docPart),
+          (callFunction as any)(prompt, history, SYSTEM_PERSONALITY, hasDocs, docParts),
           35000,
           config.name
         );

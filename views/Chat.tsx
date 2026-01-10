@@ -34,17 +34,14 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [currentValidation, setCurrentValidation] = useState<LessonValidation | null>(null);
   
-  // Advanced Tool States
   const [diffResults, setDiffResults] = useState<Record<string, DifferentiatedLesson | null>>({ below: null, at: null, above: null });
   const [diffLoading, setDiffLoading] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<Assessment | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
 
-  // showSidebar is true by default on desktop, false on mobile
   const [showSidebar, setShowSidebar] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Initialize sidebar state based on screen size
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth >= 768) {
       setShowSidebar(true);
@@ -62,18 +59,19 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
-    const updated = localDocs.map(d => ({ ...d, isSelected: d.id === docId ? !d.isSelected : false }));
+    // Multi-select implementation
+    const updated = localDocs.map(d => ({ 
+      ...d, 
+      isSelected: d.id === docId ? !d.isSelected : d.isSelected 
+    }));
     setLocalDocs(updated);
     
     const targetDoc = updated.find(d => d.id === docId);
     
-    await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
-    if (targetDoc?.isSelected) {
-      await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
-      await supabase.from('profiles').update({ active_doc_id: docId }).eq('id', user.id);
-    } else {
-      await supabase.from('profiles').update({ active_doc_id: null }).eq('id', user.id);
-    }
+    // Persist selection to database for server-side RAG
+    await supabase.from('documents')
+      .update({ is_selected: targetDoc?.isSelected || false })
+      .eq('id', docId);
   };
 
   const handleToolSelect = (tool: string) => {
@@ -161,8 +159,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     try {
       onQuery();
       let fullContent = '';
-      const selectedDoc = localDocs.find(d => d.isSelected);
-
+      
       const history = messages
         .filter(m => m.role === 'user' || m.role === 'assistant')
         .map(m => ({ 
@@ -170,9 +167,10 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           content: m.content 
         }));
 
+      // In multi-doc mode, the backend fetches all selected docs based on userId
       const stream = geminiService.chatWithDocumentStream(
         msgContent,
-        { base64: selectedDoc?.base64Data, mimeType: selectedDoc?.mimeType, filePath: selectedDoc?.filePath },
+        {}, // docPart handled by server-side RAG from is_selected state
         history,
         brain,
         user
@@ -198,7 +196,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
 
   return (
     <div className="flex h-[calc(100vh-100px)] lg:h-[calc(100vh-40px)] bg-slate-50 dark:bg-[#0a0a0a] relative overflow-hidden">
-      {/* Mobile Backdrop */}
       {showSidebar && (
         <div 
           className="fixed inset-0 z-[40] bg-black/20 backdrop-blur-sm md:hidden" 
@@ -206,7 +203,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         />
       )}
 
-      {/* Curriculum Context Sidebar */}
       <div className={`
         fixed md:relative inset-y-0 left-0 z-[50] md:z-10
         transition-all duration-300 border-r border-slate-200 dark:border-white/5 
@@ -234,7 +230,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       </div>
 
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Toggle Button Positioned Adaptively */}
         <button 
           onClick={() => setShowSidebar(!showSidebar)}
           className={`

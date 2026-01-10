@@ -1,4 +1,3 @@
-
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -221,7 +220,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
             />
             <button onClick={handleSave} disabled={isSaving} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
               {isSaving ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20}/>}
-              Deploy to Global Educators
+              Deploy to Global educators
             </button>
           </div>
           <div className="bg-slate-900 text-white p-12 rounded-[3rem] flex flex-col justify-center shadow-2xl relative overflow-hidden">
@@ -285,9 +284,9 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
       {activeTab === 'audit' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-           <AuditCard icon={<Lock className="text-emerald-500" />} title="Encryption" status="AES-256" desc="All document buffers are encrypted in transit via JWT." />
-           <AuditCard icon={<EyeOff className="text-indigo-500" />} title="Retention" status="VOLATILE" desc="AI session data is ephemeral and never used for training." />
-           <AuditCard icon={<Scale className="text-amber-500" />} title="Licensing" status="COMMERCIAL" desc="Enterprise-grade Gemini licensing for safe production use." />
+           <AuditCard icon={<Lock className="text-emerald-500" />} title="Encryption" status="AES-256" desc="All document buffers are encrypted in transit via cloud-native JWT." />
+           <AuditCard icon={<EyeOff className="text-indigo-500" />} title="Retention" status="VOLATILE" desc="AI session data is ephemeral and never used for global model training." />
+           <AuditCard icon={<Scale className="text-amber-500" />} title="Licensing" status="COMMERCIAL" desc="Enterprise-grade Gemini licensing for reliable academic production." />
         </div>
       )}
     </div>
@@ -301,7 +300,7 @@ const AuditCard = ({ icon, title, status, desc }: any) => (
        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg uppercase tracking-widest">{status}</span>
     </div>
     <h4 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">{title}</h4>
-    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{desc}</p>
+    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-medium">{desc}</p>
   </div>
 );
 

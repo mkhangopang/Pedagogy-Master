@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Upload, FileText, Plus, Target, 
@@ -35,7 +34,6 @@ const Documents: React.FC<DocumentsProps> = ({
   
   const canDelete = userProfile.role === UserRole.APP_ADMIN || userProfile.plan !== SubscriptionPlan.FREE;
 
-  // Poll for processing status if needed
   useEffect(() => {
     const processingDocs = documents.filter(d => d.status === 'processing');
     if (processingDocs.length === 0) return;
@@ -77,7 +75,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const handleDelete = async (id: string) => {
     if (!canDelete) return;
-    if (window.confirm('Erase this curriculum node permanently?')) {
+    if (window.confirm('Erase this curriculum asset permanently?')) {
       setDeletingId(id);
       try { await onDeleteDocument(id); } finally { setDeletingId(null); }
     }
@@ -101,7 +99,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Curriculum Library</h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium">
             <Database size={18} className="text-indigo-500" />
-            Node Sync: {isConnected ? 'Active' : 'Offline'}
+            Infrastructure Status: {isConnected ? 'Active' : 'Offline'}
           </p>
         </div>
         <button 
@@ -112,7 +110,7 @@ const Documents: React.FC<DocumentsProps> = ({
           }`}
         >
           <Plus size={20} />
-          {limitReached ? 'Quota Reached' : 'Add Document'}
+          {limitReached ? 'Quota Reached' : 'Ingest Document'}
         </button>
       </header>
 
@@ -168,7 +166,7 @@ const Documents: React.FC<DocumentsProps> = ({
                  </div>
 
                  {doc.documentSummary && (
-                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed font-medium">
                      {doc.documentSummary}
                    </p>
                  )}
@@ -183,7 +181,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <div className="col-span-full py-40 text-center bg-white/40 dark:bg-white/5 rounded-[4rem] border-4 border-dashed border-slate-100 dark:border-white/5 flex flex-col items-center justify-center">
             <Upload size={48} className="text-slate-200 mb-6" />
             <h3 className="text-2xl font-black text-slate-800 dark:text-slate-200">Library Empty</h3>
-            <p className="text-slate-400 mt-2 max-w-xs mx-auto text-sm">Upload curriculum documents to enable localized AI synthesis.</p>
+            <p className="text-slate-400 mt-2 max-w-xs mx-auto text-sm font-medium">Upload curriculum documents to enable localized AI grounding.</p>
           </div>
         )}
       </div>

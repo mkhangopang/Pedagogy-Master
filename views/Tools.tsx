@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -65,7 +64,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       }
       await adaptiveService.captureGeneration(user.id, activeTool, fullContent, { tool: activeTool });
     } catch (err) {
-      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: "Synthesis error." } : m));
+      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: "Synthesis gate error. The neural grid encountered a bottleneck." } : m));
     } finally {
       setIsGenerating(false);
     }
@@ -83,7 +82,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     return (
       <div className="max-w-4xl mx-auto w-full pt-8 pb-20 px-4">
         <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">Pedagogical Toolkit</h1>
-        <p className="text-slate-500 dark:text-slate-400 mb-10">Select a specialized engine to synthesize academic artifacts.</p>
+        <p className="text-slate-500 dark:text-slate-400 mb-10 font-medium">Select a specialized engine to synthesize curriculum-aligned artifacts.</p>
         
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {toolDefinitions.map((tool) => (
@@ -97,7 +96,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
               <div>
                 <h3 className="font-bold text-lg text-slate-900 dark:text-white">{tool.name}</h3>
-                <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">{tool.desc}</p>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5 font-medium">{tool.desc}</p>
               </div>
             </button>
           ))}
@@ -108,14 +107,13 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   return (
     <div className="flex flex-col h-[calc(100vh-100px)] lg:h-[calc(100vh-40px)] bg-slate-50 dark:bg-[#0a0a0a] relative overflow-hidden">
-      {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md sticky top-0 z-20">
         <div className="flex items-center gap-4">
           <button onClick={() => {setActiveTool(null); setMessages([]);}} className="p-2 text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">
             <ArrowLeft size={20} />
           </button>
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-indigo-600 text-white rounded-lg"><Sparkles size={14} /></div>
+            <div className="p-1.5 bg-indigo-600 text-white rounded-lg shadow-md"><Sparkles size={14} /></div>
             <span className="font-bold text-sm text-slate-900 dark:text-white tracking-tight capitalize">{activeTool.replace('-', ' ')}</span>
           </div>
         </div>
@@ -138,7 +136,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         </div>
       </div>
 
-      {/* Workspace Area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar px-4 pt-10 pb-4">
         <div className="max-w-3xl mx-auto">
           {messages.length === 0 ? (
@@ -147,9 +144,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 {React.createElement(toolDefinitions.find(t => t.id === activeTool)?.icon || Sparkles, { size: 40 })}
               </div>
               <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Ready to generate.</h2>
-                <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm">
-                  Describe the parameters for your {activeTool.replace('-', ' ')}. You can iterate and refine the result after the first generation.
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">System Ready.</h2>
+                <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
+                  Define your parameters for the {activeTool.replace('-', ' ')}. The AI will cross-reference your library for alignment.
                 </p>
               </div>
               <SuggestedPrompts type="tools" onSelect={handleGenerate} />
@@ -164,7 +161,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         </div>
       </div>
 
-      {/* Input Section */}
       <div className="shrink-0">
         <ChatInput 
           onSend={handleGenerate} 
