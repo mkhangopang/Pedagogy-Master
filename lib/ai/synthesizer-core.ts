@@ -11,7 +11,7 @@ import { requestQueue } from './request-queue';
 import { SYSTEM_PERSONALITY } from '../config/ai-personality';
 
 export const PROVIDERS: ProviderConfig[] = [
-  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!process.env.API_KEY },
+  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
   { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
   { name: 'sambanova', rpm: 100, rpd: 999999, enabled: !!process.env.SAMBANOVA_API_KEY },
   { name: 'cerebras', rpm: 120, rpd: 999999, enabled: !!process.env.CEREBRAS_API_KEY },

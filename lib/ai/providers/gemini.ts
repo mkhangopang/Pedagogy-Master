@@ -8,8 +8,9 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
-  const geminiKey = process.env.API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing (process.env.API_KEY required)');
+  // Support both standard API_KEY and Vercel-specific GEMINI_API_KEY
+  const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  if (!geminiKey) throw new Error('Gemini API Key missing (process.env.API_KEY or GEMINI_API_KEY required)');
 
   // MANDATORY: Create instance right before API call
   const ai = new GoogleGenAI({ apiKey: geminiKey });

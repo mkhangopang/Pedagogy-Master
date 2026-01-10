@@ -33,8 +33,7 @@ export async function GET(request: NextRequest) {
     const envCheck = {
       supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       supabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      // Fix: Exclusively use process.env.API_KEY for Gemini validation
-      geminiKey: !!process.env.API_KEY,
+      geminiKey: !!(process.env.API_KEY || process.env.GEMINI_API_KEY),
       r2Configured: isR2Configured(),
       r2PublicUrl: !!R2_PUBLIC_BASE_URL
     };
@@ -43,7 +42,7 @@ export async function GET(request: NextRequest) {
       status: (envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.geminiKey) ? 'pass' : 'fail',
       message: 'Critical environment variables detected.',
       details: envCheck,
-      fix: !envCheck.geminiKey ? 'Missing API_KEY in environment variables. Gemini will be disabled.' : undefined
+      fix: !envCheck.geminiKey ? 'Missing API_KEY or GEMINI_API_KEY in environment variables. Gemini will be disabled.' : undefined
     });
 
     // 2. R2 Handshake
@@ -97,13 +96,12 @@ export async function GET(request: NextRequest) {
     }
 
     // 4. AI Engine Handshake
-    // Fix: Exclusively use process.env.API_KEY
-    const geminiKey = process.env.API_KEY;
+    const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
     if (!geminiKey) {
       results.push({
         name: 'Gemini AI Synthesis Engine',
         status: 'fail',
-        message: 'API Key is missing (Checked API_KEY).',
+        message: 'API Key is missing (Checked API_KEY and GEMINI_API_KEY).',
         fix: 'Add your Gemini API Key to your environment variables to enable the AI engine.'
       });
     } else {
