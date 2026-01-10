@@ -54,6 +54,7 @@ MISCONCEPTIONS: ${sloData.common_misconceptions?.join(', ') || 'N/A'}
 /**
  * ASSET VAULT SYNCHRONIZER
  * Fetches selected documents from R2 for multimodal synthesis.
+ * Only includes MIME types natively supported by Gemini vision/PDF parsing.
  */
 async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) {
   const { data: selectedDocs } = await supabase
@@ -65,16 +66,25 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
 
   if (!selectedDocs || selectedDocs.length === 0) return [];
 
+  // Gemini supported multimodal types for curriculum ingestion
+  const supportedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+
   const parts = [];
   for (const doc of selectedDocs) {
-    const buffer = await getObjectBuffer(doc.file_path);
-    if (buffer) {
-      parts.push({
-        inlineData: {
-          mimeType: doc.mime_type,
-          data: buffer.toString('base64')
-        }
-      });
+    if (!supportedTypes.includes(doc.mime_type)) continue;
+    
+    try {
+      const buffer = await getObjectBuffer(doc.file_path);
+      if (buffer) {
+        parts.push({
+          inlineData: {
+            mimeType: doc.mime_type,
+            data: buffer.toString('base64')
+          }
+        });
+      }
+    } catch (e) {
+      console.warn(`[Vault Sync Warning] Failed to ingest ${doc.name}:`, e);
     }
   }
   return parts;
@@ -86,7 +96,7 @@ export async function generateAIResponse(
   userId: string,
   supabase: SupabaseClient,
   adaptiveContext?: string,
-  overrideDocPart?: any, // Deprecated in favor of multi-doc R2 logic
+  overrideDocPart?: any, 
   toolType?: string
 ): Promise<{ text: string; provider: string }> {
   const cached = responseCache.get(userPrompt, history);

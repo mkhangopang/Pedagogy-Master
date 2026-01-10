@@ -48,9 +48,9 @@ export async function analyzeDocumentWithAI(
       return;
     }
 
-    // 3. Initialize Gemini
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("process.env.API_KEY is missing");
+    // 3. Initialize Gemini with dual key support
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("Gemini API Key missing (API_KEY or GEMINI_API_KEY required)");
     
     const ai = new GoogleGenAI({ apiKey });
 

@@ -23,13 +23,29 @@ export async function callGemini(
 
   const contents: any[] = [];
   
-  // Minimal history for edge speed
-  history.slice(-3).forEach(h => {
-    contents.push({
-      role: h.role === 'user' ? 'user' : 'model',
-      parts: [{ text: h.content }]
-    });
+  /**
+   * ROLE ALTERNATION LOGIC
+   * Gemini requires alternating 'user' and 'model' roles.
+   * We ensure the sequence ends with a 'model' turn before adding the current 'user' message.
+   */
+  let lastRole = 'model'; // Initial state assuming first turn will be user
+  const processedHistory = history.slice(-6); // Limit history for speed/cost
+  
+  processedHistory.forEach(h => {
+    const role = h.role === 'user' ? 'user' : 'model';
+    if (role !== lastRole) {
+      contents.push({
+        role,
+        parts: [{ text: h.content }]
+      });
+      lastRole = role;
+    }
   });
+
+  // If the last history message was a user message, we remove it to allow the new prompt
+  if (lastRole === 'user') {
+    contents.pop();
+  }
 
   const currentParts: any[] = [];
   
