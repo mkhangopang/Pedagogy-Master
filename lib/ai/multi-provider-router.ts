@@ -81,20 +81,20 @@ export async function generateAIResponse(
 
   const { prompt: enhancedPrompt } = buildDocumentAwarePrompt(userPrompt, documentIndex);
 
-  // CONTEXT ASSEMBLY
+  // CONTEXT ASSEMBLY - Sharpened for interactive grounding
   let documentContext = "";
   if (docMetadata && docMetadata.length > 0) {
     documentContext = "📚 <ASSET_VAULT_INTELLIGENCE>\n";
     docMetadata.forEach(meta => {
-      documentContext += `FILE: ${meta.name}\nSUMMARY: ${meta.document_summary || 'Not audited yet'}\nTOPICS: ${meta.key_topics?.join(', ') || 'N/A'}\nLEVEL: ${meta.difficulty_level || 'N/A'}\n\n`;
+      documentContext += `FILE: ${meta.name}\nSUMMARY: ${meta.document_summary || 'Analysis pending...'}\nTOPICS: ${meta.key_topics?.join(', ') || 'N/A'}\nGRADE_LEVEL: ${meta.difficulty_level || 'N/A'}\n\n`;
     });
     documentContext += "</ASSET_VAULT_INTELLIGENCE>\n";
   }
 
   if (documentIndex.documentCount > 0) {
-    documentContext += "📖 <RAW_EXTRACTS>\n" + 
-      documentIndex.documents.map(d => `SOURCE: ${d.filename}\n${d.content}`).join('\n\n') +
-      "\n</RAW_EXTRACTS>";
+    documentContext += "📖 <RAW_CURRICULUM_EXTRACTS>\n" + 
+      documentIndex.documents.map(d => `SOURCE: ${d.filename}\nCONTENT:\n${d.content}`).join('\n\n') +
+      "\n</RAW_CURRICULUM_EXTRACTS>";
   }
 
   const finalPrompt = `
@@ -105,6 +105,8 @@ TEACHER_QUERY: ${enhancedPrompt}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
+
+STRICT_COMMAND: If documents are present above, your response MUST originate 100% from them. If they are missing the answer, say DATA_UNAVAILABLE.
 `;
 
   // Merge personality with custom master prompt from Brain settings

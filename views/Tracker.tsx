@@ -1,11 +1,10 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { 
-  ClipboardCheck, Target, Calendar, BarChart3, 
-  ChevronRight, Search, Filter, CheckCircle2, 
-  Clock, BookOpen, AlertCircle, Save, Loader2
+  ClipboardCheck, Target, BarChart3, 
+  ChevronRight, Search, CheckCircle2, 
+  Clock, BookOpen, Loader2
 } from 'lucide-react';
 import { UserProfile, Document, TeacherProgress } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -28,7 +27,6 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Fetch identified SLOs
         const { data: sloData } = await supabase
           .from('slo_database')
           .select('*, documents!inner(user_id, name)')
@@ -36,7 +34,6 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
         
         setSlos(sloData || []);
 
-        // Fetch user progress
         const progressRecords = await curriculumService.getProgress(user.id);
         const progressMap: Record<string, TeacherProgress> = {};
         progressRecords.forEach(p => {
@@ -61,7 +58,6 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
         taughtDate: status === 'completed' ? new Date().toISOString().split('T')[0] : undefined
       });
       
-      // Update local state
       const { data: updated } = await supabase
         .from('teacher_progress')
         .select('*')
@@ -97,7 +93,6 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
     return matchesSearch && matchesFilter;
   });
 
-  // Explicitly cast to TeacherProgress[] to avoid "unknown" type inference errors
   const stats = {
     total: slos.length,
     completed: (Object.values(progress) as TeacherProgress[]).filter(p => p.status === 'completed').length,

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
-  Database, ShieldCheck, Terminal, ShieldAlert, Lock, EyeOff, FileCheck, Scale
+  Database, ShieldCheck, Terminal, ShieldAlert, Lock, EyeOff, Scale
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
@@ -182,68 +182,6 @@ USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid(
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 `;
-
-const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'infra' | 'audit'>('logic');
-  const [formData, setFormData] = useState(brain);
-  const [isSaving, setIsSaving] = useState(false);
-  const [dbStatus, setDbStatus] = useState<{table: string, exists: boolean | null}[]>([]);
-  const [isChecking, setIsChecking] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
-
-  const checkHealth = async () => {
-    setIsChecking(true);
-    const tables = [
-      'profiles', 
-      'documents', 
-      'neural_brain', 
-      'output_artifacts', 
-      'feedback_events', 
-      'slo_database', 
-      'ai_generated_content',
-      'teacher_progress'
-    ];
-    const status = await Promise.all(tables.map(async (table) => {
-      try {
-        const { error } = await supabase.from(table).select('id').limit(1);
-        return { table, exists: !error || error.code !== '42P01' };
-      } catch (e) {
-        return { table, exists: false };
-      }
-    }));
-    setDbStatus(status);
-    setIsChecking(false);
-  };
-
-  useEffect(() => {
-    if (activeTab === 'infra') checkHealth();
-  }, [activeTab]);
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No active session.");
-
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-      if (profile?.role !== 'app_admin') throw new Error("Administrative rights required.");
-
-      const { error } = await supabase.from('neural_brain').insert([{
-        master_prompt: formData.masterPrompt,
-        bloom_rules: formData.bloomRules || '',
-        version: formData.version + 1,
-        is_active: true
-      }]);
-      
-      if (error) throw error;
-      onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
-      alert("Neural logic deployed successfully.");
-    } catch (err: any) {
-      alert(`Deployment Failed: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 px-4">
