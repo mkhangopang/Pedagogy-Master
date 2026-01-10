@@ -17,7 +17,8 @@ import {
   Zap,
   X,
   Sun,
-  Moon
+  Moon,
+  ClipboardCheck
 } from 'lucide-react';
 import { UserRole, UserProfile, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
@@ -47,6 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Curriculum Docs', icon: FileText },
+    { id: 'tracker', label: 'Progress Tracker', icon: ClipboardCheck },
     { id: 'chat', label: 'AI Tutor Chat', icon: MessageSquare },
     { id: 'tools', label: 'Tools', icon: Wrench },
     { id: 'pricing', label: 'Pricing Tiers', icon: CreditCard },
@@ -137,7 +139,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               onViewChange('pricing');
               if (onClose) onClose();
             }}
-            className="w-full py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-500 dark:hover:bg-indigo-400 text-xs font-bold rounded-lg transition-colors shadow-lg shadow-indigo-900"
+            className="w-full py-2 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-50:dark:hover:bg-indigo-400 text-xs font-bold rounded-lg transition-colors shadow-lg shadow-indigo-900"
           >
             Unlock Full Access
           </button>

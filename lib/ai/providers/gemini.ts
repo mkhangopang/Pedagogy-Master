@@ -8,10 +8,10 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
-  // Use API_KEY as primary per instructions
-  const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing (API_KEY required)');
+  const geminiKey = process.env.API_KEY;
+  if (!geminiKey) throw new Error('Gemini API Key missing (process.env.API_KEY required)');
 
+  // MANDATORY: Create instance right before API call
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
   const finalSystem = hasDocuments 
@@ -38,6 +38,7 @@ export async function callGemini(
   
   contents.push({ role: 'user', parts: currentParts });
 
+  // Use recommended gemini-3-flash-preview for speed and efficiency
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview', 
     contents,
@@ -50,5 +51,6 @@ export async function callGemini(
     }
   });
 
+  // Use property access for .text
   return response.text || "Neural node failed to synthesize response.";
 }

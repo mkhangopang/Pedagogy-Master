@@ -5,11 +5,10 @@ import { r2Client, R2_BUCKET } from '../../../lib/r2';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
-import { APP_NAME } from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60; // Extend Vercel timeout to 60s for curriculum analysis
+export const maxDuration = 120; // Extended for deep curriculum analysis
 
 function encodeBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -56,7 +55,10 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     const docPart = await getDocumentPart(doc, supabase);
     
-    const promptText = task === 'chat' ? message : `Generate ${toolType}: ${userInput}`;
+    // Determine the prompt based on task type
+    const promptText = task === 'generate-tool' 
+      ? `GENERATE_${toolType.toUpperCase().replace('-', '_')}: ${userInput}`
+      : message;
 
     const { text, provider } = await generateAIResponse(
       promptText, 
@@ -72,7 +74,7 @@ export async function POST(req: NextRequest) {
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis by Node: ${provider}*`));
+        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis Node: ${provider}*`));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });

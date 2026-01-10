@@ -19,6 +19,23 @@ export interface SLO {
   code: string;
   description: string;
   level?: string;
+  bloomLevel?: string;
+  strategies?: string[];
+  assessmentIdeas?: string[];
+}
+
+/**
+ * Teacher curriculum coverage tracking
+ */
+export interface TeacherProgress {
+  id: string;
+  userId: string;
+  sloCode: string;
+  status: 'planning' | 'teaching' | 'completed';
+  taughtDate?: string;
+  studentMasteryPercentage?: number;
+  notes?: string;
+  createdAt: string;
 }
 
 /**
@@ -73,9 +90,12 @@ export interface Document {
   subject: string;
   gradeLevel: string;
   extractedText?: string;
-  // Use defined SLO interface instead of any
   sloTags: SLO[];
   createdAt: string;
+  // Enhanced schema fields
+  geminiProcessed?: boolean;
+  documentSummary?: string;
+  difficultyLevel?: string;
 }
 
 export interface ChatMessage {

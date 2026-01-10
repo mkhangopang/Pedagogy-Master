@@ -4,7 +4,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, ArrowLeft, Loader2, 
-  Bot, Target, FileText, Check, Copy, Download, Share2
+  Bot, Target, FileText, Check, Copy, Download, Share2, GitMerge
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -75,6 +75,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     { id: 'lesson-plan', name: 'Lesson Plan', icon: BookOpen, desc: 'Detailed pedagogical flow' },
     { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Balanced query sets' },
     { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Criteria & Leveling' },
+    { id: 'learning-path', name: 'Learning Path', icon: GitMerge, desc: 'Sequence prerequisites' },
     { id: 'slo-tagger', name: 'SLO Tagger', icon: Target, desc: 'Extract & Map Outcomes' },
   ];
 
@@ -174,5 +175,3 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     </div>
   );
 };
-
-export default Tools;

@@ -17,6 +17,7 @@ const ChatView = lazy(() => import('../views/Chat'));
 const ToolsView = lazy(() => import('../views/Tools'));
 const BrainControlView = lazy(() => import('../views/BrainControl'));
 const PricingView = lazy(() => import('../views/Pricing'));
+const TrackerView = lazy(() => import('../views/Tracker'));
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -279,6 +280,8 @@ export default function App() {
               return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
             case 'tools':
               return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
+            case 'tracker':
+              return <TrackerView user={userProfile} documents={documents} />;
             case 'brain':
               return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             case 'pricing':

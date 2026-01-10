@@ -1,136 +1,106 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
-import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../../lib/r2';
+import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
+import { processDocument } from '../../../../lib/documents/document-processor';
+import { analyzeDocumentWithAI } from '../../../../lib/ai/document-analyzer';
+
+export const runtime = 'nodejs';
+export const maxDuration = 120; // Allow sufficient time for deep curriculum audit
 
 /**
- * SECURE STORAGE GATEWAY
- * Orchestrates document persistence between Cloudflare R2 and Supabase Storage.
+ * SECURE INGESTION GATEWAY
+ * Persists original assets and extracted text to R2, then triggers deep AI audit.
  */
 export async function POST(req: NextRequest) {
   try {
-    // 1. Authenticate Request
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) {
-      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
-    }
+    if (!token) return NextResponse.json({ error: 'Auth required' }, { status: 401 });
 
     const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
-    }
+    if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const userId = formData.get('userId') as string;
 
-    if (userId !== user.id) {
-       return NextResponse.json({ error: 'Identity mismatch' }, { status: 403 });
-    }
+    if (userId !== user.id) return NextResponse.json({ error: 'Identity mismatch' }, { status: 403 });
+    if (!file) return NextResponse.json({ error: 'Missing file' }, { status: 400 });
 
-    if (!file || !userId) {
-      return NextResponse.json({ error: 'Missing file or identity' }, { status: 400 });
-    }
+    console.log(`📤 [Ingestion] Processing asset: ${file.name}`);
 
     const supabase = getSupabaseServerClient(token);
     const timestamp = Date.now();
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const filePath = `${userId}/${timestamp}_${sanitizedName}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const r2Key = `${userId}/${timestamp}_${sanitizedName}`;
+    const extractedTextR2Key = `${userId}/${timestamp}_${sanitizedName}.txt`;
+    
+    const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-    // --- STRATEGY: CLOUDFLARE R2 (Primary Storage) ---
-    if (isR2Configured() && r2Client) {
-      try {
-        await r2Client.send(
-          new PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: filePath,
-            Body: buffer,
-            ContentType: file.type,
-            Metadata: {
-              'original-name': file.name,
-              'user-id': userId
-            }
-          })
-        );
-
-        // For simple text-based files, we also store the text content in R2 for easy AI fetching
-        let extractedTextR2Key = null;
-        if (file.type === 'text/plain' || file.type === 'text/csv' || file.type === 'application/json') {
-          extractedTextR2Key = `${filePath}.txt`;
-          await r2Client.send(
-            new PutObjectCommand({
-              Bucket: R2_BUCKET,
-              Key: extractedTextR2Key,
-              Body: buffer.toString('utf-8'),
-              ContentType: 'text/plain',
-            })
-          );
-        }
-
-        // Register metadata in Supabase DB
-        const { data, error } = await supabase.from('documents').insert({
-          user_id: userId,
-          name: file.name,
-          file_path: filePath,
-          r2_key: filePath,
-          r2_bucket: R2_BUCKET,
-          extracted_text_r2_key: extractedTextR2Key,
-          mime_type: file.type,
-          status: 'ready',
-          storage_type: 'r2',
-          is_public: !!R2_PUBLIC_BASE_URL,
-          is_selected: true,
-          content_cached: false
-        }).select().single();
-
-        if (error) throw error;
-
-        return NextResponse.json({
-          id: data.id,
-          name: data.name,
-          filePath: data.file_path,
-          mimeType: data.mime_type,
-          storage: 'r2'
-        });
-      } catch (err: any) {
-        console.error("R2 Upload Error:", err);
-        return NextResponse.json({ error: `R2 Node Error: ${err.message}` }, { status: 502 });
-      }
+    // 1. Storage Selection & Persistence
+    if (!isR2Configured() || !r2Client) {
+      throw new Error("Cloud infrastructure (R2) not configured for ingestion.");
     }
 
-    // --- FALLBACK: SUPABASE STORAGE ---
-    const { error: storageError } = await supabase.storage
-      .from('documents')
-      .upload(filePath, buffer, { contentType: file.type, upsert: true });
+    // Upload Original Asset to R2
+    await r2Client.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: r2Key,
+      Body: fileBuffer,
+      ContentType: file.type
+    }));
 
-    if (storageError) throw storageError;
+    // 2. Text Extraction
+    const processed = await processDocument(file);
+    
+    // Upload Extracted Text to R2
+    await r2Client.send(new PutObjectCommand({
+      Bucket: R2_BUCKET,
+      Key: extractedTextR2Key,
+      Body: processed.text,
+      ContentType: 'text/plain'
+    }));
 
-    const { data, error } = await supabase.from('documents').insert({
+    // 3. Database Metadata Synchronization
+    const { data: docData, error: dbError } = await supabase.from('documents').insert({
       user_id: userId,
-      name: file.name,
-      file_path: filePath,
-      mime_type: file.type,
-      status: 'ready',
-      storage_type: 'supabase',
-      is_selected: true
+      name: processed.filename,
+      file_path: r2Key,
+      r2_key: r2Key,
+      r2_bucket: R2_BUCKET,
+      extracted_text_r2_key: extractedTextR2Key,
+      mime_type: processed.type,
+      word_count: processed.wordCount,
+      page_count: processed.pageCount,
+      status: 'processing',
+      storage_type: 'r2',
+      is_selected: true,
+      gemini_processed: false
     }).select().single();
 
-    if (error) throw error;
+    if (dbError) throw new Error(`Database record creation failed: ${dbError.message}`);
+
+    console.log(`✅ [Ingestion] Metadata synchronized. Document ID: ${docData.id}`);
+
+    // 4. Background Pedagogical Audit (Async)
+    // We trigger this but don't strictly await it for the response, though we let it run.
+    analyzeDocumentWithAI(docData.id, userId, supabase)
+      .then(() => console.log(`✅ [AI Audit] Deep processing complete for ${docData.id}`))
+      .catch(err => console.error(`❌ [AI Audit] Deep processing failed for ${docData.id}`, err));
 
     return NextResponse.json({
-      id: data.id,
-      name: data.name,
-      filePath: data.file_path,
-      mimeType: data.mime_type,
-      storage: 'supabase'
+      success: true,
+      id: docData.id,
+      name: processed.filename,
+      status: 'processing',
+      message: '📄 Curriculum asset uploaded. Neural AI is auditing the content...'
     });
 
   } catch (error: any) {
-    console.error('❌ Upload error:', error);
+    console.error('❌ [Ingestion Error]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

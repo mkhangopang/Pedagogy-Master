@@ -1,14 +1,14 @@
 
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, Zap, Target, 
   Activity, GraduationCap,
-  RefreshCw, Server, BookOpen
+  RefreshCw, Server, BookOpen, CheckCircle
 } from 'lucide-react';
 import { UserProfile, Document } from '../types';
-import { supabase } from '../lib/supabase';
+import { curriculumService } from '../lib/curriculum-service';
 
 interface DashboardProps {
   user: UserProfile;
@@ -20,6 +20,13 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth }) => {
   const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
+  const [coverage, setCoverage] = useState({ total: 0, completed: 0, percentage: 0 });
+
+  useEffect(() => {
+    curriculumService.getCoverageStats(user.id).then(stats => {
+      setCoverage(stats);
+    });
+  }, [user.id, documents]);
 
   const totalSLOs = documents.reduce((acc, doc) => acc + (doc.sloTags?.length || 0), 0);
   const displayName = user.name || user.email.split('@')[0];
@@ -55,7 +62,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard title="Library" value={documents.length.toString()} icon={<FileText className="w-5 h-5 text-indigo-600" />} color="indigo" />
         <StatCard title="AI Usage" value={`${user.queriesUsed}/${user.queriesLimit}`} icon={<Zap className="w-5 h-5 text-emerald-600" />} color="emerald" />
-        <StatCard title="SLO Points" value={totalSLOs.toString()} icon={<Target className="w-5 h-5 text-amber-600" />} color="amber" />
+        <StatCard title="Coverage" value={`${coverage.percentage}%`} icon={<CheckCircle className="w-5 h-5 text-amber-600" />} color="amber" />
         <StatCard title="Account" value={user.plan.toUpperCase()} icon={<GraduationCap className="w-5 h-5 text-purple-600" />} color="purple" />
       </section>
 

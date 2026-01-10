@@ -23,7 +23,16 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
   const checkHealth = async () => {
     setIsChecking(true);
-    const tables = ['profiles', 'documents', 'neural_brain', 'output_artifacts', 'feedback_events'];
+    const tables = [
+      'profiles', 
+      'documents', 
+      'neural_brain', 
+      'output_artifacts', 
+      'feedback_events', 
+      'slo_database', 
+      'ai_generated_content',
+      'teacher_progress'
+    ];
     const status = await Promise.all(tables.map(async (table) => {
       try {
         const { error } = await supabase.from(table).select('id').limit(1);
@@ -66,72 +75,113 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: R2-AWARE INFRASTRUCTURE CORE V29
--- MISSION: ADD 'active_doc_id' & OPTIMIZE PROFILE SCHEMA
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE CORE V36
+-- MISSION: PROGRESS TRACKING & COVERAGE AUDIT
 -- ========================================================================================
 
--- 1. AGGRESSIVE CLEANUP OF ALL LEGACY POLICIES
-DO $$ 
+-- 1. EXTENSION SETUP
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- 2. ENHANCED SLO DATABASE
+CREATE TABLE IF NOT EXISTS public.slo_database (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
+    slo_code TEXT NOT NULL,
+    slo_full_text TEXT NOT NULL,
+    subject TEXT,
+    grade_level TEXT,
+    bloom_level TEXT,
+    cognitive_complexity TEXT,
+    teaching_strategies TEXT[],
+    assessment_ideas TEXT[],
+    prerequisite_concepts TEXT[],
+    common_misconceptions TEXT[],
+    keywords TEXT[],
+    page_number INTEGER,
+    extraction_confidence FLOAT DEFAULT 0.85,
+    embedding vector(768),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(document_id, slo_code)
+);
+
+-- 3. GLOBAL ARTIFACT CACHE
+CREATE TABLE IF NOT EXISTS public.ai_generated_content (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slo_code TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    generated_by TEXT,
+    usage_count INTEGER DEFAULT 1,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(slo_code, content_type)
+);
+
+-- 4. TEACHER PROGRESS TRACKER (New for V36)
+CREATE TABLE IF NOT EXISTS public.teacher_progress (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  slo_code TEXT NOT NULL,
+  status TEXT DEFAULT 'planning', -- 'planning', 'teaching', 'completed'
+  taught_date DATE,
+  student_mastery_percentage INTEGER CHECK (student_mastery_percentage >= 0 AND student_mastery_percentage <= 100),
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. VECTOR SIMILARITY SEARCH RPC
+CREATE OR REPLACE FUNCTION find_similar_slos(
+    target_slo TEXT, 
+    similarity_threshold FLOAT, 
+    max_results INT
+)
+RETURNS TABLE (slo_code TEXT)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_embedding vector(768);
 BEGIN
-    -- profiles
-    DROP POLICY IF EXISTS "profiles_owner_access_v2" ON public.profiles;
-    DROP POLICY IF EXISTS "profiles_admin_global_read_v2" ON public.profiles;
+    SELECT embedding INTO target_embedding 
+    FROM public.slo_database 
+    WHERE slo_code = target_slo 
+    LIMIT 1;
     
-    -- documents
-    DROP POLICY IF EXISTS "documents_owner_access_v2" ON public.documents;
-    
-    -- artifacts
-    DROP POLICY IF EXISTS "artifacts_owner_access_v2" ON public.output_artifacts;
-    
-    -- neural_brain
-    DROP POLICY IF EXISTS "neural_brain_read_all_v2" ON public.neural_brain;
-    DROP POLICY IF EXISTS "neural_brain_admin_write_v2" ON public.neural_brain;
-END $$;
+    IF target_embedding IS NULL THEN
+        RETURN;
+    END IF;
 
--- 2. SCHEMA UPDATE: PROFILES ENHANCEMENTS
-ALTER TABLE IF EXISTS public.profiles 
-ADD COLUMN IF NOT EXISTS active_doc_id UUID;
+    RETURN QUERY
+    SELECT s.slo_code
+    FROM public.slo_database s
+    WHERE s.slo_code != target_slo
+      AND 1 - (s.embedding <=> target_embedding) > similarity_threshold
+    ORDER BY 1 - (s.embedding <=> target_embedding) DESC
+    LIMIT max_results;
+END;
+$$;
 
-ALTER TABLE IF EXISTS public.documents 
-ADD COLUMN IF NOT EXISTS r2_key TEXT,
-ADD COLUMN IF NOT EXISTS r2_bucket TEXT DEFAULT 'pedagogy-master-documents',
-ADD COLUMN IF NOT EXISTS extracted_text_r2_key TEXT,
-ADD COLUMN IF NOT EXISTS content_cached BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT true,
-ADD COLUMN IF NOT EXISTS extracted_text TEXT,
-ADD COLUMN IF NOT EXISTS word_count INTEGER DEFAULT 0;
+-- 6. RLS ENFORCEMENT
+ALTER TABLE public.slo_database ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.ai_generated_content ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.teacher_progress ENABLE ROW LEVEL SECURITY;
 
-CREATE INDEX IF NOT EXISTS idx_documents_r2_key ON public.documents(r2_key);
-CREATE INDEX IF NOT EXISTS idx_documents_selected ON public.documents(user_id, is_selected);
+-- Progress tracking is strictly user-private
+DROP POLICY IF EXISTS "progress_owner_all" ON public.teacher_progress;
+CREATE POLICY "progress_owner_all" ON public.teacher_progress FOR ALL TO authenticated
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
 
--- 3. OPTIMIZED RLS POLICIES (Fixes auth_rls_initplan 0003)
-CREATE POLICY "profiles_owner_access_v3" ON public.profiles FOR ALL TO authenticated
-USING (id = (select auth.uid())) WITH CHECK (id = (select auth.uid()));
+-- AI Generated Content is globally readable for authenticated users
+DROP POLICY IF EXISTS "content_read_v1" ON public.ai_generated_content;
+CREATE POLICY "content_read_v1" ON public.ai_generated_content FOR SELECT TO authenticated USING (true);
 
-CREATE POLICY "profiles_admin_global_read_v3" ON public.profiles FOR SELECT TO authenticated
-USING (((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com'));
+DROP POLICY IF EXISTS "slo_db_owner_read_v6" ON public.slo_database;
+CREATE POLICY "slo_db_owner_read_v6" ON public.slo_database FOR SELECT TO authenticated
+USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid()));
 
-CREATE POLICY "documents_owner_access_v3" ON public.documents FOR ALL TO authenticated
-USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()));
-
-CREATE POLICY "artifacts_owner_access_v3" ON public.output_artifacts FOR ALL TO authenticated
-USING (user_id = (select auth.uid())) WITH CHECK (user_id = (select auth.uid()));
-
-CREATE POLICY "neural_brain_read_all_v3" ON public.neural_brain FOR SELECT TO authenticated 
-USING (true);
-
-CREATE POLICY "neural_brain_admin_write_v3" ON public.neural_brain FOR INSERT TO authenticated
-WITH CHECK (((select auth.jwt()) ->> 'email') IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com'));
-
--- 4. SYSTEM ADMIN SYNC
+-- 7. SYSTEM ADMIN SYNC
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
-WHERE email IN ('mkgopang@gmail.com', 'fasi.2001@live.com');
-
--- 5. ENFORCEMENT
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.output_artifacts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
+WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 `;
 
   return (
@@ -200,7 +250,7 @@ ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
                <h2 className="text-2xl font-bold flex items-center gap-3 dark:text-white"><Database size={24} className="text-indigo-600" /> Database Diagnostic</h2>
                <button onClick={checkHealth} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">{isChecking ? <RefreshCw className="animate-spin" /> : <RefreshCw />}</button>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {dbStatus.map((item, idx) => (
                 <div key={idx} className={`p-6 rounded-2xl border flex flex-col gap-3 transition-all ${item.exists ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-100 dark:border-rose-900 text-rose-700 dark:text-rose-400 animate-pulse'}`}>
                   <span className="text-[10px] font-black uppercase tracking-widest">{item.table}</span>
@@ -227,7 +277,7 @@ ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
             </div>
             <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                <Terminal size={20} className="text-indigo-400 shrink-0" />
-               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch adds support for persistent curriculum context in teacher profiles.</p>
+               <p className="text-xs text-indigo-200 leading-relaxed italic">Important: This patch enables progress tracking and high-precision SLO grounding.</p>
             </div>
           </div>
         </div>
@@ -245,7 +295,7 @@ ALTER TABLE public.neural_brain ENABLE ROW LEVEL SECURITY;
 };
 
 const AuditCard = ({ icon, title, status, desc }: any) => (
-  <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-6 hover:border-indigo-500 transition-all hover:shadow-2xl">
+  <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-100 dark:border-white/5 shadow-sm space-y-6 hover:border-indigo-500 transition-all hover:shadow-2xl">
     <div className="flex justify-between items-center">
        <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl shadow-inner">{icon}</div>
        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg uppercase tracking-widest">{status}</span>
