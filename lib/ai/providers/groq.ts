@@ -9,7 +9,7 @@ export async function callGroq(
   if (!apiKey) throw new Error('GROQ_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "STRICT_DOCUMENT_ONLY_MODE: Use ONLY the <ASSET_VAULT> in the prompt. Do not use general knowledge. No web search. Temperature 0.0."
+    ? "STRICT_DOCUMENT_ONLY_MODE: Use ONLY information provided in the <ASSET_VAULT> section of the user prompt. Do not use general knowledge. No web search. No bold headings. Temperature 0.0."
     : systemInstruction;
 
   const messages = [

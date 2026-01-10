@@ -9,7 +9,7 @@ export async function callOpenRouter(
   if (!apiKey) throw new Error('OPENROUTER_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "STRICT_ASSET_GROUNDING: Read <ASSET_VAULT> first. Use ONLY vault text. No general knowledge. No search. No bold headings. Temperature 0.0."
+    ? "STRICT_ASSET_GROUNDING: Read the <ASSET_VAULT> in the prompt. Use ONLY vault text. Do not use general knowledge or search. No bold headings. Temperature 0.0."
     : systemInstruction;
 
   const messages = [

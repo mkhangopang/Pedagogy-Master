@@ -10,7 +10,7 @@ import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../
 import { DEFAULT_MASTER_PROMPT, APP_NAME } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
-  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
+  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!process.env.API_KEY },
   { name: 'openrouter', rpm: 50, rpd: 500, enabled: !!process.env.OPENROUTER_API_KEY },
   { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
 ];
@@ -37,10 +37,10 @@ export async function getSystemPrompt(supabase: SupabaseClient): Promise<string>
 }
 
 /**
- * 🔥 NUCLEAR GROUNDING: buildDocumentCenteredPrompt
- * This ensures documents are the FIRST thing the model sees and cannot be ignored.
+ * 🔥 NUCLEAR GROUNDING PROMPT
+ * Forces the model to prioritize provided curriculum assets above all else.
  */
-function buildDocumentCenteredPrompt(
+function buildNuclearPrompt(
   documentContext: string,
   history: any[],
   userPrompt: string,
@@ -55,7 +55,18 @@ function buildDocumentCenteredPrompt(
 🚨🚨🚨 MANDATORY: CORE OPERATIONAL DIRECTIVE - ABSOLUTE GROUNDING 🚨🚨🚨
 
 YOU ARE CURRENTLY IN DOCUMENT-ONLY MODE. 
-THE ASSETS BELOW ARE YOUR ONLY SOURCE OF TRUTH.
+THE ASSETS BELOW ARE YOUR ONLY SOURCE OF TRUTH. 
+
+STRICT RULES:
+1. **ZERO EXTERNAL KNOWLEDGE**: Do not use general training or web search.
+2. **STRICT ASSET RETRIEVAL**: If information is not in the <ASSET_VAULT>, explicitly state: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
+3. **NO ACCESS DENIALS**: Do not claim you lack access to files. The full text is provided below.
+4. **NEGATIVE EXAMPLES**: 
+   - DO NOT say: "As an AI, I don't have access to your files."
+   - DO NOT say: "Let me search the web for that SLO code."
+   - DO NOT say: "Based on general educational standards..."
+5. **CITE SOURCES**: Refer to documents by name (e.g., "[Ref: ${documentFilenames[0]}]").
+6. **FORMATTING**: Use 1. and 1.1. headings. NO BOLD HEADINGS.
 
 <ASSET_VAULT>
 ACTIVE_CURRICULUM_FILES: ${documentFilenames.join(', ')}
@@ -63,15 +74,8 @@ ACTIVE_CURRICULUM_FILES: ${documentFilenames.join(', ')}
 ${documentContext}
 </ASSET_VAULT>
 
-INSTRUCTIONS FOR THIS TURN:
-1. **ZERO EXTERNAL KNOWLEDGE**: Do not use general training or web search.
-2. **STRICT VAULT RETRIEVAL**: If information is not in the <ASSET_VAULT>, explicitly state: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
-3. **NO ACCESS DENIALS**: Do not say "I don't have access to documents" - the documents are provided above in the vault.
-4. **CITE SOURCES**: Refer to documents by name (e.g., "[Source: ${documentFilenames[0]}]").
-5. **FORMATTING**: Use 1. and 1.1. headings. NO BOLD HEADINGS.
-
 ---
-[PREVIOUS_CONVERSATION_HISTORY]
+[HISTORY]
 ${historyText}
 
 [TEACHER_REQUEST]
@@ -81,6 +85,20 @@ ${userPrompt}
 Synthesize based EXCLUSIVELY on the <ASSET_VAULT> provided above.
 
 NEURAL_SYNTHESIS:`;
+}
+
+/**
+ * Checks if the AI response indicates it ignored the provided documents.
+ */
+function wasDocumentsIgnored(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("don't have access") || 
+    lower.includes("cannot read the documents") ||
+    lower.includes("no documents were provided") ||
+    lower.includes("let me search the web") ||
+    lower.includes("i don't have information about your specific curriculum")
+  );
 }
 
 export async function generateAIResponse(
@@ -95,7 +113,6 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // Fetch documents using the authenticated supabase client for RLS compliance
   const documents = await getSelectedDocumentsWithContent(supabase, userId);
   const docNames = documents.map(d => d.filename);
   const hasDocs = documents.length > 0;
@@ -108,12 +125,14 @@ export async function generateAIResponse(
   let finalInstruction = baseInstruction;
 
   if (hasDocs) {
-    finalPrompt = buildDocumentCenteredPrompt(docContext, history, prompt, docNames);
-    finalInstruction = `ABSOLUTE_GROUNDING_PROTOCOL_ACTIVE. Use ONLY the <ASSET_VAULT> provided at the top of the prompt. Temperature 0.0. Disregard general knowledge.`;
+    finalPrompt = buildNuclearPrompt(docContext, history, prompt, docNames);
+    finalInstruction = `STRICT_CURRICULUM_GROUNDING: Use ONLY the <ASSET_VAULT> in the user message. Do not use general knowledge. Temperature 0.0. If missing, say DATA_UNAVAILABLE.`;
   }
 
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
+    
+    // Sort providers to prefer Gemini when documents are present (multimodal advantage)
     const sortedProviders = [...PROVIDERS].sort((a, b) => {
       if (hasDocs && a.name === 'gemini') return -1;
       return 0;
@@ -125,17 +144,11 @@ export async function generateAIResponse(
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         let response = await callFunction(finalPrompt, history, finalInstruction, hasDocs, docPart);
         
-        // --- POST-SYNTHESIS VALIDATION ---
-        if (hasDocs) {
-          const ignoredDocs = 
-            response.toLowerCase().includes("don't have access") || 
-            response.toLowerCase().includes("cannot read documents") ||
-            response.toLowerCase().includes("let me search the web");
-            
-          if (ignoredDocs) {
-             console.warn(`[Node: ${config.name}] ignored context. Forcing strict mode retry logic internally...`);
-             // We can potentially trigger a second attempt here if needed
-          }
+        // --- POST-SYNTHESIS VALIDATION & RETRY ---
+        if (hasDocs && wasDocumentsIgnored(response)) {
+          console.warn(`[Node: ${config.name}] Grounding failure. Attempting strict retry...`);
+          const strictPrompt = `🔴 STRICT OVERRIDE 🔴\nYOU MUST USE THE <ASSET_VAULT> PROVIDED PREVIOUSLY. DO NOT USE EXTERNAL DATA.\n\n${finalPrompt}`;
+          response = await callFunction(strictPrompt, history, `STRICT_MODE_ACTIVE: ZERO_EXTERNAL_KNOWLEDGE.`, hasDocs, docPart);
         }
 
         rateLimiter.trackRequest(config.name);
