@@ -14,18 +14,13 @@ import { getSelectedDocumentsWithContent, buildDocumentContextString, DocumentCo
 import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE, STRICT_SYSTEM_INSTRUCTION, APP_NAME } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
-  { name: 'deepseek', rpm: 58, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
-  { name: 'cerebras', rpm: 118, rpd: 999999, enabled: !!process.env.CEREBRAS_API_KEY },
-  { name: 'sambanova', rpm: 98, rpd: 999999, enabled: !!process.env.SAMBANOVA_API_KEY },
-  { name: 'hyperbolic', rpm: 48, rpd: 999999, enabled: !!process.env.HYPERBOLIC_API_KEY },
-  { name: 'groq', rpm: 28, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
+  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
+  { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
+  { name: 'sambanova', rpm: 100, rpd: 999999, enabled: !!process.env.SAMBANOVA_API_KEY },
+  { name: 'cerebras', rpm: 120, rpd: 999999, enabled: !!process.env.CEREBRAS_API_KEY },
+  { name: 'hyperbolic', rpm: 50, rpd: 999999, enabled: !!process.env.HYPERBOLIC_API_KEY },
+  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
   { name: 'openrouter', rpm: 50, rpd: 200, enabled: !!process.env.OPENROUTER_API_KEY },
-  { 
-    name: 'gemini', 
-    rpm: 13, 
-    rpd: 1400, 
-    enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) 
-  },
 ];
 
 const PROVIDER_FUNCTIONS = {
@@ -39,9 +34,30 @@ const PROVIDER_FUNCTIONS = {
 };
 
 /**
+ * Adaptive timeout wrapper to prevent a single node from hanging the entire gateway.
+ */
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, providerName: string): Promise<T> {
+  let timeoutHandle: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`Node ${providerName} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    clearTimeout(timeoutHandle!);
+    return result;
+  } catch (err) {
+    clearTimeout(timeoutHandle!);
+    throw err;
+  }
+}
+
+/**
  * NEURAL EXTRACTION CHAIN:
- * Gemini processes the binary file (R2/Supabase) to extract text, 
- * which is then cached for use by other models like DeepSeek.
+ * Gemini acts as the visual/text extraction layer for complex curriculum files.
+ * This result is shared with other reasoning models like DeepSeek.
  */
 async function ensureDocumentText(
   documents: DocumentContent[], 
@@ -54,8 +70,12 @@ async function ensureDocumentText(
 
   try {
     const extractionPrompt = "MANDATORY: Extract the full raw text from this document. Respond ONLY with the extracted text. No commentary.";
-    // Use Gemini for high-speed OCR/Extraction
-    const extractedText = await callGemini(extractionPrompt, [], "SYSTEM: RAW_TEXT_EXTRACTOR", true, docPart);
+    // Extraction is a heavy task, we give it a 20s window.
+    const extractedText = await withTimeout<string>(
+      callGemini(extractionPrompt, [], "SYSTEM: RAW_TEXT_EXTRACTOR", true, docPart),
+      20000,
+      'gemini-extractor'
+    );
     
     if (extractedText && extractedText.length > 50) {
       await supabase.from('documents').update({ 
@@ -66,16 +86,17 @@ async function ensureDocumentText(
       needsExtraction[0].extractedText = extractedText;
     }
   } catch (e) {
-    console.warn("[Neural Chain] Extraction node failed, proceeding with metadata only.", e);
+    console.warn("[Neural Chain] Extraction failed, using existing metadata for grounding.", e);
   }
 
   return documents;
 }
 
-function selectOptimalProviderOrder(hasDocuments: boolean, promptLength: number): string[] {
-  if (hasDocuments && promptLength > 8000) return ['sambanova', 'deepseek', 'gemini'];
-  if (hasDocuments) return ['deepseek', 'sambanova', 'groq', 'hyperbolic'];
-  return ['cerebras', 'hyperbolic', 'groq', 'deepseek'];
+function selectOptimalProviderOrder(hasDocs: boolean, hasDocPart: boolean): string[] {
+  // If we have a raw file part, Gemini MUST be tried first as it's the multimodal specialist.
+  if (hasDocPart) return ['gemini', 'deepseek', 'sambanova', 'hyperbolic'];
+  if (hasDocs) return ['deepseek', 'sambanova', 'gemini', 'groq'];
+  return ['cerebras', 'hyperbolic', 'groq', 'deepseek', 'gemini'];
 }
 
 function buildNuclearPrompt(
@@ -120,6 +141,15 @@ function wasDocumentsIgnored(text: string): boolean {
   );
 }
 
+export function getProviderStatus() {
+  return PROVIDERS.map(config => ({
+    name: config.name,
+    enabled: config.enabled,
+    limits: { rpm: config.rpm, rpd: config.rpd },
+    remaining: rateLimiter.getRemainingRequests(config.name, config)
+  }));
+}
+
 export async function generateAIResponse(
   prompt: string,
   history: any[],
@@ -134,7 +164,7 @@ export async function generateAIResponse(
 
   let documents = await getSelectedDocumentsWithContent(supabase, userId);
   
-  // Chain interaction: Gemini prepares the text for other providers
+  // 1. NEURAL PRE-PROCESSING: Use Gemini to extract text from files for other models.
   if (documents.length > 0 && docPart) {
     documents = await ensureDocumentText(documents, supabase, docPart);
   }
@@ -143,7 +173,6 @@ export async function generateAIResponse(
   const hasDocs = documents.length > 0;
   const docContext = buildDocumentContextString(documents);
   
-  // Use a fast query for the brain prompt
   const dbSystemPrompt = await (async () => {
     try {
       const { data } = await supabase
@@ -169,10 +198,11 @@ export async function generateAIResponse(
     finalInstruction = STRICT_SYSTEM_INSTRUCTION;
   }
 
-  return await requestQueue.add(async () => {
+  return await requestQueue.add<{ text: string; provider: string }>(async () => {
     let lastError: Error | null = null;
+    const startTime = Date.now();
     
-    const optimalOrder = selectOptimalProviderOrder(hasDocs, finalPrompt.length);
+    const optimalOrder = selectOptimalProviderOrder(hasDocs, !!docPart);
     const sortedProviders = [...PROVIDERS]
       .filter(p => p.enabled)
       .sort((a, b) => {
@@ -184,40 +214,52 @@ export async function generateAIResponse(
         return indexA - indexB;
       });
 
+    // Vercel/Gateway limit is 60s. We aim to return within 55s.
+    const GLOBAL_MAX_DURATION = 55000;
+
     for (const config of sortedProviders) {
+      const elapsed = Date.now() - startTime;
+      if (elapsed > GLOBAL_MAX_DURATION) break;
+
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
+
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        // Only pass docPart to Gemini
+        
         const callArgs = [finalPrompt, history, finalInstruction, hasDocs];
         if (config.name === 'gemini') {
           callArgs.push(docPart);
         }
         
-        let response = await (callFunction as any)(...callArgs);
+        // Adaptive timeout: give more time to the first provider, less to fallbacks
+        const nodeTimeout = Math.min(25000, GLOBAL_MAX_DURATION - (Date.now() - startTime));
+
+        let response = await withTimeout<string>(
+          (callFunction as any)(...callArgs),
+          nodeTimeout,
+          config.name
+        );
         
+        // Verify grounding success
         if (hasDocs && wasDocumentsIgnored(response)) {
-          console.warn(`[Node: ${config.name}] Grounding failure. Attempting strict retry...`);
-          const strictPrompt = `🔴 STRICT OVERRIDE 🔴\nYOU MUST USE THE <ASSET_VAULT> PROVIDED PREVIOUSLY.\n\n${finalPrompt}`;
-          response = await (callFunction as any)(strictPrompt, history, `STRICT_MODE_ACTIVE.`, hasDocs);
+          console.warn(`[Node: ${config.name}] Grounding failure. Retrying with explicit boost...`);
+          const strictPrompt = `🔴 CRITICAL: YOU MUST USE THE DATA PROVIDED IN THE ASSET VAULT. 🔴\n\n${finalPrompt}`;
+          response = await withTimeout<string>(
+            (callFunction as any)(strictPrompt, history, `STRICT_GROUNDING_ACTIVE.`, hasDocs),
+            nodeTimeout,
+            `${config.name}-retry`
+          );
         }
 
         rateLimiter.trackRequest(config.name);
         responseCache.set(prompt, history, response, config.name);
         return { text: response, provider: config.name };
       } catch (e: any) {
+        console.error(`[Synthesis Grid] Node ${config.name} failed:`, e.message);
         lastError = e;
       }
     }
-    throw lastError || new Error("The AI synthesis grid is currently disconnected.");
+    
+    throw lastError || new Error("The synthesis grid is currently disconnected or exhausted.");
   });
-}
-
-export function getProviderStatus() {
-  return PROVIDERS.map(config => ({
-    name: config.name,
-    enabled: config.enabled,
-    limits: { rpm: config.rpm, rpd: config.rpd },
-    remaining: rateLimiter.getRemainingRequests(config.name, config)
-  }));
 }

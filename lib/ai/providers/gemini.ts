@@ -8,21 +8,22 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
+  // Use API_KEY as primary per instructions
   const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing');
+  if (!geminiKey) throw new Error('Gemini API Key missing (API_KEY required)');
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
   const finalSystem = hasDocuments 
-    ? `STRICT_CURRICULUM_ANALYZER: Ground your responses EXCLUSIVELY in the <ASSET_VAULT>. 
-       Use ONLY provided text. Ignore general training. 
-       Format using numbered headers (1., 1.1). NO BOLD HEADINGS.`
+    ? `STRICT_CURRICULUM_ANALYZER: Ground your responses EXCLUSIVELY in the provided <ASSET_VAULT>. 
+       Do not use general training or search. If content is missing, output: DATA_UNAVAILABLE.
+       Formatting: Numbered headers (1., 1.1). NO BOLD HEADINGS.`
     : systemInstruction;
 
   const contents: any[] = [];
   
-  // Keep history minimal to stay within edge function limits
-  history.slice(-2).forEach(h => {
+  // History mapping
+  history.slice(-3).forEach(h => {
     contents.push({
       role: h.role === 'user' ? 'user' : 'model',
       parts: [{ text: h.content }]
@@ -30,6 +31,7 @@ export async function callGemini(
   });
 
   const currentParts: any[] = [];
+  // Add multimodal document part if provided
   if (docPart) {
     currentParts.push(docPart);
   }
@@ -38,12 +40,14 @@ export async function callGemini(
   contents.push({ role: 'user', parts: currentParts });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview', // Using Flash for speed to avoid timeouts
+    model: 'gemini-3-flash-preview', 
     contents,
     config: { 
       systemInstruction: finalSystem, 
       temperature: hasDocuments ? 0.0 : 0.7,
-      thinkingConfig: { thinkingBudget: 0 } // Disable thinking for extraction/speed
+      topK: 1,
+      topP: 1,
+      thinkingConfig: { thinkingBudget: 0 } // High-speed mode
     }
   });
 

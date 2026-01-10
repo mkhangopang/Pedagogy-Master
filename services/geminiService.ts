@@ -11,13 +11,23 @@ function parseAIError(errorData: any): string {
   const lowerMsg = msg.toLowerCase();
   
   if (lowerMsg.includes('429') || lowerMsg.includes('resource_exhausted') || lowerMsg.includes('saturated')) {
-    globalCooldownUntil = Date.now() + 20000; // 20s lock
-    return "Neural Capacity Reached: Gemini Free Tier is cooling down. Please wait 20 seconds before retrying.";
+    globalCooldownUntil = Date.now() + 15000; // 15s lock
+    return "Neural Grid Saturated: All processing nodes are busy. This usually happens during high-traffic academic hours. Please wait 15 seconds.";
   }
-  if (lowerMsg.includes('timeout') || lowerMsg.includes('link lost') || lowerMsg.includes('handshake')) {
-    return "Neural Link Interrupted: The connection to the AI node timed out. This usually happens when the document is too large for the Free Tier processing speed.";
+  
+  if (lowerMsg.includes('timeout') || lowerMsg.includes('link lost') || lowerMsg.includes('deadline')) {
+    return "Handshake Timeout: The synthesis node took too long to analyze the document. Retrying often switches to a faster node.";
   }
-  return msg || "Synthesis interrupted. Please retry in a moment.";
+
+  if (lowerMsg.includes('disconnected') || lowerMsg.includes('exhausted')) {
+    return "Grid Offline: All available AI nodes are currently disconnected. This may be due to regional network maintenance. Please try again in a few minutes.";
+  }
+
+  if (lowerMsg.includes('auth') || lowerMsg.includes('unauthorized')) {
+    return "Neural Security Violation: Your session has expired. Please refresh the page and sign in again.";
+  }
+
+  return msg || "Synthesis interrupted by cloud gateway. Please retry your request.";
 }
 
 export const geminiService = {
@@ -40,7 +50,7 @@ export const geminiService = {
   ) {
     const wait = this.checkCooldown();
     if (wait > 0) {
-      yield `AI Alert: Neural nodes are cooling down. Please wait ${wait}s...`;
+      yield `AI Alert: Synthesis cooling down. Retrying in ${wait}s...`;
       return;
     }
 
@@ -55,14 +65,14 @@ export const geminiService = {
           task: 'chat',
           message,
           doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
-          history: history.slice(-4), // Aggressively trim history for quota
+          history: history.slice(-3),
           brain,
           adaptiveContext
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Neural link lost." }));
+        const errorData = await response.json().catch(() => ({ error: "Synthesis link lost." }));
         yield `AI Alert: ${parseAIError(errorData)}`;
         return;
       }
@@ -76,18 +86,13 @@ export const geminiService = {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
-          if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            globalCooldownUntil = Date.now() + 20000;
-            yield "\n\n[System Alert: Neural capacity exceeded. Please pause for 20s.]";
-            break;
-          }
           yield chunk;
         }
       } finally {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: ${parseAIError("Neural link lost. Verify your internet connection.")}`;
+      yield `AI Alert: ${parseAIError("The synthesis gateway is temporarily unreachable. Check your internet connection.")}`;
     }
   },
 
@@ -122,7 +127,7 @@ export const geminiService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Synthesis node busy." }));
+        const errorData = await response.json().catch(() => ({ error: "Synthesis nodes busy." }));
         yield `AI Alert: ${parseAIError(errorData)}`;
         return;
       }
@@ -136,18 +141,13 @@ export const geminiService = {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
-          if (chunk.includes('ERROR_SIGNAL:RATE_LIMIT')) {
-            globalCooldownUntil = Date.now() + 20000;
-            yield "\n\n[Neural Alert: Synthesis paused due to quota limit. Please wait 20s.]";
-            break;
-          }
           yield chunk;
         }
       } finally {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: ${parseAIError("Synthesis gateway timed out.")}`;
+      yield `AI Alert: ${parseAIError("Heavy curriculum analysis caused a timeout. Please try a shorter request.")}`;
     }
   }
 };
