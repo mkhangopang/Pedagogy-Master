@@ -175,3 +175,5 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     </div>
   );
 };
+
+export default Tools;

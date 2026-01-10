@@ -1,6 +1,6 @@
 
 import { supabase } from '../supabase';
-import { synthesize } from './multi-provider-router';
+import { synthesize } from './synthesizer-core';
 
 /**
  * INTELLIGENT PEDAGOGICAL CACHE
