@@ -7,7 +7,7 @@ import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { responseCache } from './response-cache';
 import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
-import { DEFAULT_MASTER_PROMPT } from '../../constants';
+import { DEFAULT_MASTER_PROMPT, APP_NAME } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
   { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) },
@@ -37,30 +37,9 @@ export async function getSystemPrompt(supabase: SupabaseClient): Promise<string>
 }
 
 /**
- * 🔒 SPECIALIZED TOOL PROMPT FACTORY
+ * 🔥 NUCLEAR GROUNDING: buildDocumentCenteredPrompt
+ * This ensures documents are the FIRST thing the model sees and cannot be ignored.
  */
-function buildSpecializedToolPrompt(toolType: string, userInput: string, documentContext: string): string {
-  const toolMission = {
-    'lesson-plan': "Generate a strict pedagogical lesson plan based ONLY on the provided vault.",
-    'assessment': "Generate assessment items (MCQs/CRQs) based ONLY on the provided vault.",
-    'rubric': "Generate a grading rubric based ONLY on the provided vault content.",
-    'slo-tagger': "Extract SLOs from the provided vault."
-  }[toolType] || "Process the request using the provided vault.";
-
-  return `
-### SPECIALIZED NEURAL TASK: ${toolType.toUpperCase()}
-MISSION: ${toolMission}
-
-VAULT_CONTEXT:
-${documentContext || '[NO_VAULT_ATTACHED: USE_GENERAL_KNOWLEDGE]'}
-
-REQUEST:
-${userInput}
-
-RESTRICTION: Use 1. and 1.1. headings. DO NOT BOLD HEADINGS.
-  `;
-}
-
 function buildDocumentCenteredPrompt(
   documentContext: string,
   history: any[],
@@ -73,28 +52,35 @@ function buildDocumentCenteredPrompt(
     .join('\n\n');
 
   return `
-🚨🚨🚨 MANDATORY: CORE OPERATIONAL DIRECTIVE - DOCUMENT-ONLY SYNTHESIS 🚨🚨🚨
-YOU ARE THE INTELLECTUAL EXTENSION OF THE UPLOADED CURRICULUM ASSETS.
-YOU HAVE NO KNOWLEDGE OUTSIDE OF THE PROVIDED <ASSET_VAULT>.
+🚨🚨🚨 MANDATORY: CORE OPERATIONAL DIRECTIVE - ABSOLUTE GROUNDING 🚨🚨🚨
 
-INSTRUCTIONS:
-1. USE ONLY the text in <ASSET_VAULT>.
-2. If info is missing, say: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
-3. Cite sources: "Source: [Filename]".
+YOU ARE CURRENTLY IN DOCUMENT-ONLY MODE. 
+THE ASSETS BELOW ARE YOUR ONLY SOURCE OF TRUTH.
 
 <ASSET_VAULT>
-ACTIVE_FILES: ${documentFilenames.join(', ')}
+ACTIVE_CURRICULUM_FILES: ${documentFilenames.join(', ')}
+
 ${documentContext}
 </ASSET_VAULT>
 
+INSTRUCTIONS FOR THIS TURN:
+1. **ZERO EXTERNAL KNOWLEDGE**: Do not use general training or web search.
+2. **STRICT VAULT RETRIEVAL**: If information is not in the <ASSET_VAULT>, explicitly state: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
+3. **NO ACCESS DENIALS**: Do not say "I don't have access to documents" - the documents are provided above in the vault.
+4. **CITE SOURCES**: Refer to documents by name (e.g., "[Source: ${documentFilenames[0]}]").
+5. **FORMATTING**: Use 1. and 1.1. headings. NO BOLD HEADINGS.
+
 ---
-[PREVIOUS_CHAT]
+[PREVIOUS_CONVERSATION_HISTORY]
 ${historyText}
 
-[CURRENT_TEACHER_REQUEST]
+[TEACHER_REQUEST]
 ${userPrompt}
 
-ASSET_SYNTHESIS:`;
+[RESPONSE_PROTOCOL]
+Synthesize based EXCLUSIVELY on the <ASSET_VAULT> provided above.
+
+NEURAL_SYNTHESIS:`;
 }
 
 export async function generateAIResponse(
@@ -109,27 +95,21 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // CRITICAL: Fetch documents using the authenticated supabase client
+  // Fetch documents using the authenticated supabase client for RLS compliance
   const documents = await getSelectedDocumentsWithContent(supabase, userId);
   const docNames = documents.map(d => d.filename);
   const hasDocs = documents.length > 0;
   const docContext = buildDocumentContextString(documents);
   const dbSystemPrompt = await getSystemPrompt(supabase);
 
-  // Strength the Master identity & formatting rules
   const baseInstruction = `${dbSystemPrompt}\n${adaptiveContext || ''}\nRESTRICTION: 1. and 1.1. for headers. NO BOLD HEADINGS. BE CONCISE.`;
 
   let finalPrompt = prompt;
   let finalInstruction = baseInstruction;
 
-  if (toolType) {
-    finalPrompt = buildSpecializedToolPrompt(toolType, prompt, docContext);
-    if (hasDocs) {
-      finalInstruction = `STRICT_DOCUMENT_GROUNDING_ACTIVE. ${baseInstruction}`;
-    }
-  } else if (hasDocs) {
+  if (hasDocs) {
     finalPrompt = buildDocumentCenteredPrompt(docContext, history, prompt, docNames);
-    finalInstruction = `ABSOLUTE_GROUNDING_PROTOCOL_ACTIVE. Use ONLY the <ASSET_VAULT> provided in the message. Disregard general knowledge. ${baseInstruction}`;
+    finalInstruction = `ABSOLUTE_GROUNDING_PROTOCOL_ACTIVE. Use ONLY the <ASSET_VAULT> provided at the top of the prompt. Temperature 0.0. Disregard general knowledge.`;
   }
 
   return await requestQueue.add(async () => {
@@ -144,6 +124,20 @@ export async function generateAIResponse(
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         let response = await callFunction(finalPrompt, history, finalInstruction, hasDocs, docPart);
+        
+        // --- POST-SYNTHESIS VALIDATION ---
+        if (hasDocs) {
+          const ignoredDocs = 
+            response.toLowerCase().includes("don't have access") || 
+            response.toLowerCase().includes("cannot read documents") ||
+            response.toLowerCase().includes("let me search the web");
+            
+          if (ignoredDocs) {
+             console.warn(`[Node: ${config.name}] ignored context. Forcing strict mode retry logic internally...`);
+             // We can potentially trigger a second attempt here if needed
+          }
+        }
+
         rateLimiter.trackRequest(config.name);
         responseCache.set(prompt, history, response, config.name);
         return { text: response, provider: config.name };

@@ -8,17 +8,18 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
+  // Respecting Vercel environment variable naming while maintaining SDK standards
   const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing (Checked API_KEY and GEMINI_API_KEY environment variables)');
+  if (!geminiKey) throw new Error('Gemini API Key missing (Verify API_KEY in environment)');
 
-  // Strictly follow the SDK initialization rules
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
-  // Strict system instructions for grounding
+  // High-priority grounding instructions passed as systemInstruction
   const finalSystem = hasDocuments 
-    ? `ABSOLUTE_GROUNDING_ACTIVE: You are a specialized curriculum analyzer. 
-       Ignore your internal knowledge. Use ONLY the text in the provided vault. 
-       Temperature 0.0 for precision. Do not search web.`
+    ? `STRICT_CURRICULUM_ANALYZER_ACTIVE: Use ONLY the <ASSET_VAULT> text provided in the user message. 
+       Ignore your general training. Do not search the web. 
+       If information is missing from the vault, reply: "DATA_UNAVAILABLE: [topic] not found in uploaded curriculum assets."
+       Strict formatting: Numbered headers (1., 1.1). No bold headings.`
     : systemInstruction;
 
   const contents: any[] = history.slice(-3).map(h => ({
@@ -39,7 +40,7 @@ export async function callGemini(
     contents,
     config: { 
       systemInstruction: finalSystem, 
-      temperature: hasDocuments ? 0 : 0.7, 
+      temperature: hasDocuments ? 0.0 : 0.7, // Zero temperature for document extraction
       topK: 1,
       topP: 1
     }

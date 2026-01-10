@@ -9,7 +9,7 @@ export async function callGroq(
   if (!apiKey) throw new Error('GROQ_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "STRICT_DOCUMENT_GROUNDING: You are a curriculum document database. Use ONLY the provided assets. No web search. No general training knowledge. Temperature 0.0."
+    ? "STRICT_DOCUMENT_ONLY_MODE: Use ONLY the <ASSET_VAULT> in the prompt. Do not use general knowledge. No web search. Temperature 0.0."
     : systemInstruction;
 
   const messages = [

@@ -9,7 +9,7 @@ export async function callOpenRouter(
   if (!apiKey) throw new Error('OPENROUTER_API_KEY missing');
 
   const finalSystem = hasDocuments 
-    ? "STRICT_GROUNDING: Act as a curriculum document database. Use ONLY provided vault content. No guessing. No search. No training knowledge. Temperature 0.0."
+    ? "STRICT_ASSET_GROUNDING: Read <ASSET_VAULT> first. Use ONLY vault text. No general knowledge. No search. No bold headings. Temperature 0.0."
     : systemInstruction;
 
   const messages = [

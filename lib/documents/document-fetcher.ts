@@ -14,15 +14,12 @@ export interface DocumentContent {
 
 /**
  * Fetch selected documents for a user WITH actual content from R2/Supabase.
- * REQUIRED: Must use an authenticated Supabase client to bypass RLS.
  */
 export async function getSelectedDocumentsWithContent(
   supabase: SupabaseClient,
   userId: string
 ): Promise<DocumentContent[]> {
   try {
-    // 1. Fetch metadata for currently selected document
-    // We check both the 'is_selected' flag and the user's 'active_doc_id' for redundancy
     const { data: documents, error } = await supabase
       .from('documents')
       .select('*')
@@ -36,7 +33,6 @@ export async function getSelectedDocumentsWithContent(
       return [];
     }
 
-    // 2. Fallback check for active_doc_id in user profile if no doc is explicitly marked is_selected
     if (!documents || documents.length === 0) {
       const { data: profile } = await supabase.from('profiles').select('active_doc_id').eq('id', userId).single();
       if (profile?.active_doc_id) {
@@ -53,20 +49,17 @@ export async function getSelectedDocumentsWithContent(
       try {
         let extractedText = '';
 
-        // Prioritize Supabase 'extracted_text' cache
         if (doc.extracted_text && doc.extracted_text.trim().length > 0) {
           extractedText = doc.extracted_text;
         } else {
-          // Fallback to direct fetch from Cloudflare R2
           const key = doc.extracted_text_r2_key || doc.r2_key || doc.file_path;
           if (key) {
             extractedText = await getObjectText(key);
           }
         }
 
-        // If we still have no text, we can't ground a text-only model
         if (extractedText && extractedText.trim().length > 0) {
-          // Truncate to safe context size for models (approx 15k chars to stay in free limits)
+          // Increase context window to 18,000 chars for richer grounding
           const truncatedText = extractedText.substring(0, 18000);
           
           documentsWithContent.push({
@@ -104,7 +97,7 @@ METADATA:
 - Grade Level: ${doc.gradeLevel || 'Not Set'}
 - SLO Mappings: ${JSON.stringify(doc.sloTags)}
 
-TEXT_CONTENT:
+CONTENT_TEXT_EXTRACT:
 ${doc.extractedText}
 --- END ASSET: ${doc.filename} ---
 `).join('\n\n');
