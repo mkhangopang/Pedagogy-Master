@@ -37,9 +37,31 @@ export async function getSystemPrompt(): Promise<string> {
 }
 
 /**
- * 🔒 ABSOLUTE GROUNDING PROMPT (Document Centered)
- * Forces the AI to identify as a 'Curriculum Asset Intelligence' rather than a general assistant.
+ * 🔒 SPECIALIZED TOOL PROMPT FACTORY
+ * Ensures each tool remains restricted to its core mission.
  */
+function buildSpecializedToolPrompt(toolType: string, userInput: string, documentContext: string): string {
+  const toolMission = {
+    'lesson-plan': "Strictly generate a high-quality pedagogical lesson plan. DO NOT include rubrics, quizzes, or assessments unless they are explicitly part of the instructional flow. Focus on: Hook, Input, Guided Practice, and Closure.",
+    'assessment': "Strictly generate assessment items (MCQs, CRQs, or Short Answers). DO NOT generate lesson plans or long-form teaching materials. Focus on alignment with SLOs and cognitive rigor.",
+    'rubric': "Strictly generate a grading rubric with clear criteria and level descriptors. DO NOT generate lesson content or quizzes.",
+    'slo-tagger': "Strictly identify and extract Student Learning Objectives (SLOs) and curriculum codes. Map them to Bloom's levels. DO NOT generate lessons or assessments."
+  }[toolType] || "Generate the requested educational artifact.";
+
+  return `
+### SPECIALIZED NEURAL TASK: ${toolType.toUpperCase()}
+MISSION: ${toolMission}
+
+VAULT_CONTEXT:
+${documentContext}
+
+REQUEST:
+${userInput}
+
+RESTRICTION: Deliver ONLY the ${toolType} artifact. No preamble. No auxiliary tools.
+  `;
+}
+
 function buildDocumentCenteredPrompt(
   systemPrompt: string,
   documentContext: string,
@@ -88,55 +110,36 @@ ${userPrompt}
 ASSET_SYNTHESIS:`;
 }
 
-/**
- * 🔴 REJECTION RECOVERY: For models that attempted to use general knowledge.
- */
-function buildStrictRejectionRetry(documentContext: string, userPrompt: string): string {
-  return `
-[STRICT_MODE_RETRY]
-Your previous attempt failed grounding validation. YOU IGNORED THE DOCUMENTS.
-YOU ARE FORBIDDEN FROM USING OUTSIDE KNOWLEDGE OR WEB SEARCH.
-
-ONLY USE THE TEXT BELOW:
-<DOC_CONTENT>
-${documentContext.substring(0, 15000)}
-</DOC_CONTENT>
-
-QUESTION: ${userPrompt}
-
-IF ANSWER IS NOT IN <DOC_CONTENT>, SAY "DATA_UNAVAILABLE: NOT FOUND IN ASSETS".`;
-}
-
 export async function generateAIResponse(
   prompt: string,
   history: any[],
   userId: string,
   systemInstruction?: string,
-  docPart?: any
+  docPart?: any,
+  toolType?: string
 ): Promise<{ text: string; provider: string }> {
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  // 1. Fetch live document context and metadata
   const documents = await getSelectedDocumentsWithContent(userId);
   const docNames = documents.map(d => d.filename);
   const hasDocs = documents.length > 0;
   const docContext = buildDocumentContextString(documents);
   const dbSystemPrompt = await getSystemPrompt();
 
-  const finalInstruction = hasDocs 
-    ? `DOCUMENT_ONLY_MODE_ACTIVE. You are a specialized curriculum analyzer. Disregard general training. Use only provided assets.`
-    : dbSystemPrompt;
+  let finalPrompt = prompt;
+  if (toolType) {
+    finalPrompt = buildSpecializedToolPrompt(toolType, prompt, docContext);
+  } else if (hasDocs) {
+    finalPrompt = buildDocumentCenteredPrompt(dbSystemPrompt + "\n" + (systemInstruction || ''), docContext, history, prompt, docNames);
+  }
 
-  // 2. Wrap request in the Document-Centered Prompt
-  const finalPrompt = hasDocs 
-    ? buildDocumentCenteredPrompt(dbSystemPrompt + "\n" + (systemInstruction || ''), docContext, history, prompt, docNames)
-    : prompt;
+  const finalInstruction = hasDocs 
+    ? `DOCUMENT_ONLY_MODE_ACTIVE. You are a specialized curriculum analyzer. Disregard general training.`
+    : dbSystemPrompt;
 
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
-
-    // Sort PROVIDERS so Gemini is checked first for document tasks
     const sortedProviders = [...PROVIDERS].sort((a, b) => {
       if (hasDocs && a.name === 'gemini') return -1;
       if (hasDocs && b.name === 'gemini') return 1;
@@ -145,38 +148,16 @@ export async function generateAIResponse(
 
     for (const config of sortedProviders.filter(p => p.enabled)) {
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
-
       try {
-        console.log(`[Neural Router] Routing to ${config.name} (Grounded: ${hasDocs})`);
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        
         let response = await callFunction(finalPrompt, history, finalInstruction, hasDocs, docPart);
-
-        // 3. Grounding Validation
-        if (hasDocs) {
-          const lowerRes = response.toLowerCase();
-          const breachSignals = [
-            "don't have access", "can't see the document", "let me search", 
-            "based on my general training", "as an ai model", "search results",
-            "i cannot access the file", "could not read the file"
-          ].some(signal => lowerRes.includes(signal));
-
-          if (breachSignals) {
-            console.warn(`[Neural Router] ${config.name} failed grounding check. Retrying with Strict Mode...`);
-            const retryPrompt = buildStrictRejectionRetry(docContext, prompt);
-            response = await callFunction(retryPrompt, [], "STRICT_DOCUMENT_GROUNDING: Use provided text only.", true);
-          }
-        }
-
         rateLimiter.trackRequest(config.name);
         responseCache.set(prompt, history, response, config.name);
         return { text: response, provider: config.name };
       } catch (e: any) {
-        console.error(`[Neural Router] Node failure (${config.name}):`, e.message);
         lastError = e;
       }
     }
-
     throw lastError || new Error("The AI synthesis grid is currently disconnected.");
   });
 }

@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Target, FileText, CheckCircle2, Loader2, Sparkles, HelpCircle, Save } from 'lucide-react';
+import { Target, FileText, CheckCircle2, Loader2, Sparkles, HelpCircle, Save, RefreshCcw } from 'lucide-react';
 import { Assessment, Question, AssessmentOptions } from '../../lib/pedagogy/assessment-generator';
 
 interface AssessmentGeneratorProps {
@@ -66,6 +66,7 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
                   className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold outline-none"
                 >
                   <option value="MCQ">MCQ Only</option>
+                  <option value="CRQ">CRQ (Constructed Response)</option>
                   <option value="Short Answer">Short Answer</option>
                   <option value="Mixed">Mixed Modes</option>
                 </select>
@@ -122,7 +123,7 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
                     </span>
                   </div>
                   
-                  {q.options && (
+                  {q.options && q.options.length > 0 && (
                     <div className="grid grid-cols-1 gap-2 pl-4">
                       {q.options.map((opt, i) => (
                         <div key={i} className={`text-xs p-2 rounded-xl border ${
@@ -136,13 +137,29 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
                     </div>
                   )}
 
+                  {!q.options && (
+                    <div className="pl-4 border-l-2 border-emerald-500/30">
+                       <p className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Sample Response:</p>
+                       <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 italic">{q.correctAnswer}</p>
+                    </div>
+                  )}
+
                   <details className="group mt-2">
                     <summary className="text-[10px] font-black uppercase tracking-widest text-indigo-400 cursor-pointer hover:text-indigo-500 flex items-center gap-1">
-                      <HelpCircle size={10} /> Explanation
+                      <HelpCircle size={10} /> {q.rubricCriteria ? 'Scoring Criteria' : 'Explanation'}
                     </summary>
-                    <p className="mt-2 text-xs text-slate-500 dark:text-slate-400 italic leading-relaxed pl-2 border-l-2 border-indigo-500/30">
+                    <div className="mt-2 text-xs text-slate-500 dark:text-slate-400 italic leading-relaxed pl-2 border-l-2 border-indigo-500/30">
                       {q.explanation}
-                    </p>
+                      {q.rubricCriteria && (
+                        <ul className="mt-2 space-y-1">
+                          {q.rubricCriteria.map((c, i) => (
+                            <li key={i} className="flex items-center gap-2">
+                              <div className="w-1 h-1 bg-indigo-400 rounded-full" /> {c}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   </details>
                 </div>
               ))}
@@ -157,5 +174,3 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
     </div>
   );
 };
-
-import { RefreshCcw } from 'lucide-react';

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -47,7 +48,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Curriculum Docs', icon: FileText },
     { id: 'chat', label: 'AI Tutor Chat', icon: MessageSquare },
-    { id: 'tools', label: 'Gen Tools', icon: Wrench },
+    { id: 'tools', label: 'Tools', icon: Wrench },
     { id: 'pricing', label: 'Pricing Tiers', icon: CreditCard },
   ];
 

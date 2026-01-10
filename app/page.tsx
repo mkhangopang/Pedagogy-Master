@@ -82,15 +82,20 @@ export default function App() {
       
       let activeProfile: UserProfile;
 
+      // STRICT ROLE ENFORCEMENT: Only ADMIN_EMAILS get enterprise/admin by default
+      const defaultRole = isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER;
+      const defaultPlan = isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE;
+      const defaultLimit = isSystemAdmin ? 999999 : 30;
+
       if (!profile) {
         activeProfile = {
           id: userId,
           name: email?.split('@')[0] || 'Educator',
           email: email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
+          role: defaultRole,
+          plan: defaultPlan,
           queriesUsed: 0,
-          queriesLimit: isSystemAdmin ? 999999 : 30,
+          queriesLimit: defaultLimit,
           generationCount: 0,
           successRate: 0,
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
@@ -106,14 +111,17 @@ export default function App() {
           queries_limit: activeProfile.queriesLimit
         }]);
       } else {
+        // Correct existing profiles if they aren't admins but somehow have enterprise access
+        const needsCorrection = !isSystemAdmin && (profile.plan === SubscriptionPlan.ENTERPRISE || profile.role === UserRole.APP_ADMIN);
+        
         activeProfile = {
           id: profile.id,
           name: profile.name || 'Educator',
           email: profile.email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole),
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan),
+          role: isSystemAdmin ? UserRole.APP_ADMIN : (needsCorrection ? UserRole.TEACHER : profile.role as UserRole),
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (needsCorrection ? SubscriptionPlan.FREE : profile.plan as SubscriptionPlan),
           queriesUsed: profile.queries_used || 0,
-          queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
+          queriesLimit: isSystemAdmin ? 999999 : (needsCorrection ? 30 : profile.queries_limit || 30),
           gradeLevel: profile.grade_level || 'High School',
           subjectArea: profile.subject_area || 'General',
           teachingStyle: profile.teaching_style || 'balanced',
@@ -122,6 +130,14 @@ export default function App() {
           successRate: profile.success_rate || 0,
           editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         };
+
+        if (needsCorrection) {
+          await supabase.from('profiles').update({
+            role: activeProfile.role,
+            plan: activeProfile.plan,
+            queries_limit: activeProfile.queriesLimit
+          }).eq('id', userId);
+        }
       }
       
       setUserProfile(activeProfile);
@@ -318,7 +334,7 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <ProviderStatusBar />
+        {userProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
             <Menu size={24} />
