@@ -8,9 +8,9 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
-  // Exclusively use process.env.API_KEY as per instructions
-  const geminiKey = process.env.API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing (Verify process.env.API_KEY)');
+  // Check for both API_KEY and GEMINI_API_KEY for maximum compatibility
+  const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+  if (!geminiKey) throw new Error('Gemini API Key missing (Verify process.env.API_KEY or process.env.GEMINI_API_KEY)');
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
