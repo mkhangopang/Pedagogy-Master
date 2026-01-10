@@ -12,22 +12,22 @@ function parseAIError(errorData: any): string {
   
   if (lowerMsg.includes('429') || lowerMsg.includes('resource_exhausted') || lowerMsg.includes('saturated')) {
     globalCooldownUntil = Date.now() + 15000; // 15s lock
-    return "Neural Grid Saturated: All processing nodes are busy. This usually happens during high-traffic academic hours. Please wait 15 seconds.";
+    return "Neural Grid Saturated: All processing nodes are busy. This usually happens during peak academic hours. Please wait 15 seconds.";
   }
   
   if (lowerMsg.includes('timeout') || lowerMsg.includes('link lost') || lowerMsg.includes('deadline')) {
-    return "Handshake Timeout: The synthesis node took too long to analyze the document. Retrying often switches to a faster node.";
+    return "Handshake Interrupted: The synthesis node took too long to analyze the document. Retrying often switches to a faster node automatically.";
   }
 
   if (lowerMsg.includes('disconnected') || lowerMsg.includes('exhausted')) {
-    return "Grid Offline: All available AI nodes are currently disconnected. This may be due to regional network maintenance. Please try again in a few minutes.";
+    return "Grid Offline: All available AI nodes are currently disconnected or at capacity. Please try again in a few minutes.";
   }
 
   if (lowerMsg.includes('auth') || lowerMsg.includes('unauthorized')) {
-    return "Neural Security Violation: Your session has expired. Please refresh the page and sign in again.";
+    return "Security Violation: Your session has expired. Please sign in again.";
   }
 
-  return msg || "Synthesis interrupted by cloud gateway. Please retry your request.";
+  return msg || "Synthesis interrupted by cloud gateway. Please retry.";
 }
 
 export const geminiService = {
@@ -92,7 +92,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: ${parseAIError("The synthesis gateway is temporarily unreachable. Check your internet connection.")}`;
+      yield `AI Alert: ${parseAIError("The synthesis gateway is temporarily unreachable. Try again.")}`;
     }
   },
 
@@ -147,7 +147,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: ${parseAIError("Heavy curriculum analysis caused a timeout. Please try a shorter request.")}`;
+      yield `AI Alert: ${parseAIError("Heavy curriculum analysis caused a timeout. Try a shorter segment.")}`;
     }
   }
 };

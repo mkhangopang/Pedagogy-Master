@@ -16,13 +16,13 @@ export async function callGemini(
   
   const finalSystem = hasDocuments 
     ? `STRICT_CURRICULUM_ANALYZER: Ground your responses EXCLUSIVELY in the provided <ASSET_VAULT>. 
-       Do not use general training or search. If content is missing, output: DATA_UNAVAILABLE.
+       Do not use general training. If data is missing from vault, say DATA_UNAVAILABLE.
        Formatting: Numbered headers (1., 1.1). NO BOLD HEADINGS.`
     : systemInstruction;
 
   const contents: any[] = [];
   
-  // History mapping
+  // Minimal history for edge speed
   history.slice(-3).forEach(h => {
     contents.push({
       role: h.role === 'user' ? 'user' : 'model',
@@ -31,7 +31,6 @@ export async function callGemini(
   });
 
   const currentParts: any[] = [];
-  // Add multimodal document part if provided
   if (docPart) {
     currentParts.push(docPart);
   }
@@ -47,7 +46,7 @@ export async function callGemini(
       temperature: hasDocuments ? 0.0 : 0.7,
       topK: 1,
       topP: 1,
-      thinkingConfig: { thinkingBudget: 0 } // High-speed mode
+      thinkingConfig: { thinkingBudget: 0 } // High-speed synthesis mode
     }
   });
 

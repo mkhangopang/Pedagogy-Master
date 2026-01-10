@@ -34,7 +34,7 @@ const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * Adaptive timeout wrapper to prevent a single node from hanging the entire gateway.
+ * Executes a function with a specific timeout to prevent blocking the whole gateway.
  */
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, providerName: string): Promise<T> {
   let timeoutHandle: any;
@@ -56,8 +56,8 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, providerNa
 
 /**
  * NEURAL EXTRACTION CHAIN:
- * Gemini acts as the visual/text extraction layer for complex curriculum files.
- * This result is shared with other reasoning models like DeepSeek.
+ * Gemini processes the binary file to extract text for other providers.
+ * This is now non-blocking for the global timeout.
  */
 async function ensureDocumentText(
   documents: DocumentContent[], 
@@ -70,10 +70,10 @@ async function ensureDocumentText(
 
   try {
     const extractionPrompt = "MANDATORY: Extract the full raw text from this document. Respond ONLY with the extracted text. No commentary.";
-    // Extraction is a heavy task, we give it a 20s window.
+    // Extraction timeout is aggressive (12s) to avoid dragging down the response.
     const extractedText = await withTimeout<string>(
       callGemini(extractionPrompt, [], "SYSTEM: RAW_TEXT_EXTRACTOR", true, docPart),
-      20000,
+      12000,
       'gemini-extractor'
     );
     
@@ -86,17 +86,16 @@ async function ensureDocumentText(
       needsExtraction[0].extractedText = extractedText;
     }
   } catch (e) {
-    console.warn("[Neural Chain] Extraction failed, using existing metadata for grounding.", e);
+    console.warn("[Neural Chain] Extraction node busy or failed. Falling back to metadata-only grounding.");
   }
 
   return documents;
 }
 
-function selectOptimalProviderOrder(hasDocs: boolean, hasDocPart: boolean): string[] {
-  // If we have a raw file part, Gemini MUST be tried first as it's the multimodal specialist.
+function selectOptimalProviderOrder(hasDocPart: boolean): string[] {
+  // If we have a direct file part, Gemini MUST be tried first.
   if (hasDocPart) return ['gemini', 'deepseek', 'sambanova', 'hyperbolic'];
-  if (hasDocs) return ['deepseek', 'sambanova', 'gemini', 'groq'];
-  return ['cerebras', 'hyperbolic', 'groq', 'deepseek', 'gemini'];
+  return ['deepseek', 'sambanova', 'cerebras', 'hyperbolic', 'groq'];
 }
 
 function buildNuclearPrompt(
@@ -141,15 +140,6 @@ function wasDocumentsIgnored(text: string): boolean {
   );
 }
 
-export function getProviderStatus() {
-  return PROVIDERS.map(config => ({
-    name: config.name,
-    enabled: config.enabled,
-    limits: { rpm: config.rpm, rpd: config.rpd },
-    remaining: rateLimiter.getRemainingRequests(config.name, config)
-  }));
-}
-
 export async function generateAIResponse(
   prompt: string,
   history: any[],
@@ -164,7 +154,7 @@ export async function generateAIResponse(
 
   let documents = await getSelectedDocumentsWithContent(supabase, userId);
   
-  // 1. NEURAL PRE-PROCESSING: Use Gemini to extract text from files for other models.
+  // Chain interaction: Use Gemini to prepare the ground for reasoning models
   if (documents.length > 0 && docPart) {
     documents = await ensureDocumentText(documents, supabase, docPart);
   }
@@ -202,7 +192,10 @@ export async function generateAIResponse(
     let lastError: Error | null = null;
     const startTime = Date.now();
     
-    const optimalOrder = selectOptimalProviderOrder(hasDocs, !!docPart);
+    // Vercel nodejs runtime maxDuration is 60s. We aim to finish by 55s.
+    const GLOBAL_MAX_MS = 55000;
+    
+    const optimalOrder = selectOptimalProviderOrder(!!docPart);
     const sortedProviders = [...PROVIDERS]
       .filter(p => p.enabled)
       .sort((a, b) => {
@@ -214,16 +207,14 @@ export async function generateAIResponse(
         return indexA - indexB;
       });
 
-    // Vercel/Gateway limit is 60s. We aim to return within 55s.
-    const GLOBAL_MAX_DURATION = 55000;
-
     for (const config of sortedProviders) {
       const elapsed = Date.now() - startTime;
-      if (elapsed > GLOBAL_MAX_DURATION) break;
+      if (elapsed > GLOBAL_MAX_MS) break;
 
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
 
       try {
+        console.log(`[Neural Router] Attempting synthesis with node: ${config.name}`);
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         
         const callArgs = [finalPrompt, history, finalInstruction, hasDocs];
@@ -231,22 +222,22 @@ export async function generateAIResponse(
           callArgs.push(docPart);
         }
         
-        // Adaptive timeout: give more time to the first provider, less to fallbacks
-        const nodeTimeout = Math.min(25000, GLOBAL_MAX_DURATION - (Date.now() - startTime));
+        // Per-provider timeout to allow fallback if one node is slow
+        // We give each node 15s to 20s.
+        const providerTimeout = Math.min(20000, GLOBAL_MAX_MS - (Date.now() - startTime));
 
         let response = await withTimeout<string>(
           (callFunction as any)(...callArgs),
-          nodeTimeout,
+          providerTimeout,
           config.name
         );
         
-        // Verify grounding success
         if (hasDocs && wasDocumentsIgnored(response)) {
-          console.warn(`[Node: ${config.name}] Grounding failure. Retrying with explicit boost...`);
-          const strictPrompt = `🔴 CRITICAL: YOU MUST USE THE DATA PROVIDED IN THE ASSET VAULT. 🔴\n\n${finalPrompt}`;
+          console.warn(`[Node: ${config.name}] Grounding failure detected. Attempting strict retry...`);
+          const strictPrompt = `🔴 STICK TO THE ASSET_VAULT 🔴\n\n${finalPrompt}`;
           response = await withTimeout<string>(
-            (callFunction as any)(strictPrompt, history, `STRICT_GROUNDING_ACTIVE.`, hasDocs),
-            nodeTimeout,
+            (callFunction as any)(strictPrompt, history, `STRICT_GROUNDING_ONLY.`, hasDocs),
+            providerTimeout,
             `${config.name}-retry`
           );
         }
@@ -255,11 +246,20 @@ export async function generateAIResponse(
         responseCache.set(prompt, history, response, config.name);
         return { text: response, provider: config.name };
       } catch (e: any) {
-        console.error(`[Synthesis Grid] Node ${config.name} failed:`, e.message);
+        console.error(`[Neural Router] Node ${config.name} failure:`, e.message);
         lastError = e;
       }
     }
     
-    throw lastError || new Error("The synthesis grid is currently disconnected or exhausted.");
+    throw lastError || new Error("The synthesis grid is currently disconnected or exhausted. Try a shorter request.");
   });
+}
+
+export function getProviderStatus() {
+  return PROVIDERS.map(config => ({
+    name: config.name,
+    enabled: config.enabled,
+    limits: { rpm: config.rpm, rpd: config.rpd },
+    remaining: rateLimiter.getRemainingRequests(config.name, config)
+  }));
 }

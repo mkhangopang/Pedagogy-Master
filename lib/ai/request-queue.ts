@@ -10,9 +10,9 @@ class RequestQueue {
     resolve: (value: any) => void;
     reject: (error: any) => void;
   }> = [];
-  private running = 0;
-  private readonly MAX_CONCURRENT = 5; // Allow 5 concurrent requests
-  private readonly MIN_DELAY = 100; // Minimal delay between starts
+  private activeCount = 0;
+  private readonly MAX_CONCURRENT = 5;
+  private readonly MIN_START_DELAY = 150;
 
   async add<T>(fn: () => Promise<T>): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -22,15 +22,15 @@ class RequestQueue {
   }
 
   private async process(): Promise<void> {
-    if (this.running >= this.MAX_CONCURRENT || this.queue.length === 0) {
+    if (this.activeCount >= this.MAX_CONCURRENT || this.queue.length === 0) {
       return;
     }
 
-    this.running++;
+    this.activeCount++;
     const { fn, resolve, reject } = this.queue.shift()!;
 
-    // Start next in queue after a tiny delay
-    setTimeout(() => this.process(), this.MIN_DELAY);
+    // Stagger starts slightly to prevent burst errors on edge
+    setTimeout(() => this.process(), this.MIN_START_DELAY);
 
     try {
       const result = await fn();
@@ -38,15 +38,19 @@ class RequestQueue {
     } catch (error) {
       reject(error);
     } finally {
-      this.running--;
+      this.activeCount--;
       this.process();
     }
+  }
+
+  getQueueLength(): number {
+    return this.queue.length;
   }
 
   getStats() {
     return {
       queued: this.queue.length,
-      running: this.running,
+      active: this.activeCount,
       capacity: this.MAX_CONCURRENT
     };
   }
