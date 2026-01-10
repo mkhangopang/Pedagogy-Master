@@ -3,27 +3,44 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { callGroq } from './providers/groq';
 import { callOpenRouter } from './providers/openrouter';
 import { callGemini } from './providers/gemini';
+import { callDeepSeek } from './providers/deepseek';
+import { callCerebras } from './providers/cerebras';
+import { callSambaNova } from './providers/sambanova';
+import { callHyperbolic } from './providers/hyperbolic';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { responseCache } from './response-cache';
 import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
-import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE, STRICT_SYSTEM_INSTRUCTION } from '../../constants';
+import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE, STRICT_SYSTEM_INSTRUCTION, APP_NAME } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
+  // TIER 1: UNLIMITED FREE (High RPM)
+  { name: 'deepseek', rpm: 58, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
+  { name: 'cerebras', rpm: 118, rpd: 999999, enabled: !!process.env.CEREBRAS_API_KEY },
+  { name: 'sambanova', rpm: 98, rpd: 999999, enabled: !!process.env.SAMBANOVA_API_KEY },
+  { name: 'hyperbolic', rpm: 48, rpd: 999999, enabled: !!process.env.HYPERBOLIC_API_KEY },
+  
+  // TIER 2: HIGH LIMITS (Reliable)
+  { name: 'groq', rpm: 28, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
+  { name: 'openrouter', rpm: 50, rpd: 200, enabled: !!process.env.OPENROUTER_API_KEY },
+  
+  // TIER 3: FALLBACK
   { 
     name: 'gemini', 
-    rpm: 15, 
-    rpd: 1500, 
+    rpm: 13, 
+    rpd: 1400, 
     enabled: !!(process.env.API_KEY || process.env.GEMINI_API_KEY) 
   },
-  { name: 'openrouter', rpm: 50, rpd: 500, enabled: !!process.env.OPENROUTER_API_KEY },
-  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
 ];
 
 const PROVIDER_FUNCTIONS = {
+  deepseek: callDeepSeek,
+  cerebras: callCerebras,
+  sambanova: callSambaNova,
+  hyperbolic: callHyperbolic,
+  groq: callGroq,
   openrouter: callOpenRouter,
   gemini: callGemini,
-  groq: callGroq,
 };
 
 export async function getSystemPrompt(supabase: SupabaseClient): Promise<string> {
@@ -42,9 +59,21 @@ export async function getSystemPrompt(supabase: SupabaseClient): Promise<string>
 }
 
 /**
- * 🔥 NUCLEAR GROUNDING PROMPT
- * Uses centralized templates from constants.ts to ensure permanent core functionality.
+ * Prioritize providers based on workload type and prompt length.
  */
+function selectOptimalProviderOrder(hasDocuments: boolean, promptLength: number): string[] {
+  if (hasDocuments && promptLength > 5000) {
+    // Large documents: Use big context windows
+    return ['sambanova', 'deepseek', 'gemini', 'groq'];
+  }
+  if (hasDocuments) {
+    // Normal documents: Use accurate analyzers
+    return ['deepseek', 'sambanova', 'groq', 'hyperbolic', 'cerebras'];
+  }
+  // General chat: Use fastest available
+  return ['cerebras', 'hyperbolic', 'groq', 'deepseek', 'openrouter'];
+}
+
 function buildNuclearPrompt(
   documentContext: string,
   history: any[],
@@ -78,9 +107,6 @@ Synthesize based EXCLUSIVELY on the <ASSET_VAULT> provided above.
 NEURAL_SYNTHESIS:`;
 }
 
-/**
- * Checks if the AI response indicates it ignored the provided documents.
- */
 function wasDocumentsIgnored(text: string): boolean {
   const lower = text.toLowerCase();
   return (
@@ -123,23 +149,30 @@ export async function generateAIResponse(
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
     
-    // Sort providers to prefer Gemini when documents are present (multimodal advantage)
-    const sortedProviders = [...PROVIDERS].sort((a, b) => {
-      if (hasDocs && a.name === 'gemini') return -1;
-      return 0;
-    });
+    // Smart Load Balancing
+    const optimalOrder = selectOptimalProviderOrder(hasDocs, finalPrompt.length);
+    const sortedProviders = [...PROVIDERS]
+      .filter(p => p.enabled)
+      .sort((a, b) => {
+        const indexA = optimalOrder.indexOf(a.name);
+        const indexB = optimalOrder.indexOf(b.name);
+        if (indexA === -1 && indexB === -1) return 0;
+        if (indexA === -1) return 1;
+        if (indexB === -1) return -1;
+        return indexA - indexB;
+      });
 
-    for (const config of sortedProviders.filter(p => p.enabled)) {
+    for (const config of sortedProviders) {
       if (!rateLimiter.canMakeRequest(config.name, config)) continue;
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        let response = await callFunction(finalPrompt, history, finalInstruction, hasDocs, docPart);
+        let response = await (callFunction as any)(finalPrompt, history, finalInstruction, hasDocs, docPart);
         
-        // --- POST-SYNTHESIS VALIDATION & RETRY ---
+        // Validation & Retry
         if (hasDocs && wasDocumentsIgnored(response)) {
           console.warn(`[Node: ${config.name}] Grounding failure. Attempting strict retry...`);
           const strictPrompt = `🔴 STRICT OVERRIDE 🔴\nYOU MUST USE THE <ASSET_VAULT> PROVIDED PREVIOUSLY. DO NOT USE EXTERNAL DATA.\n\n${finalPrompt}`;
-          response = await callFunction(strictPrompt, history, `STRICT_MODE_ACTIVE: ZERO_EXTERNAL_KNOWLEDGE.`, hasDocs, docPart);
+          response = await (callFunction as any)(strictPrompt, history, `STRICT_MODE_ACTIVE: ZERO_EXTERNAL_KNOWLEDGE.`, hasDocs, docPart);
         }
 
         rateLimiter.trackRequest(config.name);
