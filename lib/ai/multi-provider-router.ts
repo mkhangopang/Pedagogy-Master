@@ -10,21 +10,16 @@ import { callHyperbolic } from './providers/hyperbolic';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { responseCache } from './response-cache';
 import { requestQueue } from './request-queue';
-import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
+import { getSelectedDocumentsWithContent, buildDocumentContextString, DocumentContent } from '../documents/document-fetcher';
 import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE, STRICT_SYSTEM_INSTRUCTION, APP_NAME } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
-  // TIER 1: UNLIMITED FREE (High RPM)
   { name: 'deepseek', rpm: 58, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
   { name: 'cerebras', rpm: 118, rpd: 999999, enabled: !!process.env.CEREBRAS_API_KEY },
   { name: 'sambanova', rpm: 98, rpd: 999999, enabled: !!process.env.SAMBANOVA_API_KEY },
   { name: 'hyperbolic', rpm: 48, rpd: 999999, enabled: !!process.env.HYPERBOLIC_API_KEY },
-  
-  // TIER 2: HIGH LIMITS (Reliable)
   { name: 'groq', rpm: 28, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
   { name: 'openrouter', rpm: 50, rpd: 200, enabled: !!process.env.OPENROUTER_API_KEY },
-  
-  // TIER 3: FALLBACK
   { 
     name: 'gemini', 
     rpm: 13, 
@@ -43,35 +38,48 @@ const PROVIDER_FUNCTIONS = {
   gemini: callGemini,
 };
 
-export async function getSystemPrompt(supabase: SupabaseClient): Promise<string> {
+/**
+ * NEURAL EXTRACTION CHAIN:
+ * If a document has no text (PDF/Image), use Gemini to extract it so other models can see it.
+ */
+async function ensureDocumentText(
+  documents: DocumentContent[], 
+  supabase: SupabaseClient, 
+  docPart: any
+): Promise<DocumentContent[]> {
+  const needsExtraction = documents.filter(d => (!d.extractedText || d.extractedText.length < 100) && d.mimeType.includes('pdf'));
+  
+  if (needsExtraction.length === 0 || !docPart) return documents;
+
+  console.log(`[Neural Chain] Triggering Gemini text extraction for: ${needsExtraction[0].filename}`);
+  
   try {
-    const { data } = await supabase
-      .from('neural_brain')
-      .select('master_prompt')
-      .eq('is_active', true)
-      .order('version', { ascending: false })
-      .limit(1)
-      .single();
-    return data?.master_prompt || DEFAULT_MASTER_PROMPT;
+    // Use Gemini Flash for ultra-fast extraction
+    const extractionPrompt = "MANDATORY: Extract the full raw text from this curriculum document. Do not summarize. Just output the raw text content exactly as it appears. If it is a scan, use OCR.";
+    const extractedText = await callGemini(extractionPrompt, [], "SYSTEM: RAW_TEXT_EXTRACTOR", true, docPart);
+    
+    if (extractedText && extractedText.length > 100) {
+      // Update Supabase so this is cached permanently
+      const docId = needsExtraction[0].id;
+      await supabase.from('documents').update({ 
+        extracted_text: extractedText,
+        word_count: extractedText.split(/\s+/).length
+      }).eq('id', docId);
+
+      // Update local object for the current request
+      needsExtraction[0].extractedText = extractedText;
+    }
   } catch (e) {
-    return DEFAULT_MASTER_PROMPT;
+    console.error("[Neural Chain] Extraction failed:", e);
   }
+
+  return documents;
 }
 
-/**
- * Prioritize providers based on workload type and prompt length.
- */
 function selectOptimalProviderOrder(hasDocuments: boolean, promptLength: number): string[] {
-  if (hasDocuments && promptLength > 5000) {
-    // Large documents: Use big context windows
-    return ['sambanova', 'deepseek', 'gemini', 'groq'];
-  }
-  if (hasDocuments) {
-    // Normal documents: Use accurate analyzers
-    return ['deepseek', 'sambanova', 'groq', 'hyperbolic', 'cerebras'];
-  }
-  // General chat: Use fastest available
-  return ['cerebras', 'hyperbolic', 'groq', 'deepseek', 'openrouter'];
+  if (hasDocuments && promptLength > 10000) return ['sambanova', 'deepseek', 'gemini'];
+  if (hasDocuments) return ['deepseek', 'sambanova', 'groq', 'hyperbolic'];
+  return ['cerebras', 'hyperbolic', 'groq', 'deepseek'];
 }
 
 function buildNuclearPrompt(
@@ -113,8 +121,7 @@ function wasDocumentsIgnored(text: string): boolean {
     lower.includes("don't have access") || 
     lower.includes("cannot read the documents") ||
     lower.includes("no documents were provided") ||
-    lower.includes("let me search the web") ||
-    lower.includes("i don't have information about your specific curriculum")
+    lower.includes("let me search the web")
   );
 }
 
@@ -130,11 +137,31 @@ export async function generateAIResponse(
   const cached = responseCache.get(prompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  const documents = await getSelectedDocumentsWithContent(supabase, userId);
+  let documents = await getSelectedDocumentsWithContent(supabase, userId);
+  
+  // TRIGGER NEURAL EXTRACTION IF NEEDED (Inter-model interaction)
+  // Gemini extracts content from storage (R2/Supabase) so DeepSeek can "see" it.
+  if (documents.length > 0 && docPart) {
+    documents = await ensureDocumentText(documents, supabase, docPart);
+  }
+
   const docNames = documents.map(d => d.filename);
   const hasDocs = documents.length > 0;
   const docContext = buildDocumentContextString(documents);
-  const dbSystemPrompt = await getSystemPrompt(supabase);
+  const dbSystemPrompt = await (async () => {
+    try {
+      const { data } = await supabase
+        .from('neural_brain')
+        .select('master_prompt')
+        .eq('is_active', true)
+        .order('version', { ascending: false })
+        .limit(1)
+        .single();
+      return data?.master_prompt || DEFAULT_MASTER_PROMPT;
+    } catch (e) {
+      return DEFAULT_MASTER_PROMPT;
+    }
+  })();
 
   const baseInstruction = `${dbSystemPrompt}\n${adaptiveContext || ''}\nRESTRICTION: 1. and 1.1. for headers. NO BOLD HEADINGS. BE CONCISE.`;
 
@@ -149,7 +176,6 @@ export async function generateAIResponse(
   return await requestQueue.add(async () => {
     let lastError: Error | null = null;
     
-    // Smart Load Balancing
     const optimalOrder = selectOptimalProviderOrder(hasDocs, finalPrompt.length);
     const sortedProviders = [...PROVIDERS]
       .filter(p => p.enabled)
@@ -168,7 +194,6 @@ export async function generateAIResponse(
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         let response = await (callFunction as any)(finalPrompt, history, finalInstruction, hasDocs, docPart);
         
-        // Validation & Retry
         if (hasDocs && wasDocumentsIgnored(response)) {
           console.warn(`[Node: ${config.name}] Grounding failure. Attempting strict retry...`);
           const strictPrompt = `🔴 STRICT OVERRIDE 🔴\nYOU MUST USE THE <ASSET_VAULT> PROVIDED PREVIOUSLY. DO NOT USE EXTERNAL DATA.\n\n${finalPrompt}`;

@@ -8,26 +8,31 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docPart?: any
 ): Promise<string> {
-  // Check for both API_KEY and GEMINI_API_KEY for maximum compatibility
   const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
   if (!geminiKey) throw new Error('Gemini API Key missing (Verify process.env.API_KEY or process.env.GEMINI_API_KEY)');
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
-  // High-priority grounding instructions
+  // Enhanced dynamic instructions
   const finalSystem = hasDocuments 
-    ? `STRICT_CURRICULUM_ANALYZER_ACTIVE: Use ONLY the <ASSET_VAULT> provided in the user message. 
-       Ignore all general training. Do not search the web. 
-       If information is not in the vault, reply: "DATA_UNAVAILABLE: [topic] not found in uploaded curriculum documents."
-       Formatting: Use numbered headers (1., 1.1). DO NOT USE BOLD HEADINGS.`
+    ? `STRICT_CURRICULUM_ANALYZER_ACTIVE: You are grounded in the <ASSET_VAULT>. 
+       Use ONLY provided curriculum text or multimodal input. 
+       Ignore general knowledge. If information is missing, say DATA_UNAVAILABLE.
+       Formatting: Numbered headers (1., 1.1). NO BOLD HEADINGS.`
     : systemInstruction;
 
-  const contents: any[] = history.slice(-3).map(h => ({
-    role: h.role === 'user' ? 'user' : 'model',
-    parts: [{ text: h.content }]
-  }));
+  const contents: any[] = [];
+  
+  // Map history to standard Gemini parts
+  history.slice(-3).forEach(h => {
+    contents.push({
+      role: h.role === 'user' ? 'user' : 'model',
+      parts: [{ text: h.content }]
+    });
+  });
 
   const currentParts: any[] = [];
+  // Native multimodal support: Gemini parses the PDF/Image bytes directly if available
   if (docPart) {
     currentParts.push(docPart);
   }
