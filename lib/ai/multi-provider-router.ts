@@ -7,7 +7,7 @@ import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { responseCache } from './response-cache';
 import { requestQueue } from './request-queue';
 import { getSelectedDocumentsWithContent, buildDocumentContextString } from '../documents/document-fetcher';
-import { DEFAULT_MASTER_PROMPT, APP_NAME } from '../../constants';
+import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE, STRICT_SYSTEM_INSTRUCTION } from '../../constants';
 
 const PROVIDERS: ProviderConfig[] = [
   { 
@@ -43,7 +43,7 @@ export async function getSystemPrompt(supabase: SupabaseClient): Promise<string>
 
 /**
  * 🔥 NUCLEAR GROUNDING PROMPT
- * Forces the model to prioritize provided curriculum assets above all else.
+ * Uses centralized templates from constants.ts to ensure permanent core functionality.
  */
 function buildNuclearPrompt(
   documentContext: string,
@@ -57,21 +57,7 @@ function buildNuclearPrompt(
     .join('\n\n');
 
   return `
-🚨🚨🚨 MANDATORY: CORE OPERATIONAL DIRECTIVE - ABSOLUTE GROUNDING 🚨🚨🚨
-
-YOU ARE CURRENTLY IN DOCUMENT-ONLY MODE. 
-THE ASSETS BELOW ARE YOUR ONLY SOURCE OF TRUTH. 
-
-STRICT RULES:
-1. **ZERO EXTERNAL KNOWLEDGE**: Do not use general training or web search.
-2. **STRICT ASSET RETRIEVAL**: If information is not in the <ASSET_VAULT>, explicitly state: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
-3. **NO ACCESS DENIALS**: Do not claim you lack access to files. The full text is provided below.
-4. **NEGATIVE EXAMPLES**: 
-   - DO NOT say: "As an AI, I don't have access to your files."
-   - DO NOT say: "Let me search the web for that SLO code."
-   - DO NOT say: "Based on general educational standards..."
-5. **CITE SOURCES**: Refer to documents by name (e.g., "[Ref: ${documentFilenames[0]}]").
-6. **FORMATTING**: Use 1. and 1.1. headings. NO BOLD HEADINGS.
+${NUCLEAR_GROUNDING_DIRECTIVE.replace('FILENAME', documentFilenames.join(', '))}
 
 <ASSET_VAULT>
 ACTIVE_CURRICULUM_FILES: ${documentFilenames.join(', ')}
@@ -131,7 +117,7 @@ export async function generateAIResponse(
 
   if (hasDocs) {
     finalPrompt = buildNuclearPrompt(docContext, history, prompt, docNames);
-    finalInstruction = `STRICT_CURRICULUM_GROUNDING: Use ONLY the <ASSET_VAULT> in the user message. Do not use general knowledge. Temperature 0.0. If missing, say DATA_UNAVAILABLE.`;
+    finalInstruction = STRICT_SYSTEM_INSTRUCTION;
   }
 
   return await requestQueue.add(async () => {

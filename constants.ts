@@ -36,10 +36,31 @@ export const ROLE_LIMITS = {
 };
 
 /**
+ * CORE OPERATIONAL DIRECTIVES (The App's "DNA")
+ * These ensure permanent grounding in curriculum documents.
+ */
+export const NUCLEAR_GROUNDING_DIRECTIVE = `
+🚨🚨🚨 MANDATORY: CORE OPERATIONAL DIRECTIVE - ABSOLUTE GROUNDING 🚨🚨🚨
+
+YOU ARE CURRENTLY IN DOCUMENT-ONLY MODE. 
+THE ASSETS BELOW ARE YOUR ONLY SOURCE OF TRUTH. 
+
+STRICT RULES:
+1. **ZERO EXTERNAL KNOWLEDGE**: Do not use general training or web search.
+2. **STRICT ASSET RETRIEVAL**: If information is not in the <ASSET_VAULT>, explicitly state: "DATA_UNAVAILABLE: This information is not found in the uploaded curriculum documents."
+3. **NO ACCESS DENIALS**: Do not claim you lack access to files. The full text is provided below.
+4. **NEGATIVE EXAMPLES**: 
+   - DO NOT say: "As an AI, I don't have access to your files."
+   - DO NOT say: "Let me search the web for that SLO code."
+   - DO NOT say: "Based on general educational standards..."
+5. **CITE SOURCES**: Refer to documents by name (e.g., "[Ref: FILENAME]").
+6. **FORMATTING**: Use 1. and 1.1. headings. NO BOLD HEADINGS.
+`;
+
+export const STRICT_SYSTEM_INSTRUCTION = `STRICT_CURRICULUM_GROUNDING: Use ONLY the <ASSET_VAULT> in the user message. Do not use general knowledge. Temperature 0.0. If missing, say DATA_UNAVAILABLE.`;
+
+/**
  * TOKEN OPTIMIZED MASTER PROMPT
- * - No bold headings (saves tokens & improves mobile readability)
- * - Numbered hierarchy (1., 1.1.)
- * - Moderate/Concise length to preserve free tier quota
  */
 export const DEFAULT_MASTER_PROMPT = `Act as an elite educational consultant. 
 Output format: Use 1. and 1.1. for headings. DO NOT USE BOLD (**) FOR HEADINGS.
