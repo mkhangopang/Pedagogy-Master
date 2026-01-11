@@ -4,6 +4,7 @@ import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 import { ADMIN_EMAILS } from '../../../../constants';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5-minute timeout for bulk tasks
 
 /**

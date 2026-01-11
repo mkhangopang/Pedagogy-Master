@@ -7,6 +7,7 @@ import { processDocument } from '../../../../lib/documents/document-processor';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {

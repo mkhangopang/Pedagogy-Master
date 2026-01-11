@@ -3,6 +3,7 @@ import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/su
 import { indexDocumentForRAG } from '../../../lib/rag/document-indexer';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /**
  * REINDEX ENDPOINT

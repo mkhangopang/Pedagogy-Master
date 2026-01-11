@@ -1,8 +1,9 @@
-
 import { NextResponse } from 'next/server';
 import { supabase } from '../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * Global Health Monitor

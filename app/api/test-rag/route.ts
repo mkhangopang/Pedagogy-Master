@@ -3,6 +3,7 @@ import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/su
 import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
