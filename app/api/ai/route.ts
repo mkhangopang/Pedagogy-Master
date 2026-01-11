@@ -4,7 +4,7 @@ import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120; // Extended for deep curriculum analysis
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
@@ -18,17 +18,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { task, message, adaptiveContext, history, toolType, userInput, brain } = body;
     
+    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log(`🤖 [AI ROUTE] Task: ${task || 'chat'} | User: ${user.email}`);
+    console.log(`💬 Message: "${message?.substring(0, 100)}..."`);
+
     const supabase = getSupabaseServerClient(token);
-    
-    // Determine the prompt based on task type
     const promptText = task === 'generate-tool' 
-      ? `GENERATE_${toolType.toUpperCase().replace('-', '_')}: ${userInput}`
+      ? `GENERATE_${toolType?.toUpperCase().replace('-', '_')}: ${userInput}`
       : message;
 
-    // We now pass the custom master prompt if available in the brain object
     const customSystem = brain?.masterPrompt;
 
-    const { text, provider } = await generateAIResponse(
+    const { text, provider, metadata } = await generateAIResponse(
       promptText, 
       history || [], 
       user.id, 
@@ -39,17 +40,28 @@ export async function POST(req: NextRequest) {
       customSystem
     );
 
+    console.log(`✅ [AI ROUTE] Synthesis Complete`);
+    console.log(`📡 Provider: ${provider}`);
+    console.log(`📚 RAG Chunks: ${metadata?.chunksUsed || 0}`);
+    if (metadata?.sources && metadata.sources.length > 0) {
+      console.log('📊 Similarity Profile:');
+      metadata.sources.forEach((s: any, i: number) => {
+        console.log(`  - Source ${i+1}: ${(s.similarity * 100).toFixed(1)}% | SLOs: ${s.sloCodes?.join(',')}`);
+      });
+    }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis Node: ${provider}*`));
+        controller.enqueue(encoder.encode(`\n\n---\n*Synthesis Node: ${provider}${metadata?.chunksUsed ? ` | Grounded in ${metadata.chunksUsed} assets` : ''}*`));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error("AI ROUTE ERROR:", error);
+    console.error("❌ [AI ROUTE ERROR]:", error);
     return NextResponse.json({ 
       error: error.message || "Synthesis grid encountered a fatal exception." 
     }, { status: 500 });

@@ -71,7 +71,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.2
+  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.5
 -- MISSION: SEMANTIC CURRICULUM RETRIEVAL (768 DIM)
 
 -- 1. EXTENSION
@@ -83,6 +83,8 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
   document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
   chunk_text TEXT NOT NULL,
   chunk_index INTEGER NOT NULL,
+  section_title TEXT,
+  page_number INTEGER,
   chunk_type TEXT,
   slo_codes TEXT[],
   keywords TEXT[],
@@ -106,6 +108,8 @@ CREATE OR REPLACE FUNCTION hybrid_search_chunks(
 RETURNS TABLE (
   chunk_id UUID,
   chunk_text TEXT,
+  section_title TEXT,
+  page_number INTEGER,
   slo_codes TEXT[],
   combined_score FLOAT
 )
@@ -116,6 +120,8 @@ BEGIN
   SELECT
     id as chunk_id,
     document_chunks.chunk_text,
+    document_chunks.section_title,
+    document_chunks.page_number,
     document_chunks.slo_codes,
     (
       (1 - (document_chunks.embedding <=> query_embedding)) * 0.7 + 

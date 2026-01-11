@@ -17,7 +17,7 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
     .select('*')
     .eq('user_id', userId)
     .eq('is_selected', true)
-    .limit(2); // Reduced limit for token efficiency
+    .limit(2);
 
   if (!selectedDocs || selectedDocs.length === 0) return [];
 
@@ -26,7 +26,14 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
     if (['application/pdf', 'image/jpeg', 'image/png'].includes(doc.mime_type)) {
       try {
         const buffer = await getObjectBuffer(doc.file_path);
-        if (buffer) parts.push({ inlineData: { mimeType: doc.mime_type, data: buffer.toString('base64') } });
+        if (buffer) {
+          parts.push({ 
+            inlineData: { 
+              mimeType: doc.mime_type, 
+              data: buffer.toString('base64') 
+            } 
+          });
+        }
       } catch (e) {
         console.warn(`[Vault] Multimodal skip: ${doc.name}`);
       }
@@ -44,14 +51,14 @@ export async function generateAIResponse(
   overrideDocPart?: any, 
   toolType?: string,
   customSystem?: string
-): Promise<{ text: string; provider: string }> {
+): Promise<{ text: string; provider: string; metadata?: any }> {
   const cached = responseCache.get(userPrompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
-  const preferredProvider = MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'groq';
+  const preferredProvider = MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini';
 
-  // 1. GET SELECTED DOC IDS
+  // 1. IDENTIFY CONTEXT
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name')
@@ -59,56 +66,78 @@ export async function generateAIResponse(
     .eq('is_selected', true);
   const documentIds = selectedDocs?.map(d => d.id) || [];
 
-  // 2. SEMANTIC RETRIEVAL (RAG)
+  // 2. RAG RETRIEVAL
   let retrievedChunks = [];
   if (documentIds.length > 0) {
+    console.log(`[RAG] Querying vault for: ${userPrompt.substring(0, 50)}...`);
     if (queryAnalysis.extractedSLO) {
       retrievedChunks = await retrieveChunksForSLO(queryAnalysis.extractedSLO, documentIds, supabase);
     } else {
-      retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase);
+      retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 6);
     }
   }
 
   const docParts = await fetchMultimodalContext(userId, supabase);
-  const hasDocs = retrievedChunks.length > 0 || docParts.length > 0;
+  const hasRAG = retrievedChunks.length > 0;
+  const hasMultimodal = docParts.length > 0;
   
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 3. CONTEXT ASSEMBLY - Sharpened for strict grounding
-  let ragContext = "";
-  if (retrievedChunks.length > 0) {
-    ragContext = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-    ragContext += "📚 MANDATORY SOURCE MATERIAL: <ASSET_VAULT_SEGMENTS>\n";
-    ragContext += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
-    retrievedChunks.forEach((chunk, i) => {
-      ragContext += `[SEGMENT ${i+1}] (Semantic Relevance: ${(chunk.similarity * 100).toFixed(0)}%)\n${chunk.text}\n\n`;
+  // 3. CONTEXT ASSEMBLY
+  let contextVault = "";
+  if (hasRAG) {
+    contextVault = "# CURRICULUM CONTEXT (Retrieved from selected documents):\n\n";
+    retrievedChunks.forEach((chunk, idx) => {
+      contextVault += `## Source Segment ${idx + 1}\n`;
+      contextVault += `Relevance: ${(chunk.similarity * 100).toFixed(1)}%\n`;
+      if (chunk.sloCodes?.length > 0) contextVault += `Related SLOs: ${chunk.sloCodes.join(', ')}\n`;
+      contextVault += `Content:\n${chunk.text}\n\n---\n\n`;
     });
-    ragContext += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
-    ragContext += "END OF ASSET VAULT\n";
-    ragContext += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
   }
 
   const finalPrompt = `
-${hasDocs ? `🔴 LOCAL_GROUNDING_ACTIVE: Use the provided source segments below.` : '⚠️ GLOBAL_MODE: No curriculum documents selected.'}
+${hasRAG || hasMultimodal ? `🔴 LOCAL_GROUNDING_ACTIVE` : '⚠️ GLOBAL_MODE: No specific curriculum context found.'}
 
-${ragContext}
+${contextVault}
 
----
-TEACHER_QUERY: ${userPrompt}
----
+# USER QUESTION:
+${userPrompt}
+
+# SYSTEM INSTRUCTIONS:
+- You are the Pedagogy Master Neural Brain.
+${hasRAG ? '- USE ONLY the provided curriculum context above to answer.' : '- You do not have specific curriculum segments for this query. Provide general pedagogical guidance but suggest the user select relevant documents.'}
+${hasRAG ? '- CITE your sources using [Source Segment X] notation.' : ''}
+- If the context doesn't contain the answer, say "I don't find that specific information in your current curriculum documents."
+- Highlight any Student Learning Objectives (SLOs) found in the text.
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
-
-STRICT_COMMAND: If information is found in segments, CITE the [SEGMENT X]. If not found, say "I don't find that specific information in your curriculum."
 `;
 
   const finalSystemInstruction = `${SYSTEM_PERSONALITY}\n\n${customSystem || ''}`;
-  const result = await synthesize(finalPrompt, history, hasDocs, docParts, preferredProvider, finalSystemInstruction);
+  
+  const result = await synthesize(
+    finalPrompt, 
+    history, 
+    hasRAG || hasMultimodal, 
+    docParts, 
+    preferredProvider, 
+    finalSystemInstruction
+  );
   
   responseCache.set(userPrompt, history, result.text, result.provider);
-  return result;
+  
+  return {
+    ...result,
+    metadata: {
+      chunksUsed: retrievedChunks.length,
+      sources: retrievedChunks.map(c => ({
+        similarity: c.similarity,
+        sloCodes: c.sloCodes
+      }))
+    }
+  };
 }
 
 export function getProviderStatus() {

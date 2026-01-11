@@ -14,9 +14,9 @@ export async function GET(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
     const url = new URL(req.url);
-    const query = url.searchParams.get('q') || '';
+    const query = url.searchParams.get('q') || 'teaching strategies';
     
-    if (!query) return NextResponse.json({ error: 'Missing query parameter "q"' }, { status: 400 });
+    console.log(`🧪 [TEST-RAG] Diagnostic run for: "${query}"`);
 
     const supabase = getSupabaseServerClient(token);
     
@@ -31,27 +31,35 @@ export async function GET(req: NextRequest) {
 
     if (docIds.length === 0) {
       return NextResponse.json({ 
-        error: 'No documents selected. RAG search cannot proceed.',
-        docs: [] 
+        success: false,
+        error: 'No documents selected in the vault. RAG requires an active curriculum context.',
+        suggestion: 'Go to Library and select at least one document.'
       }, { status: 400 });
     }
 
     const chunks = await retrieveRelevantChunks(query, docIds, supabase, 5);
 
     return NextResponse.json({
+      success: true,
       query,
       timestamp: new Date().toISOString(),
-      documentContext: selectedDocs,
+      activeVault: selectedDocs,
       resultsFound: chunks.length,
       chunks: chunks.map(c => ({
         id: c.id,
         text: c.text.substring(0, 300) + '...',
-        similarity: (c.similarity * 100).toFixed(2) + '%',
-        slos: c.sloCodes
+        similarity: (c.similarity * 100).toFixed(1) + '%',
+        slos: c.sloCodes,
+        section: c.sectionTitle,
+        page: c.pageNumber
       }))
     });
 
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('❌ [TEST-RAG Error]:', error);
+    return NextResponse.json({ 
+      success: false, 
+      error: error.message 
+    }, { status: 500 });
   }
 }

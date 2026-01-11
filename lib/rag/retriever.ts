@@ -6,6 +6,8 @@ export interface RetrievedChunk {
   sloCodes: string[];
   similarity: number;
   id: string;
+  sectionTitle?: string;
+  pageNumber?: number;
 }
 
 /**
@@ -30,7 +32,6 @@ export async function retrieveRelevantChunks(
     const queryEmbedding = await generateEmbedding(query);
 
     // 2. Execute Hybrid Search RPC
-    // We use a slightly lower match threshold (0.6) to allow for broader semantic relevance
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -46,6 +47,8 @@ export async function retrieveRelevantChunks(
     const results = (data || []).map((r: any) => ({
       id: r.chunk_id,
       text: r.chunk_text,
+      sectionTitle: r.section_title,
+      pageNumber: r.page_number,
       sloCodes: r.slo_codes || [],
       similarity: r.combined_score
     }));
@@ -69,7 +72,7 @@ export async function retrieveChunksForSLO(
 ): Promise<RetrievedChunk[]> {
   const { data, error } = await supabase
     .from('document_chunks')
-    .select('id, chunk_text, slo_codes')
+    .select('id, chunk_text, slo_codes, section_title, page_number')
     .contains('slo_codes', [sloCode])
     .in('document_id', documentIds)
     .limit(3);
@@ -82,6 +85,8 @@ export async function retrieveChunksForSLO(
   return (data || []).map(d => ({
     id: d.id,
     text: d.chunk_text,
+    sectionTitle: d.section_title,
+    pageNumber: d.page_number,
     sloCodes: d.slo_codes,
     similarity: 1.0
   }));

@@ -7,31 +7,19 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docParts: any[] = []
 ): Promise<string> {
-  const geminiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!geminiKey) throw new Error('Gemini API Key missing');
+  const geminiKey = process.env.API_KEY;
+  if (!geminiKey) throw new Error('Gemini API Key missing (process.env.API_KEY)');
 
   const ai = new GoogleGenAI({ apiKey: geminiKey });
   
-  // STRICT GROUNDING PROTOCOL
-  // We prioritize the asset vault when documents are present
-  const finalSystem = hasDocuments 
-    ? `### ROLE: CURRICULUM_INTELLIGENCE_NODE
-### MANDATE: STRICT_GROUNDING
-1. You are LOCKED to the provided <ASSET_VAULT_INTELLIGENCE> and <RAW_EXTRACTS>.
-2. Respond based ONLY on the selected curriculum assets. 
-3. If information is not in the vault, state: "DATA_UNAVAILABLE: This objective/topic is not present in your current curriculum library."
-4. DO NOT use external pedagogical training for curriculum-specific lookups.
-5. Formatting: Use 1. and 1.1 headings. NO BOLD HEADINGS.
-6. Reference files by name.
-
-${systemInstruction}`
-    : systemInstruction;
+  // Model name selection per instructions
+  const modelName = 'gemini-3-flash-preview';
 
   const contents: any[] = [];
   
-  // Clean history for token efficiency
-  let lastRole = 'model';
+  // Map history to Google GenAI format
   const processedHistory = history.slice(-6);
+  let lastRole = '';
   
   processedHistory.forEach(h => {
     const role = h.role === 'user' ? 'user' : 'model';
@@ -44,35 +32,40 @@ ${systemInstruction}`
     }
   });
 
-  if (lastRole === 'user') {
-    contents.pop();
+  // Ensure user is the last speaker in contents before sending
+  if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
+    // Merge existing user message with the new prompt
+    const lastUserParts = contents[contents.length - 1].parts;
+    lastUserParts.push({ text: "\n\nNEW_QUERY: " + fullPrompt });
+    
+    // Add multimodal parts if available
+    if (docParts && docParts.length > 0) {
+      docParts.forEach(part => {
+        if (part.inlineData) lastUserParts.unshift(part);
+      });
+    }
+  } else {
+    // New turn
+    const parts: any[] = [];
+    if (docParts && docParts.length > 0) {
+      docParts.forEach(part => {
+        if (part.inlineData) parts.push(part);
+      });
+    }
+    parts.push({ text: fullPrompt });
+    contents.push({ role: 'user', parts });
   }
-
-  const currentParts: any[] = [];
-  
-  // Multimodal Ingestion
-  if (docParts && docParts.length > 0) {
-    docParts.forEach(part => {
-      if (part.inlineData) {
-        currentParts.push(part);
-      }
-    });
-  }
-  
-  currentParts.push({ text: fullPrompt });
-  contents.push({ role: 'user', parts: currentParts });
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview', 
+    model: modelName, 
     contents,
     config: { 
-      systemInstruction: finalSystem, 
-      temperature: hasDocuments ? 0.0 : 0.7, // Zero temperature for strict grounding
-      topK: 1,
-      topP: 1,
-      thinkingConfig: { thinkingBudget: 0 }
+      systemInstruction: systemInstruction, 
+      temperature: hasDocuments ? 0.1 : 0.7,
+      topK: 40,
+      topP: 0.95
     }
   });
 
-  return response.text || "Synthesis node timed out.";
+  return response.text || "Synthesis error: No response text returned.";
 }
