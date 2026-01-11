@@ -5,16 +5,23 @@ import { GoogleGenAI } from "@google/genai";
  * Converts text into a 768-dimensional vector using Gemini.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Embedding node requires API_KEY');
+  // MUST use process.env.API_KEY exclusively
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error('Embedding node requires API_KEY environment variable');
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // Use text-embedding-004 for state-of-the-art semantic representation
+    
+    // Using the simplified content parameter as required by the latest @google/genai SDK
+    // The SDK expects { model, content } where content is a string or Content object
     const result = await ai.models.embedContent({
       model: "text-embedding-004",
-      content: { parts: [{ text }] }
+      content: text
     });
+
+    if (!result.embeddings || result.embeddings.length === 0) {
+      throw new Error("No embeddings returned from synthesis node.");
+    }
 
     return result.embeddings[0].values;
   } catch (error) {
@@ -29,18 +36,24 @@ export async function generateEmbedding(text: string): Promise<number[]> {
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   const embeddings: number[][] = [];
-  const batchSize = 20; // Gemini limit for single call
+  const batchSize = 10; // Conservative batching for rate limit stability
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
-    const batchEmbeddings = await Promise.all(
-      batch.map(text => generateEmbedding(text))
-    );
-    embeddings.push(...batchEmbeddings);
     
-    // Prevent rate limiting on large curriculum files
-    if (i + batchSize < texts.length) {
-      await new Promise(resolve => setTimeout(resolve, 300));
+    try {
+      const batchEmbeddings = await Promise.all(
+        batch.map(text => generateEmbedding(text))
+      );
+      embeddings.push(...batchEmbeddings);
+      
+      // Prevent burst throttling on large curriculum files
+      if (i + batchSize < texts.length) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } catch (err) {
+      console.error(`Batch processing failed at index ${i}`, err);
+      throw err;
     }
   }
   
