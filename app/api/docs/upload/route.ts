@@ -1,19 +1,14 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 import { processDocument } from '../../../../lib/documents/document-processor';
-import { analyzeDocumentWithAI } from '../../../../lib/ai/document-analyzer';
+import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 
 export const runtime = 'nodejs';
-export const maxDuration = 120; // Allow sufficient time for deep curriculum audit
+export const maxDuration = 120;
 
-/**
- * SECURE INGESTION GATEWAY
- * Persists original assets and extracted text to R2, then triggers deep AI audit.
- */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -30,22 +25,18 @@ export async function POST(req: NextRequest) {
     if (userId !== user.id) return NextResponse.json({ error: 'Identity mismatch' }, { status: 403 });
     if (!file) return NextResponse.json({ error: 'Missing file' }, { status: 400 });
 
-    console.log(`📤 [Ingestion] Processing asset: ${file.name}`);
-
     const supabase = getSupabaseServerClient(token);
     const timestamp = Date.now();
     const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const r2Key = `${userId}/${timestamp}_${sanitizedName}`;
-    const extractedTextR2Key = `${userId}/${timestamp}_${sanitizedName}.txt`;
     
     const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-    // 1. Storage Selection & Persistence
     if (!isR2Configured() || !r2Client) {
-      throw new Error("Cloud infrastructure (R2) not configured for ingestion.");
+      throw new Error("Cloud infrastructure (R2) not configured.");
     }
 
-    // Upload Original Asset to R2
+    // 1. Raw Storage
     await r2Client.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
@@ -53,54 +44,38 @@ export async function POST(req: NextRequest) {
       ContentType: file.type
     }));
 
-    // 2. Text Extraction
+    // 2. Local Extraction
     const processed = await processDocument(file);
-    
-    // Upload Extracted Text to R2
-    await r2Client.send(new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: extractedTextR2Key,
-      Body: processed.text,
-      ContentType: 'text/plain'
-    }));
 
-    // 3. Database Metadata Synchronization
+    // 3. Database Sync
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       user_id: userId,
       name: processed.filename,
       file_path: r2Key,
-      r2_key: r2Key,
-      r2_bucket: R2_BUCKET,
-      extracted_text_r2_key: extractedTextR2Key,
       mime_type: processed.type,
-      word_count: processed.wordCount,
-      page_count: processed.pageCount,
       status: 'processing',
       storage_type: 'r2',
       is_selected: true,
       gemini_processed: false
     }).select().single();
 
-    if (dbError) throw new Error(`Database record creation failed: ${dbError.message}`);
+    if (dbError) throw dbError;
 
-    console.log(`✅ [Ingestion] Metadata synchronized. Document ID: ${docData.id}`);
-
-    // 4. Background Pedagogical Audit (Async)
-    // We trigger this but don't strictly await it for the response, though we let it run.
-    analyzeDocumentWithAI(docData.id, userId, supabase)
-      .then(() => console.log(`✅ [AI Audit] Deep processing complete for ${docData.id}`))
-      .catch(err => console.error(`❌ [AI Audit] Deep processing failed for ${docData.id}`, err));
+    // 4. Background Neural Indexing (RAG)
+    // Trigger and let run in background
+    indexDocumentForRAG(docData.id, processed.text, supabase)
+      .catch(e => console.error(`RAG Indexing Error for ${docData.id}:`, e));
 
     return NextResponse.json({
       success: true,
       id: docData.id,
       name: processed.filename,
       status: 'processing',
-      message: '📄 Curriculum asset uploaded. Neural AI is auditing the content...'
+      message: '📄 Curriculum asset uploaded. Neural indexing in progress...'
     });
 
   } catch (error: any) {
-    console.error('❌ [Ingestion Error]:', error);
+    console.error('Ingestion Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

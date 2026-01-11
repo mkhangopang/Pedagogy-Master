@@ -4,15 +4,12 @@ import { responseCache } from './response-cache';
 import { SYSTEM_PERSONALITY, RESPONSE_LENGTH_GUIDELINES } from '../config/ai-personality';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
-import { fetchAndIndexDocuments, buildDocumentAwarePrompt } from '../documents/document-processor-runtime';
-import { getCachedOrGenerate } from './intelligent-cache';
-import { generateLearningPath } from './learning-path';
 import { synthesize, PROVIDERS, MODEL_SPECIALIZATION } from './synthesizer-core';
+import { retrieveRelevantChunks, retrieveChunksForSLO } from '../rag/retriever';
 import { getObjectBuffer } from '../r2';
 
 /**
- * ASSET VAULT SYNCHRONIZER
- * Fetches raw assets from R2 for multimodal grounding.
+ * MULTIMODAL CONTEXT SYNCHRONIZER
  */
 async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) {
   const { data: selectedDocs } = await supabase
@@ -20,28 +17,17 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
     .select('*')
     .eq('user_id', userId)
     .eq('is_selected', true)
-    .limit(5);
+    .limit(3);
 
   if (!selectedDocs || selectedDocs.length === 0) return [];
 
-  const supportedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
   const parts = [];
-
   for (const doc of selectedDocs) {
-    if (!supportedTypes.includes(doc.mime_type)) continue;
-    
-    try {
-      const buffer = await getObjectBuffer(doc.file_path);
-      if (buffer) {
-        parts.push({
-          inlineData: {
-            mimeType: doc.mime_type,
-            data: buffer.toString('base64')
-          }
-        });
-      }
-    } catch (e) {
-      console.warn(`[Vault Warning] Skipping asset ${doc.name}`);
+    if (['application/pdf', 'image/jpeg', 'image/png'].includes(doc.mime_type)) {
+      try {
+        const buffer = await getObjectBuffer(doc.file_path);
+        if (buffer) parts.push({ inlineData: { mimeType: doc.mime_type, data: buffer.toString('base64') } });
+      } catch (e) {}
     }
   }
   return parts;
@@ -63,64 +49,59 @@ export async function generateAIResponse(
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const preferredProvider = MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'groq';
 
-  // CORE RAG FETCHING
-  const documentIndex = await fetchAndIndexDocuments(userId);
-  const docParts = await fetchMultimodalContext(userId, supabase);
-  
-  // Fetch detailed metadata from DB for selected docs
-  const { data: docMetadata } = await supabase
+  // 1. GET SELECTED DOC IDS
+  const { data: selectedDocs } = await supabase
     .from('documents')
-    .select('name, document_summary, difficulty_level, key_topics')
+    .select('id')
     .eq('user_id', userId)
     .eq('is_selected', true);
+  const documentIds = selectedDocs?.map(d => d.id) || [];
 
-  const hasDocs = documentIndex.documentCount > 0 || docParts.length > 0;
+  // 2. SEMANTIC RETRIEVAL (RAG)
+  let retrievedChunks = [];
+  if (documentIds.length > 0) {
+    if (queryAnalysis.extractedSLO) {
+      retrievedChunks = await retrieveChunksForSLO(queryAnalysis.extractedSLO, documentIds, supabase);
+    } else {
+      retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase);
+    }
+  }
+
+  const docParts = await fetchMultimodalContext(userId, supabase);
+  const hasDocs = retrievedChunks.length > 0 || docParts.length > 0;
   
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  const { prompt: enhancedPrompt } = buildDocumentAwarePrompt(userPrompt, documentIndex);
-
-  // CONTEXT ASSEMBLY - Sharpened for interactive grounding
-  let documentContext = "";
-  if (docMetadata && docMetadata.length > 0) {
-    documentContext = "📚 <ASSET_VAULT_INTELLIGENCE>\n";
-    docMetadata.forEach(meta => {
-      documentContext += `FILE: ${meta.name}\nSUMMARY: ${meta.document_summary || 'Analysis pending...'}\nTOPICS: ${meta.key_topics?.join(', ') || 'N/A'}\nGRADE_LEVEL: ${meta.difficulty_level || 'N/A'}\n\n`;
+  // 3. CONTEXT ASSEMBLY
+  let ragContext = "";
+  if (retrievedChunks.length > 0) {
+    ragContext = "📚 <MOST_RELEVANT_CURRICULUM_SEGMENTS>\n";
+    retrievedChunks.forEach((chunk, i) => {
+      ragContext += `[SEGMENT ${i+1}] (Relevance: ${(chunk.similarity * 100).toFixed(0)}%)\n${chunk.text}\n\n`;
     });
-    documentContext += "</ASSET_VAULT_INTELLIGENCE>\n";
-  }
-
-  if (documentIndex.documentCount > 0) {
-    documentContext += "📖 <RAW_CURRICULUM_EXTRACTS>\n" + 
-      documentIndex.documents.map(d => `SOURCE: ${d.filename}\nCONTENT:\n${d.content}`).join('\n\n') +
-      "\n</RAW_CURRICULUM_EXTRACTS>";
+    ragContext += "</MOST_RELEVANT_CURRICULUM_SEGMENTS>\n";
   }
 
   const finalPrompt = `
-${hasDocs ? `🔴 ATTACHED_DOCUMENTS_PRESENT\n${documentContext}` : '⚠️ NO_LOCAL_DOCUMENTS_DETECTED'}
+${hasDocs ? `🔴 LOCAL_GROUNDING_ACTIVE\n${ragContext}` : '⚠️ NO_LOCAL_CONTEXT_FOUND'}
 ---
-TEACHER_QUERY: ${enhancedPrompt}
+USER_QUERY: ${userPrompt}
 ---
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 
-STRICT_COMMAND: If documents are present above, your response MUST originate 100% from them. If they are missing the answer, say DATA_UNAVAILABLE.
+STRICT_COMMAND: Use ONLY the provided curriculum segments. If they don't contain the answer, say "DATA_UNAVAILABLE in current curriculum."
 `;
 
-  // Merge personality with custom master prompt from Brain settings
   const finalSystemInstruction = `${SYSTEM_PERSONALITY}\n\n${customSystem || ''}`;
-
   const result = await synthesize(finalPrompt, history, hasDocs, docParts, preferredProvider, finalSystemInstruction);
+  
   responseCache.set(userPrompt, history, result.text, result.provider);
   return result;
 }
 
-/**
- * GET PROVIDER STATUS
- * Returns the current health and rate limit status of all configured AI providers.
- */
 export function getProviderStatus() {
   return PROVIDERS.map(config => ({
     name: config.name,
