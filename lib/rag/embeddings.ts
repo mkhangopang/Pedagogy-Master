@@ -6,13 +6,16 @@ import { GoogleGenAI } from "@google/genai";
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   // MUST use process.env.API_KEY exclusively
-  if (!process.env.API_KEY) throw new Error('Embedding node requires API_KEY environment variable');
+  if (!process.env.API_KEY) {
+    throw new Error('Embedding node requires API_KEY environment variable');
+  }
 
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
+     * The SDK requires the content object with a parts array.
      */
     const result = await ai.models.embedContent({
       model: "text-embedding-004",
@@ -40,7 +43,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   if (!texts.length) return [];
   
   const embeddings: number[][] = [];
-  const batchSize = 10;
+  const batchSize = 10; // Conservative batch size for rate limit stability
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
@@ -51,11 +54,12 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       );
       embeddings.push(...batchEmbeddings);
       
+      // Prevent burst throttling on large curriculum files
       if (i + batchSize < texts.length) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (err) {
-      console.error(`Batch processing failed at chunk index ${i}`, err);
+      console.error(`Batch processing failed at index ${i}`, err);
       throw err;
     }
   }

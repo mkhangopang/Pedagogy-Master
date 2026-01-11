@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getObjectText } from "../r2";
@@ -48,9 +47,9 @@ export async function analyzeDocumentWithAI(
       return;
     }
 
-    // 3. Initialize Gemini with dual key support
-    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("Gemini API Key missing (API_KEY or GEMINI_API_KEY required)");
+    // 3. Initialize Gemini - MUST use process.env.API_KEY exclusively
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) throw new Error("Gemini API Key missing (process.env.API_KEY)");
     
     const ai = new GoogleGenAI({ apiKey });
 
@@ -117,8 +116,8 @@ export async function analyzeDocumentWithAI(
     });
 
     let analysis: any = { summary: "Analysis failed", difficultyLevel: "middle_school", slos: [] };
+    const text = response.text || '{}';
     try {
-      const text = response.text || '{}';
       analysis = JSON.parse(text);
     } catch (parseErr) {
       console.error("JSON Parse Error:", parseErr);
