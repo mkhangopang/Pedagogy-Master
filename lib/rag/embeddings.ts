@@ -6,15 +6,13 @@ import { GoogleGenAI } from "@google/genai";
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   // MUST use process.env.API_KEY exclusively
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error('Embedding node requires API_KEY environment variable');
+  if (!process.env.API_KEY) throw new Error('Embedding node requires API_KEY environment variable');
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * embedContent takes a singular 'content' object.
      */
     const result = await ai.models.embedContent({
       model: "text-embedding-004",
@@ -37,7 +35,6 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 /**
  * BATCH EMBEDDING ENGINE
  * Optimized for high-throughput document indexing.
- * Prevents rate-limit saturation through controlled staggering.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
@@ -49,13 +46,11 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     const batch = texts.slice(i, i + batchSize);
     
     try {
-      // Execute batch concurrently within safety limits
       const batchEmbeddings = await Promise.all(
         batch.map(text => generateEmbedding(text))
       );
       embeddings.push(...batchEmbeddings);
       
-      // Stagger batches to avoid burst throttling
       if (i + batchSize < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 300));
       }

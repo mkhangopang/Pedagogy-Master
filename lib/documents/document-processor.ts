@@ -28,7 +28,6 @@ export async function processDocument(file: File): Promise<{
     } else if (type.startsWith('text/') || filename.toLowerCase().endsWith('.txt') || filename.toLowerCase().endsWith('.csv')) {
       text = new TextDecoder().decode(arrayBuffer);
     } else {
-      // Fallback for word docs or other formats if multimodal processing is used downstream
       text = `[Multimodal Asset: ${filename}] - Content extraction pending neural analysis.`;
     }
   } catch (err) {
