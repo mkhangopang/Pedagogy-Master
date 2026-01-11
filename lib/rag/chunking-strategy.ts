@@ -10,6 +10,8 @@ export interface DocumentChunk {
   sloMentioned: string[];
   keywords: string[];
   semanticDensity: number;
+  sectionTitle?: string;
+  pageNumber?: number;
 }
 
 export function chunkDocument(text: string): DocumentChunk[] {
@@ -29,15 +31,20 @@ export function chunkDocument(text: string): DocumentChunk[] {
       type: 'slo_definition',
       sloMentioned: [sloCode],
       keywords: extractKeywords(text.substring(start, end)),
-      semanticDensity: 0.95
+      semanticDensity: 0.95,
+      sectionTitle: "Learning Objective Definition"
     });
   }
 
   // Strategy 2: Logical Section Breaks
   const sections = text.split(/\n(?=(?:\d+\.|\*|#{1,3})\s+[A-Z])/);
-  sections.forEach(section => {
+  sections.forEach((section, idx) => {
     if (section.length < 200 || section.length > 2000) return;
     
+    // Attempt to extract a title from the first line
+    const lines = section.trim().split('\n');
+    const potentialTitle = lines[0].length < 100 ? lines[0] : `Section ${idx + 1}`;
+
     const sloCodes = Array.from(section.matchAll(sloPattern), m => m[0]);
     chunks.push({
       text: section.trim(),
@@ -45,7 +52,8 @@ export function chunkDocument(text: string): DocumentChunk[] {
       type: determineChunkType(section),
       sloMentioned: Array.from(new Set(sloCodes)),
       keywords: extractKeywords(section),
-      semanticDensity: 0.8
+      semanticDensity: 0.8,
+      sectionTitle: potentialTitle
     });
   });
 

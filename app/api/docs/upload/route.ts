@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     // 2. Local Extraction
     const processed = await processDocument(file);
 
-    // 3. Database Sync
+    // 3. Database Sync - Include extracted text for re-indexing capability
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       user_id: userId,
       name: processed.filename,
@@ -56,13 +56,13 @@ export async function POST(req: NextRequest) {
       status: 'processing',
       storage_type: 'r2',
       is_selected: true,
-      gemini_processed: false
+      gemini_processed: false,
+      extracted_text: processed.text // Critical for RAG re-indexing
     }).select().single();
 
     if (dbError) throw dbError;
 
     // 4. Background Neural Indexing (RAG)
-    // Trigger and let run in background
     indexDocumentForRAG(docData.id, processed.text, supabase)
       .catch(e => console.error(`RAG Indexing Error for ${docData.id}:`, e));
 

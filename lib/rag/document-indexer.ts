@@ -16,7 +16,10 @@ export async function indexDocumentForRAG(
   try {
     // 1. Semantic Splitting
     const chunks = chunkDocument(documentText);
-    if (chunks.length === 0) return;
+    if (chunks.length === 0) {
+      console.warn(`[RAG Indexer] No content chunks generated for ${documentId}`);
+      return;
+    }
 
     // 2. Multi-Model Embedding
     const texts = chunks.map(c => c.text);
@@ -31,8 +34,13 @@ export async function indexDocumentForRAG(
       slo_codes: chunk.sloMentioned,
       keywords: chunk.keywords,
       embedding: vectors[i],
-      semantic_density: chunk.semanticDensity
+      semantic_density: chunk.semanticDensity,
+      section_title: chunk.sectionTitle,
+      page_number: chunk.pageNumber
     }));
+
+    // Clear old chunks if any
+    await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     // Batch insert for database stability
     const { error } = await supabase
