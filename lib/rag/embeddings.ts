@@ -13,19 +13,21 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const ai = new GoogleGenAI({ apiKey });
     
     /**
-     * Fix: The compiler reports that 'content' does not exist in 'EmbedContentParameters' 
-     * and suggests 'contents'. We pass a Content array as expected by the plural 'contents' property.
+     * Use the text-embedding-004 model for pedagogical vector synthesis.
+     * embedContent takes a singular 'content' object.
      */
     const result = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: [{ parts: [{ text }] }]
+      content: { parts: [{ text }] }
     });
 
-    if (!result.embeddings || result.embeddings.length === 0) {
-      throw new Error("No embeddings returned from synthesis node.");
+    const embedding = result.embedding;
+
+    if (!embedding || !embedding.values) {
+      throw new Error("No valid embedding values returned from synthesis node.");
     }
 
-    return result.embeddings[0].values;
+    return embedding.values;
   } catch (error) {
     console.error('[Embedding Error]:', error);
     throw error;
@@ -35,26 +37,30 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 /**
  * BATCH EMBEDDING ENGINE
  * Optimized for high-throughput document indexing.
+ * Prevents rate-limit saturation through controlled staggering.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+  if (!texts.length) return [];
+  
   const embeddings: number[][] = [];
-  const batchSize = 10; // Conservative batching for rate limit stability
+  const batchSize = 10;
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     
     try {
+      // Execute batch concurrently within safety limits
       const batchEmbeddings = await Promise.all(
         batch.map(text => generateEmbedding(text))
       );
       embeddings.push(...batchEmbeddings);
       
-      // Prevent burst throttling on large curriculum files
+      // Stagger batches to avoid burst throttling
       if (i + batchSize < texts.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
     } catch (err) {
-      console.error(`Batch processing failed at index ${i}`, err);
+      console.error(`Batch processing failed at chunk index ${i}`, err);
       throw err;
     }
   }

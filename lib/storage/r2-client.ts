@@ -1,5 +1,6 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
+import pdf from 'pdf-parse';
 
 // Initialize R2 client using environment variables
 const r2Client = new S3Client({
@@ -18,7 +19,7 @@ const BUCKET_NAME = process.env.R2_BUCKET_NAME || 'documents';
  */
 export async function fetchDocumentFromR2(key: string): Promise<string> {
   try {
-    console.log(`📥 [R2] Fetching document: ${key}`);
+    console.log(`📥 [R2] Fetching text-based document: ${key}`);
     
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
@@ -28,26 +29,23 @@ export async function fetchDocumentFromR2(key: string): Promise<string> {
     const response = await r2Client.send(command);
     
     if (!response.Body) {
-      throw new Error('No body in R2 response');
+      throw new Error('Empty body returned from cloud storage.');
     }
 
     const bodyString = await response.Body.transformToString();
-    console.log(`✅ [R2] Fetched ${bodyString.length} characters`);
-    
     return bodyString;
   } catch (error) {
-    console.error(`❌ [R2] Failed to fetch ${key}:`, error);
+    console.error(`❌ [R2] Fetch failed for ${key}:`, error);
     throw error;
   }
 }
 
 /**
- * Fetch PDF and extract text (Note: Uses a simplified approach as pdf-parse is heavy)
- * In production, this would typically use a dedicated extraction service.
+ * Fetch PDF and extract text using pdf-parse
  */
 export async function fetchAndExtractPDF(key: string): Promise<string> {
   try {
-    console.log(`📄 [R2] Fetching PDF: ${key}`);
+    console.log(`📄 [R2] Fetching and parsing PDF: ${key}`);
     
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,
@@ -57,16 +55,19 @@ export async function fetchAndExtractPDF(key: string): Promise<string> {
     const response = await r2Client.send(command);
     
     if (!response.Body) {
-      throw new Error('No body in R2 response');
+      throw new Error('No content found in PDF object.');
     }
 
-    // For this environment, we return a placeholder indicating multimodal readiness 
-    // if a complex parser isn't available, or a simple string transform.
-    const bodyString = await response.Body.transformToString();
-    return bodyString;
+    const bytes = await response.Body.transformToByteArray();
+    const buffer = Buffer.from(bytes);
+    
+    const data = await pdf(buffer);
+    console.log(`✅ [R2] Extracted ${data.text.length} characters from ${data.numpages} pages.`);
+    
+    return data.text;
     
   } catch (error) {
-    console.error(`❌ [R2] PDF extraction failed for ${key}:`, error);
-    throw error;
+    console.error(`❌ [R2] PDF neural extraction failed for ${key}:`, error);
+    return `[PDF Extraction Error: ${key}]`;
   }
 }

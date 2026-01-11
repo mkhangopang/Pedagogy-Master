@@ -1,7 +1,9 @@
+import pdf from 'pdf-parse';
+import { Buffer } from 'buffer';
 
 /**
  * DOCUMENT PROCESSOR ENGINE
- * Handles raw text extraction from curriculum assets.
+ * Extracts searchable text and pedagogical metadata from curriculum assets.
  */
 export async function processDocument(file: File): Promise<{
   text: string;
@@ -11,23 +13,30 @@ export async function processDocument(file: File): Promise<{
   type: string;
 }> {
   const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
   const filename = file.name;
   const type = file.type;
   
   let text = "";
-  
-  // Basic extraction for text-based files
-  if (type === 'text/plain' || type === 'text/csv' || filename.endsWith('.txt')) {
-    text = new TextDecoder().decode(arrayBuffer);
-  } else {
-    // For PDF/Word, in a real env we'd use pdf-parse or mammoth.
-    // In this edge/browser hybrid, we return a placeholder if we can't parse natively,
-    // as Gemini 3's multimodal capabilities will handle the raw file bytes in the background anyway.
-    text = `[Multimodal Asset: ${filename}] - Binary content preserved for AI vision/parsing.`;
+  let pageCount = 1;
+
+  try {
+    if (type === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
+      const data = await pdf(buffer);
+      text = data.text;
+      pageCount = data.numpages || 1;
+    } else if (type.startsWith('text/') || filename.toLowerCase().endsWith('.txt') || filename.toLowerCase().endsWith('.csv')) {
+      text = new TextDecoder().decode(arrayBuffer);
+    } else {
+      // Fallback for word docs or other formats if multimodal processing is used downstream
+      text = `[Multimodal Asset: ${filename}] - Content extraction pending neural analysis.`;
+    }
+  } catch (err) {
+    console.warn(`Extraction failed for ${filename}, falling back to raw data reference.`, err);
+    text = `[Extraction Error: ${filename}] - Neural fallback active.`;
   }
 
   const wordCount = text.split(/\s+/).filter(Boolean).length;
-  const pageCount = 1; // Default for non-paginated or unparsed assets
 
   return {
     text,

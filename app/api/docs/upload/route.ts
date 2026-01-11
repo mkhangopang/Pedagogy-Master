@@ -63,7 +63,8 @@ export async function POST(req: NextRequest) {
     if (dbError) throw dbError;
 
     // 4. Background Neural Indexing (RAG)
-    indexDocumentForRAG(docData.id, processed.text, supabase)
+    // Fix: Corrected parameter order to match (documentId, content, r2Key, supabase)
+    indexDocumentForRAG(docData.id, processed.text, null, supabase)
       .catch(e => console.error(`RAG Indexing Error for ${docData.id}:`, e));
 
     return NextResponse.json({
