@@ -7,9 +7,9 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docParts: any[] = []
 ): Promise<string> {
-  // MUST use process.env.API_KEY exclusively
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error('Gemini API Key missing (process.env.API_KEY)');
+  // Support both standard and Vercel-specific API key names
+  const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
+  if (!apiKey) throw new Error('Gemini API Key missing (API_KEY or GEMINI_API_KEY)');
 
   const ai = new GoogleGenAI({ apiKey });
   
@@ -35,18 +35,15 @@ export async function callGemini(
 
   // Ensure user is the last speaker in contents before sending
   if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
-    // Merge existing user message with the new prompt
     const lastUserParts = contents[contents.length - 1].parts;
     lastUserParts.push({ text: "\n\nNEW_QUERY: " + fullPrompt });
     
-    // Add multimodal parts if available
     if (docParts && docParts.length > 0) {
       docParts.forEach(part => {
         if (part.inlineData) lastUserParts.unshift(part);
       });
     }
   } else {
-    // New turn
     const parts: any[] = [];
     if (docParts && docParts.length > 0) {
       docParts.forEach(part => {

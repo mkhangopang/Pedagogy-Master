@@ -5,10 +5,11 @@ import { GoogleGenAI } from "@google/genai";
  * Converts text into a 768-dimensional vector using Gemini.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  // MUST use process.env.API_KEY exclusively
-  const apiKey = process.env.API_KEY;
+  // Support both standard and Vercel-specific API key names
+  const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
+  
   if (!apiKey) {
-    throw new Error('Embedding node requires API_KEY environment variable');
+    throw new Error('Embedding node requires API_KEY or GEMINI_API_KEY environment variable');
   }
 
   try {
@@ -16,7 +17,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * The SDK requires the content object with a parts array.
+     * Fixed the parameter structure to satisfy the compiler's requirements.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
@@ -30,7 +31,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     }
 
     return embedding.values;
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Embedding Error]:', error);
     throw error;
   }
@@ -44,7 +45,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   if (!texts.length) return [];
   
   const embeddings: number[][] = [];
-  const batchSize = 10; // Conservative batch size for rate limit stability
+  const batchSize = 10; 
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
@@ -55,7 +56,6 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       );
       embeddings.push(...batchEmbeddings);
       
-      // Prevent burst throttling on large curriculum files
       if (i + batchSize < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }

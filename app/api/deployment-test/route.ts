@@ -28,23 +28,25 @@ export async function GET(request: NextRequest) {
 
     const results: TestResult[] = [];
 
-    // 1. Environment Verification
+    // Support both standard and Vercel-specific API key names
+    const geminiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
+
     const envCheck = {
       supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       supabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      geminiKey: !!process.env.API_KEY,
+      geminiKey: !!geminiKey,
       r2Configured: isR2Configured(),
       r2PublicUrl: !!R2_PUBLIC_BASE_URL
     };
+
     results.push({
       name: 'Cloud Infrastructure Keys',
       status: (envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.geminiKey) ? 'pass' : 'fail',
       message: 'Critical environment variables detected.',
       details: envCheck,
-      fix: !envCheck.geminiKey ? 'Missing API_KEY in environment variables. Gemini will be disabled.' : undefined
+      fix: !envCheck.geminiKey ? 'Missing API_KEY or GEMINI_API_KEY in environment variables.' : undefined
     });
 
-    // 2. R2 Handshake
     if (isR2Configured() && r2Client) {
       try {
         await r2Client.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, MaxKeys: 1 }));
@@ -53,20 +55,6 @@ export async function GET(request: NextRequest) {
           status: 'pass',
           message: `Successfully connected to bucket: ${R2_BUCKET}`
         });
-        
-        if (R2_PUBLIC_BASE_URL) {
-          results.push({
-            name: 'R2 Public Access',
-            status: 'pass',
-            message: `Public URL established: ${R2_PUBLIC_BASE_URL}`
-          });
-        } else {
-          results.push({
-            name: 'R2 Public Access',
-            status: 'warning',
-            message: 'R2 is active but NEXT_PUBLIC_R2_PUBLIC_URL is missing. Documents will be proxied via server.'
-          });
-        }
       } catch (e: any) {
         results.push({
           name: 'Cloudflare R2 Storage',
@@ -74,15 +62,8 @@ export async function GET(request: NextRequest) {
           message: `R2 Connection Error: ${e.message}`
         });
       }
-    } else {
-      results.push({
-        name: 'Cloudflare R2 Storage',
-        status: 'warning',
-        message: 'R2 not configured. System is using Supabase fallback.'
-      });
     }
 
-    // 3. Database Connectivity
     try {
       const { error } = await supabase.from('profiles').select('id').limit(1);
       results.push({
@@ -94,14 +75,11 @@ export async function GET(request: NextRequest) {
       results.push({ name: 'Supabase Data Plane', status: 'fail', message: e.message });
     }
 
-    // 4. AI Engine Handshake
-    const geminiKey = process.env.API_KEY;
     if (!geminiKey) {
       results.push({
         name: 'Gemini AI Synthesis Engine',
         status: 'fail',
-        message: 'API Key is missing (Checked process.env.API_KEY).',
-        fix: 'Add your Gemini API Key to your environment variables to enable the AI engine.'
+        message: 'API Key is missing.'
       });
     } else {
       try {
@@ -113,31 +91,24 @@ export async function GET(request: NextRequest) {
         results.push({
           name: 'Gemini AI Synthesis Engine',
           status: response.text ? 'pass' : 'warning',
-          message: 'AI Handshake successful. Semantic engine is operational.'
+          message: 'AI Handshake successful.'
         });
       } catch (e: any) {
         results.push({ name: 'Gemini AI Synthesis Engine', status: 'fail', message: `Engine offline: ${e.message}` });
       }
     }
 
-    const passedCount = results.filter(r => r.status === 'pass').length;
-    const failedCount = results.filter(r => r.status === 'fail').length;
-    const warningCount = results.filter(r => r.status === 'warning').length;
-
     return NextResponse.json({
       summary: {
-        overall: failedCount === 0 ? 'pass' : 'fail',
-        passed: passedCount,
-        failed: failedCount,
-        warnings: warningCount,
+        overall: results.some(r => r.status === 'fail') ? 'fail' : 'pass',
+        passed: results.filter(r => r.status === 'pass').length,
+        failed: results.filter(r => r.status === 'fail').length,
+        warnings: results.filter(r => r.status === 'warning').length,
         total: results.length,
         timestamp: new Date().toISOString(),
-        readyForProduction: failedCount === 0
+        readyForProduction: !results.some(r => r.status === 'fail')
       },
-      tests: results,
-      recommendations: failedCount === 0 
-        ? ["Infrastructure is fully validated for production."] 
-        : ["Address failing modules or provide missing R2 credentials or AI API keys."]
+      tests: results
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -22,7 +22,6 @@ export async function analyzeDocumentWithAI(
   supabase: SupabaseClient
 ) {
   try {
-    // 1. Fetch document metadata
     const { data: doc, error: fetchError } = await supabase
       .from('documents')
       .select('*')
@@ -31,7 +30,6 @@ export async function analyzeDocumentWithAI(
 
     if (fetchError || !doc) throw new Error("Document not found");
 
-    // 2. Fetch content
     let content = "";
     if (doc.extracted_text_r2_key) {
       content = await getObjectText(doc.extracted_text_r2_key);
@@ -42,18 +40,16 @@ export async function analyzeDocumentWithAI(
     }
 
     if (!content || content.length < 10) {
-      console.warn("Document content missing for analysis");
       await supabase.from('documents').update({ status: 'completed', gemini_processed: true }).eq('id', documentId);
       return;
     }
 
-    // 3. Initialize Gemini - MUST use process.env.API_KEY exclusively
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("Gemini API Key missing (process.env.API_KEY)");
+    // Support both standard and Vercel-specific API key names
+    const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
+    if (!apiKey) throw new Error("Gemini API Key missing (API_KEY or GEMINI_API_KEY)");
     
     const ai = new GoogleGenAI({ apiKey });
 
-    // 4. Prompt Gemini for structured intelligence
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `You are a curriculum document intelligence system. Analyze this curriculum document and extract ALL structured information.
@@ -65,7 +61,7 @@ export async function analyzeDocumentWithAI(
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            summary: { type: Type.STRING, description: "2-3 sentence summary of content." },
+            summary: { type: Type.STRING },
             keyTopics: { type: Type.ARRAY, items: { type: Type.STRING } },
             difficultyLevel: { type: Type.STRING, enum: ["elementary", "middle_school", "high_school", "college"] },
             subject: { type: Type.STRING },
@@ -123,7 +119,6 @@ export async function analyzeDocumentWithAI(
       console.error("JSON Parse Error:", parseErr);
     }
 
-    // 5. Calculate Quality Score
     const calculateQualityScore = (data: any) => {
       let score = 0;
       if (data.summary?.length > 50) score += 20;
@@ -137,7 +132,6 @@ export async function analyzeDocumentWithAI(
 
     const qualityScore = calculateQualityScore(analysis);
 
-    // 6. Update Document Metadata in Supabase
     await supabase.from('documents').update({
       status: 'completed',
       gemini_processed: true,
@@ -154,7 +148,6 @@ export async function analyzeDocumentWithAI(
       }
     }).eq('id', documentId);
 
-    // 7. Insert/Upsert SLOs into Database
     if (analysis.slos && analysis.slos.length > 0) {
       const sloRecords = analysis.slos.map((s: any) => ({
         document_id: documentId,
