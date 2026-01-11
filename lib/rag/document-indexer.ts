@@ -45,7 +45,7 @@ export async function indexDocumentForRAG(
       documentText = doc?.extracted_text || "";
     }
 
-    if (!documentText || documentText.trim().length === 0) {
+    if (!documentText) {
       throw new Error('No indexable curriculum content discovered.');
     }
     
@@ -55,7 +55,7 @@ export async function indexDocumentForRAG(
     const chunks = chunkDocument(documentText);
     if (chunks.length === 0) {
       console.warn(`⚠️ [RAG Indexer] Zero semantic nodes generated. Finalizing lifecycle...`);
-      await supabase.from('documents').update({ status: 'ready', gemini_processed: true }).eq('id', documentId);
+      await supabase.from('documents').update({ status: 'ready' }).eq('id', documentId);
       return;
     }
     console.log(`📦 [RAG Indexer] Generated ${chunks.length} neural segments.`);
@@ -97,13 +97,11 @@ export async function indexDocumentForRAG(
       if (insertError) throw insertError;
     }
     
-    // 5. Lifecycle Status Synchronization
+    // 5. Lifecycle Status Synchronization (Removed gemini_processed)
     await supabase
       .from('documents')
       .update({
-        status: 'ready',
-        gemini_processed: true,
-        gemini_processed_at: new Date().toISOString()
+        status: 'ready'
       })
       .eq('id', documentId);
     
@@ -112,8 +110,7 @@ export async function indexDocumentForRAG(
   } catch (error: any) {
     console.error(`❌ [RAG Indexer] Synthesis Interrupted:`, error);
     await supabase.from('documents').update({ 
-      status: 'failed',
-      gemini_processed: false 
+      status: 'failed'
     }).eq('id', documentId);
     throw error;
   }

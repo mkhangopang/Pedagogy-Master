@@ -100,13 +100,32 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.5
--- MISSION: SEMANTIC CURRICULUM RETRIEVAL (768 DIM)
+  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.6
+-- MISSION: SEMANTIC CURRICULUM RETRIEVAL & VECTOR PLANE
 
 -- 1. EXTENSION
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. DOCUMENT CHUNKS (RAG CORE)
+-- 2. CORE DOCUMENTS TABLE
+CREATE TABLE IF NOT EXISTS public.documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id),
+  name TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  mime_type TEXT,
+  status TEXT DEFAULT 'processing',
+  storage_type TEXT DEFAULT 'r2',
+  is_selected BOOLEAN DEFAULT true,
+  extracted_text TEXT,
+  document_summary TEXT,
+  difficulty_level TEXT,
+  subject TEXT,
+  grade_level TEXT,
+  gemini_metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 3. DOCUMENT CHUNKS (RAG CORE)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -122,12 +141,12 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. SEARCH INDEXES
+-- 4. SEARCH INDEXES
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 4. HYBRID SEARCH RPC (REVISED)
+-- 5. HYBRID SEARCH RPC (REVISED)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -163,13 +182,19 @@ BEGIN
 END;
 $$;
 
--- 5. RLS
+-- 6. RLS
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "owner_all_docs" ON public.documents;
+CREATE POLICY "owner_all_docs" ON public.documents FOR ALL TO authenticated
+USING (user_id = auth.uid());
+
 DROP POLICY IF EXISTS "owner_all_chunks" ON public.document_chunks;
 CREATE POLICY "owner_all_chunks" ON public.document_chunks FOR ALL TO authenticated
 USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid()));
 
--- 6. ADMIN SYNC
+-- 7. ADMIN SYNC
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 `;

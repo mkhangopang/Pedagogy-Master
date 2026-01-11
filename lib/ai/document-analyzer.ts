@@ -40,7 +40,7 @@ export async function analyzeDocumentWithAI(
     }
 
     if (!content || content.length < 10) {
-      await supabase.from('documents').update({ status: 'completed', gemini_processed: true }).eq('id', documentId);
+      await supabase.from('documents').update({ status: 'completed' }).eq('id', documentId);
       return;
     }
 
@@ -134,8 +134,6 @@ export async function analyzeDocumentWithAI(
 
     await supabase.from('documents').update({
       status: 'completed',
-      gemini_processed: true,
-      gemini_processed_at: new Date().toISOString(),
       document_summary: analysis.summary,
       difficulty_level: analysis.difficultyLevel,
       subject: analysis.subject || doc.subject,

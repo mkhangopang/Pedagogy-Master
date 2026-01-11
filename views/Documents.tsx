@@ -39,9 +39,10 @@ const Documents: React.FC<DocumentsProps> = ({
     if (processingDocs.length === 0) return;
 
     const interval = setInterval(async () => {
+      // Standardized selection to avoid schema errors
       const { data } = await supabase
         .from('documents')
-        .select('id, status, gemini_processed, document_summary, difficulty_level')
+        .select('id, status, document_summary, difficulty_level')
         .in('id', processingDocs.map(d => d.id));
 
       if (data) {
@@ -49,7 +50,6 @@ const Documents: React.FC<DocumentsProps> = ({
           if (updated.status !== 'processing') {
             onUpdateDocument(updated.id, { 
               status: updated.status as any,
-              geminiProcessed: updated.gemini_processed,
               documentSummary: updated.document_summary,
               difficultyLevel: updated.difficulty_level
             });
@@ -152,7 +152,7 @@ const Documents: React.FC<DocumentsProps> = ({
                       <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 rounded-full text-[10px] font-black uppercase">
                         <Loader2 size={10} className="animate-spin" /> Deep Audit...
                       </span>
-                    ) : doc.geminiProcessed ? (
+                    ) : doc.status === 'ready' || doc.status === 'completed' ? (
                       <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase">
                         <Sparkles size={10} /> Neural Indexed
                       </span>

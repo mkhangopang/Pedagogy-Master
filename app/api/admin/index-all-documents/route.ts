@@ -29,10 +29,10 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // Identify documents requiring indexing - standardized column selection
+    // Identify documents requiring indexing - standardized column selection (removed gemini_processed)
     const { data: documents, error: fetchError } = await supabase
       .from('documents')
-      .select('id, name, file_path, extracted_text, gemini_processed, status');
+      .select('id, name, file_path, extracted_text, status');
 
     if (fetchError) {
       console.error('❌ [ADMIN] Database Fetch Error:', fetchError);
