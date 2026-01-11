@@ -1,4 +1,3 @@
-
 import { NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 import { supabase } from "../lib/supabase";
@@ -43,10 +42,11 @@ export const geminiService = {
 
   async *chatWithDocumentStream(
     message: string, 
-    doc: { base64?: string; mimeType?: string; filePath?: string }, 
+    doc: { base64?: string; mimeType?: string; filePath?: string; id?: string }, 
     history: { role: 'user' | 'assistant', content: string }[],
     brain: NeuralBrain,
-    user?: UserProfile
+    user?: UserProfile,
+    priorityDocumentId?: string
   ) {
     const wait = this.checkCooldown();
     if (wait > 0) {
@@ -54,20 +54,16 @@ export const geminiService = {
       return;
     }
 
-    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     const token = await this.getAuthToken();
 
     try {
-      const response = await fetch('/api/ai', {
+      // Direct synthesis requests now target the specialized /api/chat route for RAG-grounded responses.
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({
-          task: 'chat',
           message,
-          doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
-          history: history.slice(-3),
-          brain,
-          adaptiveContext
+          priorityDocumentId
         })
       });
 
@@ -99,9 +95,10 @@ export const geminiService = {
   async *generatePedagogicalToolStream(
     toolType: string,
     userInput: string,
-    doc: { base64?: string; mimeType?: string; filePath?: string },
+    doc: { base64?: string; mimeType?: string; filePath?: string; id?: string },
     brain: NeuralBrain,
-    user?: UserProfile
+    user?: UserProfile,
+    priorityDocumentId?: string
   ) {
     const wait = this.checkCooldown();
     if (wait > 0) {
@@ -122,7 +119,8 @@ export const geminiService = {
           userInput,
           doc: { base64: doc.filePath ? undefined : doc.base64, mimeType: doc.mimeType, filePath: doc.filePath },
           brain,
-          adaptiveContext
+          adaptiveContext,
+          priorityDocumentId
         })
       });
 

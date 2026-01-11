@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -33,6 +32,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [isLoading, setIsLoading] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [currentValidation, setCurrentValidation] = useState<LessonValidation | null>(null);
+  const [focusedDocId, setFocusedDocId] = useState<string | null>(null); // New: Tracking focus
   
   const [diffResults, setDiffResults] = useState<Record<string, DifferentiatedLesson | null>>({ below: null, at: null, above: null });
   const [diffLoading, setDiffLoading] = useState(false);
@@ -67,7 +67,15 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     }));
     setLocalDocs(updated);
     
+    // Update focus on toggle to prioritize the last document clicked
     const targetDoc = updated.find(d => d.id === docId);
+    if (targetDoc?.isSelected) {
+      setFocusedDocId(docId);
+    } else if (focusedDocId === docId) {
+      const remainingSelected = updated.find(d => d.isSelected);
+      setFocusedDocId(remainingSelected?.id || null);
+    }
+
     await supabase.from('documents')
       .update({ is_selected: targetDoc?.isSelected || false })
       .eq('id', docId);
@@ -96,7 +104,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     try {
       const prompt = buildDifferentiationPrompt(lastAiMsg.content, level);
       let fullResponse = "";
-      const stream = geminiService.chatWithDocumentStream(prompt, {}, [], brain, user);
+      const stream = geminiService.chatWithDocumentStream(prompt, {}, [], brain, user, focusedDocId || undefined);
       for await (const chunk of stream) {
         fullResponse += chunk;
       }
@@ -117,7 +125,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     try {
       const prompt = buildAssessmentPrompt(lastAiMsg.content, options);
       let fullResponse = "";
-      const stream = geminiService.chatWithDocumentStream(prompt, {}, [], brain, user);
+      const stream = geminiService.chatWithDocumentStream(prompt, {}, [], brain, user, focusedDocId || undefined);
       for await (const chunk of stream) {
         fullResponse += chunk;
       }
@@ -166,12 +174,14 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           content: m.content 
         }));
 
+      // Passing focusedDocId to prioritize chunks from that document
       const stream = geminiService.chatWithDocumentStream(
         msgContent,
         {},
         history,
         brain,
-        user
+        user,
+        focusedDocId || undefined
       );
 
       for await (const chunk of stream) {

@@ -16,11 +16,21 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const body = await req.json();
-    const { task, message, adaptiveContext, history, toolType, userInput, brain } = body;
+    const { 
+      task, 
+      message, 
+      adaptiveContext, 
+      history, 
+      toolType, 
+      userInput, 
+      brain,
+      priorityDocumentId // New Parameter
+    } = body;
     
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`🤖 [AI ROUTE] Task: ${task || 'chat'} | User: ${user.email}`);
     console.log(`💬 Message: "${message?.substring(0, 100)}..."`);
+    if (priorityDocumentId) console.log(`🎯 Priority Asset: ${priorityDocumentId}`);
 
     const supabase = getSupabaseServerClient(token);
     const promptText = task === 'generate-tool' 
@@ -37,7 +47,8 @@ export async function POST(req: NextRequest) {
       adaptiveContext, 
       undefined, 
       toolType,
-      customSystem
+      customSystem,
+      priorityDocumentId // Passing to orchestrator
     );
 
     console.log(`✅ [AI ROUTE] Synthesis Complete`);

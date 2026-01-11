@@ -50,7 +50,8 @@ export async function generateAIResponse(
   adaptiveContext?: string,
   overrideDocPart?: any, 
   toolType?: string,
-  customSystem?: string
+  customSystem?: string,
+  priorityDocumentId?: string // New Parameter
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   const cached = responseCache.get(userPrompt, history);
   if (cached) return { text: cached, provider: 'cache' };
@@ -80,7 +81,8 @@ export async function generateAIResponse(
       retrievalMethod = 'slo_lookup';
       retrievedChunks = await retrieveChunksForSLO(sloMatch[0], documentIds, supabase);
     } else {
-      retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 6);
+      // Passing priorityDocumentId for boosting
+      retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 6, priorityDocumentId);
     }
   }
 

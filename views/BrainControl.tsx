@@ -100,8 +100,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.6
--- MISSION: SEMANTIC CURRICULUM RETRIEVAL & VECTOR PLANE
+  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.7
+-- MISSION: SEMANTIC CURRICULUM RETRIEVAL & VECTOR PLANE WITH PRIORITY BOOST
 
 -- 1. EXTENSION
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -146,12 +146,13 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 5. HYBRID SEARCH RPC (REVISED)
+-- 5. HYBRID SEARCH RPC (ENHANCED WITH PRIORITY BOOST)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
   match_count INTEGER,
-  filter_document_ids UUID[]
+  filter_document_ids UUID[],
+  priority_document_id UUID DEFAULT NULL
 )
 RETURNS TABLE (
   chunk_id UUID,
@@ -172,8 +173,9 @@ BEGIN
     document_chunks.page_number,
     document_chunks.slo_codes,
     (
-      (1 - (document_chunks.embedding <=> query_embedding)) * 0.7 + 
-      ts_rank_cd(to_tsvector('english', document_chunks.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3
+      ((1 - (document_chunks.embedding <=> query_embedding)) * 0.7 + 
+      ts_rank_cd(to_tsvector('english', document_chunks.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3) +
+      (CASE WHEN document_id = priority_document_id THEN 0.15 ELSE 0 END)
     ) AS combined_score
   FROM document_chunks
   WHERE document_id = ANY(filter_document_ids)

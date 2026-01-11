@@ -2,7 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 
 /**
  * GENERATE NEURAL EMBEDDING
- * Converts text into a 768-dimensional vector using Gemini.
+ * Converts curriculum text into a 768-dimensional vector using Gemini.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   // Support both standard and Vercel-specific API key names
@@ -16,17 +16,17 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const ai = new GoogleGenAI({ apiKey });
     
     /**
-     * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * The @google/genai SDK version 1.34.0 uses plural 'contents' for the input payload
-     * and returns an array of 'embeddings' in the response.
+     * Use the text-embedding-004 model for high-fidelity pedagogical vector synthesis.
+     * The embedContent call uses 'contents' to pass the payload directly, avoiding schema mismatch.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: { parts: [{ text }] }
+      contents: {
+        parts: [{ text }]
+      }
     });
 
-    // The response for @google/genai's embedContent provides an 'embeddings' array.
-    // We access the first result for single-content requests.
+    // Extracting the vector from the synthesis result
     const result = response.embeddings;
 
     if (!result || !Array.isArray(result) || result.length === 0) {
@@ -48,7 +48,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING ENGINE
- * Optimized for high-throughput document indexing.
+ * Optimized for high-throughput document indexing across multiple curriculum segments.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
@@ -65,7 +65,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       );
       embeddings.push(...batchEmbeddings);
       
-      // Stagger batches to prevent rate limiting on the free tier
+      // Prevent synthesis node rate limits
       if (i + batchSize < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }

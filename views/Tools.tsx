@@ -48,12 +48,15 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     try {
       onQuery();
       let fullContent = '';
+      
+      // Pass selectedDocId as priorityDocumentId to prioritize RAG chunks from this specific file
       const stream = geminiService.generatePedagogicalToolStream(
         activeTool, 
         userInput, 
         { base64: selectedDoc?.base64Data, mimeType: selectedDoc?.mimeType, filePath: selectedDoc?.filePath }, 
         brain,
-        user
+        user,
+        selectedDocId || undefined
       );
 
       for await (const chunk of stream) {
@@ -126,7 +129,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shrink-0 flex items-center gap-1.5 border ${
                 selectedDocId === doc.id 
                   ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm' 
-                  : 'bg-white dark:bg-white/5 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-white/5'
+                  : 'bg-white dark:bg-white/5 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-white/5 hover:border-indigo-400'
               }`}
             >
               <FileText size={10} />
