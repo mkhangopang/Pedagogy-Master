@@ -71,8 +71,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.0
--- MISSION: SEMANTIC CURRICULUM RETRIEVAL
+  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.2
+-- MISSION: SEMANTIC CURRICULUM RETRIEVAL (768 DIM)
 
 -- 1. EXTENSION
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -96,7 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 4. HYBRID SEARCH RPC
+-- 4. HYBRID SEARCH RPC (REVISED)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -119,7 +119,7 @@ BEGIN
     document_chunks.slo_codes,
     (
       (1 - (document_chunks.embedding <=> query_embedding)) * 0.7 + 
-      ts_rank_cd(to_tsvector('english', document_chunks.chunk_text), plainto_tsquery('english', query_text)) * 0.3
+      ts_rank_cd(to_tsvector('english', document_chunks.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3
     ) AS combined_score
   FROM document_chunks
   WHERE document_id = ANY(filter_document_ids)
@@ -130,6 +130,7 @@ $$;
 
 -- 5. RLS
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "owner_all_chunks" ON public.document_chunks;
 CREATE POLICY "owner_all_chunks" ON public.document_chunks FOR ALL TO authenticated
 USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid()));
 

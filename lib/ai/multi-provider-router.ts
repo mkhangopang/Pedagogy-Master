@@ -17,7 +17,7 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
     .select('*')
     .eq('user_id', userId)
     .eq('is_selected', true)
-    .limit(3);
+    .limit(2); // Reduced limit for token efficiency
 
   if (!selectedDocs || selectedDocs.length === 0) return [];
 
@@ -27,7 +27,9 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
       try {
         const buffer = await getObjectBuffer(doc.file_path);
         if (buffer) parts.push({ inlineData: { mimeType: doc.mime_type, data: buffer.toString('base64') } });
-      } catch (e) {}
+      } catch (e) {
+        console.warn(`[Vault] Multimodal skip: ${doc.name}`);
+      }
     }
   }
   return parts;
@@ -52,7 +54,7 @@ export async function generateAIResponse(
   // 1. GET SELECTED DOC IDS
   const { data: selectedDocs } = await supabase
     .from('documents')
-    .select('id')
+    .select('id, name')
     .eq('user_id', userId)
     .eq('is_selected', true);
   const documentIds = selectedDocs?.map(d => d.id) || [];
@@ -73,26 +75,33 @@ export async function generateAIResponse(
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 3. CONTEXT ASSEMBLY
+  // 3. CONTEXT ASSEMBLY - Sharpened for strict grounding
   let ragContext = "";
   if (retrievedChunks.length > 0) {
-    ragContext = "📚 <MOST_RELEVANT_CURRICULUM_SEGMENTS>\n";
+    ragContext = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    ragContext += "📚 MANDATORY SOURCE MATERIAL: <ASSET_VAULT_SEGMENTS>\n";
+    ragContext += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n";
     retrievedChunks.forEach((chunk, i) => {
-      ragContext += `[SEGMENT ${i+1}] (Relevance: ${(chunk.similarity * 100).toFixed(0)}%)\n${chunk.text}\n\n`;
+      ragContext += `[SEGMENT ${i+1}] (Semantic Relevance: ${(chunk.similarity * 100).toFixed(0)}%)\n${chunk.text}\n\n`;
     });
-    ragContext += "</MOST_RELEVANT_CURRICULUM_SEGMENTS>\n";
+    ragContext += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
+    ragContext += "END OF ASSET VAULT\n";
+    ragContext += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
   }
 
   const finalPrompt = `
-${hasDocs ? `🔴 LOCAL_GROUNDING_ACTIVE\n${ragContext}` : '⚠️ NO_LOCAL_CONTEXT_FOUND'}
+${hasDocs ? `🔴 LOCAL_GROUNDING_ACTIVE: Use the provided source segments below.` : '⚠️ GLOBAL_MODE: No curriculum documents selected.'}
+
+${ragContext}
+
 ---
-USER_QUERY: ${userPrompt}
+TEACHER_QUERY: ${userPrompt}
 ---
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 
-STRICT_COMMAND: Use ONLY the provided curriculum segments. If they don't contain the answer, say "DATA_UNAVAILABLE in current curriculum."
+STRICT_COMMAND: If information is found in segments, CITE the [SEGMENT X]. If not found, say "I don't find that specific information in your curriculum."
 `;
 
   const finalSystemInstruction = `${SYSTEM_PERSONALITY}\n\n${customSystem || ''}`;

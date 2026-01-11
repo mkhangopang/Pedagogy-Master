@@ -5,6 +5,7 @@ export interface RetrievedChunk {
   text: string;
   sloCodes: string[];
   similarity: number;
+  id: string;
 }
 
 /**
@@ -18,12 +19,18 @@ export async function retrieveRelevantChunks(
   maxChunks: number = 5
 ): Promise<RetrievedChunk[]> {
   
+  if (!documentIds || documentIds.length === 0) {
+    console.warn('[Retriever] No document IDs provided for search.');
+    return [];
+  }
+
   try {
     // 1. Vectorize Query
+    console.log(`[Retriever] Vectorizing query: "${query.substring(0, 50)}..."`);
     const queryEmbedding = await generateEmbedding(query);
 
     // 2. Execute Hybrid Search RPC
-    // match_threshold: 0.65 is optimal for academic documents
+    // We use a slightly lower match threshold (0.6) to allow for broader semantic relevance
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -31,15 +38,22 @@ export async function retrieveRelevantChunks(
       filter_document_ids: documentIds
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Retriever RPC Error]:', error);
+      throw error;
+    }
 
-    return (data || []).map((r: any) => ({
+    const results = (data || []).map((r: any) => ({
+      id: r.chunk_id,
       text: r.chunk_text,
       sloCodes: r.slo_codes || [],
       similarity: r.combined_score
     }));
+
+    console.log(`[Retriever] Found ${results.length} relevant chunks across selected assets.`);
+    return results;
   } catch (err) {
-    console.error('[Retriever Error]:', err);
+    console.error('[Retriever Critical Error]:', err);
     return [];
   }
 }
@@ -53,14 +67,20 @@ export async function retrieveChunksForSLO(
   documentIds: string[],
   supabase: SupabaseClient
 ): Promise<RetrievedChunk[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('document_chunks')
-    .select('chunk_text, slo_codes')
+    .select('id, chunk_text, slo_codes')
     .contains('slo_codes', [sloCode])
     .in('document_id', documentIds)
     .limit(3);
 
+  if (error) {
+    console.error('[SLO Lookup Error]:', error);
+    return [];
+  }
+
   return (data || []).map(d => ({
+    id: d.id,
     text: d.chunk_text,
     sloCodes: d.slo_codes,
     similarity: 1.0
