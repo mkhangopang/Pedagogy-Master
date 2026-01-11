@@ -17,24 +17,26 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * Some versions of the @google/genai SDK expect 'contents' as the key.
+     * The @google/genai SDK version 1.34.0 uses plural 'contents' for the input payload
+     * and returns an array of 'embeddings' in the response.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: { parts: [{ text }] }
     });
 
-    /**
-     * The SDK response structure for embedContent can vary by version.
-     * We check for both singular 'embedding' and plural 'embeddings' (common in batch or specific SDK builds).
-     * The compiler indicated 'embeddings' might be an array, leading to a confusion 
-     * between Array.prototype.values() and ContentEmbedding.values.
-     */
-    const result = (response as any).embedding || (response as any).embeddings;
-    const values = Array.isArray(result) ? result[0]?.values : result?.values;
+    // The response for @google/genai's embedContent provides an 'embeddings' array.
+    // We access the first result for single-content requests.
+    const result = response.embeddings;
+
+    if (!result || !Array.isArray(result) || result.length === 0) {
+      throw new Error("No valid embedding values returned from synthesis node.");
+    }
+
+    const values = result[0].values;
 
     if (!values || !Array.isArray(values)) {
-      throw new Error("No valid embedding values returned from synthesis node.");
+      throw new Error("Malformed embedding vector returned from synthesis node.");
     }
 
     return values;
@@ -63,6 +65,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       );
       embeddings.push(...batchEmbeddings);
       
+      // Stagger batches to prevent rate limiting on the free tier
       if (i + batchSize < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }
