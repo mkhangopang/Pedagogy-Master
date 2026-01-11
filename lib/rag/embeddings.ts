@@ -12,11 +12,13 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     
-    // Using the simplified content parameter as required by the latest @google/genai SDK
-    // The SDK expects { model, content } where content is a string or Content object
+    /**
+     * Fix: The compiler reports that 'content' does not exist in 'EmbedContentParameters' 
+     * and suggests 'contents'. We pass a Content array as expected by the plural 'contents' property.
+     */
     const result = await ai.models.embedContent({
       model: "text-embedding-004",
-      content: text
+      contents: [{ parts: [{ text }] }]
     });
 
     if (!result.embeddings || result.embeddings.length === 0) {
