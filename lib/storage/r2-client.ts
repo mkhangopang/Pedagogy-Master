@@ -1,6 +1,5 @@
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
-import pdf from 'pdf-parse';
 
 // Initialize R2 client using environment variables
 const r2Client = new S3Client({
@@ -41,11 +40,14 @@ export async function fetchDocumentFromR2(key: string): Promise<string> {
 }
 
 /**
- * Fetch PDF and extract text using pdf-parse
+ * Fetch PDF and extract text using pdf-parse (Dynamically imported)
  */
 export async function fetchAndExtractPDF(key: string): Promise<string> {
   try {
     console.log(`📄 [R2] Fetching and parsing PDF: ${key}`);
+    
+    // Dynamic import to prevent build-time ENOENT errors from pdf-parse internal tests
+    const pdf = (await import('pdf-parse')).default;
     
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,

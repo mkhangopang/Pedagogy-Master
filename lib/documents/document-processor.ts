@@ -1,4 +1,3 @@
-import pdf from 'pdf-parse';
 import { Buffer } from 'buffer';
 
 /**
@@ -22,6 +21,8 @@ export async function processDocument(file: File): Promise<{
 
   try {
     if (type === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
+      // Dynamic import to avoid build-time initialization errors
+      const pdf = (await import('pdf-parse')).default;
       const data = await pdf(buffer);
       text = data.text;
       pageCount = data.numpages || 1;
