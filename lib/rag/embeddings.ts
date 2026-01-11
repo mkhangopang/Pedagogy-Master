@@ -17,11 +17,12 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * Fixed the parameter structure to satisfy the compiler's requirements.
+     * The @google/genai SDK version 1.34.0 uses the key 'contents' for the input payload
+     * in the embedContent method.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
-      content: { parts: [{ text }] }
+      contents: { parts: [{ text }] }
     });
 
     const embedding = response.embedding;
