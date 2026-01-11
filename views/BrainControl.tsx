@@ -18,6 +18,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [dbStatus, setDbStatus] = useState<{table: string, exists: boolean | null}[]>([]);
   const [isChecking, setIsChecking] = useState(false);
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexStatus, setIndexStatus] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
 
   const checkHealth = async () => {
@@ -41,6 +43,33 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }));
     setDbStatus(status);
     setIsChecking(false);
+  };
+
+  const handleBulkIndex = async () => {
+    if (!window.confirm("Initialize global neural synchronization? This will rebuild the vector grid for all documents.")) return;
+    
+    setIsIndexing(true);
+    setIndexStatus("Syncing neural nodes...");
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/admin/index-all-documents', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        }
+      });
+      
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Bulk sync failed.");
+      
+      setIndexStatus(`✅ Success: ${data.message}`);
+    } catch (err: any) {
+      setIndexStatus(`❌ Error: ${err.message}`);
+    } finally {
+      setIsIndexing(false);
+    }
   };
 
   useEffect(() => {
@@ -219,6 +248,28 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
                   <span className="font-bold text-sm">{item.exists ? 'SYNCED' : 'ERR_404'}</span>
                 </div>
               ))}
+            </div>
+
+            {/* NEW: System Actions for Admins */}
+            <div className="mt-12 pt-10 border-t border-slate-100 dark:border-white/5">
+               <h2 className="text-xl font-bold flex items-center gap-3 dark:text-white mb-6">
+                 <Zap size={20} className="text-amber-500" /> Neural Synchronization
+               </h2>
+               <div className="flex flex-col md:flex-row gap-4 items-start">
+                  <button 
+                    onClick={handleBulkIndex} 
+                    disabled={isIndexing}
+                    className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-3 shadow-xl shadow-indigo-600/20 disabled:opacity-50"
+                  >
+                    {isIndexing ? <RefreshCw className="animate-spin" size={18} /> : <Database size={18} />}
+                    Bulk Re-index All Documents
+                  </button>
+                  {indexStatus && (
+                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-white/5 text-xs font-medium text-slate-500 max-w-md animate-in slide-in-from-left-4">
+                      {indexStatus}
+                    </div>
+                  )}
+               </div>
             </div>
           </div>
 

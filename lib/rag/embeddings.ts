@@ -6,23 +6,24 @@ import { GoogleGenAI } from "@google/genai";
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   // MUST use process.env.API_KEY exclusively
-  if (!process.env.API_KEY) {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
     throw new Error('Embedding node requires API_KEY environment variable');
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey });
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
      * The SDK requires the content object with a parts array.
      */
-    const result = await ai.models.embedContent({
+    const response = await ai.models.embedContent({
       model: "text-embedding-004",
       content: { parts: [{ text }] }
     });
 
-    const embedding = result.embedding;
+    const embedding = response.embedding;
 
     if (!embedding || !embedding.values) {
       throw new Error("No valid embedding values returned from synthesis node.");
