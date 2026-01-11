@@ -17,22 +17,27 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * The @google/genai SDK (version 1.34.0 as imported) uses plural 'contents' 
-     * for input and plural 'embeddings' for the response in the embedContent method
-     * based on the explicit compiler error in the production build environment.
+     * Some versions of the @google/genai SDK expect 'contents' as the key.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: { parts: [{ text }] }
     });
 
-    const embeddings = response.embeddings;
+    /**
+     * The SDK response structure for embedContent can vary by version.
+     * We check for both singular 'embedding' and plural 'embeddings' (common in batch or specific SDK builds).
+     * The compiler indicated 'embeddings' might be an array, leading to a confusion 
+     * between Array.prototype.values() and ContentEmbedding.values.
+     */
+    const result = (response as any).embedding || (response as any).embeddings;
+    const values = Array.isArray(result) ? result[0]?.values : result?.values;
 
-    if (!embeddings || !embeddings.values) {
+    if (!values || !Array.isArray(values)) {
       throw new Error("No valid embedding values returned from synthesis node.");
     }
 
-    return embeddings.values;
+    return values;
   } catch (error: any) {
     console.error('[Embedding Error]:', error);
     throw error;
