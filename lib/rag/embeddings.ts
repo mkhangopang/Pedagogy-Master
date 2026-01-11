@@ -17,15 +17,16 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * The @google/genai SDK version 1.34.0 uses the key 'contents' for the input payload
-     * in the embedContent method.
+     * The @google/genai SDK (version 1.34.0 as imported) uses plural 'contents' 
+     * for input and plural 'embeddings' for the response in the embedContent method.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: { parts: [{ text }] }
     });
 
-    const embedding = response.embedding;
+    // The compiler explicitly suggests 'embeddings' over 'embedding' for this response type.
+    const embedding = response.embeddings;
 
     if (!embedding || !embedding.values) {
       throw new Error("No valid embedding values returned from synthesis node.");
