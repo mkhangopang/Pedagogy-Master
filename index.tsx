@@ -1,16 +1,12 @@
 
-import './app/globals.css';
-
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
- * API_KEY is excluded to remain strictly on the server-side.
  */
 const performSystemHandshake = () => {
   if (typeof window === 'undefined') return;
 
   const win = window as any;
-  
   win.process = win.process || { env: {} };
   win.process.env = win.process.env || {};
   
@@ -41,7 +37,8 @@ import { createRoot } from 'react-dom/client';
 
 const startApp = async () => {
   try {
-    const { default: App } = await import('./app/page');
+    // Dynamic import of the main app component
+    const { default: App } = await import('./app/page.tsx');
     const container = document.getElementById('root');
     if (container) {
       createRoot(container).render(
@@ -52,6 +49,15 @@ const startApp = async () => {
     }
   } catch (error) {
     console.error("Pedagogy Master: Startup Failure", error);
+    // Add visual error indicator if possible
+    const root = document.getElementById('root');
+    if (root) {
+      root.innerHTML = `<div style="padding: 20px; color: #ef4444; font-family: sans-serif;">
+        <h1 style="font-size: 1.5rem; font-weight: bold;">Startup Failure</h1>
+        <p>Failed to initialize the application grid. Please check your cloud configuration.</p>
+        <pre style="background: #f1f5f9; padding: 10px; border-radius: 8px; font-size: 0.8rem; overflow: auto;">${error instanceof Error ? error.message : String(error)}</pre>
+      </div>`;
+    }
   }
 };
 

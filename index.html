@@ -6,8 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pedagogy Master</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/app/globals.css">
     <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
     <script>
+      // Early polyfill for process to prevent dependency crashes
       window.process = window.process || { env: {} };
       window.process.env = window.process.env || {};
     </script>
@@ -34,13 +36,14 @@
     "buffer": "https://esm.sh/buffer@6.0.3",
     "@aws-sdk/client-s3": "https://esm.sh/@aws-sdk/client-s3@3.511.0",
     "marked": "https://esm.sh/marked@15.0.0",
-    "next": "https://esm.sh/next@14.2.23",
-    "next/": "https://esm.sh/next@14.2.23/",
-    "react/": "https://esm.sh/react@18.3.1/",
-    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
-    "pdf-parse": "https://esm.sh/pdf-parse@1.1.1",
     "pdfjs-dist": "https://esm.sh/pdfjs-dist@4.4.168",
-    "pdfjs-dist/build/pdf.worker.mjs": "https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.mjs"
+    "pdfjs-dist/build/pdf.worker.mjs": "https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.mjs",
+    "@/": "/",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "next": "https://esm.sh/next@^16.1.1",
+    "next/": "https://esm.sh/next@^16.1.1/",
+    "pdf-parse": "https://esm.sh/pdf-parse@^2.4.5"
   }
 }
 </script>

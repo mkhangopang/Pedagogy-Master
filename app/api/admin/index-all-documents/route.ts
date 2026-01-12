@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
@@ -10,7 +11,6 @@ export const maxDuration = 300; // 5-minute timeout for bulk tasks
 /**
  * ADMIN BULK INDEXING
  * Scans the entire curriculum library and ensures all assets are indexed for RAG.
- * Uses standardized column names (name, file_path) to prevent DB schema errors.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // Identify documents requiring indexing - standardized column selection (removed gemini_processed)
+    // Identify documents requiring indexing
     const { data: documents, error: fetchError } = await supabase
       .from('documents')
       .select('id, name, file_path, extracted_text, status');
@@ -57,11 +57,8 @@ export async function POST(req: NextRequest) {
         const displayName = doc.name || `Node_${doc.id.substring(0, 8)}`;
         console.log(`🔍 [ADMIN] Processing: ${displayName}`);
         
-        // Use standard file_path as the source key for R2/Storage access
-        const r2Key = doc.file_path;
-        
-        // Trigger neural indexing
-        await indexDocumentForRAG(doc.id, doc.extracted_text, r2Key, supabase);
+        // Trigger neural indexing - Using file_path (R2 Key)
+        await indexDocumentForRAG(doc.id, doc.extracted_text, doc.file_path, supabase);
         
         results.push({ id: doc.id, name: displayName, success: true });
         successCount++;

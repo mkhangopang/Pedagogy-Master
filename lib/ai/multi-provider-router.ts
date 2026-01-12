@@ -71,52 +71,43 @@ export async function generateAIResponse(
   const preferredProvider = MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini';
 
   // 1. Identify Context
+  const { data: allDocs } = await supabase
+    .from('documents')
+    .select('id, name, rag_indexed, status')
+    .eq('user_id', userId);
+
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, rag_indexed, status')
     .eq('user_id', userId)
     .eq('is_selected', true);
   
-  const documentIds = selectedDocs?.map(d => d.id) || [];
-  const documentNames = selectedDocs?.map(d => d.name) || [];
+  const documentIds = selectedDocs && selectedDocs.length > 0 
+    ? selectedDocs.map(d => d.id) 
+    : (allDocs?.map(d => d.id) || []);
 
-  if (documentIds.length === 0) {
-    return {
-      text: `📚 **Pedagogy Master**: Please select curriculum assets from the sidebar to enable synthesis grounding.`,
-      provider: 'system',
-    };
+  // 2. RAG Memory Retrieval
+  let retrievedChunks = [];
+  if (documentIds.length > 0) {
+    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 10, priorityDocumentId);
   }
-
-  // 2. Check Indexing Health
-  const unindexedDocs = selectedDocs?.filter(d => !d.rag_indexed && d.status !== 'ready') || [];
-  if (unindexedDocs.length > 0 && selectedDocs?.length === unindexedDocs.length) {
-    return {
-      text: `⏳ **Pedagogy Master**: Selected assets are being indexed for neural search. Please wait 10-20 seconds.`,
-      provider: 'system',
-    };
-  }
-
-  // 3. RAG Memory Retrieval
-  const retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 10, priorityDocumentId);
-  const docParts = await fetchMultimodalContext(userId, supabase);
   
-  if (retrievedChunks.length === 0 && docParts.length === 0) {
-    return {
-      text: `**DATA_UNAVAILABLE**: I searched ${documentNames.join(', ')} but found no relevant content for: "${userPrompt}"\n\n**Suggestions**:\n- Check that the topic is in your files.\n- Try search for SLO code.\n- Use **Sync Neural Nodes** in the Library.`,
-      provider: 'system',
-    };
-  }
+  const docParts = await fetchMultimodalContext(userId, supabase);
+  const isGrounded = retrievedChunks.length > 0 || docParts.length > 0;
 
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 4. Memory Vault Construction
-  let contextVault = "# 📚 <ASSET_VAULT> (Retrieved curriculum nodes):\n\n";
-  retrievedChunks.forEach((chunk, idx) => {
-    contextVault += `### NODE_${idx + 1}\n`;
-    if (chunk.sloCodes?.length > 0) contextVault += `**SLOs:** ${chunk.sloCodes.join(', ')}\n`;
-    contextVault += `${chunk.text}\n\n`;
-  });
+  // 3. Memory Vault Construction
+  let contextVault = "";
+  if (isGrounded) {
+    contextVault = "# 📚 <ASSET_VAULT> (Retrieved curriculum nodes):\n\n";
+    retrievedChunks.forEach((chunk, idx) => {
+      contextVault += `### NODE_${idx + 1}\n`;
+      if (chunk.sloCodes?.length > 0) contextVault += `**SLOs:** ${chunk.sloCodes.join(', ')}\n`;
+      contextVault += `${chunk.text}\n\n`;
+    });
+  }
 
   const finalPrompt = `
 ${contextVault}
@@ -124,20 +115,20 @@ ${contextVault}
 # TEACHER QUERY:
 "${userPrompt}"
 
-${NUCLEAR_GROUNDING_DIRECTIVE}
-- Respond strictly using the ASSET_VAULT above.
-- Cite sources: [NODE_X].
+${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### GENERAL_PEDAGOGY_MODE: No library matches found. Provide a high-quality general response based on best pedagogical practices.'}
+${isGrounded ? '- Respond strictly using the ASSET_VAULT above.' : ''}
+${isGrounded ? '- Cite sources: [NODE_X].' : ''}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 `;
 
-  const finalSystemInstruction = `${customSystem || DEFAULT_MASTER_PROMPT}\n\nSTRICT_PEDAGOGY_RULES: Use 1. and 1.1 headings. NO BOLD HEADINGS. Temperature 0.1 for document grounding.`;
+  const finalSystemInstruction = `${customSystem || DEFAULT_MASTER_PROMPT}\n\nSTRICT_PEDAGOGY_RULES: Use 1. and 1.1 headings. NO BOLD HEADINGS. Temperature ${isGrounded ? '0.1' : '0.7'}.`;
   
   const result = await synthesize(
     finalPrompt, 
     history, 
-    true, 
+    isGrounded, 
     docParts, 
     preferredProvider, 
     finalSystemInstruction
@@ -149,6 +140,7 @@ ${lengthGuideline}
     ...result,
     metadata: {
       chunksUsed: retrievedChunks.length,
+      isGrounded,
       sources: retrievedChunks.map(c => ({
         similarity: c.similarity,
         sloCodes: c.sloCodes,

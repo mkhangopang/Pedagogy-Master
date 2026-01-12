@@ -1,8 +1,21 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Fallback to empty string if process.env is not yet available during hoisting
+const getEnv = (key: string) => {
+  if (typeof window !== 'undefined' && (window as any).process?.env) {
+    const val = (window as any).process.env[key];
+    if (val) return val;
+  }
+  try {
+    return typeof process !== 'undefined' ? process.env[key] || '' : '';
+  } catch {
+    return '';
+  }
+};
+
+const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
 export const isSupabaseConfigured = (): boolean => {
   return (
@@ -47,7 +60,7 @@ export const getSupabaseHealth = async () => {
 
   try {
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Connection timeout')), 3500) // Reduced to 3.5s
+      setTimeout(() => reject(new Error('Connection timeout')), 3500)
     );
 
     const queryPromise = supabase.from('profiles').select('id').limit(1);

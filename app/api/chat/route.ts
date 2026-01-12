@@ -10,9 +10,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL BRAIN CHAT ENGINE (v2.0)
+ * NEURAL BRAIN CHAT ENGINE (v2.1)
  * Orchestrates pedagogical grounding with the "Pedagogy Master" core persona.
- * Updated: Document-independent and SLO-centric search logic.
+ * Updated: Hybrid Fallback Logic for general queries.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     const activeMasterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
 
-    // 2. Identification of context (Automatic selection)
+    // 2. Identification of context
     const { data: allDocs } = await supabase
       .from('documents')
       .select('id, name, rag_indexed')
@@ -51,77 +51,59 @@ export async function POST(req: NextRequest) {
       .eq('user_id', user.id)
       .eq('is_selected', true);
     
-    // SLO-CENTRIC LOGIC: If no documents are manually selected, search across ALL available documents
     let documentIds = selectedDocs?.map(d => d.id) || [];
-    if (documentIds.length === 0) {
-      documentIds = allDocs?.map(d => d.id) || [];
-    }
-
-    if (!allDocs || allDocs.length === 0) {
-      return new Response(`📚 **Pedagogy Master (v2.0)**: 
-      
-It looks like your **Library** is empty. Please upload curriculum documents (PDF, Word, or TXT) in the **Curriculum Docs** section to enable neural tutoring and SLO alignment.`);
-    }
+    const hasLibrary = allDocs && allDocs.length > 0;
 
     // 3. Neural Semantic Memory Retrieval
-    const retrievedChunks = await retrieveRelevantChunks(
-      message, 
-      documentIds, 
-      supabase, 
-      12, // Context window
-      priorityDocumentId
-    );
-
-    // 4. Handle context retrieval gaps
-    if (retrievedChunks.length === 0) {
-      return new Response(`**DATA_UNAVAILABLE**: 
-      
-I searched through your ${allDocs.length} curriculum assets but found no high-confidence pedagogical data for: "${message}".
-
-**Action Steps**:
-- Mention a specific SLO code (e.g., S8a5).
-- Ensure your curriculum documents contain the requested topic.
-- If you just uploaded files, click **Sync Neural Nodes** in the Library.`);
+    let retrievedChunks = [];
+    if (hasLibrary) {
+      // If no docs selected, search across all docs in the library
+      const targetIds = documentIds.length > 0 ? documentIds : (allDocs?.map(d => d.id) || []);
+      retrievedChunks = await retrieveRelevantChunks(
+        message, 
+        targetIds, 
+        supabase, 
+        12, 
+        priorityDocumentId
+      );
     }
 
-    // 5. Memory Vault Synthesis
-    const contextVault = retrievedChunks.map((c, i) => (
-      `### [MEMORY_NODE_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'N/A'})
-      ${c.text}`
-    )).join('\n\n');
+    const isGrounded = retrievedChunks.length > 0;
 
-    // 6. Gemini Synthesis Execution
+    // 4. Gemini Synthesis Execution
     const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey });
     
-    const systemInstruction = `${activeMasterPrompt}
+    // Construct Dynamic System Instruction
+    let systemInstruction = `${activeMasterPrompt}\n\n`;
+    
+    if (isGrounded) {
+      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\nSTRICT_GROUNDING: Use the provided MEMORY_VAULT. Cite as [Memory Node X].`;
+    } else {
+      systemInstruction += `GENERAL_PEDAGOGY_MODE: The user's query did not match specific curriculum assets. Provide a world-class pedagogical response using your general training data, but add a brief note that this is not grounded in their uploaded documents.`;
+    }
 
----
-${NUCLEAR_GROUNDING_DIRECTIVE}
+    systemInstruction += `\n\nStyle: Markdown headers (1., 1.1), tables, bullet points. NO BOLD HEADINGS.`;
 
-STRICT GROUNDING RULES:
-- Source of truth: ONLY the provided MEMORY_VAULT.
-- Automatic Detection: You are already provided with the most relevant curriculum nodes. Use them.
-- If specific data is missing: Explicitly state "DATA_UNAVAILABLE".
-- Citation format: "Based on [Memory Node X], ..."
-- Style: Markdown headers (1., 1.1), tables, bullet points. NO BOLD HEADINGS.`;
+    // 5. Build Synthesis Prompt
+    let contextVault = "";
+    if (isGrounded) {
+      contextVault = retrievedChunks.map((c, i) => (
+        `### [MEMORY_NODE_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'N/A'})
+        ${c.text}`
+      )).join('\n\n');
+    }
 
-    const synthesisPrompt = `
-# MEMORY_VAULT (Active Curriculum Context):
-${contextVault}
-
-# TEACHER QUERY:
-"${message}"
-
-Synthesize a world-class pedagogical response using the Neural Brain logic. Reference all mentioned SLOs in [brackets].
-`;
+    const synthesisPrompt = isGrounded 
+      ? `# MEMORY_VAULT (Matched Context):\n${contextVault}\n\n# TEACHER QUERY:\n"${message}"\n\nSynthesize response referencing nodes.`
+      : `# TEACHER QUERY (No Document Matches Found):\n"${message}"\n\nProvide general pedagogical assistance.`;
 
     const streamResponse = await ai.models.generateContentStream({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // High precision
+        temperature: isGrounded ? 0.1 : 0.7,
       }
     });
 
@@ -129,6 +111,12 @@ Synthesize a world-class pedagogical response using the Neural Brain logic. Refe
     return new Response(new ReadableStream({
       async start(controller) {
         try {
+          if (!isGrounded && hasLibrary) {
+            controller.enqueue(encoder.encode("> *Note: No direct matches found in your curriculum library. Providing general pedagogical guidance.*\n\n"));
+          } else if (!hasLibrary) {
+             controller.enqueue(encoder.encode("> *Note: Your library is empty. Please upload documents to enable curriculum-grounded responses.*\n\n"));
+          }
+
           for await (const chunk of streamResponse) {
             if (chunk.text) {
               controller.enqueue(encoder.encode(chunk.text));
