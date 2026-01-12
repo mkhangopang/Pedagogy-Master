@@ -26,35 +26,32 @@ export async function POST(req: NextRequest) {
     // 1. Identify currently selected curriculum context
     const { data: selectedDocs } = await supabase
       .from('documents')
-      .select('id')
+      .select('id, name')
       .eq('user_id', user.id)
       .eq('is_selected', true);
     
     const documentIds = selectedDocs?.map(d => d.id) || [];
 
-    // 2. Hybrid RAG Retrieval (SLO Detection + Neural Search)
+    // 2. Multi-Layer Retrieval (Precision SLO + Semantic Neural)
     let retrievedChunks = [];
     
     if (documentIds.length > 0) {
-      // 2a. Detect SLO pattern (e.g., "s7 a5", "S7a5", "S-7-a-5")
-      // This helps solve the "DATA_UNAVAILABLE" issue for specific curriculum codes.
-      const sloPattern = /\b([a-z])\s*(\d{1,2})\s*([a-z])\s*(\d{1,2})\b/i;
-      const sloMatch = message.match(sloPattern);
+      // 2a. Precision SLO Extraction (Matches 's8 a5', 'S8A5', etc.)
+      const sloPattern = /\b([a-z])\s*(\d{1,2})\s*([a-z])\s*(\d{1,2})\b/gi;
+      const sloMatches = Array.from(message.matchAll(sloPattern));
       
-      if (sloMatch) {
-        const sloCode = sloMatch[0].replace(/\s+/g, '').toUpperCase();
-        console.log(`[Chat API] Detected SLO code in query: ${sloCode}. Running precision lookup.`);
-        const directChunks = await retrieveChunksForSLO(sloCode, documentIds, supabase);
-        if (directChunks.length > 0) {
-          retrievedChunks.push(...directChunks);
-        }
+      for (const match of sloMatches) {
+        const normalizedCode = match[0].replace(/[\s-]/g, '').toUpperCase();
+        console.log(`[Chat Node] High-Precision Lookup: ${normalizedCode}`);
+        const exactMatchChunks = await retrieveChunksForSLO(normalizedCode, documentIds, supabase);
+        retrievedChunks.push(...exactMatchChunks);
       }
       
-      // 2b. Neural Semantic Search (Global context matching)
-      const neuralChunks = await retrieveRelevantChunks(message, documentIds, supabase, 5, priorityDocumentId);
-      retrievedChunks.push(...neuralChunks);
+      // 2b. Semantic Neural Search (For context and general queries)
+      const semanticChunks = await retrieveRelevantChunks(message, documentIds, supabase, 5, priorityDocumentId);
+      retrievedChunks.push(...semanticChunks);
       
-      // Deduplicate results by chunk ID to ensure clean context
+      // Deduplicate results by chunk ID
       const seenIds = new Set();
       retrievedChunks = retrievedChunks.filter(c => {
         if (seenIds.has(c.id)) return false;
@@ -65,33 +62,36 @@ export async function POST(req: NextRequest) {
 
     let retrievedContext = "";
     if (retrievedChunks.length > 0) {
-      retrievedContext = retrievedChunks.map((c, i) => `[Context Segment ${i+1}${c.sectionTitle ? `: ${c.sectionTitle}` : ''}]\n${c.text}`).join('\n\n');
+      retrievedContext = retrievedChunks.map((c, i) => {
+        const header = `[Source Asset ${i+1}: ${c.sectionTitle || 'Curriculum Segment'}]`;
+        return `${header}\n${c.text}`;
+      }).join('\n\n');
     }
 
     // 3. Grounding Verification
-    // If no information is found in selected docs, provide a helpful pedagogical fallback guidance.
     if (!retrievedContext) {
-      return new Response("DATA_UNAVAILABLE: I couldn't find any specific information in your currently selected curriculum documents to address this request. \n\nTo help me assist you better:\n1. Ensure the relevant documents are uploaded in the Library.\n2. Verify they are 'Selected' (checked) in the Library or the Chat sidebar.\n3. Try re-indexing the document if it was recently uploaded.");
+      const activeDocsNames = selectedDocs?.map(d => d.name).join(', ') || 'No documents';
+      return new Response(`DATA_UNAVAILABLE: I searched your selected curriculum assets (${activeDocsNames}) but couldn't find information about "${message}". \n\nTips:\n- Ensure the correct document is selected in the Sidebar.\n- Verify the SLO code format matches your document.\n- Try re-indexing your library from the Brain Control panel.`);
     }
 
     // 4. Gemini Neural Synthesis
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    const systemInstruction = `You are the Pedagogy Master AI, an expert instructional designer and curriculum coach.
-Your task is to assist the teacher using ONLY the curriculum context provided in the ASSET_VAULT.
+    const systemInstruction = `You are the Pedagogy Master AI, an elite instructional designer.
+Your primary directive is to use ONLY the curriculum context provided in the ASSET_VAULT.
 
-STRICT GROUNDING RULES:
-1. USE ONLY the provided context to answer the user's question. 
-2. DO NOT use external general training knowledge.
-3. If the context does not contain the necessary information, explicitly state that it is unavailable in the current curriculum.
-4. Cite the source segments (e.g., "Based on Context Segment 1...").
-5. Maintain a professional, supportive, and highly actionable tone.`;
+STRICT GROUNDING PROTOCOL:
+1. Ground every statement in the ASSET_VAULT.
+2. If the user asks for a lesson plan, rubric, or activity, base it strictly on the learning objectives found in the vault.
+3. Cite sources: "Based on [Source Asset Name]..."
+4. Maintain a professional, actionable pedagogical tone.
+5. If you cannot find the specific SLO text, state what is available instead.`;
 
     const prompt = `
 # ASSET_VAULT (CURRICULUM CONTEXT):
 ${retrievedContext}
 
-# TEACHER QUESTION:
+# TEACHER QUERY:
 ${message}
 `;
 
@@ -100,7 +100,7 @@ ${message}
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // Precision temperature for strict grounding
+        temperature: 0.1, // Precision temperature
       }
     });
 
@@ -114,8 +114,8 @@ ${message}
             }
           }
         } catch (err) {
-          console.error('[Stream Synthesis Error]:', err);
-          controller.enqueue(encoder.encode("\n\n[Synthesis Node Interrupted]"));
+          console.error('[Synthesis Stream Break]:', err);
+          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted]"));
         } finally {
           controller.close();
         }
@@ -123,7 +123,7 @@ ${message}
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error('[Chat API Route Fatal]:', error);
-    return NextResponse.json({ error: error.message || 'Synthesis engine encountered a fatal exception.' }, { status: 500 });
+    console.error('[Chat API Fatal]:', error);
+    return NextResponse.json({ error: 'The synthesis engine encountered a fatal bottleneck.' }, { status: 500 });
   }
 }
