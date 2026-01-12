@@ -1,7 +1,12 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { getObjectText } from '../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // Extend timeout to 5 minutes for large curriculum files
 
 /**
  * MANUAL INDEX TRIGGER
@@ -39,7 +44,6 @@ export async function POST(request: NextRequest) {
     // Attempt text retrieval for indexing
     let text = doc.extracted_text;
     if (!text && doc.file_path) {
-      // Fallback to R2 fetch if database text column is empty
       try {
         text = await getObjectText(doc.file_path);
       } catch (r2Err) {
@@ -48,15 +52,17 @@ export async function POST(request: NextRequest) {
     }
     
     if (!text || text.length < 10) {
-      return NextResponse.json({ error: 'No usable text content found for indexing. Document might be empty or corrupt.' }, { status: 422 });
+      return NextResponse.json({ error: 'No usable text content found for indexing.' }, { status: 422 });
     }
     
-    // Execute one-time persistent indexing
+    // Execute indexing with higher timeout resilience
     try {
       await indexDocumentForRAG(documentId, text, doc.file_path, supabase);
     } catch (indexErr: any) {
       console.error('[Indexing Logic Failure]:', indexErr);
-      return NextResponse.json({ error: `Neural processing failed: ${indexErr.message || 'Vector Grid Error'}` }, { status: 500 });
+      return NextResponse.json({ 
+        error: `Neural processing failed: ${indexErr.message || 'The operation took too long or the document format is invalid.'}` 
+      }, { status: 500 });
     }
     
     return NextResponse.json({

@@ -6,8 +6,8 @@ import { generateEmbeddingsBatch } from './embeddings';
 
 /**
  * SANITIZE TEXT
- * Aggressively removes null bytes and control characters that break 
- * PostgreSQL's JSON and text parsers during batch insertion.
+ * Aggressively removes null bytes, control characters, and invalid unicode
+ * that can cause PostgreSQL JSON parsing errors.
  */
 function sanitizeText(text: string): string {
   if (!text) return "";
@@ -53,13 +53,12 @@ export async function indexDocumentForRAG(
     console.log(`✅ [Indexer] ${chunks.length} segments generated.`);
     
     // 2. Synthesize Vectors
-    console.log(`✨ [Indexer] Synthesizing semantic vectors...`);
+    console.log(`✨ [Indexer] Synthesizing semantic vectors in parallel...`);
     const chunkTexts = chunks.map(c => sanitizeText(c.text));
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
-    console.log(`✅ [Indexer] Vectors ready.`);
+    console.log(`✅ [Indexer] ${embeddings.length} vectors ready.`);
 
     // 3. Persistent Database Update
-    // Clean up existing chunks to prevent duplicates
     await supabase
       .from('document_chunks')
       .delete()
@@ -70,16 +69,14 @@ export async function indexDocumentForRAG(
       chunk_text: sanitizeText(chunk.text),
       chunk_index: chunk.index,
       chunk_type: chunk.type,
-      // Ensure arrays contain clean strings to prevent JSON parsing errors if column is JSONB
       slo_codes: (chunk.sloMentioned || []).map(s => sanitizeText(s)).filter(Boolean),
       keywords: (chunk.keywords || []).map(k => sanitizeText(k)).filter(Boolean),
-      // Pass embedding as a native number array; the Supabase client handles 
-      // conversion to the required vector/json format.
-      embedding: embeddings[idx]
+      // Use string format for vector to avoid JSON parsing issues with large arrays
+      embedding: `[${embeddings[idx].join(',')}]`
     }));
     
-    // Perform insertion in small batches to stay within PostgREST/Gateway limits
-    const dbBatchSize = 10;
+    // Bulk insertion in small batches to stay within PostgREST limits
+    const dbBatchSize = 15;
     for (let i = 0; i < insertData.length; i += dbBatchSize) {
       const batch = insertData.slice(i, i + dbBatchSize);
       const { error: insertError } = await supabase
@@ -87,7 +84,7 @@ export async function indexDocumentForRAG(
         .insert(batch);
       
       if (insertError) {
-        console.error(`[Indexer DB Error]:`, insertError);
+        console.error(`[Indexer DB Error at ${i}]:`, insertError);
         throw new Error(`Database rejected segments: ${insertError.message}`);
       }
     }

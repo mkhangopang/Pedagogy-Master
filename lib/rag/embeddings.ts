@@ -46,16 +46,24 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING SYNTHESIS
- * Processes multiple chunks sequentially to avoid rate limits while maintaining efficiency.
+ * Processes chunks in parallel batches to optimize performance for large documents.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
-  const embeddings: number[][] = [];
-  // Sequential processing for reliability
-  for (const text of texts) {
-    embeddings.push(await generateEmbedding(text));
+  const CONCURRENCY_LIMIT = 5; // Process 5 embeddings at a time
+  const results: number[][] = [];
+  
+  for (let i = 0; i < texts.length; i += CONCURRENCY_LIMIT) {
+    const batch = texts.slice(i, i + CONCURRENCY_LIMIT);
+    try {
+      const batchEmbeddings = await Promise.all(batch.map(text => generateEmbedding(text)));
+      results.push(...batchEmbeddings);
+    } catch (err: any) {
+      console.error(`[Embeddings Batch] Error at index ${i}:`, err);
+      throw err;
+    }
   }
   
-  return embeddings;
+  return results;
 }
