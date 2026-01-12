@@ -37,8 +37,8 @@ import { createRoot } from 'react-dom/client';
 
 const startApp = async () => {
   try {
-    // Dynamic import of the main app component
-    const { default: App } = await import('./app/page.tsx');
+    // Dynamic import of the main app component - extension removed to fix TS build error
+    const { default: App } = await import('./app/page');
     const container = document.getElementById('root');
     if (container) {
       createRoot(container).render(
