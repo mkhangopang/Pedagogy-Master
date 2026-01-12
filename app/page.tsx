@@ -2,22 +2,22 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
-import { supabase, isSupabaseConfigured, getSupabaseHealth } from '../lib/supabase.ts';
-import Sidebar from '../components/Sidebar.tsx';
-import Dashboard from '../views/Dashboard.tsx';
-import Login from '../views/Login.tsx';
-import { ProviderStatusBar } from '../components/ProviderStatusBar.tsx';
-import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types.ts';
-import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants.ts';
-import { paymentService } from '../services/paymentService.ts';
+import { supabase, isSupabaseConfigured, getSupabaseHealth } from '../lib/supabase';
+import Sidebar from '../components/Sidebar';
+import Dashboard from '../views/Dashboard';
+import Login from '../views/Login';
+import { ProviderStatusBar } from '../components/ProviderStatusBar';
+import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
+import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
+import { paymentService } from '../services/paymentService';
 import { Loader2, Menu, AlertCircle, RefreshCw } from 'lucide-react';
 
-const DocumentsView = lazy(() => import('../views/Documents.tsx'));
-const ChatView = lazy(() => import('../views/Chat.tsx'));
-const ToolsView = lazy(() => import('../views/Tools.tsx'));
-const BrainControlView = lazy(() => import('../views/BrainControl.tsx'));
-const PricingView = lazy(() => import('../views/Pricing.tsx'));
-const TrackerView = lazy(() => import('../views/Tracker.tsx'));
+const DocumentsView = lazy(() => import('../views/Documents'));
+const ChatView = lazy(() => import('../views/Chat'));
+const ToolsView = lazy(() => import('../views/Tools'));
+const BrainControlView = lazy(() => import('../views/BrainControl'));
+const PricingView = lazy(() => import('../views/Pricing'));
+const TrackerView = lazy(() => import('../views/Tracker'));
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
