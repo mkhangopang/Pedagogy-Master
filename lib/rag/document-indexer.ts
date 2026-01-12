@@ -4,6 +4,21 @@ import { chunkDocument } from './chunking-strategy';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
+ * SANITIZE TEXT
+ * Removes null bytes (\u0000) and other non-printable Unicode characters
+ * that cause PostgreSQL to fail with "unsupported Unicode escape sequence".
+ */
+function sanitizeText(text: string): string {
+  if (!text) return "";
+  // 1. Remove null bytes (\u0000)
+  // 2. Remove replacement characters and common invalid Unicode sequences
+  return text
+    .replace(/\u0000/g, '')
+    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
+    .trim();
+}
+
+/**
  * ONE-TIME NEURAL INDEXER
  * Orchestrates the persistent storage of curriculum assets. 
  * Text is chunked, embedded, and stored in the vector grid.
@@ -17,20 +32,23 @@ export async function indexDocumentForRAG(
   console.log(`\n🧠 [Neural Sync] Initializing persistent indexing for: ${documentId}`);
   
   try {
-    let documentText = content || "";
+    let rawText = content || "";
     
     // Fetch text from DB if not provided (needed for re-syncing legacy docs)
-    if (!documentText) {
+    if (!rawText) {
       const { data: doc } = await supabase
         .from('documents')
         .select('extracted_text')
         .eq('id', documentId)
         .single();
-      documentText = doc?.extracted_text || "";
+      rawText = doc?.extracted_text || "";
     }
 
-    if (!documentText || documentText.length < 50) {
-      throw new Error('Insufficient curriculum text discovered for indexing.');
+    // SANITIZATION: Clean the entire document text before processing
+    const documentText = sanitizeText(rawText);
+
+    if (!documentText || documentText.length < 20) {
+      throw new Error('Insufficient or corrupt curriculum text discovered for indexing.');
     }
     
     // 1. Structural Chunking Strategy
@@ -39,7 +57,7 @@ export async function indexDocumentForRAG(
     
     // 2. Neural Vector Generation (One-time cost)
     console.log(`✨ [Indexer] Generating semantic embeddings...`);
-    const chunkTexts = chunks.map(c => c.text);
+    const chunkTexts = chunks.map(c => sanitizeText(c.text));
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
     console.log(`✅ [Indexer] Neural vectors synthesized.`);
 
@@ -52,7 +70,7 @@ export async function indexDocumentForRAG(
 
     const insertData = chunks.map((chunk, idx) => ({
       document_id: documentId,
-      chunk_text: chunk.text,
+      chunk_text: sanitizeText(chunk.text), // Final sanitization check
       chunk_index: chunk.index,
       chunk_type: chunk.type,
       slo_codes: chunk.sloMentioned,
@@ -61,14 +79,17 @@ export async function indexDocumentForRAG(
     }));
     
     // Batch insertion to respect Postgres limits
-    const dbBatchSize = 20;
+    const dbBatchSize = 10; // Smaller batch size for better reliability
     for (let i = 0; i < insertData.length; i += dbBatchSize) {
       const batch = insertData.slice(i, i + dbBatchSize);
       const { error: insertError } = await supabase
         .from('document_chunks')
         .insert(batch);
       
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error(`[Indexer DB Insert Error]:`, insertError);
+        throw new Error(`Database rejected segments: ${insertError.message}`);
+      }
     }
     
     // 4. Update Document Metadata Status
