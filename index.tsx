@@ -1,3 +1,4 @@
+
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
@@ -20,6 +21,7 @@ const performSystemHandshake = () => {
   ];
   
   const metaEnv = (import.meta as any).env || {};
+  const statusReport: Record<string, string> = {};
 
   keys.forEach(key => {
     const viteKey = `VITE_${key.replace('NEXT_PUBLIC_', '')}`;
@@ -37,14 +39,20 @@ const performSystemHandshake = () => {
       const trimmed = String(value).trim();
       win.process.env[key] = trimmed;
       win[key] = trimmed;
+      statusReport[key] = 'LOADED';
       
-      // Critical mapping: Ensure the standard API_KEY is set if Gateway key exists
-      if (key === 'AI_GATEWAY_API_KEY' || key === 'AI_GATWAY_API_KEY') {
+      // Map gateway variants to standard API_KEY for internal consistency
+      if (key === 'AI_GATWAY_API_KEY' || key === 'AI_GATEWAY_API_KEY' || key === 'GEMINI_API_KEY') {
         win.process.env['API_KEY'] = trimmed;
         win['API_KEY'] = trimmed;
       }
+    } else {
+      statusReport[key] = 'MISSING';
     }
   });
+
+  console.log('--- System Handshake Report ---');
+  console.table(statusReport);
 };
 
 performSystemHandshake();
