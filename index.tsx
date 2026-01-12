@@ -1,4 +1,3 @@
-
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
@@ -20,10 +19,18 @@ const performSystemHandshake = () => {
 
   keys.forEach(key => {
     const viteKey = `VITE_${key.replace('NEXT_PUBLIC_', '')}`;
-    const value = win.process.env[key] || win[key] || metaEnv[key] || metaEnv[viteKey] || '';
     
-    if (value && value !== 'undefined' && value !== 'null' && value.trim() !== '') {
-      const trimmed = value.trim();
+    // Check all possible sources
+    const value = 
+      win.process.env[key] || 
+      win[key] || 
+      win.env?.[key] ||
+      metaEnv[key] || 
+      metaEnv[viteKey] || 
+      '';
+    
+    if (value && value !== 'undefined' && value !== 'null' && String(value).trim() !== '') {
+      const trimmed = String(value).trim();
       win.process.env[key] = trimmed;
       win[key] = trimmed;
     }
@@ -37,7 +44,7 @@ import { createRoot } from 'react-dom/client';
 
 const startApp = async () => {
   try {
-    // Dynamic import of the main app component - extension removed to fix TS build error
+    // Dynamic import of the main app component
     const { default: App } = await import('./app/page');
     const container = document.getElementById('root');
     if (container) {

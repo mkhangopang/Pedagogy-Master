@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -9,10 +8,21 @@ const getEnv = (key: string): string => {
   if (typeof window !== 'undefined') {
     const win = window as any;
     // Check various common locations for environment variables
-    const val = win.process?.env?.[key] || win[key] || (import.meta as any).env?.[key] || '';
+    // 1. window.process.env (from handshake)
+    // 2. window[key] (global)
+    // 3. window.env[key] (common container pattern)
+    // 4. import.meta.env[key] (Vite)
+    const val = 
+      win.process?.env?.[key] || 
+      win[key] || 
+      win.env?.[key] || 
+      (import.meta as any).env?.[key] || 
+      '';
+    
     if (val && val !== 'undefined' && val !== 'null') return val;
   }
   try {
+    // Standard Node/Next process.env
     return typeof process !== 'undefined' ? process.env[key] || '' : '';
   } catch {
     return '';
@@ -26,12 +36,11 @@ const getEnv = (key: string): string => {
 export const isSupabaseConfigured = (): boolean => {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
   const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  return (
-    !!url && 
-    !!key && 
-    url !== 'https://placeholder-project.supabase.co' &&
-    url.startsWith('http')
-  );
+  
+  const isValidUrl = !!url && url !== 'https://placeholder-project.supabase.co' && url.startsWith('http');
+  const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 20;
+
+  return isValidUrl && isValidKey;
 };
 
 let cachedClient: SupabaseClient | null = null;
@@ -65,9 +74,16 @@ const getClient = (): SupabaseClient => {
  */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
+    // Handle standard JS behavior for proxies
+    if (prop === 'then') return undefined;
+    
     const client = getClient();
     const value = (client as any)[prop];
-    return typeof value === 'function' ? value.bind(client) : value;
+    
+    if (typeof value === 'function') {
+      return value.bind(client);
+    }
+    return value;
   }
 });
 
