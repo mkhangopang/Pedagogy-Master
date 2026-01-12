@@ -11,8 +11,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * HYBRID NEURAL RETRIEVER
- * Fetches relevant curriculum context from the persistent Supabase vector store.
+ * SEMANTIC RETRIEVER
+ * Pulls the most relevant curriculum "memories" based on user query vector.
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -22,25 +22,36 @@ export async function retrieveRelevantChunks(
   priorityDocumentId?: string
 ): Promise<RetrievedChunk[]> {
   
-  console.log(`🔍 [Retriever] Initializing neural lookup for: "${query.substring(0, 50)}..."`);
+  console.log(`🔍 [Retriever] Semantic lookup for: "${query.substring(0, 50)}..."`);
   
   try {
-    // 1. Check for explicit SLO codes (Highest precision)
+    // 1. Check for direct SLO code match (High Precision Fallback)
     const sloPattern = /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/i;
     const sloMatch = query.match(sloPattern);
     
     if (sloMatch) {
       const sloCode = sloMatch[0].toUpperCase();
-      console.log(`🎯 [Retriever] Priority SLO match: ${sloCode}`);
-      const results = await retrieveChunksForSLO(sloCode, documentIds, supabase);
-      if (results.length > 0) return results;
+      const { data: sloChunks } = await supabase.rpc('find_slo_chunks', {
+        slo_code: sloCode,
+        document_ids: documentIds
+      });
+      
+      if (sloChunks && sloChunks.length > 0) {
+        console.log(`🎯 [Retriever] Direct SLO match found: ${sloCode}`);
+        return sloChunks.map((d: any) => ({
+          id: d.chunk_id,
+          text: d.chunk_text,
+          sloCodes: [sloCode],
+          similarity: 1.0,
+          pageNumber: d.page_number
+        }));
+      }
     }
 
     // 2. Generate Query Embedding for Semantic Search
-    console.log(`✨ [Retriever] Generating query vector...`);
     const queryEmbedding = await generateEmbedding(query);
 
-    // 3. Execute Hybrid Search RPC (Vector Similarity + Full-Text Rank)
+    // 3. Persistent Vector Search (pgvector)
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -54,8 +65,6 @@ export async function retrieveRelevantChunks(
       return [];
     }
 
-    console.log(`✅ [Retriever] Retrieved ${data?.length || 0} semantic matches.`);
-
     return (data || []).map((d: any) => ({
       id: d.chunk_id,
       text: d.chunk_text,
@@ -65,31 +74,7 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
   } catch (err) {
-    console.error('[Retriever Fatal]:', err);
+    console.error('[Retriever Fatal Failure]:', err);
     return [];
   }
-}
-
-/**
- * SLO DIRECT LOOKUP (Fallback for exact code queries)
- */
-export async function retrieveChunksForSLO(
-  sloCode: string,
-  documentIds: string[],
-  supabase: SupabaseClient
-): Promise<RetrievedChunk[]> {
-  const { data, error } = await supabase.rpc('find_slo_chunks', {
-    slo_code: sloCode.toUpperCase(),
-    document_ids: documentIds
-  });
-
-  if (error) return [];
-
-  return (data || []).map((d: any) => ({
-    id: d.chunk_id,
-    text: d.chunk_text,
-    sloCodes: [sloCode.toUpperCase()],
-    similarity: 1.0,
-    pageNumber: d.page_number
-  }));
 }

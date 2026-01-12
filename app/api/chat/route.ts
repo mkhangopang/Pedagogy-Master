@@ -6,8 +6,8 @@ import { GoogleGenAI } from '@google/genai';
 export const runtime = 'nodejs';
 
 /**
- * GROUNDED SYNTHESIS ENGINE
- * Connects the user to the persistent curriculum memory.
+ * GROUNDED CHAT ENGINE
+ * Leverages persistent RAG memory to provide context-aware synthesis.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Verify selected curriculum context
+    // 1. Identify context (selected documents)
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name')
@@ -31,56 +31,51 @@ export async function POST(req: NextRequest) {
       .eq('is_selected', true);
     
     const documentIds = selectedDocs?.map(d => d.id) || [];
-    const documentNames = selectedDocs?.map(d => d.name) || [];
 
     if (documentIds.length === 0) {
-      return new Response(`📚 Please activate a curriculum document in the library. I need persistent context to assist you accurately.`);
+      return new Response(`📚 Active context required. Please select at least one curriculum document in your Library.`);
     }
 
-    // 2. Persistent RAG Retrieval (Neural + Keyword)
+    // 2. Semantic Memory Retrieval
     const retrievedChunks = await retrieveRelevantChunks(
       message, 
       documentIds, 
       supabase, 
-      10, // Increased chunk limit for better synthesis
+      10, 
       priorityDocumentId
     );
 
-    // 3. Context Verification
+    // 3. Verify grounded data
     if (retrievedChunks.length === 0) {
-      return new Response(`DATA_UNAVAILABLE: I searched your persistent curriculum memory but found no relevant data for your query. 
-
-Suggestions:
-- Check if the document covers this specific topic.
-- Try searching with different pedagogical keywords.
-- Verify the document is fully indexed in the Library.`);
+      return new Response(`DATA_UNAVAILABLE: Your current query doesn't match the curriculum data in your selected documents. Please try a different pedagogical keyword or check your document selection.`);
     }
 
-    // 4. Grounded Prompt Assembly
+    // 4. Synthesis Prompt Generation
     const contextVault = retrievedChunks.map((c, i) => (
-      `### [MEMORY_SEGMENT_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'General'})
+      `### [MEMORY_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'N/A'})
       ${c.text}`
     )).join('\n\n');
 
+    // Initialize AI per coding guidelines
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const systemInstruction = `You are Pedagogy Master AI.
-Strict Rule: Answer ONLY using the curriculum memories provided in the MEMORY_VAULT.
+Strict Directive: Answer ONLY using the curriculum data in the MEMORY_VAULT.
 
-OPERATIONAL PROTOCOL:
-1. CITATION: Cite specific segments (e.g., "Based on Segment 4...").
-2. SCOPE: If the info is not in the vault, say "DATA_UNAVAILABLE".
-3. FORMATTING: Use professional, structured Markdown. No bold headings.
-4. TONE: Expert pedagogical consultant.`;
+Operational Rules:
+- If info is missing, say "DATA_UNAVAILABLE".
+- Cite memories used: (e.g., "According to Memory 2...").
+- Tone: Professional pedagogical consultant.
+- Format: Structured Markdown. NO BOLD HEADINGS.`;
 
     const prompt = `
-# MEMORY_VAULT (Persistent Curriculum Data):
+# MEMORY_VAULT (Curriculum Data):
 ${contextVault}
 
 # USER TEACHER QUERY:
 "${message}"
 
-Synthesize a grounded response based solely on the persistent memories above.
+Synthesize a professional response based strictly on the curriculum data above.
 `;
 
     const streamResponse = await ai.models.generateContentStream({
@@ -88,7 +83,7 @@ Synthesize a grounded response based solely on the persistent memories above.
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // Absolute precision
+        temperature: 0.1, // High precision
       }
     });
 
@@ -102,7 +97,7 @@ Synthesize a grounded response based solely on the persistent memories above.
             }
           }
         } catch (err) {
-          controller.enqueue(encoder.encode("\n\n[Synthesis Node Disconnected]"));
+          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted]"));
         } finally {
           controller.close();
         }
@@ -110,7 +105,7 @@ Synthesize a grounded response based solely on the persistent memories above.
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error('[Grounded Chat Error]:', error);
-    return NextResponse.json({ error: 'Memory retrieval bottleneck.' }, { status: 500 });
+    console.error('[Chat API Error]:', error);
+    return NextResponse.json({ error: 'Curriculum retrieval failure.' }, { status: 500 });
   }
 }

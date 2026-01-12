@@ -3,6 +3,10 @@ import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib
 import { getObjectText } from '../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 
+/**
+ * MANUAL INDEX TRIGGER
+ * Used to synchronize legacy or failed uploads with the neural vector grid.
+ */
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get('Authorization');
@@ -20,7 +24,7 @@ export async function POST(request: NextRequest) {
     
     const supabase = getSupabaseServerClient(token);
 
-    // Get document from database
+    // Verify document existence and ownership
     const { data: doc, error: docError } = await supabase
       .from('documents')
       .select('*')
@@ -32,26 +36,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
     
-    // Fetch text from DB or R2
+    // Attempt text retrieval for indexing
     let text = doc.extracted_text;
     if (!text && doc.file_path) {
+      // Fallback to R2 fetch if database text column is empty
       text = await getObjectText(doc.file_path);
     }
     
     if (!text) {
-      return NextResponse.json({ error: 'No document text found' }, { status: 404 });
+      return NextResponse.json({ error: 'No text content available for indexing.' }, { status: 404 });
     }
     
-    // Index the document
+    // Execute one-time persistent indexing
     await indexDocumentForRAG(documentId, text, doc.file_path, supabase);
     
     return NextResponse.json({
       success: true,
-      message: `Document indexed successfully.`,
+      message: `Curriculum asset indexed successfully. Neural grid updated.`,
     });
     
   } catch (error: any) {
-    console.error('Indexing error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('[Index API Fatal]:', error);
+    return NextResponse.json({ error: error.message || 'Indexing operation failed.' }, { status: 500 });
   }
 }

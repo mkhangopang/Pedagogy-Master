@@ -4,8 +4,9 @@ import { chunkDocument } from './chunking-strategy';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * RAG INDEXER (NEURAL EDITION)
- * One-time processing of curriculum assets into a permanent vector grid.
+ * ONE-TIME NEURAL INDEXER
+ * Orchestrates the persistent storage of curriculum assets. 
+ * Text is chunked, embedded, and stored in the vector grid.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -13,12 +14,12 @@ export async function indexDocumentForRAG(
   r2Key: string | null,
   supabase: SupabaseClient = defaultSupabase
 ): Promise<void> {
-  console.log(`\n🧠 [Neural Indexer] Commencing sync for document: ${documentId}`);
+  console.log(`\n🧠 [Neural Sync] Initializing persistent indexing for: ${documentId}`);
   
   try {
     let documentText = content || "";
     
-    // Fallback: Fetch content if not provided (essential for re-indexing existing docs)
+    // Fetch text from DB if not provided (needed for re-syncing legacy docs)
     if (!documentText) {
       const { data: doc } = await supabase
         .from('documents')
@@ -29,21 +30,21 @@ export async function indexDocumentForRAG(
     }
 
     if (!documentText || documentText.length < 50) {
-      throw new Error('Insufficient text discovered for neural indexing.');
+      throw new Error('Insufficient curriculum text discovered for indexing.');
     }
     
-    // 1. Structural Chunking
+    // 1. Structural Chunking Strategy
     const chunks = chunkDocument(documentText);
-    console.log(`✅ [Indexer] Generated ${chunks.length} pedagogical chunks.`);
+    console.log(`✅ [Indexer] ${chunks.length} pedagogical segments generated.`);
     
-    // 2. Neural Vector Synthesis
-    console.log(`✨ [Indexer] Synthesizing neural embeddings...`);
+    // 2. Neural Vector Generation (One-time cost)
+    console.log(`✨ [Indexer] Generating semantic embeddings...`);
     const chunkTexts = chunks.map(c => c.text);
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
-    console.log(`✅ [Indexer] Embeddings generated successfully.`);
+    console.log(`✅ [Indexer] Neural vectors synthesized.`);
 
-    // 3. Persistent Storage Update (CLEANUP BEFORE INSERT)
-    // This ensures re-indexing old documents doesn't double the context
+    // 3. Persistent Transaction: Clear old and insert new
+    // This ensures re-indexing doesn't lead to duplicate context
     await supabase
       .from('document_chunks')
       .delete()
@@ -56,13 +57,13 @@ export async function indexDocumentForRAG(
       chunk_type: chunk.type,
       slo_codes: chunk.sloMentioned,
       keywords: chunk.keywords,
-      embedding: embeddings[idx]
+      embedding: embeddings[idx] // The persistent vector
     }));
     
-    // Insert in batches to prevent payload limits
-    const batchSize = 25;
-    for (let i = 0; i < insertData.length; i += batchSize) {
-      const batch = insertData.slice(i, i + batchSize);
+    // Batch insertion to respect Postgres limits
+    const dbBatchSize = 20;
+    for (let i = 0; i < insertData.length; i += dbBatchSize) {
+      const batch = insertData.slice(i, i + dbBatchSize);
       const { error: insertError } = await supabase
         .from('document_chunks')
         .insert(batch);
@@ -70,7 +71,7 @@ export async function indexDocumentForRAG(
       if (insertError) throw insertError;
     }
     
-    // 4. Finalize Status and Mark as Indexed
+    // 4. Update Document Metadata Status
     await supabase
       .from('documents')
       .update({
@@ -81,10 +82,10 @@ export async function indexDocumentForRAG(
       })
       .eq('id', documentId);
     
-    console.log(`🏁 [Neural Indexer] Indexing finalized for: ${documentId}`);
+    console.log(`🏁 [Neural Sync] Persistent indexing complete.`);
     
   } catch (error: any) {
-    console.error(`❌ [Neural Indexer] Fatal error:`, error);
+    console.error(`❌ [Neural Sync] Fatal error:`, error);
     await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
     throw error;
   }

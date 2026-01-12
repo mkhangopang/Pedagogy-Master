@@ -3,15 +3,17 @@ import { GoogleGenAI } from "@google/genai";
 /**
  * GENERATE NEURAL EMBEDDING
  * Converts curriculum text into a 768-dimensional vector using Gemini.
+ * This vector represents the semantic meaning of the text for RAG retrieval.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
+  const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    throw new Error('Embedding node requires API_KEY or GEMINI_API_KEY environment variable');
+    throw new Error('Neural Node Failure: API_KEY environment variable is missing.');
   }
 
   try {
+    // Initialize AI client per guidelines
     const ai = new GoogleGenAI({ apiKey });
     
     // Using the state-of-the-art text-embedding-004 model
@@ -23,36 +25,36 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const result = response.embedding;
 
     if (!result || !result.values || !Array.isArray(result.values)) {
-      throw new Error("Invalid response from embedding node.");
+      throw new Error("Neural Node Error: Invalid response from embedding service.");
     }
 
     return result.values;
   } catch (error: any) {
-    console.error('[Embedding Error]:', error);
+    console.error('[Embedding Fatal Error]:', error);
     throw error;
   }
 }
 
 /**
- * BATCH EMBEDDING ENGINE
- * Optimized for document indexing by processing multiple chunks in parallel.
+ * BATCH EMBEDDING SYNTHESIS
+ * Optimized for document indexing by processing multiple chunks.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
-  // Processing in smaller batches to respect API limits
   const embeddings: number[][] = [];
-  const batchSize = 16; 
+  // Batch size limited to ensure stability and avoid rate limits during one-time indexing
+  const batchSize = 10; 
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     try {
-      const batchEmbeddings = await Promise.all(
+      const batchResults = await Promise.all(
         batch.map(text => generateEmbedding(text))
       );
-      embeddings.push(...batchEmbeddings);
+      embeddings.push(...batchResults);
     } catch (err) {
-      console.error(`Batch processing failed at index ${i}`, err);
+      console.error(`Batch node failure at index ${i}`, err);
       throw err;
     }
   }
