@@ -6,7 +6,7 @@ import { GoogleGenAI } from "@google/genai";
  * This vector represents the semantic meaning of the text for RAG retrieval.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.API_KEY;
+  const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   
   if (!apiKey) {
     throw new Error('Neural Node Failure: API_KEY environment variable is missing.');
@@ -17,9 +17,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const ai = new GoogleGenAI({ apiKey });
     
     // Using the state-of-the-art text-embedding-004 model
+    // Using 'contents' as specified by the SDK type definitions in this environment
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
-      content: { parts: [{ text }] }
+      contents: { parts: [{ text }] }
     });
 
     const result = response.embedding;
