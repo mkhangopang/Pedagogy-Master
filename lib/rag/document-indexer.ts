@@ -64,23 +64,20 @@ export async function indexDocumentForRAG(
 
     const insertData = chunks.map((chunk, idx) => {
       const embedding = embeddings[idx];
-      // CRITICAL FIX: Convert number array to pgvector string format "[v1,v2,v3...]"
-      // This prevents "invalid input syntax for type json" errors in Supabase
-      const embeddingString = embedding ? `[${embedding.join(',')}]` : null;
-
+      
+      // Standard number array is best for Supabase JS client with pgvector
       return {
         document_id: documentId,
         chunk_text: deepSanitize(chunk.text),
         chunk_index: chunk.index,
         chunk_type: chunk.type,
-        // Ensure arrays are sanitized and not null
         slo_codes: (chunk.sloMentioned || [])
           .map(s => deepSanitize(s))
           .filter(s => s.length > 0 && s.length < 64),
         keywords: (chunk.keywords || [])
           .map(k => deepSanitize(k))
           .filter(k => k.length > 0 && k.length < 64),
-        embedding: embeddingString 
+        embedding: embedding || null
       };
     });
     
@@ -94,10 +91,12 @@ export async function indexDocumentForRAG(
       
       if (insertError) {
         console.error(`[Indexer DB Batch Error] offset ${i}:`, insertError);
-        // Explicitly check for column type mismatch errors
-        if (insertError.message?.includes('type json')) {
-          throw new Error(`Database Schema Error: The 'embedding' column might be incorrectly typed as JSON. Please run the SQL Patch in Control Hub.`);
+        
+        // Check for specific column type mismatch errors
+        if (insertError.message?.includes('type json') || insertError.message?.includes('type jsonb')) {
+          throw new Error(`Database Schema Error: The 'embedding' column might be incorrectly typed as JSON. Please run the SQL Patch (v9.0) in Control Hub to fix this.`);
         }
+        
         throw new Error(`Database rejected segments: ${insertError.message}`);
       }
     }
@@ -116,7 +115,6 @@ export async function indexDocumentForRAG(
     console.error(`❌ [Neural Sync Fatal]:`, error);
     await supabase.from('documents').update({ 
       status: 'failed',
-      // Store error for UI feedback
       gemini_metadata: { last_error: error.message }
     } as any).eq('id', documentId);
     throw error;

@@ -31,7 +31,6 @@ export async function retrieveRelevantChunks(
       : null;
 
     // 1. Direct SLO High-Precision Search
-    // Matches S8a5, 8.1.1, Bio-IX-1, etc.
     const sloMatch = query.match(/\b([A-Z]?)(\d{1,2})([a-z]?)(\d{1,2})\b/i);
     if (sloMatch) {
       const sloCode = sloMatch[0].toUpperCase();
@@ -53,15 +52,13 @@ export async function retrieveRelevantChunks(
     }
 
     // 2. Semantic Analysis (Neural Embeddings)
-    const queryEmbeddingArray = await generateEmbedding(query);
-    
-    // CRITICAL FIX: Convert number array to pgvector string format "[v1,v2,v3...]"
-    const queryEmbeddingString = `[${queryEmbeddingArray.join(',')}]`;
+    // Send as standard number array
+    const queryEmbedding = await generateEmbedding(query);
 
     // 3. Hybrid Search Execution
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
-      query_embedding: queryEmbeddingString, // Pass as formatted string
+      query_embedding: queryEmbedding, 
       match_count: maxChunks,
       filter_document_ids: documentIds,
       priority_document_id: sanitizedPriorityId

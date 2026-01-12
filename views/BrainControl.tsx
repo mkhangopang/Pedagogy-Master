@@ -101,13 +101,13 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: DATABASE REPAIR & RAG PATCH v8.0
--- RUN THIS IN SUPABASE SQL EDITOR TO FIX "COLUMN NOT FOUND" OR "JSON SYNTAX" ERRORS
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE REPAIR v9.0
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE "TYPE JSON" OR "COLUMN NOT FOUND" ERRORS
 
--- 1. EXTENSIONS
+-- 1. ENABLE NEURAL ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. CORE DOCUMENTS TABLE REPAIR
+-- 2. CORE DOCUMENTS TABLE (PEDAGOGICAL ASSETS)
 CREATE TABLE IF NOT EXISTS public.documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id),
@@ -129,52 +129,50 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. DOCUMENT CHUNKS (RAG CORE)
+-- 3. DOCUMENT CHUNKS (NEURAL NODES)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
   chunk_text TEXT NOT NULL,
   chunk_index INTEGER NOT NULL,
-  section_title TEXT,
-  page_number INTEGER,
   chunk_type TEXT,
   slo_codes TEXT[],
   keywords TEXT[],
-  embedding vector(768), -- Optimized for text-embedding-004
+  embedding vector(768), 
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- FORCE COLUMN UPDATES & TYPE FIXES
+-- 4. AGGRESSIVE SCHEMA ALIGNMENT (Fixes "invalid syntax for type json")
 DO $$ 
 BEGIN 
-  -- Fix document_chunks.embedding type (Critical for "invalid syntax for type json" errors)
-  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='embedding' AND (data_type='json' OR data_type='jsonb')) THEN
+  -- Fix Embedding Column Type
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'document_chunks' 
+    AND column_name = 'embedding' 
+    AND udt_name != 'vector'
+  ) THEN
     ALTER TABLE public.document_chunks DROP COLUMN embedding;
     ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
   END IF;
 
-  -- Fix rag_indexed
+  -- Ensure RAG tracking columns exist on documents
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed') THEN
     ALTER TABLE public.documents ADD COLUMN rag_indexed BOOLEAN DEFAULT false;
   END IF;
   
-  -- Fix rag_indexed_at
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed_at') THEN
-    ALTER TABLE public.documents ADD COLUMN rag_indexed_at TIMESTAMPTZ;
-  END IF;
-
-  -- Fix chunk_count
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='chunk_count') THEN
     ALTER TABLE public.documents ADD COLUMN chunk_count INTEGER DEFAULT 0;
   END IF;
 END $$;
 
--- 4. PERFORMANCE INDEXES
+-- 5. PERFORMANCE TUNING
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 5. HYBRID SEARCH LOGIC
+-- 6. HYBRID SEARCH ENGINE
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -197,8 +195,8 @@ BEGIN
   SELECT
     dc.id as chunk_id,
     dc.chunk_text,
-    dc.section_title,
-    dc.page_number,
+    NULL::TEXT as section_title,
+    NULL::INTEGER as page_number,
     dc.slo_codes,
     (
       ((1 - (dc.embedding <=> query_embedding)) * 0.7 + 
@@ -212,29 +210,7 @@ BEGIN
 END;
 $$;
 
--- 6. SLO DISCOVERY ENGINE
-CREATE OR REPLACE FUNCTION find_slo_chunks(
-  slo_code TEXT,
-  document_ids UUID[]
-)
-RETURNS TABLE (
-  chunk_id UUID,
-  chunk_text TEXT,
-  page_number INTEGER
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT id, chunk_text, page_number
-  FROM document_chunks
-  WHERE document_id = ANY(document_ids)
-  AND slo_code = ANY(slo_codes)
-  LIMIT 5;
-END;
-$$;
-
--- 7. SECURITY & ACCESS
+-- 7. SECURITY & ACCESS (RLS)
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
@@ -246,7 +222,7 @@ DROP POLICY IF EXISTS "owner_all_chunks" ON public.document_chunks;
 CREATE POLICY "owner_all_chunks" ON public.document_chunks FOR ALL TO authenticated
 USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid()));
 
--- 8. GRANT ADMIN STATUS
+-- 8. GLOBAL ADMIN PRIVILEGES
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 `;
@@ -259,7 +235,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
             <ShieldCheck className="text-indigo-600" />
             Control Hub
           </h1>
-          <p className="text-slate-500 mt-1 font-medium italic">RAG & Vector Infrastructure monitoring.</p>
+          <p className="text-slate-500 mt-1 font-medium italic">Neural Network & Infrastructure Monitoring.</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
           {['logic', 'infra', 'audit'].map(tab => (
@@ -363,7 +339,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v8.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v9.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"
