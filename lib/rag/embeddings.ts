@@ -27,7 +27,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       throw new Error("Neural Node Error: Invalid vector format received.");
     }
 
-    // Sanitize values for JSON safety (no NaN/Infinity) and ensure length
+    // Sanitize values for JSON safety (no NaN/Infinity)
     const vector = result.values.map((v: any) => {
       const num = Number(v);
       return isFinite(num) ? num : 0;
@@ -46,12 +46,13 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING SYNTHESIS
- * Processes chunks in parallel batches to optimize performance for large documents.
+ * Optimized for performance using parallel execution with concurrency control.
+ * This is crucial for large documents (3-4MB).
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
-  const CONCURRENCY_LIMIT = 5; // Process 5 embeddings at a time
+  const CONCURRENCY_LIMIT = 5; // Process in small concurrent groups to avoid rate limits
   const results: number[][] = [];
   
   for (let i = 0; i < texts.length; i += CONCURRENCY_LIMIT) {
@@ -60,7 +61,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       const batchEmbeddings = await Promise.all(batch.map(text => generateEmbedding(text)));
       results.push(...batchEmbeddings);
     } catch (err: any) {
-      console.error(`[Embeddings Batch] Error at index ${i}:`, err);
+      console.error(`[Embeddings Batch] Group Error at index ${i}:`, err);
       throw err;
     }
   }

@@ -1,9 +1,12 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 120; // 2 minutes for deep context retrieval
 
 /**
  * GROUNDED CHAT ENGINE
@@ -67,6 +70,7 @@ Operational Rules:
 - If info is missing, say "DATA_UNAVAILABLE".
 - Cite memories used: (e.g., "According to Memory 2...").
 - Tone: Professional pedagogical consultant.
+- Precision: Align strictly to SLO codes mentioned [S8A5].
 - Format: Structured Markdown. NO BOLD HEADINGS.`;
 
     const prompt = `
@@ -76,7 +80,7 @@ ${contextVault}
 # USER TEACHER QUERY:
 "${message}"
 
-Synthesize a professional response based strictly on the curriculum data above.
+Synthesize a professional response based strictly on the curriculum data above. Reference SLO codes in [brackets].
 `;
 
     const streamResponse = await ai.models.generateContentStream({

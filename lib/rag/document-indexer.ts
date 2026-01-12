@@ -6,13 +6,13 @@ import { generateEmbeddingsBatch } from './embeddings';
 
 /**
  * SANITIZE TEXT
- * Aggressively removes null bytes, control characters, and invalid unicode
- * that can cause PostgreSQL JSON parsing errors.
+ * Deep cleaning to remove null bytes and control characters that break 
+ * PostgreSQL's JSON and array input parsers.
  */
 function sanitizeText(text: string): string {
   if (!text) return "";
   return text
-    .replace(/\u0000/g, '') // Null bytes
+    .replace(/\u0000/g, '') // Remove null bytes (common PDF issue)
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Control characters
     .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Invalid Unicode
     .trim();
@@ -45,20 +45,21 @@ export async function indexDocumentForRAG(
     const documentText = sanitizeText(rawText);
 
     if (!documentText || documentText.length < 10) {
-      throw new Error('Insufficient curriculum text found for indexing.');
+      throw new Error('No usable curriculum text found for indexing.');
     }
     
     // 1. Generate Pedagogical Chunks
     const chunks = chunkDocument(documentText);
     console.log(`✅ [Indexer] ${chunks.length} segments generated.`);
     
-    // 2. Synthesize Vectors
-    console.log(`✨ [Indexer] Synthesizing semantic vectors in parallel...`);
+    // 2. Synthesize Vectors (Parallel Batching)
+    console.log(`✨ [Indexer] Synthesizing semantic vectors...`);
     const chunkTexts = chunks.map(c => sanitizeText(c.text));
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
     console.log(`✅ [Indexer] ${embeddings.length} vectors ready.`);
 
     // 3. Persistent Database Update
+    // Delete existing chunks for this doc before fresh re-index
     await supabase
       .from('document_chunks')
       .delete()
@@ -69,14 +70,15 @@ export async function indexDocumentForRAG(
       chunk_text: sanitizeText(chunk.text),
       chunk_index: chunk.index,
       chunk_type: chunk.type,
+      // Pass arrays as native JS arrays; Supabase driver handles the rest
       slo_codes: (chunk.sloMentioned || []).map(s => sanitizeText(s)).filter(Boolean),
       keywords: (chunk.keywords || []).map(k => sanitizeText(k)).filter(Boolean),
-      // Use string format for vector to avoid JSON parsing issues with large arrays
-      embedding: `[${embeddings[idx].join(',')}]`
+      // Use native array for vector column
+      embedding: embeddings[idx]
     }));
     
-    // Bulk insertion in small batches to stay within PostgREST limits
-    const dbBatchSize = 15;
+    // Batch insertion to stay within PostgREST limits
+    const dbBatchSize = 10;
     for (let i = 0; i < insertData.length; i += dbBatchSize) {
       const batch = insertData.slice(i, i + dbBatchSize);
       const { error: insertError } = await supabase
@@ -84,7 +86,7 @@ export async function indexDocumentForRAG(
         .insert(batch);
       
       if (insertError) {
-        console.error(`[Indexer DB Error at ${i}]:`, insertError);
+        console.error(`[Indexer DB Error]:`, insertError);
         throw new Error(`Database rejected segments: ${insertError.message}`);
       }
     }
@@ -100,7 +102,7 @@ export async function indexDocumentForRAG(
       })
       .eq('id', documentId);
     
-    console.log(`🏁 [Neural Sync] Synchronization complete.`);
+    console.log(`🏁 [Neural Sync] Document "${documentId}" is live in the vector grid.`);
     
   } catch (error: any) {
     console.error(`❌ [Neural Sync] Fatal failure:`, error);
