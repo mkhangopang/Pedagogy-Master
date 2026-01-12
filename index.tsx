@@ -1,4 +1,3 @@
-
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
@@ -15,6 +14,7 @@ const performSystemHandshake = () => {
     'NEXT_PUBLIC_SUPABASE_ANON_KEY', 
     'NEXT_PUBLIC_R2_PUBLIC_URL',
     'AI_GATWAY_API_KEY',
+    'AI_GATEWAY_API_KEY',
     'API_KEY',
     'GEMINI_API_KEY'
   ];
@@ -38,8 +38,8 @@ const performSystemHandshake = () => {
       win.process.env[key] = trimmed;
       win[key] = trimmed;
       
-      // If we find the Gateway key, also map it to API_KEY for standard libraries
-      if (key === 'AI_GATWAY_API_KEY') {
+      // Map gateway variants to standard API_KEY for internal consistency
+      if (key === 'AI_GATWAY_API_KEY' || key === 'AI_GATEWAY_API_KEY') {
         win.process.env['API_KEY'] = trimmed;
         win['API_KEY'] = trimmed;
       }
@@ -68,10 +68,10 @@ const startApp = async () => {
     console.error("Pedagogy Master: Startup Failure", error);
     const root = document.getElementById('root');
     if (root) {
-      root.innerHTML = `<div style="padding: 40px; color: #ef4444; font-family: 'Plus Jakarta Sans', sans-serif; text-align: center;">
+      root.innerHTML = `<div style="padding: 40px; color: #ef4444; font-family: 'Plus Jakarta Sans', sans-serif; text-align: center; background: #fff; min-height: 100vh;">
         <h1 style="font-size: 2rem; font-weight: 800; margin-bottom: 1rem;">System Handshake Failed</h1>
-        <p style="color: #64748b; max-width: 500px; margin: 0 auto 2rem;">The neural grid could not initialize. This usually means environment variables (Supabase URL/Key) are missing in Vercel.</p>
-        <pre style="background: #f8fafc; padding: 20px; border-radius: 16px; font-size: 0.75rem; overflow: auto; border: 1px solid #e2e8f0; text-align: left; max-width: 600px; margin: 0 auto;">${error instanceof Error ? error.message : String(error)}</pre>
+        <p style="color: #64748b; max-width: 500px; margin: 0 auto 2rem;">The neural grid could not initialize. This usually means environment variables (Supabase URL/Key) are missing in Vercel or misconfigured.</p>
+        <pre style="background: #f8fafc; padding: 20px; border-radius: 16px; font-size: 0.75rem; overflow: auto; border: 1px solid #e2e8f0; text-align: left; max-width: 600px; margin: 0 auto; color: #1e293b;">${error instanceof Error ? error.message : String(error)}</pre>
       </div>`;
     }
   }

@@ -2,10 +2,13 @@ import { GoogleGenAI } from "@google/genai";
 
 const getApiKey = () => {
   return (
-    process.env.AI_GATWAY_API_KEY || 
+    process.env.AI_GATEWAY_API_KEY || 
+    process.env.AI_GATWAY_API_KEY ||
+    (process.env as any).AI_GATEWAY_API_KEY ||
     (process.env as any).AI_GATWAY_API_KEY ||
     process.env.API_KEY || 
     (process.env as any).GEMINI_API_KEY ||
+    (window as any).AI_GATEWAY_API_KEY ||
     (window as any).AI_GATWAY_API_KEY ||
     (window as any).API_KEY
   );
@@ -44,6 +47,8 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   if (!texts.length) return [];
   
   const apiKey = getApiKey();
+  if (!apiKey) throw new Error('Neural Node Error: API_KEY missing for batch embeddings.');
+  
   const ai = new GoogleGenAI({ apiKey });
   const CONCURRENCY_LIMIT = 5; 
   const results: number[][] = [];

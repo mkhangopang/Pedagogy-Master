@@ -29,7 +29,17 @@ export const isSupabaseConfigured = (): boolean => {
   const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   
   const isValidUrl = !!url && url !== 'https://placeholder-project.supabase.co' && url.startsWith('http');
-  const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 20;
+  // Longer length check to ensure it's not a dummy placeholder value
+  const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 32;
+
+  if (!isValidUrl || !isValidKey) {
+    console.warn('[Infrastructure Diagnostics] Configuration incomplete:', {
+      urlPresent: !!url,
+      keyPresent: !!key,
+      keyLength: key?.length || 0,
+      urlValid: isValidUrl
+    });
+  }
 
   return isValidUrl && isValidKey;
 };

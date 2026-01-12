@@ -9,14 +9,17 @@ export async function callGemini(
 ): Promise<string> {
   // Exhaustive search for the API key across all possible naming conventions
   const apiKey = 
-    process.env.AI_GATWAY_API_KEY || 
+    process.env.AI_GATEWAY_API_KEY || 
+    process.env.AI_GATWAY_API_KEY ||
+    (process.env as any).AI_GATEWAY_API_KEY ||
     (process.env as any).AI_GATWAY_API_KEY ||
     process.env.API_KEY || 
     (process.env as any).GEMINI_API_KEY ||
+    (window as any).AI_GATEWAY_API_KEY ||
     (window as any).AI_GATWAY_API_KEY ||
     (window as any).API_KEY;
 
-  if (!apiKey) throw new Error('Synthesis failure: Gemini API Key missing (Checked: AI_GATWAY_API_KEY, API_KEY, GEMINI_API_KEY)');
+  if (!apiKey) throw new Error('Synthesis failure: Gemini API Key missing (Checked: AI_GATEWAY_API_KEY, API_KEY, GEMINI_API_KEY)');
 
   const ai = new GoogleGenAI({ apiKey });
   const modelName = 'gemini-3-flash-preview';
