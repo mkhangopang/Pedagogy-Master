@@ -15,26 +15,29 @@ export interface DocumentChunk {
 }
 
 /**
- * Robust SLO Pattern: Matches 'S8 A5', 's8a5', 'S-8-a-5', etc.
+ * Flexible SLO Pattern: Matches 'S8 A5', 's8.a5', 'S-8-A-5', '8.1.5', etc.
  */
-const SLO_REGEX = /\b([a-z])\s*(\d{1,2})\s*([a-z])\s*(\d{1,2})\b/gi;
+const SLO_REGEX = /\b[A-Z]?\s*\d{1,3}[.\-\s]*[A-Z]?\s*\d{1,3}\b/gi;
 
 /**
- * Normalizes an SLO code to a standard format: S8A5
+ * Normalizes an SLO code to a standard alphanumeric format for storage: S8A5
  */
-const normalizeSLO = (code: string) => code.replace(/[\s-]/g, '').toUpperCase();
+const normalizeSLO = (code: string) => code.replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
 export function chunkDocument(text: string): DocumentChunk[] {
   const chunks: DocumentChunk[] = [];
   
-  // Strategy 1: Targeted SLO Extraction (Highest Priority)
-  // We scan for SLO patterns and create "Anchor Chunks" with extra context
+  // Strategy 1: Targeted SLO Extraction (Anchor Chunks)
   let match;
-  const tempSloRegex = new RegExp(SLO_REGEX); // Create fresh instance for exec loop
+  const tempSloRegex = new RegExp(SLO_REGEX); 
   while ((match = tempSloRegex.exec(text)) !== null) {
-    const sloCode = normalizeSLO(match[0]);
-    const start = Math.max(0, match.index - 300);
-    const end = Math.min(text.length, match.index + 1000);
+    const rawCode = match[0];
+    // Filter out simple numbers that aren't likely SLOs
+    if (!/[A-Z]/i.test(rawCode) && rawCode.length < 3) continue;
+
+    const sloCode = normalizeSLO(rawCode);
+    const start = Math.max(0, match.index - 400); // Expanded context window
+    const end = Math.min(text.length, match.index + 1200);
     
     chunks.push({
       text: text.substring(start, end).trim(),
@@ -43,12 +46,11 @@ export function chunkDocument(text: string): DocumentChunk[] {
       sloMentioned: [sloCode],
       keywords: extractKeywords(text.substring(start, end)),
       semanticDensity: 0.95,
-      sectionTitle: `Curriculum Objective: ${sloCode}`
+      sectionTitle: `Curriculum Objective: ${rawCode}`
     });
   }
 
-  // Strategy 2: Logical Section Breaks
-  // This ensures we capture the "connective tissue" of the document
+  // Strategy 2: Logical Section Breaks (The connective tissue)
   const sections = text.split(/\n(?=(?:\d+\.|\*|#{1,3})\s+[A-Z])/);
   sections.forEach((section, idx) => {
     if (section.length < 150) return;
@@ -56,7 +58,8 @@ export function chunkDocument(text: string): DocumentChunk[] {
     const lines = section.trim().split('\n');
     const potentialTitle = lines[0].length < 100 ? lines[0] : `Section ${idx + 1}`;
 
-    const sloCodes = Array.from(section.matchAll(SLO_REGEX), m => normalizeSLO(m[0]));
+    const sloCodes = Array.from(section.matchAll(SLO_REGEX), m => normalizeSLO(m[0]))
+                         .filter(code => code.length >= 2);
     
     chunks.push({
       text: section.trim(),
@@ -88,7 +91,6 @@ function extractKeywords(text: string): string[] {
 function deduplicateChunks(chunks: DocumentChunk[]): DocumentChunk[] {
   const seen = new Set<string>();
   return chunks.filter(c => {
-    // Fingerprint based on first 80 chars to allow overlapping windows but prevent identical dupes
     const key = c.text.substring(0, 80).replace(/\s/g, '');
     if (seen.has(key)) return false;
     seen.add(key);

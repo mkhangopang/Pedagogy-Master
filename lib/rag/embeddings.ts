@@ -16,26 +16,22 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * Per @google/genai v1.34.0, embedContent uses 'contents' parameter and returns an array.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: text
     });
 
-    const result = response.embeddings;
+    /**
+     * SDK 1.34.0 compatibility: handles both .embedding and .embeddings
+     */
+    const result = (response as any).embedding || (response as any).embeddings?.[0];
 
-    if (!result || !Array.isArray(result) || result.length === 0) {
+    if (!result || !result.values || !Array.isArray(result.values)) {
       throw new Error("No valid embedding values returned from synthesis node.");
     }
 
-    const values = result[0].values;
-
-    if (!values || !Array.isArray(values)) {
-      throw new Error("Malformed embedding vector returned from synthesis node.");
-    }
-
-    return values;
+    return result.values;
   } catch (error: any) {
     console.error('[Embedding Error]:', error);
     throw error;
@@ -44,7 +40,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING ENGINE
- * Optimized for high-throughput document indexing across multiple curriculum segments.
+ * Optimized for high-throughput document indexing.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
@@ -61,7 +57,6 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       );
       embeddings.push(...batchEmbeddings);
       
-      // Prevent synthesis node rate limits
       if (i + batchSize < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 500));
       }

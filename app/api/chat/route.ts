@@ -36,19 +36,23 @@ export async function POST(req: NextRequest) {
     let retrievedChunks = [];
     
     if (documentIds.length > 0) {
-      // 2a. Precision SLO Extraction (Matches 's8 a5', 'S8A5', etc.)
-      const sloPattern = /\b([a-z])\s*(\d{1,2})\s*([a-z])\s*(\d{1,2})\b/gi;
+      // 2a. Precision SLO Extraction (Matches 's8 a5', 'S.8.A.5', etc.)
+      const sloPattern = /\b[a-z]?\s*\d{1,3}[.\-\s]*[a-z]?\s*\d{1,3}\b/gi;
       const sloMatches = Array.from(message.matchAll(sloPattern));
       
       for (const match of sloMatches) {
-        const normalizedCode = match[0].replace(/[\s-]/g, '').toUpperCase();
-        console.log(`[Chat Node] High-Precision Lookup: ${normalizedCode}`);
+        const raw = match[0];
+        // Skip if it's just a simple short number with no letters
+        if (!/[a-z]/i.test(raw) && raw.length < 3) continue;
+
+        const normalizedCode = raw.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        console.log(`[Chat Node] Precision Strike Lookup: ${normalizedCode}`);
         const exactMatchChunks = await retrieveChunksForSLO(normalizedCode, documentIds, supabase);
         retrievedChunks.push(...exactMatchChunks);
       }
       
-      // 2b. Semantic Neural Search (For context and general queries)
-      const semanticChunks = await retrieveRelevantChunks(message, documentIds, supabase, 5, priorityDocumentId);
+      // 2b. Semantic Neural Search (For general context and conceptual matching)
+      const semanticChunks = await retrieveRelevantChunks(message, documentIds, supabase, 6, priorityDocumentId);
       retrievedChunks.push(...semanticChunks);
       
       // Deduplicate results by chunk ID
@@ -71,7 +75,7 @@ export async function POST(req: NextRequest) {
     // 3. Grounding Verification
     if (!retrievedContext) {
       const activeDocsNames = selectedDocs?.map(d => d.name).join(', ') || 'No documents';
-      return new Response(`DATA_UNAVAILABLE: I searched your selected curriculum assets (${activeDocsNames}) but couldn't find information about "${message}". \n\nTips:\n- Ensure the correct document is selected in the Sidebar.\n- Verify the SLO code format matches your document.\n- Try re-indexing your library from the Brain Control panel.`);
+      return new Response(`DATA_UNAVAILABLE: I searched your selected curriculum assets (${activeDocsNames}) but couldn't find specific information for "${message}". \n\nTips:\n1. Open "Brain Control" and run "Bulk Re-index All Documents" to ensure the new search logic is applied.\n2. Ensure the correct document is checked in the Sidebar.\n3. Try typing the SLO code exactly as it appears in the text.`);
     }
 
     // 4. Gemini Neural Synthesis
@@ -85,7 +89,7 @@ STRICT GROUNDING PROTOCOL:
 2. If the user asks for a lesson plan, rubric, or activity, base it strictly on the learning objectives found in the vault.
 3. Cite sources: "Based on [Source Asset Name]..."
 4. Maintain a professional, actionable pedagogical tone.
-5. If you cannot find the specific SLO text, state what is available instead.`;
+5. If the exact SLO text is found, focus the lesson plan around its specific outcomes.`;
 
     const prompt = `
 # ASSET_VAULT (CURRICULUM CONTEXT):
@@ -100,7 +104,7 @@ ${message}
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // Precision temperature
+        temperature: 0.1, // Precision temperature for grounding
       }
     });
 
