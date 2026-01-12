@@ -6,7 +6,6 @@ import { GoogleGenAI } from "@google/genai";
  * Converts curriculum text into a 768-dimensional vector using Gemini.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  // Resilient API Key lookup
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   
   if (!apiKey) {
@@ -16,51 +15,46 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     
+    // Using text-embedding-004 which produces 768-dim vectors
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: { parts: [{ text }] }
+      contents: { parts: [{ text: text || " " }] }
     } as any);
 
-    // Some versions of the response return 'embedding', others 'embeddings' as an array
     const result = response.embedding || (response.embeddings && response.embeddings[0]);
 
     if (!result || !result.values || !Array.isArray(result.values)) {
-      console.error('[Embedding Error] Full response:', JSON.stringify(response));
-      throw new Error("Neural Node Error: The embedding service returned an invalid vector format.");
+      throw new Error("Neural Node Error: Invalid vector format received.");
     }
 
-    // Ensure all values are valid numbers (no NaN/Infinity which break JSON)
-    return result.values.map((v: any) => {
+    // Sanitize values for JSON safety (no NaN/Infinity) and ensure length
+    const vector = result.values.map((v: any) => {
       const num = Number(v);
       return isFinite(num) ? num : 0;
     });
+
+    // Ensure it matches pgvector(768) requirement
+    if (vector.length < 768) {
+      return [...vector, ...new Array(768 - vector.length).fill(0)];
+    }
+    return vector.slice(0, 768);
   } catch (error: any) {
-    console.error('[Embedding Fatal Error]:', error);
+    console.error('[Embedding Error]:', error);
     throw new Error(`Vector Synthesis Failed: ${error.message || 'Unknown provider error'}`);
   }
 }
 
 /**
  * BATCH EMBEDDING SYNTHESIS
- * Optimized for document indexing by processing multiple chunks.
+ * Processes multiple chunks sequentially to avoid rate limits while maintaining efficiency.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
   const embeddings: number[][] = [];
-  const batchSize = 10; 
-  
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-    try {
-      const batchResults = await Promise.all(
-        batch.map(text => generateEmbedding(text))
-      );
-      embeddings.push(...batchResults);
-    } catch (err: any) {
-      console.error(`Batch node failure at index ${i}`, err);
-      throw err;
-    }
+  // Sequential processing for reliability
+  for (const text of texts) {
+    embeddings.push(await generateEmbedding(text));
   }
   
   return embeddings;

@@ -6,22 +6,21 @@ import { generateEmbeddingsBatch } from './embeddings';
 
 /**
  * SANITIZE TEXT
- * Removes null bytes, control characters, and other non-printable Unicode characters
- * that cause PostgreSQL to fail during JSON parsing or text insertion.
+ * Aggressively removes null bytes and control characters that break 
+ * PostgreSQL's JSON and text parsers during batch insertion.
  */
 function sanitizeText(text: string): string {
   if (!text) return "";
   return text
     .replace(/\u0000/g, '') // Null bytes
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Control characters except newline/tab
-    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Invalid Unicode/Replacement chars
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Control characters
+    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Invalid Unicode
     .trim();
 }
 
 /**
  * ONE-TIME NEURAL INDEXER
- * Orchestrates the persistent storage of curriculum assets. 
- * Text is chunked, embedded, and stored in the vector grid.
+ * Orchestrates document chunking, semantic embedding, and persistent storage.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -29,7 +28,7 @@ export async function indexDocumentForRAG(
   r2Key: string | null,
   supabase: SupabaseClient = defaultSupabase
 ): Promise<void> {
-  console.log(`\n🧠 [Neural Sync] Initializing persistent indexing for: ${documentId}`);
+  console.log(`\n🧠 [Neural Sync] Initializing indexing for: ${documentId}`);
   
   try {
     let rawText = content || "";
@@ -45,21 +44,22 @@ export async function indexDocumentForRAG(
 
     const documentText = sanitizeText(rawText);
 
-    if (!documentText || documentText.length < 20) {
-      throw new Error('Insufficient or corrupt curriculum text discovered for indexing.');
+    if (!documentText || documentText.length < 10) {
+      throw new Error('Insufficient curriculum text found for indexing.');
     }
     
-    // 1. Structural Chunking Strategy
+    // 1. Generate Pedagogical Chunks
     const chunks = chunkDocument(documentText);
-    console.log(`✅ [Indexer] ${chunks.length} pedagogical segments generated.`);
+    console.log(`✅ [Indexer] ${chunks.length} segments generated.`);
     
-    // 2. Neural Vector Generation
-    console.log(`✨ [Indexer] Generating semantic embeddings...`);
+    // 2. Synthesize Vectors
+    console.log(`✨ [Indexer] Synthesizing semantic vectors...`);
     const chunkTexts = chunks.map(c => sanitizeText(c.text));
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
-    console.log(`✅ [Indexer] Neural vectors synthesized.`);
+    console.log(`✅ [Indexer] Vectors ready.`);
 
-    // 3. Persistent Transaction: Clear old and insert new
+    // 3. Persistent Database Update
+    // Clean up existing chunks to prevent duplicates
     await supabase
       .from('document_chunks')
       .delete()
@@ -70,14 +70,15 @@ export async function indexDocumentForRAG(
       chunk_text: sanitizeText(chunk.text),
       chunk_index: chunk.index,
       chunk_type: chunk.type,
-      slo_codes: chunk.sloMentioned || [],
-      keywords: chunk.keywords || [],
-      // Convert numeric array to Postgres vector string format "[0.1, 0.2...]"
-      // This bypasses ambiguous JSON casting in PostgREST
-      embedding: `[${embeddings[idx].join(',')}]`
+      // Ensure arrays contain clean strings to prevent JSON parsing errors if column is JSONB
+      slo_codes: (chunk.sloMentioned || []).map(s => sanitizeText(s)).filter(Boolean),
+      keywords: (chunk.keywords || []).map(k => sanitizeText(k)).filter(Boolean),
+      // Pass embedding as a native number array; the Supabase client handles 
+      // conversion to the required vector/json format.
+      embedding: embeddings[idx]
     }));
     
-    // Batch insertion for reliability
+    // Perform insertion in small batches to stay within PostgREST/Gateway limits
     const dbBatchSize = 10;
     for (let i = 0; i < insertData.length; i += dbBatchSize) {
       const batch = insertData.slice(i, i + dbBatchSize);
@@ -86,12 +87,12 @@ export async function indexDocumentForRAG(
         .insert(batch);
       
       if (insertError) {
-        console.error(`[Indexer DB Insert Error]:`, insertError);
+        console.error(`[Indexer DB Error]:`, insertError);
         throw new Error(`Database rejected segments: ${insertError.message}`);
       }
     }
     
-    // 4. Update Document Metadata Status
+    // 4. Update Document Status
     await supabase
       .from('documents')
       .update({
@@ -102,10 +103,10 @@ export async function indexDocumentForRAG(
       })
       .eq('id', documentId);
     
-    console.log(`🏁 [Neural Sync] Persistent indexing complete.`);
+    console.log(`🏁 [Neural Sync] Synchronization complete.`);
     
   } catch (error: any) {
-    console.error(`❌ [Neural Sync] Fatal error:`, error);
+    console.error(`❌ [Neural Sync] Fatal failure:`, error);
     await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
     throw error;
   }
