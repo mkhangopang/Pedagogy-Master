@@ -67,12 +67,16 @@ export async function indexDocumentForRAG(
       chunk_text: deepSanitize(chunk.text),
       chunk_index: chunk.index,
       chunk_type: chunk.type,
-      slo_codes: (chunk.sloMentioned || []).map(s => deepSanitize(s)).filter(Boolean),
-      keywords: (chunk.keywords || []).map(k => deepSanitize(k)).filter(Boolean),
+      slo_codes: (chunk.sloMentioned || [])
+        .map(s => deepSanitize(s))
+        .filter(s => s.length > 0 && s.length < 64), // Sanitize and filter
+      keywords: (chunk.keywords || [])
+        .map(k => deepSanitize(k))
+        .filter(k => k.length > 0 && k.length < 64),
       embedding: embeddings[idx] // Passed as native JS array
     }));
     
-    // Insert in chunks to avoid request body size limits in Supabase gateway
+    // Insert in small batches to stay within Supabase/Edge gateway body limits
     const dbBatchSize = 10;
     for (let i = 0; i < insertData.length; i += dbBatchSize) {
       const batch = insertData.slice(i, i + dbBatchSize);
@@ -82,7 +86,7 @@ export async function indexDocumentForRAG(
       
       if (insertError) {
         console.error(`[Indexer DB Batch Error]:`, insertError);
-        throw new Error(`Database Node Error: ${insertError.message}`);
+        throw new Error(`Database rejected segments: ${insertError.message}`);
       }
     }
     

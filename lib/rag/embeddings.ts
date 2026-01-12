@@ -11,9 +11,11 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // Use text-embedding-004 which produces 768-dim vectors
+    // Use the specific model identifier required by the API
+    const model = "models/text-embedding-004";
+    
     const response: any = await (ai as any).models.embedContent({
-      model: "text-embedding-004",
+      model,
       content: { parts: [{ text: text || " " }] }
     });
 
@@ -40,13 +42,14 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 /**
  * BATCH EMBEDDING SYNTHESIS
  * Uses Gemini's native batchEmbedContents for maximum throughput.
- * This prevents serverless timeouts for large 4MB+ documents.
+ * CRITICAL FIX: The API requires each object in the 'requests' list to contain its own 'model' property.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   const ai = new GoogleGenAI({ apiKey });
+  const model = "models/text-embedding-004";
   
   const NATIVE_BATCH_SIZE = 100; 
   const results: number[][] = [];
@@ -55,10 +58,10 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     const batchTexts = texts.slice(i, i + NATIVE_BATCH_SIZE);
     
     try {
-      // Native batch call is significantly faster than Promise.all(single_calls)
+      // Structure fixed: each item in the array must have the 'model' field defined.
       const batchResponse: any = await (ai as any).models.batchEmbedContents({
-        model: "text-embedding-004",
         requests: batchTexts.map(text => ({
+          model,
           content: { parts: [{ text: text || " " }] }
         }))
       });
@@ -74,6 +77,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       results.push(...vectors);
     } catch (err: any) {
       console.warn(`[Batch Embedding Warning] offset ${i}, falling back to sequential:`, err);
+      // Fallback logic remains to ensure reliability
       for (const text of batchTexts) {
         results.push(await generateEmbedding(text));
       }

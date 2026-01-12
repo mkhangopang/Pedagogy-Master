@@ -7,7 +7,7 @@ import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE } from '../../../con
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120; // 2 minute timeout for deep RAG synthesis
+export const maxDuration = 120;
 
 /**
  * NEURAL BRAIN CHAT ENGINE (v2.0)
@@ -58,7 +58,7 @@ Active curriculum context is required for neural grounding. Please select at lea
       message, 
       documentIds, 
       supabase, 
-      10, // Optimized context window
+      12, // Increased context window for complex pedagogical requests
       priorityDocumentId
     );
 
@@ -90,10 +90,11 @@ I searched your ${selectedDocs?.length} selected curriculum assets but found no 
 ${NUCLEAR_GROUNDING_DIRECTIVE}
 
 STRICT GROUNDING RULES:
-- Source of truth: ONLY the MEMORY_VAULT.
-- If data is missing: State "DATA_UNAVAILABLE" and detail what info is required.
-- Citation format: "Based on [Memory Node X], ..."
-- Identity: You are Pedagogy Master, focused on SLO-first alignment.`;
+- Use ONLY the provided MEMORY_VAULT for curriculum content.
+- If specific data is missing: Explicitly state "DATA_UNAVAILABLE".
+- Citation format: "According to [Memory Node X]..."
+- Identity: You are Pedagogy Master v2.0. Focus on SLO-first alignment.
+- Style: Markdown headers (1., 1.1), tables, bullet points. NO BOLD HEADINGS.`;
 
     const synthesisPrompt = `
 # MEMORY_VAULT (Active Context):
@@ -102,7 +103,7 @@ ${contextVault}
 # TEACHER QUERY:
 "${message}"
 
-Synthesize a response following the Pedagogy Master v2.0 logic. Ensure all SLOs are referenced in [brackets].
+Synthesize a response following the Pedagogy Master v2.0 logic. Reference all SLOs in [brackets].
 `;
 
     const streamResponse = await ai.models.generateContentStream({
@@ -110,7 +111,7 @@ Synthesize a response following the Pedagogy Master v2.0 logic. Ensure all SLOs 
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // Absolute precision for pedagogical alignment
+        temperature: 0.1, // High precision for curriculum alignment
       }
     });
 
