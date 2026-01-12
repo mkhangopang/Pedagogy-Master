@@ -11,18 +11,16 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // Use the fully qualified model name
-    const model = "models/text-embedding-004";
-    
-    const response: any = await (ai as any).models.embedContent({
-      model,
+    // Using text-embedding-004 for 768-dim vectors
+    const response: any = await ai.models.embedContent({
+      model: "text-embedding-004",
       content: { parts: [{ text: text || " " }] }
     });
 
     const result = response.embedding;
     if (!result?.values) throw new Error("Neural Node Error: Invalid vector response.");
 
-    // Sanitize and validate numeric precision to prevent DB syntax errors
+    // Sanitize and validate numeric precision
     const vector = result.values.map((v: any) => {
       const n = Number(v);
       return isFinite(n) ? n : 0;
@@ -41,47 +39,42 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING SYNTHESIS
- * Uses Gemini's native batchEmbedContents for maximum throughput.
- * FIXED: Each individual request in the array must have its own 'model' property.
+ * Uses parallelized single embedContent calls to bypass version-specific 
+ * errors with the batchEmbedContents wrapper while maintaining performance.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
-  if (!apiKey) throw new Error('Neural Node Error: API_KEY is missing.');
-  
   const ai = new GoogleGenAI({ apiKey });
-  const model = "models/text-embedding-004";
   
-  const NATIVE_BATCH_SIZE = 100; 
+  const CONCURRENCY_LIMIT = 5; // To avoid hitting rate limits
   const results: number[][] = [];
   
-  for (let i = 0; i < texts.length; i += NATIVE_BATCH_SIZE) {
-    const batchTexts = texts.slice(i, i + NATIVE_BATCH_SIZE);
+  for (let i = 0; i < texts.length; i += CONCURRENCY_LIMIT) {
+    const chunk = texts.slice(i, i + CONCURRENCY_LIMIT);
     
     try {
-      // The Gemini API requires the 'requests' array to contain objects with 'model' and 'content'
-      const batchResponse: any = await (ai as any).models.batchEmbedContents({
-        requests: batchTexts.map(text => ({
-          model,
+      const chunkPromises = chunk.map(async (text) => {
+        const response: any = await ai.models.embedContent({
+          model: "text-embedding-004",
           content: { parts: [{ text: text || " " }] }
-        }))
-      });
-
-      if (!batchResponse.embeddings) throw new Error("Empty batch response from neural node.");
-
-      const vectors = batchResponse.embeddings.map((emb: any) => {
-        const v = emb.values.map((val: any) => isFinite(Number(val)) ? Number(val) : 0);
-        // Standardize dimensions
+        });
+        
+        const values = response.embedding?.values;
+        if (!values) throw new Error("Empty embedding result");
+        
+        const v = values.map((val: any) => isFinite(Number(val)) ? Number(val) : 0);
         if (v.length < 768) return [...v, ...new Array(768 - v.length).fill(0)];
         return v.slice(0, 768);
       });
 
-      results.push(...vectors);
+      const chunkResults = await Promise.all(chunkPromises);
+      results.push(...chunkResults);
     } catch (err: any) {
-      console.warn(`[Batch Embedding Warning] offset ${i}, falling back to sequential:`, err);
-      // Fallback logic to ensure robustness
-      for (const text of batchTexts) {
+      console.error(`[Parallel Embedding Error] offset ${i}:`, err);
+      // Failover to individual processing for this chunk
+      for (const text of chunk) {
         results.push(await generateEmbedding(text));
       }
     }

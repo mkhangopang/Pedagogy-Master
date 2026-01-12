@@ -1,3 +1,4 @@
+
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -100,13 +101,13 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v4.7
--- MISSION: SEMANTIC CURRICULUM RETRIEVAL & VECTOR PLANE WITH PRIORITY BOOST
+  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v5.0
+-- MISSION: SEMANTIC CURRICULUM RETRIEVAL & VECTOR PLANE
 
 -- 1. EXTENSION
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. CORE DOCUMENTS TABLE
+-- 2. CORE DOCUMENTS TABLE (Updated with rag_indexed)
 CREATE TABLE IF NOT EXISTS public.documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id),
@@ -121,9 +122,26 @@ CREATE TABLE IF NOT EXISTS public.documents (
   difficulty_level TEXT,
   subject TEXT,
   grade_level TEXT,
+  chunk_count INTEGER DEFAULT 0,
+  rag_indexed BOOLEAN DEFAULT false,
+  rag_indexed_at TIMESTAMPTZ,
   gemini_metadata JSONB,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- ADD COLUMN IF MISSING (Safeguard for existing tables)
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed') THEN
+    ALTER TABLE public.documents ADD COLUMN rag_indexed BOOLEAN DEFAULT false;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed_at') THEN
+    ALTER TABLE public.documents ADD COLUMN rag_indexed_at TIMESTAMPTZ;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='chunk_count') THEN
+    ALTER TABLE public.documents ADD COLUMN chunk_count INTEGER DEFAULT 0;
+  END IF;
+END $$;
 
 -- 3. DOCUMENT CHUNKS (RAG CORE)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
@@ -146,7 +164,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 5. HYBRID SEARCH RPC (ENHANCED WITH PRIORITY BOOST)
+-- 5. HYBRID SEARCH RPC
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -184,7 +202,29 @@ BEGIN
 END;
 $$;
 
--- 6. RLS
+-- 6. SLO LOOKUP RPC
+CREATE OR REPLACE FUNCTION find_slo_chunks(
+  slo_code TEXT,
+  document_ids UUID[]
+)
+RETURNS TABLE (
+  chunk_id UUID,
+  chunk_text TEXT,
+  page_number INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT id, chunk_text, page_number
+  FROM document_chunks
+  WHERE document_id = ANY(document_ids)
+  AND slo_code = ANY(slo_codes)
+  LIMIT 5;
+END;
+$$;
+
+-- 7. RLS
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
@@ -196,7 +236,7 @@ DROP POLICY IF EXISTS "owner_all_chunks" ON public.document_chunks;
 CREATE POLICY "owner_all_chunks" ON public.document_chunks FOR ALL TO authenticated
 USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid()));
 
--- 7. ADMIN SYNC
+-- 8. ADMIN SYNC
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 `;
@@ -277,7 +317,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
               ))}
             </div>
 
-            {/* NEW: System Actions for Admins */}
+            {/* System Actions for Admins */}
             <div className="mt-12 pt-10 border-t border-slate-100 dark:border-white/5">
                <h2 className="text-xl font-bold flex items-center gap-3 dark:text-white mb-6">
                  <Zap size={20} className="text-amber-500" /> Neural Synchronization
@@ -302,7 +342,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">PostgreSQL Vector Patch</h3>
+               <h3 className="text-xl font-bold tracking-tight">PostgreSQL Vector Patch v5.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"
