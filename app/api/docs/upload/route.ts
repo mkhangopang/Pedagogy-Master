@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     // 2. Local Extraction
     const processed = await processDocument(file);
 
-    // 3. Database Sync - Standardized selection (no gemini_processed)
+    // 3. Database Sync
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       user_id: userId,
       name: processed.filename,
@@ -57,21 +57,28 @@ export async function POST(req: NextRequest) {
       status: 'processing',
       storage_type: 'r2',
       is_selected: true,
-      extracted_text: processed.text
+      extracted_text: processed.text,
+      rag_indexed: false
     }).select().single();
 
     if (dbError) throw dbError;
 
-    // 4. Background Neural Indexing (RAG)
-    indexDocumentForRAG(docData.id, processed.text, null, supabase)
-      .catch(e => console.error(`RAG Indexing Error for ${docData.id}:`, e));
+    // 4. Neural Indexing (Await to ensure completion in Serverless)
+    try {
+      console.log(`[Upload] Starting indexing for ${docData.id}`);
+      await indexDocumentForRAG(docData.id, processed.text, r2Key, supabase);
+    } catch (indexErr: any) {
+      console.error(`❌ [Upload] Indexing failure:`, indexErr.message);
+      // We don't fail the whole request, but log it. 
+      // User can retry indexing via Brain Control.
+    }
 
     return NextResponse.json({
       success: true,
       id: docData.id,
       name: processed.filename,
-      status: 'processing',
-      message: '📄 Curriculum asset uploaded. Neural indexing in progress...'
+      status: 'ready',
+      message: '📄 Curriculum asset ingested and indexed successfully.'
     });
 
   } catch (error: any) {

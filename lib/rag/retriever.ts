@@ -2,38 +2,45 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 
 export interface RetrievedChunk {
+  id: string;
   text: string;
   sloCodes: string[];
   similarity: number;
-  id: string;
   sectionTitle?: string;
   pageNumber?: number;
 }
 
 /**
  * HYBRID NEURAL RETRIEVER
- * Finds the most relevant curriculum segments for a given teacher query.
- * Enhanced to support prioritized focus on a specific document for localized grounding.
+ * Fetches relevant curriculum context from the persistent Supabase vector store.
  */
 export async function retrieveRelevantChunks(
   query: string,
   documentIds: string[],
   supabase: SupabaseClient,
-  maxChunks: number = 5,
+  maxChunks: number = 8,
   priorityDocumentId?: string
 ): Promise<RetrievedChunk[]> {
   
-  if (!documentIds || documentIds.length === 0) {
-    console.warn('[Retriever] No document context available for search.');
-    return [];
-  }
-
+  console.log(`🔍 [Retriever] Initializing neural lookup for: "${query.substring(0, 50)}..."`);
+  
   try {
-    // 1. Vectorize Query via synthesis node
+    // 1. Check for explicit SLO codes (Highest precision)
+    const sloPattern = /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/i;
+    const sloMatch = query.match(sloPattern);
+    
+    if (sloMatch) {
+      const sloCode = sloMatch[0].toUpperCase();
+      console.log(`🎯 [Retriever] Priority SLO match: ${sloCode}`);
+      const results = await retrieveChunksForSLO(sloCode, documentIds, supabase);
+      if (results.length > 0) return results;
+    }
+
+    // 2. Generate Query Embedding for Semantic Search
+    console.log(`✨ [Retriever] Generating query vector...`);
     const queryEmbedding = await generateEmbedding(query);
 
-    // 2. Execute Enhanced Hybrid Search RPC
-    // Passes priority_document_id for localized context boosting in the vector plane.
+    // 3. Execute Hybrid Search RPC (Vector Similarity + Full-Text Rank)
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -44,52 +51,45 @@ export async function retrieveRelevantChunks(
 
     if (error) {
       console.error('[Retriever RPC Error]:', error);
-      throw error;
+      return [];
     }
 
-    const results = (data || []).map((r: any) => ({
-      id: r.chunk_id,
-      text: r.chunk_text,
-      sectionTitle: r.section_title,
-      pageNumber: r.page_number,
-      sloCodes: r.slo_codes || [],
-      similarity: r.combined_score
-    }));
+    console.log(`✅ [Retriever] Retrieved ${data?.length || 0} semantic matches.`);
 
-    return results;
+    return (data || []).map((d: any) => ({
+      id: d.chunk_id,
+      text: d.chunk_text,
+      sloCodes: d.slo_codes || [],
+      similarity: d.combined_score,
+      pageNumber: d.page_number,
+      sectionTitle: d.section_title
+    }));
   } catch (err) {
-    console.error('[Retriever Fatal Interruption]:', err);
+    console.error('[Retriever Fatal]:', err);
     return [];
   }
 }
 
 /**
- * SLO DIRECT LOOKUP
- * Bypasses semantic search for exact SLO code matches within the curriculum vault.
+ * SLO DIRECT LOOKUP (Fallback for exact code queries)
  */
 export async function retrieveChunksForSLO(
   sloCode: string,
   documentIds: string[],
   supabase: SupabaseClient
 ): Promise<RetrievedChunk[]> {
-  const { data, error } = await supabase
-    .from('document_chunks')
-    .select('id, chunk_text, slo_codes, section_title, page_number')
-    .contains('slo_codes', [sloCode])
-    .in('document_id', documentIds)
-    .limit(3);
+  const { data, error } = await supabase.rpc('find_slo_chunks', {
+    slo_code: sloCode.toUpperCase(),
+    document_ids: documentIds
+  });
 
-  if (error) {
-    console.error('[SLO Lookup Error]:', error);
-    return [];
-  }
+  if (error) return [];
 
-  return (data || []).map(d => ({
-    id: d.id,
+  return (data || []).map((d: any) => ({
+    id: d.chunk_id,
     text: d.chunk_text,
-    sectionTitle: d.section_title,
-    pageNumber: d.page_number,
-    sloCodes: d.slo_codes,
-    similarity: 1.0
+    sloCodes: [sloCode.toUpperCase()],
+    similarity: 1.0,
+    pageNumber: d.page_number
   }));
 }

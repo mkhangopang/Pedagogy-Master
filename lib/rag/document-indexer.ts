@@ -2,12 +2,10 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../supabase';
 import { chunkDocument } from './chunking-strategy';
 import { generateEmbeddingsBatch } from './embeddings';
-import { fetchDocumentFromR2, fetchAndExtractPDF } from '../storage/r2-client';
 
 /**
- * NEURAL RAG INDEXER
- * Orchestrates the conversion of curriculum assets into a searchable vector grid.
- * Handles content retrieval, semantic chunking, and batch embedding.
+ * RAG INDEXER (NEURAL EDITION)
+ * One-time processing of curriculum assets into a permanent vector grid.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -15,27 +13,12 @@ export async function indexDocumentForRAG(
   r2Key: string | null,
   supabase: SupabaseClient = defaultSupabase
 ): Promise<void> {
-  console.log(`\n🔍 [RAG Indexer] Starting indexing for: ${documentId}`);
+  console.log(`\n🧠 [Neural Indexer] Commencing sync for document: ${documentId}`);
   
   try {
-    // 1. Content Acquisition
     let documentText = content || "";
     
-    // Resolve content from storage if not provided in-memory
-    if (!documentText && r2Key && typeof r2Key === 'string') {
-      console.log(`📥 [RAG Indexer] Fetching from storage: ${r2Key}`);
-      try {
-        if (r2Key.toLowerCase().endsWith('.pdf')) {
-          documentText = await fetchAndExtractPDF(r2Key);
-        } else {
-          documentText = await fetchDocumentFromR2(r2Key);
-        }
-      } catch (fetchErr) {
-        console.warn(`⚠️ [RAG Indexer] Storage fetch failed. Fallback to database...`, fetchErr);
-      }
-    }
-    
-    // Database Fallback
+    // Fallback: Fetch content if not provided (essential for re-indexing existing docs)
     if (!documentText) {
       const { data: doc } = await supabase
         .from('documents')
@@ -45,73 +28,64 @@ export async function indexDocumentForRAG(
       documentText = doc?.extracted_text || "";
     }
 
-    if (!documentText) {
-      throw new Error('No indexable curriculum content discovered.');
+    if (!documentText || documentText.length < 50) {
+      throw new Error('Insufficient text discovered for neural indexing.');
     }
     
-    console.log(`✅ [RAG Indexer] Content resolved (${documentText.length} chars)`);
-    
-    // 2. Semantic Pedagogical Chunking
+    // 1. Structural Chunking
     const chunks = chunkDocument(documentText);
-    if (chunks.length === 0) {
-      console.warn(`⚠️ [RAG Indexer] Zero semantic nodes generated. Finalizing lifecycle...`);
-      await supabase.from('documents').update({ status: 'ready' }).eq('id', documentId);
-      return;
-    }
-    console.log(`📦 [RAG Indexer] Generated ${chunks.length} neural segments.`);
+    console.log(`✅ [Indexer] Generated ${chunks.length} pedagogical chunks.`);
     
-    // 3. Vectorization (text-embedding-004)
+    // 2. Neural Vector Synthesis
+    console.log(`✨ [Indexer] Synthesizing neural embeddings...`);
     const chunkTexts = chunks.map(c => c.text);
-    console.log(`🧠 [RAG Indexer] Embedding via Gemini synthesis node...`);
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
-    
-    // 4. Persistence to Vector Store
-    console.log(`💾 [RAG Indexer] Committing segments to vector plane...`);
-    
-    const insertPayload = chunks.map((chunk, idx) => ({
-      document_id: documentId,
-      chunk_text: chunk.text,
-      chunk_index: idx,
-      chunk_type: chunk.type,
-      slo_codes: chunk.sloMentioned || [],
-      keywords: chunk.keywords,
-      embedding: embeddings[idx],
-      page_number: chunk.pageNumber,
-      section_title: chunk.sectionTitle,
-      semantic_density: chunk.semanticDensity
-    }));
-    
-    // Clear legacy vectors for this document
-    const { error: deleteError } = await supabase
+    console.log(`✅ [Indexer] Embeddings generated successfully.`);
+
+    // 3. Persistent Storage Update (CLEANUP BEFORE INSERT)
+    // This ensures re-indexing old documents doesn't double the context
+    await supabase
       .from('document_chunks')
       .delete()
       .eq('document_id', documentId);
 
-    if (deleteError) throw deleteError;
-
-    // Execute atomic batch insertion
-    const batchSize = 50;
-    for (let i = 0; i < insertPayload.length; i += batchSize) {
-      const batch = insertPayload.slice(i, i + batchSize);
-      const { error: insertError } = await supabase.from('document_chunks').insert(batch);
+    const insertData = chunks.map((chunk, idx) => ({
+      document_id: documentId,
+      chunk_text: chunk.text,
+      chunk_index: chunk.index,
+      chunk_type: chunk.type,
+      slo_codes: chunk.sloMentioned,
+      keywords: chunk.keywords,
+      embedding: embeddings[idx]
+    }));
+    
+    // Insert in batches to prevent payload limits
+    const batchSize = 25;
+    for (let i = 0; i < insertData.length; i += batchSize) {
+      const batch = insertData.slice(i, i + batchSize);
+      const { error: insertError } = await supabase
+        .from('document_chunks')
+        .insert(batch);
+      
       if (insertError) throw insertError;
     }
     
-    // 5. Lifecycle Status Synchronization (Removed gemini_processed)
+    // 4. Finalize Status and Mark as Indexed
     await supabase
       .from('documents')
       .update({
-        status: 'ready'
+        status: 'ready',
+        rag_indexed: true,
+        rag_indexed_at: new Date().toISOString(),
+        chunk_count: chunks.length,
       })
       .eq('id', documentId);
     
-    console.log(`✅ [RAG Indexer] Neural synchronization complete for ${documentId}.\n`);
+    console.log(`🏁 [Neural Indexer] Indexing finalized for: ${documentId}`);
     
   } catch (error: any) {
-    console.error(`❌ [RAG Indexer] Synthesis Interrupted:`, error);
-    await supabase.from('documents').update({ 
-      status: 'failed'
-    }).eq('id', documentId);
+    console.error(`❌ [Neural Indexer] Fatal error:`, error);
+    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
     throw error;
   }
 }

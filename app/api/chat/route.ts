@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { retrieveRelevantChunks, retrieveChunksForSLO } from '../../../lib/rag/retriever';
+import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
 
 /**
- * AI CHAT ENDPOINT (GROUNDED RAG)
- * Orchestrates curriculum document retrieval and context-aware synthesis.
+ * GROUNDED SYNTHESIS ENGINE
+ * Connects the user to the persistent curriculum memory.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Identify currently selected curriculum context
+    // 1. Verify selected curriculum context
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name')
@@ -31,72 +31,56 @@ export async function POST(req: NextRequest) {
       .eq('is_selected', true);
     
     const documentIds = selectedDocs?.map(d => d.id) || [];
+    const documentNames = selectedDocs?.map(d => d.name) || [];
 
-    // 2. Multi-Layer Retrieval (Precision SLO + Semantic Neural)
-    let retrievedChunks = [];
-    
-    if (documentIds.length > 0) {
-      // 2a. Precision SLO Extraction (Matches 's8 a5', 'S.8.A.5', etc.)
-      const sloPattern = /\b[a-z]?\s*\d{1,3}[.\-\s]*[a-z]?\s*\d{1,3}\b/gi;
-      const sloMatches = Array.from(message.matchAll(sloPattern));
-      
-      for (const match of sloMatches) {
-        const raw = match[0];
-        // Skip if it's just a simple short number with no letters
-        if (!/[a-z]/i.test(raw) && raw.length < 3) continue;
-
-        const normalizedCode = raw.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-        console.log(`[Chat Node] Precision Strike Lookup: ${normalizedCode}`);
-        const exactMatchChunks = await retrieveChunksForSLO(normalizedCode, documentIds, supabase);
-        retrievedChunks.push(...exactMatchChunks);
-      }
-      
-      // 2b. Semantic Neural Search (For general context and conceptual matching)
-      const semanticChunks = await retrieveRelevantChunks(message, documentIds, supabase, 6, priorityDocumentId);
-      retrievedChunks.push(...semanticChunks);
-      
-      // Deduplicate results by chunk ID
-      const seenIds = new Set();
-      retrievedChunks = retrievedChunks.filter(c => {
-        if (seenIds.has(c.id)) return false;
-        seenIds.add(c.id);
-        return true;
-      });
+    if (documentIds.length === 0) {
+      return new Response(`📚 Please activate a curriculum document in the library. I need persistent context to assist you accurately.`);
     }
 
-    let retrievedContext = "";
-    if (retrievedChunks.length > 0) {
-      retrievedContext = retrievedChunks.map((c, i) => {
-        const header = `[Source Asset ${i+1}: ${c.sectionTitle || 'Curriculum Segment'}]`;
-        return `${header}\n${c.text}`;
-      }).join('\n\n');
+    // 2. Persistent RAG Retrieval (Neural + Keyword)
+    const retrievedChunks = await retrieveRelevantChunks(
+      message, 
+      documentIds, 
+      supabase, 
+      10, // Increased chunk limit for better synthesis
+      priorityDocumentId
+    );
+
+    // 3. Context Verification
+    if (retrievedChunks.length === 0) {
+      return new Response(`DATA_UNAVAILABLE: I searched your persistent curriculum memory but found no relevant data for your query. 
+
+Suggestions:
+- Check if the document covers this specific topic.
+- Try searching with different pedagogical keywords.
+- Verify the document is fully indexed in the Library.`);
     }
 
-    // 3. Grounding Verification
-    if (!retrievedContext) {
-      const activeDocsNames = selectedDocs?.map(d => d.name).join(', ') || 'No documents';
-      return new Response(`DATA_UNAVAILABLE: I searched your selected curriculum assets (${activeDocsNames}) but couldn't find specific information for "${message}". \n\nTips:\n1. Open "Brain Control" and run "Bulk Re-index All Documents" to ensure the new search logic is applied.\n2. Ensure the correct document is checked in the Sidebar.\n3. Try typing the SLO code exactly as it appears in the text.`);
-    }
+    // 4. Grounded Prompt Assembly
+    const contextVault = retrievedChunks.map((c, i) => (
+      `### [MEMORY_SEGMENT_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'General'})
+      ${c.text}`
+    )).join('\n\n');
 
-    // 4. Gemini Neural Synthesis
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    const systemInstruction = `You are the Pedagogy Master AI, an elite instructional designer.
-Your primary directive is to use ONLY the curriculum context provided in the ASSET_VAULT.
+    const systemInstruction = `You are Pedagogy Master AI.
+Strict Rule: Answer ONLY using the curriculum memories provided in the MEMORY_VAULT.
 
-STRICT GROUNDING PROTOCOL:
-1. Ground every statement in the ASSET_VAULT.
-2. If the user asks for a lesson plan, rubric, or activity, base it strictly on the learning objectives found in the vault.
-3. Cite sources: "Based on [Source Asset Name]..."
-4. Maintain a professional, actionable pedagogical tone.
-5. If the exact SLO text is found, focus the lesson plan around its specific outcomes.`;
+OPERATIONAL PROTOCOL:
+1. CITATION: Cite specific segments (e.g., "Based on Segment 4...").
+2. SCOPE: If the info is not in the vault, say "DATA_UNAVAILABLE".
+3. FORMATTING: Use professional, structured Markdown. No bold headings.
+4. TONE: Expert pedagogical consultant.`;
 
     const prompt = `
-# ASSET_VAULT (CURRICULUM CONTEXT):
-${retrievedContext}
+# MEMORY_VAULT (Persistent Curriculum Data):
+${contextVault}
 
-# TEACHER QUERY:
-${message}
+# USER TEACHER QUERY:
+"${message}"
+
+Synthesize a grounded response based solely on the persistent memories above.
 `;
 
     const streamResponse = await ai.models.generateContentStream({
@@ -104,7 +88,7 @@ ${message}
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // Precision temperature for grounding
+        temperature: 0.1, // Absolute precision
       }
     });
 
@@ -118,8 +102,7 @@ ${message}
             }
           }
         } catch (err) {
-          console.error('[Synthesis Stream Break]:', err);
-          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted]"));
+          controller.enqueue(encoder.encode("\n\n[Synthesis Node Disconnected]"));
         } finally {
           controller.close();
         }
@@ -127,7 +110,7 @@ ${message}
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error('[Chat API Fatal]:', error);
-    return NextResponse.json({ error: 'The synthesis engine encountered a fatal bottleneck.' }, { status: 500 });
+    console.error('[Grounded Chat Error]:', error);
+    return NextResponse.json({ error: 'Memory retrieval bottleneck.' }, { status: 500 });
   }
 }

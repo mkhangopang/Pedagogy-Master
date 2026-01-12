@@ -14,21 +14,16 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     
-    /**
-     * Use the text-embedding-004 model for pedagogical vector synthesis.
-     */
+    // Using the state-of-the-art text-embedding-004 model
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: text
+      content: { parts: [{ text }] }
     });
 
-    /**
-     * SDK 1.34.0 compatibility: handles both .embedding and .embeddings
-     */
-    const result = (response as any).embedding || (response as any).embeddings?.[0];
+    const result = response.embedding;
 
     if (!result || !result.values || !Array.isArray(result.values)) {
-      throw new Error("No valid embedding values returned from synthesis node.");
+      throw new Error("Invalid response from embedding node.");
     }
 
     return result.values;
@@ -40,26 +35,22 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING ENGINE
- * Optimized for high-throughput document indexing.
+ * Optimized for document indexing by processing multiple chunks in parallel.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
+  // Processing in smaller batches to respect API limits
   const embeddings: number[][] = [];
-  const batchSize = 10; 
+  const batchSize = 16; 
   
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
-    
     try {
       const batchEmbeddings = await Promise.all(
         batch.map(text => generateEmbedding(text))
       );
       embeddings.push(...batchEmbeddings);
-      
-      if (i + batchSize < texts.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
     } catch (err) {
       console.error(`Batch processing failed at index ${i}`, err);
       throw err;

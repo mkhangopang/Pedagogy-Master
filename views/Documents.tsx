@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Upload, FileText, Plus, Target, 
   Loader2, AlertCircle, CheckCircle2, X,
-  Database, Check, Trash2, ExternalLink, Globe, Sparkles, BrainCircuit
+  Database, Check, Trash2, ExternalLink, Globe, Sparkles, BrainCircuit, RefreshCw
 } from 'lucide-react';
 import { Document, SubscriptionPlan, UserProfile, UserRole } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -29,6 +29,8 @@ const Documents: React.FC<DocumentsProps> = ({
 }) => {
   const [showUploader, setShowUploader] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [indexingId, setIndexingId] = useState<string | null>(null);
+  
   const docLimit = ROLE_LIMITS[userProfile.plan].docs;
   const limitReached = documents.length >= docLimit;
   
@@ -39,10 +41,9 @@ const Documents: React.FC<DocumentsProps> = ({
     if (processingDocs.length === 0) return;
 
     const interval = setInterval(async () => {
-      // Standardized selection to avoid schema errors
       const { data } = await supabase
         .from('documents')
-        .select('id, status, document_summary, difficulty_level')
+        .select('id, status, document_summary, difficulty_level, rag_indexed')
         .in('id', processingDocs.map(d => d.id));
 
       if (data) {
@@ -51,7 +52,8 @@ const Documents: React.FC<DocumentsProps> = ({
             onUpdateDocument(updated.id, { 
               status: updated.status as any,
               documentSummary: updated.document_summary,
-              difficultyLevel: updated.difficulty_level
+              difficultyLevel: updated.difficulty_level,
+              geminiProcessed: updated.rag_indexed
             });
           }
         });
@@ -71,6 +73,31 @@ const Documents: React.FC<DocumentsProps> = ({
       createdAt: new Date().toISOString()
     });
     setShowUploader(false);
+  };
+
+  const handleManualIndex = async (id: string) => {
+    setIndexingId(id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/documents/index', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({ documentId: id })
+      });
+      
+      if (response.ok) {
+        onUpdateDocument(id, { status: 'ready', geminiProcessed: true });
+      } else {
+        alert("Neural sync failed. Please check your network connection.");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIndexingId(null);
+    }
   };
 
   const handleDelete = async (id: string) => {
@@ -99,7 +126,7 @@ const Documents: React.FC<DocumentsProps> = ({
           <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Curriculum Library</h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium">
             <Database size={18} className="text-indigo-500" />
-            Infrastructure Status: {isConnected ? 'Active' : 'Offline'}
+            Storage Node: {isConnected ? 'Online' : 'Offline'}
           </p>
         </div>
         <button 
@@ -118,17 +145,19 @@ const Documents: React.FC<DocumentsProps> = ({
         {documents.map(doc => {
           const publicUrl = doc.storageType === 'r2' && doc.filePath ? getR2PublicUrl(doc.filePath) : null;
           const isDeleting = deletingId === doc.id;
+          const isIndexing = indexingId === doc.id;
           const isProcessing = doc.status === 'processing';
+          const isReady = doc.status === 'ready' || doc.status === 'completed';
 
           return (
             <div key={doc.id} className={`bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group ${isDeleting ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
                <div className="flex justify-between items-start mb-6">
                   <div className={`p-5 rounded-[2rem] transition-all relative ${
-                    isProcessing 
+                    isProcessing || isIndexing
                       ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 animate-pulse' 
                       : 'bg-slate-50 dark:bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
                   }`}>
-                    {isProcessing ? <BrainCircuit size={32} className="animate-spin duration-[3s]" /> : <FileText size={32}/>}
+                    {isProcessing || isIndexing ? <BrainCircuit size={32} className="animate-spin duration-[3s]" /> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
                     {publicUrl && (
@@ -152,11 +181,22 @@ const Documents: React.FC<DocumentsProps> = ({
                       <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 rounded-full text-[10px] font-black uppercase">
                         <Loader2 size={10} className="animate-spin" /> Deep Audit...
                       </span>
-                    ) : doc.status === 'ready' || doc.status === 'completed' ? (
+                    ) : isIndexing ? (
+                      <span className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black uppercase">
+                        <RefreshCw size={10} className="animate-spin" /> Indexing...
+                      </span>
+                    ) : isReady ? (
                       <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-full text-[10px] font-black uppercase">
                         <Sparkles size={10} /> Neural Indexed
                       </span>
-                    ) : null}
+                    ) : (
+                      <button 
+                        onClick={() => handleManualIndex(doc.id)}
+                        className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase hover:bg-indigo-700 transition-all shadow-lg"
+                      >
+                        <BrainCircuit size={10} /> Sync Neural Nodes
+                      </button>
+                    )}
                     
                     {doc.difficultyLevel && (
                       <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full text-[9px] font-bold uppercase tracking-widest">

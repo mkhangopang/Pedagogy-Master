@@ -1,99 +1,100 @@
 /**
  * PEDAGOGICAL CHUNKING ENGINE
- * Splits documents into meaningful curriculum units rather than arbitrary lengths.
+ * Splits documents into overlapping, meaningful units focused on curriculum standards.
  */
 
 export interface DocumentChunk {
   text: string;
   index: number;
-  type: 'slo_definition' | 'teaching_strategy' | 'assessment' | 'context' | 'general';
+  type: 'slo' | 'teaching' | 'assessment' | 'general';
   sloMentioned: string[];
   keywords: string[];
-  semanticDensity: number;
-  sectionTitle?: string;
   pageNumber?: number;
+  sectionTitle?: string;
 }
 
 /**
- * Flexible SLO Pattern: Matches 'S8 A5', 's8.a5', 'S-8-A-5', '8.1.5', etc.
+ * Main chunking function
  */
-const SLO_REGEX = /\b[A-Z]?\s*\d{1,3}[.\-\s]*[A-Z]?\s*\d{1,3}\b/gi;
-
-/**
- * Normalizes an SLO code to a standard alphanumeric format for storage: S8A5
- */
-const normalizeSLO = (code: string) => code.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-
-export function chunkDocument(text: string): DocumentChunk[] {
-  const chunks: DocumentChunk[] = [];
+export function chunkDocument(documentText: string): DocumentChunk[] {
+  console.log(`📄 [Chunking] Starting high-fidelity pedagogical chunking...`);
   
-  // Strategy 1: Targeted SLO Extraction (Anchor Chunks)
+  const chunks: DocumentChunk[] = [];
+  let chunkIndex = 0;
+  
+  // STRATEGY 1: Extract SLO-specific chunks (PRIORITY)
+  // Matches patterns like S8a5, 8.1.2, G-IV-A, etc.
+  const sloPattern = /\b([A-Z])?(\d{1,2})([a-z])?(\d{1,2})[:\s-]+([^.]+\.)/gi;
   let match;
-  const tempSloRegex = new RegExp(SLO_REGEX); 
-  while ((match = tempSloRegex.exec(text)) !== null) {
-    const rawCode = match[0];
-    // Filter out simple numbers that aren't likely SLOs
-    if (!/[A-Z]/i.test(rawCode) && rawCode.length < 3) continue;
-
-    const sloCode = normalizeSLO(rawCode);
-    const start = Math.max(0, match.index - 400); // Expanded context window
-    const end = Math.min(text.length, match.index + 1200);
+  
+  while ((match = sloPattern.exec(documentText)) !== null) {
+    const rawMatch = match[0];
+    const sloCode = rawMatch.split(/[:\s-]/)[0].toUpperCase();
+    
+    // Provide 200 chars prefix and 800 chars suffix for context
+    const startPos = Math.max(0, match.index - 200);
+    const endPos = Math.min(documentText.length, match.index + 800);
     
     chunks.push({
-      text: text.substring(start, end).trim(),
-      index: chunks.length,
-      type: 'slo_definition',
+      text: documentText.substring(startPos, endPos).trim(),
+      index: chunkIndex++,
+      type: 'slo',
       sloMentioned: [sloCode],
-      keywords: extractKeywords(text.substring(start, end)),
-      semanticDensity: 0.95,
-      sectionTitle: `Curriculum Objective: ${rawCode}`
+      keywords: extractKeywords(documentText.substring(startPos, endPos)),
     });
   }
-
-  // Strategy 2: Logical Section Breaks (The connective tissue)
-  const sections = text.split(/\n(?=(?:\d+\.|\*|#{1,3})\s+[A-Z])/);
-  sections.forEach((section, idx) => {
-    if (section.length < 150) return;
+  
+  // STRATEGY 2: Sliding Window for conceptual coverage
+  const words = documentText.split(/\s+/);
+  const wordsPerChunk = 400;
+  const overlap = 100;
+  
+  for (let i = 0; i < words.length; i += (wordsPerChunk - overlap)) {
+    const chunkWords = words.slice(i, i + wordsPerChunk);
+    const chunkText = chunkWords.join(' ');
     
-    const lines = section.trim().split('\n');
-    const potentialTitle = lines[0].length < 100 ? lines[0] : `Section ${idx + 1}`;
-
-    const sloCodes = Array.from(section.matchAll(SLO_REGEX), m => normalizeSLO(m[0]))
-                         .filter(code => code.length >= 2);
+    if (chunkText.length < 150) continue; 
+    
+    const mentionedSLOs = extractSLOCodes(chunkText);
     
     chunks.push({
-      text: section.trim(),
-      index: chunks.length,
-      type: determineChunkType(section),
-      sloMentioned: Array.from(new Set(sloCodes)),
-      keywords: extractKeywords(section),
-      semanticDensity: 0.8,
-      sectionTitle: potentialTitle
+      text: chunkText.trim(),
+      index: chunkIndex++,
+      type: determineChunkType(chunkText),
+      sloMentioned: mentionedSLOs,
+      keywords: extractKeywords(chunkText),
     });
-  });
-
-  return deduplicateChunks(chunks);
+  }
+  
+  console.log(`✅ [Chunking] Generated ${chunks.length} segments`);
+  return chunks;
 }
 
-function determineChunkType(text: string): DocumentChunk['type'] {
+function determineChunkType(text: string): 'slo' | 'teaching' | 'assessment' | 'general' {
   const lower = text.toLowerCase();
-  if (lower.includes('strategy') || lower.includes('activity') || lower.includes('pedagogy')) return 'teaching_strategy';
-  if (lower.includes('quiz') || lower.includes('rubric') || lower.includes('assessment')) return 'assessment';
+  if (/\b(slo|standard|outcome|objective|competency)\b/i.test(lower)) return 'slo';
+  if (/\b(strategy|activity|teaching|method|pedagogy|lesson)\b/i.test(lower)) return 'teaching';
+  if (/\b(assess|quiz|test|exam|evaluate|rubric)\b/i.test(lower)) return 'assessment';
   return 'general';
 }
 
-function extractKeywords(text: string): string[] {
-  const words = text.toLowerCase().match(/\b[a-z]{4,}\b/g) || [];
-  const stopWords = new Set(['this', 'that', 'with', 'from', 'they', 'their', 'learning', 'students']);
-  return Array.from(new Set(words.filter(w => !stopWords.has(w)))).slice(0, 8);
+function extractSLOCodes(text: string): string[] {
+  // Broad pattern for various curriculum codes
+  const pattern = /\b([A-Z]\d{1,2}[a-z]\d{1,2}|[A-Z]-\d{1,2}-\d{1,2}|\d\.\d\.\d)\b/gi;
+  const matches = Array.from(text.matchAll(pattern));
+  return Array.from(new Set(matches.map(m => m[0].toUpperCase())));
 }
 
-function deduplicateChunks(chunks: DocumentChunk[]): DocumentChunk[] {
-  const seen = new Set<string>();
-  return chunks.filter(c => {
-    const key = c.text.substring(0, 80).replace(/\s/g, '');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function extractKeywords(text: string): string[] {
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'this', 'that', 'they', 'from'
+  ]);
+  
+  const words = text
+    .toLowerCase()
+    .match(/\b[a-z]{4,}\b/g) || [];
+  
+  const filtered = words.filter(w => !stopWords.has(w));
+  const unique = Array.from(new Set(filtered));
+  return unique.slice(0, 12);
 }
