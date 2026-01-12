@@ -1,11 +1,16 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Fallback to empty string if process.env is not yet available during hoisting
-const getEnv = (key: string) => {
-  if (typeof window !== 'undefined' && (window as any).process?.env) {
-    const val = (window as any).process.env[key];
-    if (val) return val;
+/**
+ * Robust environment variable retrieval.
+ * Prioritizes window.process.env (populated by handshake) over build-time process.env.
+ */
+const getEnv = (key: string): string => {
+  if (typeof window !== 'undefined') {
+    const win = window as any;
+    // Check various common locations for environment variables
+    const val = win.process?.env?.[key] || win[key] || (import.meta as any).env?.[key] || '';
+    if (val && val !== 'undefined' && val !== 'null') return val;
   }
   try {
     return typeof process !== 'undefined' ? process.env[key] || '' : '';
@@ -14,35 +19,62 @@ const getEnv = (key: string) => {
   }
 };
 
-const supabaseUrl = getEnv('NEXT_PUBLIC_SUPABASE_URL');
-const supabaseAnonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-
+/**
+ * Validates if the Supabase configuration is present and valid.
+ * Checks dynamically to ensure it catches variables added after module load.
+ */
 export const isSupabaseConfigured = (): boolean => {
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   return (
-    !!supabaseUrl && 
-    !!supabaseAnonKey && 
-    supabaseUrl !== 'https://placeholder-project.supabase.co' &&
-    supabaseUrl.startsWith('http')
+    !!url && 
+    !!key && 
+    url !== 'https://placeholder-project.supabase.co' &&
+    url.startsWith('http')
   );
 };
 
-export const supabase: SupabaseClient = createClient(
-  supabaseUrl || 'https://placeholder-project.supabase.co',
-  supabaseAnonKey || 'placeholder-anon-key',
-  {
+let cachedClient: SupabaseClient | null = null;
+
+/**
+ * Internal getter for the Supabase client instance.
+ * Implements lazy initialization to capture handshake variables.
+ */
+const getClient = (): SupabaseClient => {
+  if (cachedClient) return cachedClient;
+
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || 'https://placeholder-project.supabase.co';
+  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || 'placeholder-anon-key';
+
+  cachedClient = createClient(url, anonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
       flowType: 'pkce'
     }
+  });
+
+  return cachedClient;
+};
+
+/**
+ * Exported Supabase client proxy.
+ * This allows all existing imports (import { supabase } from ...) to continue working
+ * while delaying actual initialization until a property is accessed.
+ */
+export const supabase = new Proxy({} as SupabaseClient, {
+  get: (target, prop) => {
+    const client = getClient();
+    const value = (client as any)[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
   }
-);
+});
 
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
-    supabaseUrl,
-    supabaseAnonKey,
+    getEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
     {
       global: {
         headers: {
