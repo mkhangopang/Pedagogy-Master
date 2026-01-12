@@ -29,15 +29,15 @@ export const isSupabaseConfigured = (): boolean => {
   const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   
   const isValidUrl = !!url && url !== 'https://placeholder-project.supabase.co' && url.startsWith('http');
-  // Longer length check to ensure it's not a dummy placeholder value
-  const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 32;
+  // Length check for standard Supabase keys
+  const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 20;
 
   if (!isValidUrl || !isValidKey) {
-    console.warn('[Infrastructure Diagnostics] Configuration incomplete:', {
-      urlPresent: !!url,
-      keyPresent: !!key,
-      keyLength: key?.length || 0,
-      urlValid: isValidUrl
+    console.warn('[Infrastructure Diagnostics] Configuration check failed:', {
+      urlFound: !!url,
+      keyFound: !!key,
+      urlStartsCorrectly: url?.startsWith('http'),
+      keyLength: key?.length || 0
     });
   }
 
@@ -88,7 +88,7 @@ export const getSupabaseServerClient = (token: string): SupabaseClient => {
 
 export const getSupabaseHealth = async () => {
   if (!isSupabaseConfigured()) {
-    return { status: 'disconnected', message: 'Infrastructure keys missing (Supabase URL/Key).' };
+    return { status: 'disconnected', message: 'Credentials missing (URL/Key).' };
   }
 
   try {

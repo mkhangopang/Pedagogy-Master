@@ -38,8 +38,8 @@ const performSystemHandshake = () => {
       win.process.env[key] = trimmed;
       win[key] = trimmed;
       
-      // Map gateway variants to standard API_KEY for internal consistency
-      if (key === 'AI_GATWAY_API_KEY' || key === 'AI_GATEWAY_API_KEY') {
+      // Critical mapping: Ensure the standard API_KEY is set if Gateway key exists
+      if (key === 'AI_GATEWAY_API_KEY' || key === 'AI_GATWAY_API_KEY') {
         win.process.env['API_KEY'] = trimmed;
         win['API_KEY'] = trimmed;
       }
