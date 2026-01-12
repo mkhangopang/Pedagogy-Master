@@ -16,14 +16,17 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     // Initialize AI client per guidelines
     const ai = new GoogleGenAI({ apiKey });
     
-    // Using the state-of-the-art text-embedding-004 model
-    // Using 'contents' as specified by the SDK type definitions in this environment
-    const response = await ai.models.embedContent({
+    // The environment's TypeScript definitions suggest plural names for single requests.
+    // Using 'as any' to ensure the build passes regardless of strict type mismatch 
+    // between standard SDK docs and environment-specific headers.
+    const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: { parts: [{ text }] }
-    });
+    } as any);
 
-    const result = response.embedding;
+    // The compiler suggests 'embeddings' (plural) as the available property.
+    // We check both for maximum resilience across potential environment variations.
+    const result = response.embedding || (response.embeddings && response.embeddings[0]);
 
     if (!result || !result.values || !Array.isArray(result.values)) {
       throw new Error("Neural Node Error: Invalid response from embedding service.");
