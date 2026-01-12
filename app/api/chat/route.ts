@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Verify grounded data
     if (retrievedChunks.length === 0) {
-      return new Response(`DATA_UNAVAILABLE: Your current query doesn't match the curriculum data in your selected documents. Please try a different pedagogical keyword or check your document selection.`);
+      return new Response(`DATA_UNAVAILABLE: I searched your ${selectedDocs?.length} selected curriculum assets but found no relevant content for: "${message}". Try re-indexing your documents in the Library if you just uploaded them.`);
     }
 
     // 4. Synthesis Prompt Generation
@@ -56,8 +56,9 @@ export async function POST(req: NextRequest) {
       ${c.text}`
     )).join('\n\n');
 
-    // Initialize AI per coding guidelines
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Initialize AI per coding guidelines with resilient key lookup
+    const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
+    const ai = new GoogleGenAI({ apiKey });
     
     const systemInstruction = `You are Pedagogy Master AI.
 Strict Directive: Answer ONLY using the curriculum data in the MEMORY_VAULT.
@@ -97,7 +98,8 @@ Synthesize a professional response based strictly on the curriculum data above.
             }
           }
         } catch (err) {
-          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted]"));
+          console.error('[Chat Stream Error]:', err);
+          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted: Remote Node Error]"));
         } finally {
           controller.close();
         }
@@ -106,6 +108,6 @@ Synthesize a professional response based strictly on the curriculum data above.
 
   } catch (error: any) {
     console.error('[Chat API Error]:', error);
-    return NextResponse.json({ error: 'Curriculum retrieval failure.' }, { status: 500 });
+    return NextResponse.json({ error: `Curriculum retrieval failure: ${error.message || 'Check Neural Configuration'}` }, { status: 500 });
   }
 }

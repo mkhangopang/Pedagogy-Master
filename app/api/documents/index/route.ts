@@ -33,26 +33,35 @@ export async function POST(request: NextRequest) {
       .single();
     
     if (docError || !doc) {
-      return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Document not found or access denied.' }, { status: 404 });
     }
     
     // Attempt text retrieval for indexing
     let text = doc.extracted_text;
     if (!text && doc.file_path) {
       // Fallback to R2 fetch if database text column is empty
-      text = await getObjectText(doc.file_path);
+      try {
+        text = await getObjectText(doc.file_path);
+      } catch (r2Err) {
+        console.error('[R2 Fetch Fail during Index]:', r2Err);
+      }
     }
     
-    if (!text) {
-      return NextResponse.json({ error: 'No text content available for indexing.' }, { status: 404 });
+    if (!text || text.length < 10) {
+      return NextResponse.json({ error: 'No usable text content found for indexing. Document might be empty or corrupt.' }, { status: 422 });
     }
     
     // Execute one-time persistent indexing
-    await indexDocumentForRAG(documentId, text, doc.file_path, supabase);
+    try {
+      await indexDocumentForRAG(documentId, text, doc.file_path, supabase);
+    } catch (indexErr: any) {
+      console.error('[Indexing Logic Failure]:', indexErr);
+      return NextResponse.json({ error: `Neural processing failed: ${indexErr.message || 'Vector Grid Error'}` }, { status: 500 });
+    }
     
     return NextResponse.json({
       success: true,
-      message: `Curriculum asset indexed successfully. Neural grid updated.`,
+      message: `Curriculum asset "${doc.name}" indexed successfully.`,
     });
     
   } catch (error: any) {

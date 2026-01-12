@@ -88,13 +88,16 @@ const Documents: React.FC<DocumentsProps> = ({
         body: JSON.stringify({ documentId: id })
       });
       
+      const data = await response.json();
+
       if (response.ok) {
         onUpdateDocument(id, { status: 'ready', geminiProcessed: true });
       } else {
-        alert("Neural sync failed. Please check your network connection.");
+        alert(`Neural Sync Failed: ${data.error || 'Connection Timeout'}`);
       }
     } catch (err) {
       console.error(err);
+      alert("Neural sync failed. Please check your internet connection and try again.");
     } finally {
       setIndexingId(null);
     }

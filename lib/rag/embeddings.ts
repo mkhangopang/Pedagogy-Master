@@ -3,9 +3,9 @@ import { GoogleGenAI } from "@google/genai";
 /**
  * GENERATE NEURAL EMBEDDING
  * Converts curriculum text into a 768-dimensional vector using Gemini.
- * This vector represents the semantic meaning of the text for RAG retrieval.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
+  // Resilient API Key lookup
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   
   if (!apiKey) {
@@ -13,29 +13,27 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   }
 
   try {
-    // Initialize AI client per guidelines
     const ai = new GoogleGenAI({ apiKey });
     
-    // The environment's TypeScript definitions suggest plural names for single requests.
-    // Using 'as any' to ensure the build passes regardless of strict type mismatch 
-    // between standard SDK docs and environment-specific headers.
+    // We use 'as any' to bypass environment-specific TS definitions that might 
+    // conflict between 'contents' and 'content' or 'embedding' vs 'embeddings'.
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: { parts: [{ text }] }
     } as any);
 
-    // The compiler suggests 'embeddings' (plural) as the available property.
-    // We check both for maximum resilience across potential environment variations.
+    // Some versions of the response return 'embedding', others 'embeddings' as an array
     const result = response.embedding || (response.embeddings && response.embeddings[0]);
 
     if (!result || !result.values || !Array.isArray(result.values)) {
-      throw new Error("Neural Node Error: Invalid response from embedding service.");
+      console.error('[Embedding Error] Full response:', JSON.stringify(response));
+      throw new Error("Neural Node Error: The embedding service returned an invalid vector format.");
     }
 
     return result.values;
   } catch (error: any) {
     console.error('[Embedding Fatal Error]:', error);
-    throw error;
+    throw new Error(`Vector Synthesis Failed: ${error.message || 'Unknown provider error'}`);
   }
 }
 
@@ -47,7 +45,6 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   if (!texts.length) return [];
   
   const embeddings: number[][] = [];
-  // Batch size limited to ensure stability and avoid rate limits during one-time indexing
   const batchSize = 10; 
   
   for (let i = 0; i < texts.length; i += batchSize) {
@@ -57,7 +54,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
         batch.map(text => generateEmbedding(text))
       );
       embeddings.push(...batchResults);
-    } catch (err) {
+    } catch (err: any) {
       console.error(`Batch node failure at index ${i}`, err);
       throw err;
     }

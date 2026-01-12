@@ -19,13 +19,18 @@ export async function retrieveRelevantChunks(
   documentIds: string[],
   supabase: SupabaseClient,
   maxChunks: number = 8,
-  priorityDocumentId?: string
+  priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
   console.log(`🔍 [Retriever] Semantic lookup for: "${query.substring(0, 50)}..."`);
   
   try {
-    // 1. Check for direct SLO code match (High Precision Fallback)
+    // 1. Sanitize priority ID for Supabase RPC (must be valid UUID or null)
+    const sanitizedPriorityId = (priorityDocumentId && priorityDocumentId.length === 36) 
+      ? priorityDocumentId 
+      : null;
+
+    // 2. Check for direct SLO code match (High Precision Fallback)
     const sloPattern = /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/i;
     const sloMatch = query.match(sloPattern);
     
@@ -48,20 +53,21 @@ export async function retrieveRelevantChunks(
       }
     }
 
-    // 2. Generate Query Embedding for Semantic Search
+    // 3. Generate Query Embedding for Semantic Search
     const queryEmbedding = await generateEmbedding(query);
 
-    // 3. Persistent Vector Search (pgvector)
+    // 4. Persistent Vector Search (pgvector)
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding,
       match_count: maxChunks,
       filter_document_ids: documentIds,
-      priority_document_id: priorityDocumentId || null
+      priority_document_id: sanitizedPriorityId
     });
 
     if (error) {
       console.error('[Retriever RPC Error]:', error);
+      // Fallback: If vector search fails, try keyword search
       return [];
     }
 
