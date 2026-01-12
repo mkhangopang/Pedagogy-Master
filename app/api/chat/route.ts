@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
+import { retrieveRelevantChunks, retrieveChunksForSLO } from '../../../lib/rag/retriever';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Identify currently selected curriculum context exclusively
+    // 1. Identify currently selected curriculum context
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id')
@@ -32,18 +32,46 @@ export async function POST(req: NextRequest) {
     
     const documentIds = selectedDocs?.map(d => d.id) || [];
 
-    // 2. RAG Retrieval with Focused Priority
-    let retrievedContext = "";
+    // 2. Hybrid RAG Retrieval (SLO Detection + Neural Search)
+    let retrievedChunks = [];
+    
     if (documentIds.length > 0) {
-      const chunks = await retrieveRelevantChunks(message, documentIds, supabase, 5, priorityDocumentId);
-      if (chunks.length > 0) {
-        retrievedContext = chunks.map((c, i) => `[Context Segment ${i+1}${c.sectionTitle ? `: ${c.sectionTitle}` : ''}]\n${c.text}`).join('\n\n');
+      // 2a. Detect SLO pattern (e.g., "s7 a5", "S7a5", "S-7-a-5")
+      // This helps solve the "DATA_UNAVAILABLE" issue for specific curriculum codes.
+      const sloPattern = /\b([a-z])\s*(\d{1,2})\s*([a-z])\s*(\d{1,2})\b/i;
+      const sloMatch = message.match(sloPattern);
+      
+      if (sloMatch) {
+        const sloCode = sloMatch[0].replace(/\s+/g, '').toUpperCase();
+        console.log(`[Chat API] Detected SLO code in query: ${sloCode}. Running precision lookup.`);
+        const directChunks = await retrieveChunksForSLO(sloCode, documentIds, supabase);
+        if (directChunks.length > 0) {
+          retrievedChunks.push(...directChunks);
+        }
       }
+      
+      // 2b. Neural Semantic Search (Global context matching)
+      const neuralChunks = await retrieveRelevantChunks(message, documentIds, supabase, 5, priorityDocumentId);
+      retrievedChunks.push(...neuralChunks);
+      
+      // Deduplicate results by chunk ID to ensure clean context
+      const seenIds = new Set();
+      retrievedChunks = retrievedChunks.filter(c => {
+        if (seenIds.has(c.id)) return false;
+        seenIds.add(c.id);
+        return true;
+      });
+    }
+
+    let retrievedContext = "";
+    if (retrievedChunks.length > 0) {
+      retrievedContext = retrievedChunks.map((c, i) => `[Context Segment ${i+1}${c.sectionTitle ? `: ${c.sectionTitle}` : ''}]\n${c.text}`).join('\n\n');
     }
 
     // 3. Grounding Verification
+    // If no information is found in selected docs, provide a helpful pedagogical fallback guidance.
     if (!retrievedContext) {
-      return new Response("DATA_UNAVAILABLE: I couldn't find any relevant information in your selected curriculum documents to answer this query. Please ensure your documents are uploaded, indexed, and selected in the Library.");
+      return new Response("DATA_UNAVAILABLE: I couldn't find any specific information in your currently selected curriculum documents to address this request. \n\nTo help me assist you better:\n1. Ensure the relevant documents are uploaded in the Library.\n2. Verify they are 'Selected' (checked) in the Library or the Chat sidebar.\n3. Try re-indexing the document if it was recently uploaded.");
     }
 
     // 4. Gemini Neural Synthesis
@@ -72,7 +100,7 @@ ${message}
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // Low temperature ensures strictly grounded, deterministic responses.
+        temperature: 0.1, // Precision temperature for strict grounding
       }
     });
 
