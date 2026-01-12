@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Identify currently selected curriculum context
+    // 1. Identify currently selected curriculum context exclusively
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id')
@@ -42,13 +42,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Grounding Verification
-    // If no context segments are retrieved, the AI informs the user directly.
     if (!retrievedContext) {
-      return new Response("DATA_UNAVAILABLE: I couldn't find any relevant information in your selected curriculum documents to answer this query. Please ensure your documents are uploaded and selected in the Library.");
+      return new Response("DATA_UNAVAILABLE: I couldn't find any relevant information in your selected curriculum documents to answer this query. Please ensure your documents are uploaded, indexed, and selected in the Library.");
     }
 
     // 4. Gemini Neural Synthesis
-    // Creating a fresh instance to ensure the latest API key from the environment is used.
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const systemInstruction = `You are the Pedagogy Master AI, an expert instructional designer and curriculum coach.
@@ -69,7 +67,6 @@ ${retrievedContext}
 ${message}
 `;
 
-    // Stream the synthesis to the teacher for a real-time experience.
     const streamResponse = await ai.models.generateContentStream({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],

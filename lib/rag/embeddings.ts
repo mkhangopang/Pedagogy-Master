@@ -17,13 +17,11 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for high-fidelity pedagogical vector synthesis.
-     * The embedContent call uses 'contents' to pass the payload directly, avoiding schema mismatch.
+     * The embedContent call uses 'contents' (plural) to pass the payload directly.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: {
-        parts: [{ text }]
-      }
+      contents: text
     });
 
     // Extracting the vector from the synthesis result
