@@ -17,7 +17,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     
     /**
      * Use the text-embedding-004 model for pedagogical vector synthesis.
-     * Per user instruction, we use 'contents' instead of 'content' to pass the text.
+     * The @google/genai SDK version 1.34.0 returns an 'embeddings' array even for single requests.
      */
     const response = await ai.models.embedContent({
       model: "text-embedding-004",
@@ -25,16 +25,22 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     });
 
     /**
-     * The response for a single embedContent call contains an 'embedding' property.
-     * We extract the numerical vector from embedding.values.
+     * The response for @google/genai's embedContent provides an 'embeddings' array.
+     * We extract the numerical vector from the first element's values.
      */
-    const result = response.embedding;
+    const result = response.embeddings;
 
-    if (!result || !result.values || !Array.isArray(result.values)) {
+    if (!result || !Array.isArray(result) || result.length === 0) {
       throw new Error("No valid embedding values returned from synthesis node. Check API configuration.");
     }
 
-    return result.values;
+    const values = result[0].values;
+
+    if (!values || !Array.isArray(values)) {
+      throw new Error("Malformed embedding vector returned from synthesis node.");
+    }
+
+    return values;
   } catch (error: any) {
     console.error('[Embedding Error]:', error);
     throw error;
