@@ -6,13 +6,14 @@ import { GoogleGenAI } from "@google/genai";
  * Standardized for pgvector(768) compatibility.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
+  // Support both standard and Vercel-specific API key names
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   if (!apiKey) throw new Error('Neural Node Error: API_KEY is missing.');
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     // Using text-embedding-004 which produces 768-dim vectors
-    // FIX: SDK expects 'contents' (plural) as an array of Content objects
+    // The SDK expects 'contents' (plural) as an array of Content objects
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: [{ parts: [{ text: text || " " }] }]
@@ -40,46 +41,57 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING SYNTHESIS
- * Uses Gemini's native batchEmbedContents API.
- * FIX: 'requests' items now use 'contents' list to satisfy API validation.
+ * Since batchEmbedContents is not available on the Models object, 
+ * we execute parallelized single embedContent calls with concurrency control.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   const ai = new GoogleGenAI({ apiKey });
-  const model = "text-embedding-004";
   
-  const NATIVE_BATCH_SIZE = 100; 
+  // We process in small concurrent chunks to avoid hitting API rate limits 
+  // while still gaining speed over sequential processing.
+  const CONCURRENCY_LIMIT = 5; 
   const results: number[][] = [];
   
-  for (let i = 0; i < texts.length; i += NATIVE_BATCH_SIZE) {
-    const batchTexts = texts.slice(i, i + NATIVE_BATCH_SIZE);
+  for (let i = 0; i < texts.length; i += CONCURRENCY_LIMIT) {
+    const batchSlice = texts.slice(i, i + CONCURRENCY_LIMIT);
     
     try {
-      // Structure fixed: 'contents' must be a list/array
-      const batchResponse: any = await ai.models.batchEmbedContents({
-        requests: batchTexts.map(text => ({
-          model,
+      const promises = batchSlice.map(text => 
+        ai.models.embedContent({
+          model: "text-embedding-004",
           contents: [{ parts: [{ text: text || " " }] }]
-        }))
-      });
+        })
+      );
 
-      if (!batchResponse.embeddings) throw new Error("Empty batch response from neural node.");
+      const batchResponses = await Promise.all(promises);
 
-      const vectors = batchResponse.embeddings.map((emb: any) => {
-        const v = emb.values.map((val: any) => isFinite(Number(val)) ? Number(val) : 0);
-        // Standardize dimensions
+      const vectors = batchResponses.map((response: any) => {
+        const values = response.embedding?.values;
+        if (!values) return new Array(768).fill(0);
+        
+        const v = values.map((val: any) => isFinite(Number(val)) ? Number(val) : 0);
+        // Standardize dimensions to 768
         if (v.length < 768) return [...v, ...new Array(768 - v.length).fill(0)];
         return v.slice(0, 768);
       });
 
       results.push(...vectors);
+      
+      // Small pause between batches if there are more to process
+      if (i + CONCURRENCY_LIMIT < texts.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
     } catch (err: any) {
-      console.warn(`[Batch Embedding Warning] offset ${i}, falling back to sequential:`, err);
-      // Failover to sequential if batching fails
-      for (const text of batchTexts) {
-        results.push(await generateEmbedding(text));
+      console.warn(`[Parallel Embedding Warning] offset ${i}, falling back to sequential for this slice:`, err);
+      for (const text of batchSlice) {
+        try {
+          results.push(await generateEmbedding(text));
+        } catch (innerErr) {
+          results.push(new Array(768).fill(0));
+        }
       }
     }
   }
