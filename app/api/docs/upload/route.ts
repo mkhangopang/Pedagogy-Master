@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
     // 2. Local Extraction
     const processed = await processDocument(file);
 
-    // 3. Database Sync
+    // 3. Database Sync with Schema Awareness
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       user_id: userId,
       name: processed.filename,
@@ -58,19 +58,24 @@ export async function POST(req: NextRequest) {
       storage_type: 'r2',
       is_selected: true,
       extracted_text: processed.text,
-      rag_indexed: false
+      rag_indexed: false // Error source if SQL patch not applied
     }).select().single();
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      console.error('❌ [Database Sync Error]:', dbError);
+      if (dbError.code === '42703' || dbError.message.includes('rag_indexed')) {
+        throw new Error("Database Schema Mismatch: The 'rag_indexed' column is missing. Please go to 'Neural Brain' > 'Stack' and apply the SQL Patch to fix this.");
+      }
+      throw dbError;
+    }
 
-    // 4. Neural Indexing (Await to ensure completion in Serverless)
+    // 4. Neural Indexing
     try {
       console.log(`[Upload] Starting indexing for ${docData.id}`);
       await indexDocumentForRAG(docData.id, processed.text, r2Key, supabase);
     } catch (indexErr: any) {
       console.error(`❌ [Upload] Indexing failure:`, indexErr.message);
-      // We don't fail the whole request, but log it. 
-      // User can retry indexing via Brain Control.
+      // We return success for upload even if indexing lags, user can retry sync in Library
     }
 
     return NextResponse.json({
@@ -78,11 +83,13 @@ export async function POST(req: NextRequest) {
       id: docData.id,
       name: processed.filename,
       status: 'ready',
-      message: '📄 Curriculum asset ingested and indexed successfully.'
+      message: '📄 Curriculum asset ingested successfully.'
     });
 
   } catch (error: any) {
-    console.error('Ingestion Error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('Ingestion Fatal Error:', error);
+    return NextResponse.json({ 
+      error: error.message || 'The neural node encountered a bottleneck during ingestion.' 
+    }, { status: 500 });
   }
 }

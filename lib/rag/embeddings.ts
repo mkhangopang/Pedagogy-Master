@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 /**
@@ -11,7 +10,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // Using text-embedding-004 for 768-dim vectors
+    // Use text-embedding-004 which produces 768-dim vectors
+    // CRITICAL FIX: embedContent expects 'content' (singular) and a single object
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
       content: { parts: [{ text: text || " " }] }
@@ -20,7 +20,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const result = response.embedding;
     if (!result?.values) throw new Error("Neural Node Error: Invalid vector response.");
 
-    // Sanitize and validate numeric precision
+    // Sanitize and validate numeric precision to prevent JSON/DB syntax errors
     const vector = result.values.map((v: any) => {
       const n = Number(v);
       return isFinite(n) ? n : 0;
@@ -39,42 +39,45 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
 /**
  * BATCH EMBEDDING SYNTHESIS
- * Uses parallelized single embedContent calls to bypass version-specific 
- * errors with the batchEmbedContents wrapper while maintaining performance.
+ * Uses Gemini's native batchEmbedContents API.
+ * CRITICAL FIX: 'requests' must be a list/array of EmbedContentRequest objects.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   const ai = new GoogleGenAI({ apiKey });
+  const model = "text-embedding-004";
   
-  const CONCURRENCY_LIMIT = 5; // To avoid hitting rate limits
+  const NATIVE_BATCH_SIZE = 100; 
   const results: number[][] = [];
   
-  for (let i = 0; i < texts.length; i += CONCURRENCY_LIMIT) {
-    const chunk = texts.slice(i, i + CONCURRENCY_LIMIT);
+  for (let i = 0; i < texts.length; i += NATIVE_BATCH_SIZE) {
+    const batchTexts = texts.slice(i, i + NATIVE_BATCH_SIZE);
     
     try {
-      const chunkPromises = chunk.map(async (text) => {
-        const response: any = await ai.models.embedContent({
-          model: "text-embedding-004",
+      // Structure fixed to use standard 'requests' list as required by the API
+      const batchResponse: any = await ai.models.batchEmbedContents({
+        requests: batchTexts.map(text => ({
+          model,
           content: { parts: [{ text: text || " " }] }
-        });
-        
-        const values = response.embedding?.values;
-        if (!values) throw new Error("Empty embedding result");
-        
-        const v = values.map((val: any) => isFinite(Number(val)) ? Number(val) : 0);
+        }))
+      });
+
+      if (!batchResponse.embeddings) throw new Error("Empty batch response from neural node.");
+
+      const vectors = batchResponse.embeddings.map((emb: any) => {
+        const v = emb.values.map((val: any) => isFinite(Number(val)) ? Number(val) : 0);
+        // Standardize dimensions
         if (v.length < 768) return [...v, ...new Array(768 - v.length).fill(0)];
         return v.slice(0, 768);
       });
 
-      const chunkResults = await Promise.all(chunkPromises);
-      results.push(...chunkResults);
+      results.push(...vectors);
     } catch (err: any) {
-      console.error(`[Parallel Embedding Error] offset ${i}:`, err);
-      // Failover to individual processing for this chunk
-      for (const text of chunk) {
+      console.warn(`[Batch Embedding Warning] offset ${i}, falling back to sequential:`, err);
+      // Failover to sequential if batching fails for specific reasons
+      for (const text of batchTexts) {
         results.push(await generateEmbedding(text));
       }
     }

@@ -1,4 +1,3 @@
-
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -101,13 +100,13 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: RAG INFRASTRUCTURE v5.0
--- MISSION: SEMANTIC CURRICULUM RETRIEVAL & VECTOR PLANE
+  const sqlSchema = `-- PEDAGOGY MASTER: DATABASE REPAIR & RAG PATCH v6.0
+-- RUN THIS IN SUPABASE SQL EDITOR TO FIX "COLUMN NOT FOUND" ERRORS
 
--- 1. EXTENSION
+-- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. CORE DOCUMENTS TABLE (Updated with rag_indexed)
+-- 2. CORE DOCUMENTS TABLE REPAIR
 CREATE TABLE IF NOT EXISTS public.documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id),
@@ -129,18 +128,26 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- ADD COLUMN IF MISSING (Safeguard for existing tables)
+-- FORCE COLUMN UPDATES FOR EXISTING TABLES
 DO $$ 
 BEGIN 
+  -- Fix rag_indexed
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed') THEN
     ALTER TABLE public.documents ADD COLUMN rag_indexed BOOLEAN DEFAULT false;
   END IF;
+  
+  -- Fix rag_indexed_at
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed_at') THEN
     ALTER TABLE public.documents ADD COLUMN rag_indexed_at TIMESTAMPTZ;
   END IF;
+
+  -- Fix chunk_count
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='chunk_count') THEN
     ALTER TABLE public.documents ADD COLUMN chunk_count INTEGER DEFAULT 0;
   END IF;
+
+  -- Fix file_path unique (if needed)
+  -- ALTER TABLE public.documents ADD CONSTRAINT documents_file_path_key UNIQUE (file_path);
 END $$;
 
 -- 3. DOCUMENT CHUNKS (RAG CORE)
@@ -154,17 +161,16 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
   chunk_type TEXT,
   slo_codes TEXT[],
   keywords TEXT[],
-  embedding vector(768), -- Gemini text-embedding-004
-  semantic_density FLOAT,
+  embedding vector(768), -- Optimized for text-embedding-004
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4. SEARCH INDEXES
+-- 4. PERFORMANCE INDEXES
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 5. HYBRID SEARCH RPC
+-- 5. HYBRID SEARCH LOGIC
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -185,24 +191,24 @@ AS $$
 BEGIN
   RETURN QUERY
   SELECT
-    id as chunk_id,
-    document_chunks.chunk_text,
-    document_chunks.section_title,
-    document_chunks.page_number,
-    document_chunks.slo_codes,
+    dc.id as chunk_id,
+    dc.chunk_text,
+    dc.section_title,
+    dc.page_number,
+    dc.slo_codes,
     (
-      ((1 - (document_chunks.embedding <=> query_embedding)) * 0.7 + 
-      ts_rank_cd(to_tsvector('english', document_chunks.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3) +
-      (CASE WHEN document_id = priority_document_id THEN 0.15 ELSE 0 END)
+      ((1 - (dc.embedding <=> query_embedding)) * 0.7 + 
+      ts_rank_cd(to_tsvector('english', dc.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3) +
+      (CASE WHEN dc.document_id = priority_document_id THEN 0.15 ELSE 0 END)
     ) AS combined_score
-  FROM document_chunks
-  WHERE document_id = ANY(filter_document_ids)
+  FROM document_chunks dc
+  WHERE dc.document_id = ANY(filter_document_ids)
   ORDER BY combined_score DESC
   LIMIT match_count;
 END;
 $$;
 
--- 6. SLO LOOKUP RPC
+-- 6. SLO DISCOVERY ENGINE
 CREATE OR REPLACE FUNCTION find_slo_chunks(
   slo_code TEXT,
   document_ids UUID[]
@@ -224,7 +230,7 @@ BEGIN
 END;
 $$;
 
--- 7. RLS
+-- 7. SECURITY & ACCESS
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
@@ -236,7 +242,7 @@ DROP POLICY IF EXISTS "owner_all_chunks" ON public.document_chunks;
 CREATE POLICY "owner_all_chunks" ON public.document_chunks FOR ALL TO authenticated
 USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid()));
 
--- 8. ADMIN SYNC
+-- 8. GRANT ADMIN STATUS
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 `;
@@ -307,6 +313,17 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
                <h2 className="text-2xl font-bold flex items-center gap-3 dark:text-white"><Database size={24} className="text-indigo-600" /> Diagnostic Dashboard</h2>
                <button onClick={checkHealth} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">{isChecking ? <RefreshCw className="animate-spin" /> : <RefreshCw />}</button>
             </div>
+            
+            <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
+               <ShieldAlert className="text-amber-600 shrink-0" size={24} />
+               <div className="space-y-1">
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert</h4>
+                 <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
+                   If you are seeing "column not found" errors, please copy the SQL patch below and execute it in your Supabase SQL Editor. This will synchronize your database schema with the neural processing engine.
+                 </p>
+               </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {dbStatus.map((item, idx) => (
                 <div key={idx} className={`p-6 rounded-2xl border flex flex-col gap-3 transition-all ${item.exists ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-100 dark:border-rose-900 text-rose-700 dark:text-rose-400 animate-pulse'}`}>
@@ -342,7 +359,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">PostgreSQL Vector Patch v5.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v6.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"
