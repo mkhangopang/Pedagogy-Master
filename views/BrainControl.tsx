@@ -101,8 +101,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: DATABASE REPAIR & RAG PATCH v7.0
--- RUN THIS IN SUPABASE SQL EDITOR TO FIX "COLUMN NOT FOUND" ERRORS
+  const sqlSchema = `-- PEDAGOGY MASTER: DATABASE REPAIR & RAG PATCH v8.0
+-- RUN THIS IN SUPABASE SQL EDITOR TO FIX "COLUMN NOT FOUND" OR "JSON SYNTAX" ERRORS
 
 -- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -129,9 +129,30 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- FORCE COLUMN UPDATES FOR EXISTING TABLES
+-- 3. DOCUMENT CHUNKS (RAG CORE)
+CREATE TABLE IF NOT EXISTS public.document_chunks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
+  chunk_text TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  section_title TEXT,
+  page_number INTEGER,
+  chunk_type TEXT,
+  slo_codes TEXT[],
+  keywords TEXT[],
+  embedding vector(768), -- Optimized for text-embedding-004
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- FORCE COLUMN UPDATES & TYPE FIXES
 DO $$ 
 BEGIN 
+  -- Fix document_chunks.embedding type (Critical for "invalid syntax for type json" errors)
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='embedding' AND (data_type='json' OR data_type='jsonb')) THEN
+    ALTER TABLE public.document_chunks DROP COLUMN embedding;
+    ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
+  END IF;
+
   -- Fix rag_indexed
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed') THEN
     ALTER TABLE public.documents ADD COLUMN rag_indexed BOOLEAN DEFAULT false;
@@ -147,21 +168,6 @@ BEGIN
     ALTER TABLE public.documents ADD COLUMN chunk_count INTEGER DEFAULT 0;
   END IF;
 END $$;
-
--- 3. DOCUMENT CHUNKS (RAG CORE)
-CREATE TABLE IF NOT EXISTS public.document_chunks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
-  chunk_text TEXT NOT NULL,
-  chunk_index INTEGER NOT NULL,
-  section_title TEXT,
-  page_number INTEGER,
-  chunk_type TEXT,
-  slo_codes TEXT[],
-  keywords TEXT[],
-  embedding vector(768), -- Optimized for text-embedding-004
-  created_at TIMESTAMPTZ DEFAULT now()
-);
 
 -- 4. PERFORMANCE INDEXES
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
@@ -317,7 +323,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
                <div className="space-y-1">
                  <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   If you are seeing "column not found" errors, please copy the SQL patch below and execute it in your Supabase SQL Editor. This will synchronize your database schema with the neural processing engine.
+                   If you are seeing "column not found" or "invalid syntax for type json" errors, please copy the SQL patch below and execute it in your Supabase SQL Editor. This will synchronize your database schema with the neural processing engine.
                  </p>
                </div>
             </div>
@@ -357,7 +363,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v7.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v8.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"

@@ -53,12 +53,15 @@ export async function retrieveRelevantChunks(
     }
 
     // 2. Semantic Analysis (Neural Embeddings)
-    const queryEmbedding = await generateEmbedding(query);
+    const queryEmbeddingArray = await generateEmbedding(query);
+    
+    // CRITICAL FIX: Convert number array to pgvector string format "[v1,v2,v3...]"
+    const queryEmbeddingString = `[${queryEmbeddingArray.join(',')}]`;
 
     // 3. Hybrid Search Execution
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
-      query_embedding: queryEmbedding,
+      query_embedding: queryEmbeddingString, // Pass as formatted string
       match_count: maxChunks,
       filter_document_ids: documentIds,
       priority_document_id: sanitizedPriorityId
