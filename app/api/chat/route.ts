@@ -3,14 +3,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
 import { GoogleGenAI } from '@google/genai';
+import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE } from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120; // 2 minutes for deep context retrieval
+export const maxDuration = 120;
 
 /**
  * GROUNDED CHAT ENGINE
- * Leverages persistent RAG memory to provide context-aware synthesis.
+ * Leverages persistent RAG memory and the Neural Brain Logic.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -26,7 +27,18 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Identify context (selected documents)
+    // 1. Fetch active Neural Brain Logic from DB
+    const { data: brainData } = await supabase
+      .from('neural_brain')
+      .select('master_prompt')
+      .eq('is_active', true)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const masterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
+
+    // 2. Identify context (selected documents)
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name')
@@ -39,39 +51,36 @@ export async function POST(req: NextRequest) {
       return new Response(`📚 Active context required. Please select at least one curriculum document in your Library.`);
     }
 
-    // 2. Semantic Memory Retrieval
+    // 3. Semantic Memory Retrieval
     const retrievedChunks = await retrieveRelevantChunks(
       message, 
       documentIds, 
       supabase, 
-      10, 
+      12, // Increased for better pedagogical context
       priorityDocumentId
     );
 
-    // 3. Verify grounded data
+    // 4. Verify grounded data
     if (retrievedChunks.length === 0) {
-      return new Response(`DATA_UNAVAILABLE: I searched your ${selectedDocs?.length} selected curriculum assets but found no relevant content for: "${message}". Try re-indexing your documents in the Library if you just uploaded them.`);
+      return new Response(`DATA_UNAVAILABLE: I searched your ${selectedDocs?.length} selected curriculum assets but found no relevant content for: "${message}".`);
     }
 
-    // 4. Synthesis Prompt Generation
+    // 5. Synthesis Prompt Generation
     const contextVault = retrievedChunks.map((c, i) => (
       `### [MEMORY_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'N/A'})
       ${c.text}`
     )).join('\n\n');
 
-    // Initialize AI per coding guidelines with resilient key lookup
     const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey });
     
-    const systemInstruction = `You are Pedagogy Master AI.
-Strict Directive: Answer ONLY using the curriculum data in the MEMORY_VAULT.
+    // Combine User's Neural Brain logic with strict RAG directives
+    const systemInstruction = `${masterPrompt}
 
-Operational Rules:
-- If info is missing, say "DATA_UNAVAILABLE".
-- Cite memories used: (e.g., "According to Memory 2...").
-- Tone: Professional pedagogical consultant.
-- Precision: Align strictly to SLO codes mentioned [S8A5].
-- Format: Structured Markdown. NO BOLD HEADINGS.`;
+${NUCLEAR_GROUNDING_DIRECTIVE}
+
+Strict Directive: Answer ONLY using the curriculum data in the MEMORY_VAULT.
+If info is missing from the vault, say "DATA_UNAVAILABLE".`;
 
     const prompt = `
 # MEMORY_VAULT (Curriculum Data):
@@ -80,7 +89,7 @@ ${contextVault}
 # USER TEACHER QUERY:
 "${message}"
 
-Synthesize a professional response based strictly on the curriculum data above. Reference SLO codes in [brackets].
+Synthesize a professional response based strictly on the curriculum data above. Follow all formatting rules in the Master Prompt.
 `;
 
     const streamResponse = await ai.models.generateContentStream({
@@ -88,7 +97,7 @@ Synthesize a professional response based strictly on the curriculum data above. 
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // High precision
+        temperature: 0.1, // High precision grounding
       }
     });
 
@@ -112,6 +121,6 @@ Synthesize a professional response based strictly on the curriculum data above. 
 
   } catch (error: any) {
     console.error('[Chat API Error]:', error);
-    return NextResponse.json({ error: `Curriculum retrieval failure: ${error.message || 'Check Neural Configuration'}` }, { status: 500 });
+    return NextResponse.json({ error: `Synthesis failure: ${error.message}` }, { status: 500 });
   }
 }
