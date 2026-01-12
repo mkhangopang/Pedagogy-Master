@@ -1,3 +1,4 @@
+
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -100,7 +101,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: DATABASE REPAIR & RAG PATCH v6.0
+  const sqlSchema = `-- PEDAGOGY MASTER: DATABASE REPAIR & RAG PATCH v7.0
 -- RUN THIS IN SUPABASE SQL EDITOR TO FIX "COLUMN NOT FOUND" ERRORS
 
 -- 1. EXTENSIONS
@@ -145,9 +146,6 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='chunk_count') THEN
     ALTER TABLE public.documents ADD COLUMN chunk_count INTEGER DEFAULT 0;
   END IF;
-
-  -- Fix file_path unique (if needed)
-  -- ALTER TABLE public.documents ADD CONSTRAINT documents_file_path_key UNIQUE (file_path);
 END $$;
 
 -- 3. DOCUMENT CHUNKS (RAG CORE)
@@ -359,7 +357,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v6.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v7.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"

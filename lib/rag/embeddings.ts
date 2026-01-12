@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 /**
@@ -10,17 +11,17 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // Use text-embedding-004 which produces 768-dim vectors
-    // CRITICAL FIX: embedContent expects 'content' (singular) and a single object
+    // Using text-embedding-004 which produces 768-dim vectors
+    // FIX: SDK expects 'contents' (plural) as an array of Content objects
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
-      content: { parts: [{ text: text || " " }] }
+      contents: [{ parts: [{ text: text || " " }] }]
     });
 
     const result = response.embedding;
     if (!result?.values) throw new Error("Neural Node Error: Invalid vector response.");
 
-    // Sanitize and validate numeric precision to prevent JSON/DB syntax errors
+    // Sanitize and validate numeric precision to prevent DB syntax errors
     const vector = result.values.map((v: any) => {
       const n = Number(v);
       return isFinite(n) ? n : 0;
@@ -40,7 +41,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 /**
  * BATCH EMBEDDING SYNTHESIS
  * Uses Gemini's native batchEmbedContents API.
- * CRITICAL FIX: 'requests' must be a list/array of EmbedContentRequest objects.
+ * FIX: 'requests' items now use 'contents' list to satisfy API validation.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
@@ -56,11 +57,11 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     const batchTexts = texts.slice(i, i + NATIVE_BATCH_SIZE);
     
     try {
-      // Structure fixed to use standard 'requests' list as required by the API
+      // Structure fixed: 'contents' must be a list/array
       const batchResponse: any = await ai.models.batchEmbedContents({
         requests: batchTexts.map(text => ({
           model,
-          content: { parts: [{ text: text || " " }] }
+          contents: [{ parts: [{ text: text || " " }] }]
         }))
       });
 
@@ -76,7 +77,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       results.push(...vectors);
     } catch (err: any) {
       console.warn(`[Batch Embedding Warning] offset ${i}, falling back to sequential:`, err);
-      // Failover to sequential if batching fails for specific reasons
+      // Failover to sequential if batching fails
       for (const text of batchTexts) {
         results.push(await generateEmbedding(text));
       }
