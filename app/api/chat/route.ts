@@ -1,7 +1,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
+import { retrieveRelevantChunks, RetrievedChunk } from '../../../lib/rag/retriever';
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE } from '../../../constants';
 
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     const hasLibrary = allDocs && allDocs.length > 0;
 
     // 3. Neural Semantic Memory Retrieval
-    let retrievedChunks = [];
+    let retrievedChunks: RetrievedChunk[] = [];
     if (hasLibrary) {
       // If no docs selected, search across all docs in the library
       const targetIds = documentIds.length > 0 ? documentIds : (allDocs?.map(d => d.id) || []);

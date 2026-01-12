@@ -6,7 +6,7 @@ import { RESPONSE_LENGTH_GUIDELINES } from '../config/ai-personality';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core';
-import { retrieveRelevantChunks } from '../rag/retriever';
+import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
 import { getObjectBuffer } from '../r2';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
@@ -87,7 +87,7 @@ export async function generateAIResponse(
     : (allDocs?.map(d => d.id) || []);
 
   // 2. RAG Memory Retrieval
-  let retrievedChunks = [];
+  let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 10, priorityDocumentId);
   }
