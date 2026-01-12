@@ -31,7 +31,8 @@ export async function retrieveRelevantChunks(
       : null;
 
     // 1. Direct SLO High-Precision Search
-    const sloMatch = query.match(/\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/i);
+    // Matches S8a5, 8.1.1, Bio-IX-1, etc.
+    const sloMatch = query.match(/\b([A-Z]?)(\d{1,2})([a-z]?)(\d{1,2})\b/i);
     if (sloMatch) {
       const sloCode = sloMatch[0].toUpperCase();
       const { data: sloChunks } = await supabase.rpc('find_slo_chunks', {
@@ -40,6 +41,7 @@ export async function retrieveRelevantChunks(
       });
       
       if (sloChunks && sloChunks.length > 0) {
+        console.log(`🎯 [Retriever] Direct SLO Match Found: ${sloCode}`);
         return sloChunks.map((d: any) => ({
           id: d.chunk_id,
           text: d.chunk_text,
@@ -50,10 +52,10 @@ export async function retrieveRelevantChunks(
       }
     }
 
-    // 2. Semantic Analysis
+    // 2. Semantic Analysis (Neural Embeddings)
     const queryEmbedding = await generateEmbedding(query);
 
-    // 3. Hybrid Search
+    // 3. Hybrid Search Execution
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -63,13 +65,13 @@ export async function retrieveRelevantChunks(
     });
 
     if (error) {
-      console.error('[Retriever Node Error]:', error);
+      console.error('[Retriever RPC Node Error]:', error);
       return [];
     }
 
-    // Lowered threshold to 0.4 to prevent false "DATA_UNAVAILABLE" triggers
-    const filtered = (data || []).filter((d: any) => d.combined_score > 0.4); 
-    console.log(`📡 [Retriever] Found ${filtered.length} relevant segments.`);
+    // Inclusive threshold (0.35) to handle specific curriculum naming variants
+    const filtered = (data || []).filter((d: any) => d.combined_score > 0.35); 
+    console.log(`📡 [Retriever] Found ${filtered.length} relevant curriculum segments.`);
 
     return filtered.map((d: any) => ({
       id: d.chunk_id,
@@ -80,7 +82,7 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
   } catch (err) {
-    console.error('[Retriever Fatal Error]:', err);
+    console.error('[Retriever Critical Path Error]:', err);
     return [];
   }
 }

@@ -12,6 +12,7 @@ export const maxDuration = 120;
 /**
  * NEURAL BRAIN CHAT ENGINE (v2.0)
  * Orchestrates pedagogical grounding with the "Pedagogy Master" core persona.
+ * Updated: Document-independent and SLO-centric search logic.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -38,19 +39,28 @@ export async function POST(req: NextRequest) {
 
     const activeMasterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
 
-    // 2. Identification of selected curriculum context
+    // 2. Identification of context (Automatic selection)
+    const { data: allDocs } = await supabase
+      .from('documents')
+      .select('id, name, rag_indexed')
+      .eq('user_id', user.id);
+
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name')
       .eq('user_id', user.id)
       .eq('is_selected', true);
     
-    const documentIds = selectedDocs?.map(d => d.id) || [];
-
+    // SLO-CENTRIC LOGIC: If no documents are manually selected, search across ALL available documents
+    let documentIds = selectedDocs?.map(d => d.id) || [];
     if (documentIds.length === 0) {
+      documentIds = allDocs?.map(d => d.id) || [];
+    }
+
+    if (!allDocs || allDocs.length === 0) {
       return new Response(`📚 **Pedagogy Master (v2.0)**: 
       
-Active curriculum context is required for neural grounding. Please select at least one document from the sidebar in your **Library**.`);
+It looks like your **Library** is empty. Please upload curriculum documents (PDF, Word, or TXT) in the **Curriculum Docs** section to enable neural tutoring and SLO alignment.`);
     }
 
     // 3. Neural Semantic Memory Retrieval
@@ -58,20 +68,20 @@ Active curriculum context is required for neural grounding. Please select at lea
       message, 
       documentIds, 
       supabase, 
-      12, // Increased context window for complex pedagogical requests
+      12, // Context window
       priorityDocumentId
     );
 
-    // 4. Handle context retrieval gaps while maintaining persona
+    // 4. Handle context retrieval gaps
     if (retrievedChunks.length === 0) {
       return new Response(`**DATA_UNAVAILABLE**: 
       
-I searched your ${selectedDocs?.length} selected curriculum assets but found no high-confidence data for: "${message}".
+I searched through your ${allDocs.length} curriculum assets but found no high-confidence pedagogical data for: "${message}".
 
 **Action Steps**:
-- Verify the topic exists in your uploaded files.
-- Use a specific SLO code (e.g., S8a5).
-- If files were just uploaded, click **Sync Neural Nodes** in the Library.`);
+- Mention a specific SLO code (e.g., S8a5).
+- Ensure your curriculum documents contain the requested topic.
+- If you just uploaded files, click **Sync Neural Nodes** in the Library.`);
     }
 
     // 5. Memory Vault Synthesis
@@ -90,20 +100,20 @@ I searched your ${selectedDocs?.length} selected curriculum assets but found no 
 ${NUCLEAR_GROUNDING_DIRECTIVE}
 
 STRICT GROUNDING RULES:
-- Use ONLY the provided MEMORY_VAULT for curriculum content.
+- Source of truth: ONLY the provided MEMORY_VAULT.
+- Automatic Detection: You are already provided with the most relevant curriculum nodes. Use them.
 - If specific data is missing: Explicitly state "DATA_UNAVAILABLE".
-- Citation format: "According to [Memory Node X]..."
-- Identity: You are Pedagogy Master v2.0. Focus on SLO-first alignment.
+- Citation format: "Based on [Memory Node X], ..."
 - Style: Markdown headers (1., 1.1), tables, bullet points. NO BOLD HEADINGS.`;
 
     const synthesisPrompt = `
-# MEMORY_VAULT (Active Context):
+# MEMORY_VAULT (Active Curriculum Context):
 ${contextVault}
 
 # TEACHER QUERY:
 "${message}"
 
-Synthesize a response following the Pedagogy Master v2.0 logic. Reference all SLOs in [brackets].
+Synthesize a world-class pedagogical response using the Neural Brain logic. Reference all mentioned SLOs in [brackets].
 `;
 
     const streamResponse = await ai.models.generateContentStream({
@@ -111,7 +121,7 @@ Synthesize a response following the Pedagogy Master v2.0 logic. Reference all SL
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // High precision for curriculum alignment
+        temperature: 0.1, // High precision
       }
     });
 

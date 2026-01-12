@@ -7,7 +7,7 @@ import { generateEmbeddingsBatch } from './embeddings';
 /**
  * AGGRESSIVE SANITATION
  * Removes null bytes (\u0000) and hidden control characters that crash 
- * the PostgreSQL JSON/Vector input parsers during bulk ingestion.
+ * the PostgreSQL JSON/Vector/Array input parsers during bulk ingestion.
  */
 function deepSanitize(text: string): string {
   if (!text) return "";
@@ -67,13 +67,14 @@ export async function indexDocumentForRAG(
       chunk_text: deepSanitize(chunk.text),
       chunk_index: chunk.index,
       chunk_type: chunk.type,
+      // Ensure arrays are sanitized and not null
       slo_codes: (chunk.sloMentioned || [])
         .map(s => deepSanitize(s))
-        .filter(s => s.length > 0 && s.length < 64), // Sanitize and filter
+        .filter(s => s.length > 0 && s.length < 64),
       keywords: (chunk.keywords || [])
         .map(k => deepSanitize(k))
         .filter(k => k.length > 0 && k.length < 64),
-      embedding: embeddings[idx] // Passed as native JS array
+      embedding: embeddings[idx] 
     }));
     
     // Insert in small batches to stay within Supabase/Edge gateway body limits
@@ -86,6 +87,7 @@ export async function indexDocumentForRAG(
       
       if (insertError) {
         console.error(`[Indexer DB Batch Error]:`, insertError);
+        // If a specific batch fails with JSON/Syntax error, it's likely bad characters in one segment
         throw new Error(`Database rejected segments: ${insertError.message}`);
       }
     }
