@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 /**
@@ -15,8 +16,6 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     
-    // We use 'as any' to bypass environment-specific TS definitions that might 
-    // conflict between 'contents' and 'content' or 'embedding' vs 'embeddings'.
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: { parts: [{ text }] }
@@ -30,7 +29,11 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       throw new Error("Neural Node Error: The embedding service returned an invalid vector format.");
     }
 
-    return result.values;
+    // Ensure all values are valid numbers (no NaN/Infinity which break JSON)
+    return result.values.map((v: any) => {
+      const num = Number(v);
+      return isFinite(num) ? num : 0;
+    });
   } catch (error: any) {
     console.error('[Embedding Fatal Error]:', error);
     throw new Error(`Vector Synthesis Failed: ${error.message || 'Unknown provider error'}`);

@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../supabase';
 import { chunkDocument } from './chunking-strategy';
@@ -5,16 +6,15 @@ import { generateEmbeddingsBatch } from './embeddings';
 
 /**
  * SANITIZE TEXT
- * Removes null bytes (\u0000) and other non-printable Unicode characters
- * that cause PostgreSQL to fail with "unsupported Unicode escape sequence".
+ * Removes null bytes, control characters, and other non-printable Unicode characters
+ * that cause PostgreSQL to fail during JSON parsing or text insertion.
  */
 function sanitizeText(text: string): string {
   if (!text) return "";
-  // 1. Remove null bytes (\u0000)
-  // 2. Remove replacement characters and common invalid Unicode sequences
   return text
-    .replace(/\u0000/g, '')
-    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '')
+    .replace(/\u0000/g, '') // Null bytes
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Control characters except newline/tab
+    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Invalid Unicode/Replacement chars
     .trim();
 }
 
@@ -34,7 +34,6 @@ export async function indexDocumentForRAG(
   try {
     let rawText = content || "";
     
-    // Fetch text from DB if not provided (needed for re-syncing legacy docs)
     if (!rawText) {
       const { data: doc } = await supabase
         .from('documents')
@@ -44,7 +43,6 @@ export async function indexDocumentForRAG(
       rawText = doc?.extracted_text || "";
     }
 
-    // SANITIZATION: Clean the entire document text before processing
     const documentText = sanitizeText(rawText);
 
     if (!documentText || documentText.length < 20) {
@@ -55,14 +53,13 @@ export async function indexDocumentForRAG(
     const chunks = chunkDocument(documentText);
     console.log(`✅ [Indexer] ${chunks.length} pedagogical segments generated.`);
     
-    // 2. Neural Vector Generation (One-time cost)
+    // 2. Neural Vector Generation
     console.log(`✨ [Indexer] Generating semantic embeddings...`);
     const chunkTexts = chunks.map(c => sanitizeText(c.text));
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
     console.log(`✅ [Indexer] Neural vectors synthesized.`);
 
     // 3. Persistent Transaction: Clear old and insert new
-    // This ensures re-indexing doesn't lead to duplicate context
     await supabase
       .from('document_chunks')
       .delete()
@@ -70,16 +67,18 @@ export async function indexDocumentForRAG(
 
     const insertData = chunks.map((chunk, idx) => ({
       document_id: documentId,
-      chunk_text: sanitizeText(chunk.text), // Final sanitization check
+      chunk_text: sanitizeText(chunk.text),
       chunk_index: chunk.index,
       chunk_type: chunk.type,
-      slo_codes: chunk.sloMentioned,
-      keywords: chunk.keywords,
-      embedding: embeddings[idx] // The persistent vector
+      slo_codes: chunk.sloMentioned || [],
+      keywords: chunk.keywords || [],
+      // Convert numeric array to Postgres vector string format "[0.1, 0.2...]"
+      // This bypasses ambiguous JSON casting in PostgREST
+      embedding: `[${embeddings[idx].join(',')}]`
     }));
     
-    // Batch insertion to respect Postgres limits
-    const dbBatchSize = 10; // Smaller batch size for better reliability
+    // Batch insertion for reliability
+    const dbBatchSize = 10;
     for (let i = 0; i < insertData.length; i += dbBatchSize) {
       const batch = insertData.slice(i, i + dbBatchSize);
       const { error: insertError } = await supabase
