@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
@@ -28,13 +29,11 @@ export async function GET(request: NextRequest) {
 
     const results: TestResult[] = [];
 
-    // Support both standard and Vercel-specific API key names
-    const geminiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
-
+    // Strictly check for the standard API_KEY environment variable.
     const envCheck = {
       supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       supabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      geminiKey: !!geminiKey,
+      geminiKey: !!process.env.API_KEY,
       r2Configured: isR2Configured(),
       r2PublicUrl: !!R2_PUBLIC_BASE_URL
     };
@@ -44,7 +43,7 @@ export async function GET(request: NextRequest) {
       status: (envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.geminiKey) ? 'pass' : 'fail',
       message: 'Critical environment variables detected.',
       details: envCheck,
-      fix: !envCheck.geminiKey ? 'Missing API_KEY or GEMINI_API_KEY in environment variables.' : undefined
+      fix: !envCheck.geminiKey ? 'Missing API_KEY in environment variables.' : undefined
     });
 
     if (isR2Configured() && r2Client) {
@@ -75,7 +74,7 @@ export async function GET(request: NextRequest) {
       results.push({ name: 'Supabase Data Plane', status: 'fail', message: e.message });
     }
 
-    if (!geminiKey) {
+    if (!process.env.API_KEY) {
       results.push({
         name: 'Gemini AI Synthesis Engine',
         status: 'fail',
@@ -83,11 +82,13 @@ export async function GET(request: NextRequest) {
       });
     } else {
       try {
-        const ai = new GoogleGenAI({ apiKey: geminiKey });
+        // Fix: Use process.env.API_KEY directly with named parameters.
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
           contents: 'Ping connectivity test'
         });
+        // Access .text property as a getter.
         results.push({
           name: 'Gemini AI Synthesis Engine',
           status: response.text ? 'pass' : 'warning',

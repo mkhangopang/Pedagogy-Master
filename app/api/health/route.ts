@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 import { supabase } from '../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../lib/r2';
@@ -16,11 +17,12 @@ export async function GET() {
   const timestamp = new Date().toISOString();
   
   // Environment check for diagnostic reporting
+  // Fix: Strictly check for process.env.API_KEY as per guidelines.
   const envCheck = {
     supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     supabaseServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-    geminiKey: !!(process.env.API_KEY || (process.env as any).GEMINI_API_KEY),
+    geminiKey: !!process.env.API_KEY,
     r2AccountId: !!process.env.R2_ACCOUNT_ID,
     r2AccessKey: !!process.env.R2_ACCESS_KEY_ID,
     r2SecretKey: !!process.env.R2_SECRET_ACCESS_KEY,

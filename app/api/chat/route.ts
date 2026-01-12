@@ -71,8 +71,8 @@ export async function POST(req: NextRequest) {
     const isGrounded = retrievedChunks.length > 0;
 
     // 4. Gemini Synthesis Execution
-    const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
-    const ai = new GoogleGenAI({ apiKey });
+    // Fix: Strictly use process.env.API_KEY for SDK initialization.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
     // Construct Dynamic System Instruction
     let systemInstruction = `${activeMasterPrompt}\n\n`;
@@ -118,6 +118,7 @@ export async function POST(req: NextRequest) {
           }
 
           for await (const chunk of streamResponse) {
+            // chunk.text is a property, not a method.
             if (chunk.text) {
               controller.enqueue(encoder.encode(chunk.text));
             }

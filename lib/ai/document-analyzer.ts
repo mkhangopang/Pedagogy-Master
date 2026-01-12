@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getObjectText } from "../r2";
@@ -44,11 +45,8 @@ export async function analyzeDocumentWithAI(
       return;
     }
 
-    // Support both standard and Vercel-specific API key names
-    const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
-    if (!apiKey) throw new Error("Gemini API Key missing (API_KEY or GEMINI_API_KEY)");
-    
-    const ai = new GoogleGenAI({ apiKey });
+    // Fix: Initialize with process.env.API_KEY using the required named parameter object.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -112,6 +110,7 @@ export async function analyzeDocumentWithAI(
     });
 
     let analysis: any = { summary: "Analysis failed", difficultyLevel: "middle_school", slos: [] };
+    // Access .text property directly as per SDK guidelines.
     const text = response.text || '{}';
     try {
       analysis = JSON.parse(text);

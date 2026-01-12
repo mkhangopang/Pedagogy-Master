@@ -1,25 +1,12 @@
+
 import { GoogleGenAI } from "@google/genai";
 
-const getApiKey = () => {
-  return (
-    process.env.AI_GATEWAY_API_KEY || 
-    process.env.AI_GATWAY_API_KEY ||
-    (process.env as any).AI_GATEWAY_API_KEY ||
-    (process.env as any).AI_GATWAY_API_KEY ||
-    process.env.API_KEY || 
-    (process.env as any).GEMINI_API_KEY ||
-    (window as any).AI_GATEWAY_API_KEY ||
-    (window as any).AI_GATWAY_API_KEY ||
-    (window as any).API_KEY
-  );
-};
-
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('Neural Node Error: API_KEY is missing for embeddings.');
+  // Fix: Strictly use process.env.API_KEY for initializing GoogleGenAI as per SDK guidelines.
+  if (!process.env.API_KEY) throw new Error('Neural Node Error: API_KEY is missing for embeddings.');
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
       contents: [{ parts: [{ text: text || " " }] }]
@@ -46,10 +33,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
-  const apiKey = getApiKey();
-  if (!apiKey) throw new Error('Neural Node Error: API_KEY missing for batch embeddings.');
+  // Fix: Strictly use process.env.API_KEY for initializing GoogleGenAI as per SDK guidelines.
+  if (!process.env.API_KEY) throw new Error('Neural Node Error: API_KEY missing for batch embeddings.');
   
-  const ai = new GoogleGenAI({ apiKey });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
   const CONCURRENCY_LIMIT = 5; 
   const results: number[][] = [];
   

@@ -1,3 +1,4 @@
+
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 
@@ -46,8 +47,9 @@ export async function fetchAndExtractPDF(key: string): Promise<string> {
   try {
     console.log(`📄 [R2] Fetching and parsing PDF: ${key}`);
     
-    // Dynamic import to prevent build-time ENOENT errors from pdf-parse internal tests
-    const pdf = (await import('pdf-parse')).default;
+    // Dynamic import to prevent build-time ENOENT errors from pdf-parse internal tests.
+    // Explicitly cast to any for TS compiler stability.
+    const pdf = (await import('pdf-parse')).default as any;
     
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,

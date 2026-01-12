@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 export async function callGemini(
@@ -7,21 +8,8 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docParts: any[] = []
 ): Promise<string> {
-  // Exhaustive search for the API key across all possible naming conventions
-  const apiKey = 
-    process.env.AI_GATEWAY_API_KEY || 
-    process.env.AI_GATWAY_API_KEY ||
-    (process.env as any).AI_GATEWAY_API_KEY ||
-    (process.env as any).AI_GATWAY_API_KEY ||
-    process.env.API_KEY || 
-    (process.env as any).GEMINI_API_KEY ||
-    (window as any).AI_GATEWAY_API_KEY ||
-    (window as any).AI_GATWAY_API_KEY ||
-    (window as any).API_KEY;
-
-  if (!apiKey) throw new Error('Synthesis failure: Gemini API Key missing (Checked: AI_GATEWAY_API_KEY, API_KEY, GEMINI_API_KEY)');
-
-  const ai = new GoogleGenAI({ apiKey });
+  // Fix: Strictly use process.env.API_KEY and the named parameter object for initialization.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
   const modelName = 'gemini-3-flash-preview';
 
   const contents: any[] = [];
@@ -65,5 +53,6 @@ export async function callGemini(
     }
   });
 
+  // Access .text property directly as it is a getter, not a method.
   return response.text || "Synthesis error: Remote node returned empty response.";
 }
