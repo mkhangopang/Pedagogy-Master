@@ -1,4 +1,3 @@
-
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
@@ -14,8 +13,8 @@ const performSystemHandshake = () => {
     'NEXT_PUBLIC_SUPABASE_URL', 
     'NEXT_PUBLIC_SUPABASE_ANON_KEY', 
     'NEXT_PUBLIC_R2_PUBLIC_URL',
-    'AI_GATWAY_API_KEY',
     'AI_GATEWAY_API_KEY',
+    'AI_GATWAY_API_KEY',
     'API_KEY',
     'GEMINI_API_KEY'
   ];
@@ -41,8 +40,8 @@ const performSystemHandshake = () => {
       win[key] = trimmed;
       statusReport[key] = 'LOADED';
       
-      // Map gateway variants to standard API_KEY for internal consistency
-      if (key === 'AI_GATWAY_API_KEY' || key === 'AI_GATEWAY_API_KEY' || key === 'GEMINI_API_KEY') {
+      // Ensure AI_GATEWAY_API_KEY maps to standard API_KEY
+      if (key === 'AI_GATEWAY_API_KEY' || key === 'AI_GATWAY_API_KEY' || key === 'GEMINI_API_KEY') {
         win.process.env['API_KEY'] = trimmed;
         win['API_KEY'] = trimmed;
       }

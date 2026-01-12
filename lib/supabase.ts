@@ -29,14 +29,13 @@ export const isSupabaseConfigured = (): boolean => {
   const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   
   const isValidUrl = !!url && url !== 'https://placeholder-project.supabase.co' && url.startsWith('http');
-  // Validate standard Supabase key length and prefix
   const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 20;
 
   if (!isValidUrl || !isValidKey) {
     console.warn('[Infrastructure Diagnostics] Configuration check failed:', {
       urlFound: !!url,
+      urlPlaceholder: url === 'https://placeholder-project.supabase.co',
       keyFound: !!key,
-      urlValid: isValidUrl,
       keyLength: key?.length || 0
     });
   }
