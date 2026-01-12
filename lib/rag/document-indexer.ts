@@ -5,22 +5,22 @@ import { chunkDocument } from './chunking-strategy';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * SANITIZE TEXT
- * Deep cleaning to remove null bytes and control characters that break 
- * PostgreSQL's JSON and array input parsers.
+ * AGGRESSIVE SANITATION
+ * Removes null bytes (\u0000) and hidden control characters that crash 
+ * the PostgreSQL JSON/Vector input parsers during bulk ingestion.
  */
-function sanitizeText(text: string): string {
+function deepSanitize(text: string): string {
   if (!text) return "";
   return text
-    .replace(/\u0000/g, '') // Remove null bytes (common PDF issue)
+    .replace(/\u0000/g, '') // Remove null bytes (critical for PDF extracts)
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Control characters
     .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Invalid Unicode
     .trim();
 }
 
 /**
- * ONE-TIME NEURAL INDEXER
- * Orchestrates document chunking, semantic embedding, and persistent storage.
+ * NEURAL SYNCHRONIZER
+ * Maps curriculum text to the high-dimensional vector grid.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -28,7 +28,7 @@ export async function indexDocumentForRAG(
   r2Key: string | null,
   supabase: SupabaseClient = defaultSupabase
 ): Promise<void> {
-  console.log(`\n🧠 [Neural Sync] Initializing indexing for: ${documentId}`);
+  console.log(`\n🧠 [Neural Sync] Initializing for document: ${documentId}`);
   
   try {
     let rawText = content || "";
@@ -42,42 +42,37 @@ export async function indexDocumentForRAG(
       rawText = doc?.extracted_text || "";
     }
 
-    const documentText = sanitizeText(rawText);
+    const documentText = deepSanitize(rawText);
 
-    if (!documentText || documentText.length < 10) {
-      throw new Error('No usable curriculum text found for indexing.');
+    if (documentText.length < 10) {
+      throw new Error('Neural Sync Failed: Document contains no extractable text.');
     }
     
-    // 1. Generate Pedagogical Chunks
+    // 1. Generate Logical Segments
     const chunks = chunkDocument(documentText);
-    console.log(`✅ [Indexer] ${chunks.length} segments generated.`);
+    console.log(`✅ [Indexer] ${chunks.length} pedagogical units generated.`);
     
-    // 2. Synthesize Vectors (Parallel Batching)
-    console.log(`✨ [Indexer] Synthesizing semantic vectors...`);
-    const chunkTexts = chunks.map(c => sanitizeText(c.text));
+    // 2. Optimized Vector Synthesis
+    console.log(`✨ [Indexer] Synthesizing high-density vectors...`);
+    const chunkTexts = chunks.map(c => deepSanitize(c.text));
     const embeddings = await generateEmbeddingsBatch(chunkTexts);
-    console.log(`✅ [Indexer] ${embeddings.length} vectors ready.`);
+    console.log(`✅ [Indexer] ${embeddings.length} semantic embeddings ready.`);
 
-    // 3. Persistent Database Update
-    // Delete existing chunks for this doc before fresh re-index
-    await supabase
-      .from('document_chunks')
-      .delete()
-      .eq('document_id', documentId);
+    // 3. Grid Persistence
+    // Wipe stale vector nodes
+    await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     const insertData = chunks.map((chunk, idx) => ({
       document_id: documentId,
-      chunk_text: sanitizeText(chunk.text),
+      chunk_text: deepSanitize(chunk.text),
       chunk_index: chunk.index,
       chunk_type: chunk.type,
-      // Pass arrays as native JS arrays; Supabase driver handles the rest
-      slo_codes: (chunk.sloMentioned || []).map(s => sanitizeText(s)).filter(Boolean),
-      keywords: (chunk.keywords || []).map(k => sanitizeText(k)).filter(Boolean),
-      // Use native array for vector column
-      embedding: embeddings[idx]
+      slo_codes: (chunk.sloMentioned || []).map(s => deepSanitize(s)).filter(Boolean),
+      keywords: (chunk.keywords || []).map(k => deepSanitize(k)).filter(Boolean),
+      embedding: embeddings[idx] // Passed as native JS array
     }));
     
-    // Batch insertion to stay within PostgREST limits
+    // Insert in chunks to avoid request body size limits in Supabase gateway
     const dbBatchSize = 10;
     for (let i = 0; i < insertData.length; i += dbBatchSize) {
       const batch = insertData.slice(i, i + dbBatchSize);
@@ -86,26 +81,23 @@ export async function indexDocumentForRAG(
         .insert(batch);
       
       if (insertError) {
-        console.error(`[Indexer DB Error]:`, insertError);
-        throw new Error(`Database rejected segments: ${insertError.message}`);
+        console.error(`[Indexer DB Batch Error]:`, insertError);
+        throw new Error(`Database Node Error: ${insertError.message}`);
       }
     }
     
-    // 4. Update Document Status
-    await supabase
-      .from('documents')
-      .update({
-        status: 'ready',
-        rag_indexed: true,
-        rag_indexed_at: new Date().toISOString(),
-        chunk_count: chunks.length,
-      })
-      .eq('id', documentId);
+    // 4. Finalize Global Status
+    await supabase.from('documents').update({
+      status: 'ready',
+      rag_indexed: true,
+      rag_indexed_at: new Date().toISOString(),
+      chunk_count: chunks.length,
+    }).eq('id', documentId);
     
-    console.log(`🏁 [Neural Sync] Document "${documentId}" is live in the vector grid.`);
+    console.log(`🏁 [Neural Sync] Document synchronized with vector grid.`);
     
   } catch (error: any) {
-    console.error(`❌ [Neural Sync] Fatal failure:`, error);
+    console.error(`❌ [Neural Sync Fatal]:`, error);
     await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
     throw error;
   }

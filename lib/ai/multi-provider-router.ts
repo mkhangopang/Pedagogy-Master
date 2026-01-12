@@ -1,16 +1,17 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { rateLimiter } from './rate-limiter';
 import { responseCache } from './response-cache';
-import { SYSTEM_PERSONALITY, RESPONSE_LENGTH_GUIDELINES } from '../config/ai-personality';
+import { RESPONSE_LENGTH_GUIDELINES } from '../config/ai-personality';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core';
 import { retrieveRelevantChunks } from '../rag/retriever';
 import { getObjectBuffer } from '../r2';
+import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
  * Monitors and returns the current status and rate limits of all AI providers.
- * Used by the ProviderStatusBar component to display node health.
  */
 export function getProviderStatus() {
   return PROVIDERS.map(p => ({
@@ -45,7 +46,7 @@ async function fetchMultimodalContext(userId: string, supabase: SupabaseClient) 
           });
         }
       } catch (e) {
-        console.warn(`[Vault] Multimodal skip: ${doc.name}`);
+        console.warn(`[Multimodal Skip] ${doc.name}`);
       }
     }
   }
@@ -69,7 +70,7 @@ export async function generateAIResponse(
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const preferredProvider = MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini';
 
-  // 1. IDENTIFY CONTEXT
+  // 1. Identify Context
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, rag_indexed, status')
@@ -81,30 +82,27 @@ export async function generateAIResponse(
 
   if (documentIds.length === 0) {
     return {
-      text: `📚 Please select a curriculum document from the sidebar.\n\nI see you have documents available, but none are currently active for this chat session.`,
+      text: `📚 **Pedagogy Master**: Please select curriculum assets from the sidebar to enable synthesis grounding.`,
       provider: 'system',
     };
   }
 
-  // 2. CHECK INDEXING STATUS
+  // 2. Check Indexing Health
   const unindexedDocs = selectedDocs?.filter(d => !d.rag_indexed && d.status !== 'ready') || [];
   if (unindexedDocs.length > 0 && selectedDocs?.length === unindexedDocs.length) {
     return {
-      text: `⏳ Your selected assets are still being processed for neural search.\n\nStatus: [${unindexedDocs.map(d => d.name).join(', ')}] are indexing. Please wait 10-20 seconds.`,
+      text: `⏳ **Pedagogy Master**: Selected assets are being indexed for neural search. Please wait 10-20 seconds.`,
       provider: 'system',
     };
   }
 
-  // 3. RAG SEARCH
-  const retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 8, priorityDocumentId);
+  // 3. RAG Memory Retrieval
+  const retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 10, priorityDocumentId);
   const docParts = await fetchMultimodalContext(userId, supabase);
   
-  const hasRAG = retrievedChunks.length > 0;
-  const hasMultimodal = docParts.length > 0;
-
-  if (!hasRAG && !hasMultimodal) {
+  if (retrievedChunks.length === 0 && docParts.length === 0) {
     return {
-      text: `DATA_UNAVAILABLE: I searched your selected curriculum assets (${documentNames.join(', ')}) but couldn't find relevant information for: "${userPrompt}"\n\nTips:\n- Ensure the topic is covered in the uploaded documents.\n- Try searching for specific learning codes (SLOs).\n- Use the "Brain Control" panel to re-index all documents if you recently uploaded them.`,
+      text: `**DATA_UNAVAILABLE**: I searched ${documentNames.join(', ')} but found no relevant content for: "${userPrompt}"\n\n**Suggestions**:\n- Check that the topic is in your files.\n- Try search for SLO code.\n- Use **Sync Neural Nodes** in the Library.`,
       provider: 'system',
     };
   }
@@ -112,34 +110,29 @@ export async function generateAIResponse(
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 4. CONTEXT ASSEMBLY
-  let contextVault = "# 📚 CURRICULUM CONTEXT (Retrieved from your documents):\n\n";
+  // 4. Memory Vault Construction
+  let contextVault = "# 📚 <ASSET_VAULT> (Retrieved curriculum nodes):\n\n";
   retrievedChunks.forEach((chunk, idx) => {
-    contextVault += `### Segment ${idx + 1}\n`;
+    contextVault += `### NODE_${idx + 1}\n`;
     if (chunk.sloCodes?.length > 0) contextVault += `**SLOs:** ${chunk.sloCodes.join(', ')}\n`;
-    contextVault += `--- \n${chunk.text}\n\n`;
+    contextVault += `${chunk.text}\n\n`;
   });
 
   const finalPrompt = `
-🔴 LOCAL_GROUNDING_ACTIVE
-
 ${contextVault}
 
-# USER QUESTION:
+# TEACHER QUERY:
 "${userPrompt}"
 
-# SYSTEM INSTRUCTIONS:
-- You are the Pedagogy Master AI.
-- Answer ONLY using the curriculum context provided above.
-- Cite sources clearly: "According to [filename]..."
-- When SLO codes are mentioned, highlight them: **S8c4**.
-- If info is missing from the provided context, say: "DATA_UNAVAILABLE".
+${NUCLEAR_GROUNDING_DIRECTIVE}
+- Respond strictly using the ASSET_VAULT above.
+- Cite sources: [NODE_X].
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 `;
 
-  const finalSystemInstruction = `${SYSTEM_PERSONALITY}\n\n${customSystem || ''}`;
+  const finalSystemInstruction = `${customSystem || DEFAULT_MASTER_PROMPT}\n\nSTRICT_PEDAGOGY_RULES: Use 1. and 1.1 headings. NO BOLD HEADINGS. Temperature 0.1 for document grounding.`;
   
   const result = await synthesize(
     finalPrompt, 

@@ -3,38 +3,44 @@ import { GoogleGenAI } from "@google/genai";
 
 /**
  * GENERATE NEURAL EMBEDDING (Single)
- * Used for individual queries or small text blocks.
+ * Standardized for pgvector(768) compatibility.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
-  if (!apiKey) throw new Error('API_KEY missing');
+  if (!apiKey) throw new Error('Neural Node Error: API_KEY is missing.');
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    const response: any = await ai.models.embedContent({
+    // Use text-embedding-004 which produces 768-dim vectors
+    const response: any = await (ai as any).models.embedContent({
       model: "text-embedding-004",
-      contents: { parts: [{ text: text || " " }] }
-    } as any);
+      content: { parts: [{ text: text || " " }] }
+    });
 
-    const result = response.embedding || (response.embeddings && response.embeddings[0]);
-    if (!result?.values) throw new Error("Invalid embedding response");
+    const result = response.embedding;
+    if (!result?.values) throw new Error("Neural Node Error: Invalid vector response.");
 
-    // Standardize to 768 dimensions for pgvector compatibility
-    const vector = result.values.map((v: any) => isFinite(Number(v)) ? Number(v) : 0);
+    // Sanitize and validate numeric precision to prevent JSON/DB syntax errors
+    const vector = result.values.map((v: any) => {
+      const n = Number(v);
+      return isFinite(n) ? n : 0;
+    });
+
+    // Enforce strict 768 dimension length for pgvector
     if (vector.length < 768) {
       return [...vector, ...new Array(768 - vector.length).fill(0)];
     }
     return vector.slice(0, 768);
   } catch (error: any) {
-    console.error('[Single Embedding Error]:', error);
-    throw error;
+    console.error('[Embedding Error]:', error);
+    throw new Error(`Vector Synthesis Failed: ${error.message}`);
   }
 }
 
 /**
- * BATCH EMBEDDING SYNTHESIS (High Performance)
- * Optimized for document indexing. Processes chunks in large native batches
- * to minimize network overhead and prevent serverless timeouts.
+ * BATCH EMBEDDING SYNTHESIS
+ * Uses Gemini's native batchEmbedContents for maximum throughput.
+ * This prevents serverless timeouts for large 4MB+ documents.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
@@ -42,14 +48,14 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
   const ai = new GoogleGenAI({ apiKey });
   
-  const NATIVE_BATCH_SIZE = 100; // Gemini supports batching multiple requests
+  const NATIVE_BATCH_SIZE = 100; 
   const results: number[][] = [];
   
   for (let i = 0; i < texts.length; i += NATIVE_BATCH_SIZE) {
     const batchTexts = texts.slice(i, i + NATIVE_BATCH_SIZE);
     
     try {
-      // Use the native batch API for massive performance gain
+      // Native batch call is significantly faster than Promise.all(single_calls)
       const batchResponse: any = await (ai as any).models.batchEmbedContents({
         model: "text-embedding-004",
         requests: batchTexts.map(text => ({
@@ -57,21 +63,17 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
         }))
       });
 
-      if (!batchResponse.embeddings) {
-        throw new Error("Batch synthesis failed: No embeddings returned.");
-      }
+      if (!batchResponse.embeddings) throw new Error("Empty batch response from neural node.");
 
       const vectors = batchResponse.embeddings.map((emb: any) => {
         const v = emb.values.map((val: any) => isFinite(Number(val)) ? Number(val) : 0);
-        // Pad or slice to exactly 768 dims
         if (v.length < 768) return [...v, ...new Array(768 - v.length).fill(0)];
         return v.slice(0, 768);
       });
 
       results.push(...vectors);
     } catch (err: any) {
-      console.error(`[Batch Embedding Error] at offset ${i}:`, err);
-      // Fallback to sequential if batch fails for some reason
+      console.warn(`[Batch Embedding Warning] offset ${i}, falling back to sequential:`, err);
       for (const text of batchTexts) {
         results.push(await generateEmbedding(text));
       }

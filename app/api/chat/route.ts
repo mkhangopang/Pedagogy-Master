@@ -7,11 +7,11 @@ import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE } from '../../../con
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 120; // 2 minute timeout for deep RAG synthesis
 
 /**
- * GROUNDED CHAT ENGINE
- * Leverages persistent RAG memory and the Neural Brain Logic.
+ * NEURAL BRAIN CHAT ENGINE (v2.0)
+ * Orchestrates pedagogical grounding with the "Pedagogy Master" core persona.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Fetch active Neural Brain Logic from DB
+    // 1. Fetch active Neural Brain configuration
     const { data: brainData } = await supabase
       .from('neural_brain')
       .select('master_prompt')
@@ -36,9 +36,9 @@ export async function POST(req: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    const masterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
+    const activeMasterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
 
-    // 2. Identify context (selected documents)
+    // 2. Identification of selected curriculum context
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name')
@@ -48,56 +48,69 @@ export async function POST(req: NextRequest) {
     const documentIds = selectedDocs?.map(d => d.id) || [];
 
     if (documentIds.length === 0) {
-      return new Response(`📚 Active context required. Please select at least one curriculum document in your Library.`);
+      return new Response(`📚 **Pedagogy Master (v2.0)**: 
+      
+Active curriculum context is required for neural grounding. Please select at least one document from the sidebar in your **Library**.`);
     }
 
-    // 3. Semantic Memory Retrieval
+    // 3. Neural Semantic Memory Retrieval
     const retrievedChunks = await retrieveRelevantChunks(
       message, 
       documentIds, 
       supabase, 
-      12, // Increased for better pedagogical context
+      10, // Optimized context window
       priorityDocumentId
     );
 
-    // 4. Verify grounded data
+    // 4. Handle context retrieval gaps while maintaining persona
     if (retrievedChunks.length === 0) {
-      return new Response(`DATA_UNAVAILABLE: I searched your ${selectedDocs?.length} selected curriculum assets but found no relevant content for: "${message}".`);
+      return new Response(`**DATA_UNAVAILABLE**: 
+      
+I searched your ${selectedDocs?.length} selected curriculum assets but found no high-confidence data for: "${message}".
+
+**Action Steps**:
+- Verify the topic exists in your uploaded files.
+- Use a specific SLO code (e.g., S8a5).
+- If files were just uploaded, click **Sync Neural Nodes** in the Library.`);
     }
 
-    // 5. Synthesis Prompt Generation
+    // 5. Memory Vault Synthesis
     const contextVault = retrievedChunks.map((c, i) => (
-      `### [MEMORY_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'N/A'})
+      `### [MEMORY_NODE_${i+1}] (Source: ${c.pageNumber || 'N/A'}, SLOs: ${c.sloCodes.join(', ') || 'N/A'})
       ${c.text}`
     )).join('\n\n');
 
+    // 6. Gemini Synthesis Execution
     const apiKey = process.env.API_KEY || (process.env as any).GEMINI_API_KEY;
     const ai = new GoogleGenAI({ apiKey });
     
-    // Combine User's Neural Brain logic with strict RAG directives
-    const systemInstruction = `${masterPrompt}
+    const systemInstruction = `${activeMasterPrompt}
 
+---
 ${NUCLEAR_GROUNDING_DIRECTIVE}
 
-Strict Directive: Answer ONLY using the curriculum data in the MEMORY_VAULT.
-If info is missing from the vault, say "DATA_UNAVAILABLE".`;
+STRICT GROUNDING RULES:
+- Source of truth: ONLY the MEMORY_VAULT.
+- If data is missing: State "DATA_UNAVAILABLE" and detail what info is required.
+- Citation format: "Based on [Memory Node X], ..."
+- Identity: You are Pedagogy Master, focused on SLO-first alignment.`;
 
-    const prompt = `
-# MEMORY_VAULT (Curriculum Data):
+    const synthesisPrompt = `
+# MEMORY_VAULT (Active Context):
 ${contextVault}
 
-# USER TEACHER QUERY:
+# TEACHER QUERY:
 "${message}"
 
-Synthesize a professional response based strictly on the curriculum data above. Follow all formatting rules in the Master Prompt.
+Synthesize a response following the Pedagogy Master v2.0 logic. Ensure all SLOs are referenced in [brackets].
 `;
 
     const streamResponse = await ai.models.generateContentStream({
       model: 'gemini-3-flash-preview',
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: {
         systemInstruction,
-        temperature: 0.1, // High precision grounding
+        temperature: 0.1, // Absolute precision for pedagogical alignment
       }
     });
 
@@ -111,8 +124,8 @@ Synthesize a professional response based strictly on the curriculum data above. 
             }
           }
         } catch (err) {
-          console.error('[Chat Stream Error]:', err);
-          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted: Remote Node Error]"));
+          console.error('[Stream Failure]:', err);
+          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted: Remote Node Connection Error]"));
         } finally {
           controller.close();
         }
@@ -120,7 +133,9 @@ Synthesize a professional response based strictly on the curriculum data above. 
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error('[Chat API Error]:', error);
-    return NextResponse.json({ error: `Synthesis failure: ${error.message}` }, { status: 500 });
+    console.error('[Chat Engine Fatal]:', error);
+    return NextResponse.json({ 
+      error: `Synthesis failure: ${error.message || 'Check Neural Connectivity'}` 
+    }, { status: 500 });
   }
 }

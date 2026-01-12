@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 
@@ -22,18 +23,15 @@ export async function retrieveRelevantChunks(
   priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
-  console.log(`🔍 [Retriever] Semantic lookup for: "${query.substring(0, 50)}..."`);
+  console.log(`🔍 [Retriever] Querying neural plane: "${query.substring(0, 40)}..."`);
   
   try {
-    // 1. Sanitize priority ID for Supabase RPC (must be valid UUID or null)
-    const sanitizedPriorityId = (priorityDocumentId && priorityDocumentId.length === 36) 
+    const sanitizedPriorityId = (priorityDocumentId && /^[0-9a-fA-F-]{36}$/.test(priorityDocumentId)) 
       ? priorityDocumentId 
       : null;
 
-    // 2. Check for direct SLO code match (High Precision Fallback)
-    const sloPattern = /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/i;
-    const sloMatch = query.match(sloPattern);
-    
+    // 1. Direct SLO High-Precision Search
+    const sloMatch = query.match(/\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/i);
     if (sloMatch) {
       const sloCode = sloMatch[0].toUpperCase();
       const { data: sloChunks } = await supabase.rpc('find_slo_chunks', {
@@ -42,7 +40,6 @@ export async function retrieveRelevantChunks(
       });
       
       if (sloChunks && sloChunks.length > 0) {
-        console.log(`🎯 [Retriever] Direct SLO match found: ${sloCode}`);
         return sloChunks.map((d: any) => ({
           id: d.chunk_id,
           text: d.chunk_text,
@@ -53,10 +50,10 @@ export async function retrieveRelevantChunks(
       }
     }
 
-    // 3. Generate Query Embedding for Semantic Search
+    // 2. Semantic Analysis
     const queryEmbedding = await generateEmbedding(query);
 
-    // 4. Persistent Vector Search (pgvector)
+    // 3. Hybrid Search
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -66,12 +63,15 @@ export async function retrieveRelevantChunks(
     });
 
     if (error) {
-      console.error('[Retriever RPC Error]:', error);
-      // Fallback: If vector search fails, try keyword search
+      console.error('[Retriever Node Error]:', error);
       return [];
     }
 
-    return (data || []).map((d: any) => ({
+    // Lowered threshold to 0.4 to prevent false "DATA_UNAVAILABLE" triggers
+    const filtered = (data || []).filter((d: any) => d.combined_score > 0.4); 
+    console.log(`📡 [Retriever] Found ${filtered.length} relevant segments.`);
+
+    return filtered.map((d: any) => ({
       id: d.chunk_id,
       text: d.chunk_text,
       sloCodes: d.slo_codes || [],
@@ -80,7 +80,7 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
   } catch (err) {
-    console.error('[Retriever Fatal Failure]:', err);
+    console.error('[Retriever Fatal Error]:', err);
     return [];
   }
 }
