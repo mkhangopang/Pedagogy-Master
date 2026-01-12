@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { getObjectText } from '../../../lib/r2';
-import { indexDocumentForRAG } from '../../../lib/rag/document-indexer';
+import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
+import { getObjectText } from '../../../../lib/r2';
+import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 
 export async function POST(request: NextRequest) {
   try {
