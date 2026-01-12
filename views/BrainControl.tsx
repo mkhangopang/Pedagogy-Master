@@ -1,4 +1,3 @@
-
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -101,8 +100,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE REPAIR v9.0
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE "TYPE JSON" OR "COLUMN NOT FOUND" ERRORS
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE REPAIR v10.0 (COMPLETE FIX)
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE "TYPE JSON" OR "VECTOR" ERRORS
 
 -- 1. ENABLE NEURAL ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -126,6 +125,10 @@ CREATE TABLE IF NOT EXISTS public.documents (
   rag_indexed BOOLEAN DEFAULT false,
   rag_indexed_at TIMESTAMPTZ,
   gemini_metadata JSONB,
+  processing_status TEXT DEFAULT 'pending',
+  processed_at TIMESTAMPTZ,
+  total_tokens INTEGER DEFAULT 0,
+  error_message TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
@@ -134,18 +137,23 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
   chunk_text TEXT NOT NULL,
+  content TEXT, -- Modern naming convention
   chunk_index INTEGER NOT NULL,
   chunk_type TEXT,
   slo_codes TEXT[],
   keywords TEXT[],
+  token_count INTEGER,
+  char_count INTEGER,
+  page_number INTEGER,
+  metadata JSONB DEFAULT '{}'::JSONB,
   embedding vector(768), 
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4. AGGRESSIVE SCHEMA ALIGNMENT (Fixes "invalid syntax for type json")
+-- 4. AGGRESSIVE SCHEMA ALIGNMENT
 DO $$ 
 BEGIN 
-  -- Fix Embedding Column Type
+  -- Fix Embedding Column Type to vector(768)
   IF EXISTS (
     SELECT 1 FROM information_schema.columns 
     WHERE table_schema = 'public' 
@@ -156,15 +164,6 @@ BEGIN
     ALTER TABLE public.document_chunks DROP COLUMN embedding;
     ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
   END IF;
-
-  -- Ensure RAG tracking columns exist on documents
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='rag_indexed') THEN
-    ALTER TABLE public.documents ADD COLUMN rag_indexed BOOLEAN DEFAULT false;
-  END IF;
-  
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='chunk_count') THEN
-    ALTER TABLE public.documents ADD COLUMN chunk_count INTEGER DEFAULT 0;
-  END IF;
 END $$;
 
 -- 5. PERFORMANCE TUNING
@@ -172,7 +171,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 6. HYBRID SEARCH ENGINE
+-- 6. HYBRID SEARCH ENGINE (v10.0)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -194,13 +193,13 @@ BEGIN
   RETURN QUERY
   SELECT
     dc.id as chunk_id,
-    dc.chunk_text,
+    COALESCE(dc.content, dc.chunk_text) as chunk_text,
     NULL::TEXT as section_title,
-    NULL::INTEGER as page_number,
+    dc.page_number,
     dc.slo_codes,
     (
       ((1 - (dc.embedding <=> query_embedding)) * 0.7 + 
-      ts_rank_cd(to_tsvector('english', dc.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3) +
+      ts_rank_cd(to_tsvector('english', COALESCE(dc.content, dc.chunk_text)), websearch_to_tsquery('english', query_text)) * 0.3) +
       (CASE WHEN dc.document_id = priority_document_id THEN 0.15 ELSE 0 END)
     ) AS combined_score
   FROM document_chunks dc
@@ -339,7 +338,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v9.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v10.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"

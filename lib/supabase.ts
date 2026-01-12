@@ -8,18 +8,15 @@ const getEnv = (key: string): string => {
   if (typeof window !== 'undefined') {
     const win = window as any;
     // Check various common locations for environment variables
-    // 1. window.process.env (from handshake)
-    // 2. window[key] (global)
-    // 3. window.env[key] (common container pattern)
-    // 4. import.meta.env[key] (Vite)
     const val = 
       win.process?.env?.[key] || 
       win[key] || 
       win.env?.[key] || 
       (import.meta as any).env?.[key] || 
+      (typeof process !== 'undefined' ? process.env[key] : '') ||
       '';
     
-    if (val && val !== 'undefined' && val !== 'null') return val;
+    if (val && val !== 'undefined' && val !== 'null') return String(val).trim();
   }
   try {
     // Standard Node/Next process.env
@@ -39,6 +36,13 @@ export const isSupabaseConfigured = (): boolean => {
   
   const isValidUrl = !!url && url !== 'https://placeholder-project.supabase.co' && url.startsWith('http');
   const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 20;
+
+  if (!isValidUrl || !isValidKey) {
+    console.warn('Supabase Configuration Missing:', { 
+      url: url ? (url.substring(0, 10) + '...') : 'MISSING', 
+      keyLength: key?.length || 0 
+    });
+  }
 
   return isValidUrl && isValidKey;
 };
