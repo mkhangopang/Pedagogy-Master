@@ -1,4 +1,3 @@
-
 import { callGroq } from './providers/groq';
 import { callOpenRouter } from './providers/openrouter';
 import { callGemini } from './providers/gemini';
@@ -9,10 +8,10 @@ import { callHyperbolic } from './providers/hyperbolic';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
+import { isGeminiEnabled } from '../env-server';
 
 export const PROVIDERS: ProviderConfig[] = [
-  // Fix: Strictly use process.env.API_KEY for the Gemini provider's enabled status.
-  { name: 'gemini', rpm: 15, rpd: 1500, enabled: !!process.env.API_KEY },
+  { name: 'gemini', rpm: 15, rpd: 1500, enabled: isGeminiEnabled() },
   { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
   { name: 'sambanova', rpm: 100, rpd: 999999, enabled: !!process.env.SAMBANOVA_API_KEY },
   { name: 'cerebras', rpm: 120, rpd: 999999, enabled: !!process.env.CEREBRAS_API_KEY },
@@ -50,9 +49,6 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, providerNa
   return result;
 }
 
-/**
- * CORE SYNTHESIS LOOP
- */
 export async function synthesize(
   prompt: string,
   history: any[],
@@ -67,7 +63,6 @@ export async function synthesize(
       .sort((a, b) => {
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
-        // Prioritize Gemini if multimodal assets exist
         if (docParts.length > 0) {
           if (a.name === 'gemini') return -1;
           if (b.name === 'gemini') return 1;

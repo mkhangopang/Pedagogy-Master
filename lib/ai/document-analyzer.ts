@@ -1,7 +1,7 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getObjectText } from "../r2";
+import { resolveApiKey } from "../env-server";
 
 export interface GeminiProcessedDocument {
   documentId: string;
@@ -13,16 +13,15 @@ export interface GeminiProcessedDocument {
   qualityScore: number;
 }
 
-/**
- * Deep Analysis Engine
- * Extracts high-fidelity pedagogical intelligence from raw curriculum text using Gemini 3.
- */
 export async function analyzeDocumentWithAI(
   documentId: string, 
   userId: string, 
   supabase: SupabaseClient
 ) {
   try {
+    const apiKey = resolveApiKey();
+    if (!apiKey) throw new Error("Neural Node Error: API Key missing for analysis.");
+
     const { data: doc, error: fetchError } = await supabase
       .from('documents')
       .select('*')
@@ -45,8 +44,7 @@ export async function analyzeDocumentWithAI(
       return;
     }
 
-    // Fix: Initialize with process.env.API_KEY using the required named parameter object.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+    const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -110,7 +108,6 @@ export async function analyzeDocumentWithAI(
     });
 
     let analysis: any = { summary: "Analysis failed", difficultyLevel: "middle_school", slos: [] };
-    // Access .text property directly as per SDK guidelines.
     const text = response.text || '{}';
     try {
       analysis = JSON.parse(text);

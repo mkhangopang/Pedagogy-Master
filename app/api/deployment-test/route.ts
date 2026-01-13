@@ -1,10 +1,10 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
 import { ADMIN_EMAILS } from '../../../constants';
 import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { resolveApiKey } from '../../../lib/env-server';
 
 type TestResult = {
   name: string;
@@ -28,22 +28,26 @@ export async function GET(request: NextRequest) {
     if (!isAdmin) return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
 
     const results: TestResult[] = [];
+    const resolvedKey = resolveApiKey();
 
-    // Strictly check for the standard API_KEY environment variable.
     const envCheck = {
       supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       supabaseKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      geminiKey: !!process.env.API_KEY,
+      geminiKeyResolved: !!resolvedKey,
+      geminiKeyStandard: !!process.env.API_KEY,
+      geminiKeyAlias: !!(process.env.GEMINI_API_KEY || process.env.AI_GATEWAY_API_KEY),
       r2Configured: isR2Configured(),
       r2PublicUrl: !!R2_PUBLIC_BASE_URL
     };
 
     results.push({
       name: 'Cloud Infrastructure Keys',
-      status: (envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.geminiKey) ? 'pass' : 'fail',
-      message: 'Critical environment variables detected.',
+      status: (envCheck.supabaseUrl && envCheck.supabaseKey && envCheck.geminiKeyResolved) ? 'pass' : 'fail',
+      message: envCheck.geminiKeyResolved 
+        ? 'Critical environment variables detected.' 
+        : 'AI API Key missing (Checked API_KEY, GEMINI_API_KEY, and AI_GATEWAY_API_KEY).',
       details: envCheck,
-      fix: !envCheck.geminiKey ? 'Missing API_KEY in environment variables.' : undefined
+      fix: !envCheck.geminiKeyResolved ? 'Please add API_KEY to your Vercel Environment Variables.' : undefined
     });
 
     if (isR2Configured() && r2Client) {
@@ -74,21 +78,19 @@ export async function GET(request: NextRequest) {
       results.push({ name: 'Supabase Data Plane', status: 'fail', message: e.message });
     }
 
-    if (!process.env.API_KEY) {
+    if (!resolvedKey) {
       results.push({
         name: 'Gemini AI Synthesis Engine',
         status: 'fail',
-        message: 'API Key is missing.'
+        message: 'No valid AI Key found in resolution stack.'
       });
     } else {
       try {
-        // Fix: Use process.env.API_KEY directly with named parameters.
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const ai = new GoogleGenAI({ apiKey: resolvedKey });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
           contents: 'Ping connectivity test'
         });
-        // Access .text property as a getter.
         results.push({
           name: 'Gemini AI Synthesis Engine',
           status: response.text ? 'pass' : 'warning',

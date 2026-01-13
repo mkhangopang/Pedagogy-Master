@@ -1,5 +1,5 @@
-
 import { GoogleGenAI } from "@google/genai";
+import { resolveApiKey } from "../../env-server";
 
 export async function callGemini(
   fullPrompt: string, 
@@ -8,8 +8,10 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docParts: any[] = []
 ): Promise<string> {
-  // Fix: Strictly use process.env.API_KEY and the named parameter object for initialization.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  const apiKey = resolveApiKey();
+  if (!apiKey) throw new Error('Neural Node Error: Gemini API key is missing.');
+
+  const ai = new GoogleGenAI({ apiKey });
   const modelName = 'gemini-3-flash-preview';
 
   const contents: any[] = [];
@@ -53,6 +55,5 @@ export async function callGemini(
     }
   });
 
-  // Access .text property directly as it is a getter, not a method.
   return response.text || "Synthesis error: Remote node returned empty response.";
 }
