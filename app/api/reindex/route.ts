@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { indexDocumentForRAG } from '../../../lib/rag/document-indexer';
+import { getObjectText } from '../../../lib/r2';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,7 @@ export const dynamic = 'force-dynamic';
 /**
  * REINDEX ENDPOINT
  * Triggers a neural refresh for a specific curriculum asset.
+ * Fetches text from R2 if database extract is missing.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -37,8 +39,23 @@ export async function POST(req: NextRequest) {
 
     console.log(`🔄 [REINDEX] Refreshing neural nodes for: ${doc.name}`);
 
+    // If text is missing in DB, try to pull it from R2/Storage
+    let textToProcess = doc.extracted_text;
+    if (!textToProcess && doc.file_path && doc.storage_type === 'r2') {
+       console.log(`📥 [REINDEX] Missing text in DB. Fetching from R2...`);
+       try {
+         textToProcess = await getObjectText(doc.file_path);
+       } catch (r2Err) {
+         console.warn(`[REINDEX] R2 Fetch failed:`, r2Err);
+       }
+    }
+
+    if (!textToProcess || textToProcess.length < 10) {
+      return NextResponse.json({ error: 'The document has no extractable text. Try re-uploading the file.' }, { status: 422 });
+    }
+
     // Re-index using established content or R2 fallback
-    await indexDocumentForRAG(documentId, doc.extracted_text, doc.file_path, supabase);
+    await indexDocumentForRAG(documentId, textToProcess, doc.file_path, supabase);
 
     return NextResponse.json({
       success: true,

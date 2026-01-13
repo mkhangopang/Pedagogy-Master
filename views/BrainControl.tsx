@@ -100,80 +100,17 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.0 (COMPLETE VECTOR FIX)
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE "TYPE JSON" OR "VECTOR" ERRORS
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.1 (FIXING GROUNDING & VECTOR MISMATCH)
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE RETRIEVAL ERRORS
 
 -- 1. ENABLE NEURAL ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. USER PROFILES TABLE
-CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id),
-  email TEXT NOT NULL,
-  name TEXT,
-  role TEXT DEFAULT 'teacher',
-  plan TEXT DEFAULT 'free',
-  queries_used INTEGER DEFAULT 0,
-  queries_limit INTEGER DEFAULT 30,
-  grade_level TEXT,
-  subject_area TEXT,
-  teaching_style TEXT DEFAULT 'balanced',
-  pedagogical_approach TEXT DEFAULT 'direct-instruction',
-  preferred_framework TEXT,
-  generation_count INTEGER DEFAULT 0,
-  success_rate FLOAT DEFAULT 0,
-  edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::JSONB,
-  updated_at TIMESTAMPTZ DEFAULT now(),
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 3. CORE DOCUMENTS TABLE (PEDAGOGICAL ASSETS)
-CREATE TABLE IF NOT EXISTS public.documents (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id),
-  name TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  mime_type TEXT,
-  status TEXT DEFAULT 'processing',
-  storage_type TEXT DEFAULT 'r2',
-  is_selected BOOLEAN DEFAULT true,
-  extracted_text TEXT,
-  document_summary TEXT,
-  difficulty_level TEXT,
-  subject TEXT,
-  grade_level TEXT,
-  chunk_count INTEGER DEFAULT 0,
-  rag_indexed BOOLEAN DEFAULT false,
-  rag_indexed_at TIMESTAMPTZ,
-  gemini_metadata JSONB,
-  processing_status TEXT DEFAULT 'pending',
-  processed_at TIMESTAMPTZ,
-  total_tokens INTEGER DEFAULT 0,
-  error_message TEXT,
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 4. DOCUMENT CHUNKS (NEURAL NODES)
-CREATE TABLE IF NOT EXISTS public.document_chunks (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
-  chunk_text TEXT NOT NULL,
-  content TEXT, -- Modern naming convention
-  chunk_index INTEGER NOT NULL,
-  chunk_type TEXT,
-  slo_codes TEXT[],
-  keywords TEXT[],
-  token_count INTEGER,
-  char_count INTEGER,
-  page_number INTEGER,
-  metadata JSONB DEFAULT '{}'::JSONB,
-  embedding vector(768), 
-  created_at TIMESTAMPTZ DEFAULT now()
-);
-
--- 4.1 NUCLEAR TYPE FIX: Convert 'embedding' from JSONB to VECTOR if miscreated
+-- 2. NUCLEAR TYPE FIX for document_chunks
+-- Forces 'embedding' to be vector(768) and ensures 'slo_codes' is a text array
 DO $$ 
 BEGIN
+    -- Check for embedding type mismatch
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'document_chunks' 
@@ -184,14 +121,20 @@ BEGIN
         ALTER TABLE public.document_chunks DROP COLUMN embedding;
         ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
     END IF;
+
+    -- Ensure slo_codes is an array
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'document_chunks' 
+        AND column_name = 'slo_codes' 
+        AND data_type = 'text'
+    ) THEN
+        ALTER TABLE public.document_chunks ALTER COLUMN slo_codes TYPE TEXT[] USING ARRAY[slo_codes];
+    END IF;
 END $$;
 
--- 5. PERFORMANCE TUNING
-CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
-USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
-
--- 6. HYBRID SEARCH ENGINE (v12.0)
+-- 3. CORE HYBRID SEARCH ENGINE (Updated v12.1)
+-- Improved text search and vector scoring combination
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -213,14 +156,17 @@ BEGIN
   RETURN QUERY
   SELECT
     dc.id as chunk_id,
-    COALESCE(dc.content, dc.chunk_text) as chunk_text,
+    COALESCE(dc.chunk_text, '') as chunk_text,
     NULL::TEXT as section_title,
     dc.page_number,
     dc.slo_codes,
     (
-      ((1 - (dc.embedding <=> query_embedding)) * 0.7 + 
-      ts_rank_cd(to_tsvector('english', COALESCE(dc.content, dc.chunk_text)), websearch_to_tsquery('english', query_text)) * 0.3) +
-      (CASE WHEN dc.document_id = priority_document_id THEN 0.15 ELSE 0 END)
+      -- Vector Score (0-1)
+      ((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
+      -- Full Text Score (0-1 approx)
+      (ts_rank_cd(to_tsvector('english', dc.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3) +
+      -- Priority Document Boost
+      (CASE WHEN dc.document_id = priority_document_id THEN 0.2 ELSE 0 END)
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
@@ -229,26 +175,38 @@ BEGIN
 END;
 $$;
 
--- 7. SECURITY & ACCESS (RLS)
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
+-- 4. DIRECT SLO LOOKUP FUNCTION
+CREATE OR REPLACE FUNCTION find_slo_chunks(
+  slo_code TEXT,
+  document_ids UUID[]
+)
+RETURNS TABLE (
+  chunk_id UUID,
+  chunk_text TEXT,
+  page_number INTEGER
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    id as chunk_id,
+    chunk_text,
+    page_number
+  FROM document_chunks
+  WHERE document_id = ANY(document_ids)
+  AND slo_code = ANY(slo_codes)
+  LIMIT 5;
+END;
+$$;
 
-DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
-CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = id);
+-- 5. PERFORMANCE TUNING
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
+USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_slo_codes ON public.document_chunks USING GIN(slo_codes);
 
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
-
-DROP POLICY IF EXISTS "owner_all_docs" ON public.documents;
-CREATE POLICY "owner_all_docs" ON public.documents FOR ALL TO authenticated
-USING (user_id = auth.uid());
-
-DROP POLICY IF EXISTS "owner_all_chunks" ON public.document_chunks;
-CREATE POLICY "owner_all_chunks" ON public.document_chunks FOR ALL TO authenticated
-USING (document_id IN (SELECT id FROM public.documents WHERE user_id = auth.uid()));
-
--- 8. GLOBAL ADMIN PRIVILEGES
+-- 6. GLOBAL ADMIN PRIVILEGES
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 `;
@@ -325,7 +283,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
                <div className="space-y-1">
                  <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   If you are seeing "column not found" or "invalid syntax for type json" errors, please copy the SQL patch below and execute it in your Supabase SQL Editor. This will synchronize your database schema with the neural processing engine.
+                   If grounding fails even after indexing, please run the SQL patch v12.1 below. This update fixes specific data type mismatches that prevent vector search from returning matches.
                  </p>
                </div>
             </div>
@@ -365,7 +323,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.1</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"
