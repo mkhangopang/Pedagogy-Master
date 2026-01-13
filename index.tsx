@@ -10,13 +10,14 @@ const performSystemHandshake = () => {
   const win = window as any;
   win.process = win.process || { env: {} };
   win.process.env = win.process.env || {};
+  win.__SYSTEM_DIAGNOSTICS = { keys: {} };
   
   // Define standard keys and their common variants
   const keyMap: Record<string, string[]> = {
-    'NEXT_PUBLIC_SUPABASE_URL': ['SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL'],
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY': ['SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY'],
+    'NEXT_PUBLIC_SUPABASE_URL': ['SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'supabase_url'],
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY': ['SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'supabase_key'],
     'NEXT_PUBLIC_R2_PUBLIC_URL': ['R2_PUBLIC_URL', 'VITE_R2_PUBLIC_URL', 'NEXT_PUBLIC_R2_PUBLIC_URL'],
-    'API_KEY': ['API_KEY', 'GEMINI_API_KEY', 'AI_GATEWAY_API_KEY', 'VITE_GEMINI_API_KEY']
+    'API_KEY': ['API_KEY', 'GEMINI_API_KEY', 'AI_GATEWAY_API_KEY', 'VITE_GEMINI_API_KEY', 'api_key']
   };
   
   const metaEnv = (import.meta as any).env || {};
@@ -32,7 +33,7 @@ const performSystemHandshake = () => {
         win[variant] || 
         win.env?.[variant] ||
         metaEnv[variant] || 
-        (typeof process !== 'undefined' ? process.env[variant] : '');
+        (typeof process !== 'undefined' ? (process.env as any)[variant] : '');
 
       if (val && val !== 'undefined' && val !== 'null' && String(val).trim() !== '') {
         foundValue = String(val).trim();
@@ -52,8 +53,10 @@ const performSystemHandshake = () => {
       }
       
       statusReport[standardKey] = 'LOADED';
+      win.__SYSTEM_DIAGNOSTICS.keys[standardKey] = 'LOADED';
     } else {
       statusReport[standardKey] = 'MISSING';
+      win.__SYSTEM_DIAGNOSTICS.keys[standardKey] = 'MISSING';
     }
   });
 

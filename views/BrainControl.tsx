@@ -1,3 +1,4 @@
+
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -100,13 +101,34 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE REPAIR v10.0 (COMPLETE FIX)
+  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE REPAIR v11.0 (COMPLETE FIX)
 -- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE "TYPE JSON" OR "VECTOR" ERRORS
 
 -- 1. ENABLE NEURAL ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. CORE DOCUMENTS TABLE (PEDAGOGICAL ASSETS)
+-- 2. USER PROFILES TABLE
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id),
+  email TEXT NOT NULL,
+  name TEXT,
+  role TEXT DEFAULT 'teacher',
+  plan TEXT DEFAULT 'free',
+  queries_used INTEGER DEFAULT 0,
+  queries_limit INTEGER DEFAULT 30,
+  grade_level TEXT,
+  subject_area TEXT,
+  teaching_style TEXT DEFAULT 'balanced',
+  pedagogical_approach TEXT DEFAULT 'direct-instruction',
+  preferred_framework TEXT,
+  generation_count INTEGER DEFAULT 0,
+  success_rate FLOAT DEFAULT 0,
+  edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::JSONB,
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 3. CORE DOCUMENTS TABLE (PEDAGOGICAL ASSETS)
 CREATE TABLE IF NOT EXISTS public.documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id),
@@ -132,7 +154,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. DOCUMENT CHUNKS (NEURAL NODES)
+-- 4. DOCUMENT CHUNKS (NEURAL NODES)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -150,28 +172,12 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4. AGGRESSIVE SCHEMA ALIGNMENT
-DO $$ 
-BEGIN 
-  -- Fix Embedding Column Type to vector(768)
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns 
-    WHERE table_schema = 'public' 
-    AND table_name = 'document_chunks' 
-    AND column_name = 'embedding' 
-    AND udt_name != 'vector'
-  ) THEN
-    ALTER TABLE public.document_chunks DROP COLUMN embedding;
-    ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
-  END IF;
-END $$;
-
 -- 5. PERFORMANCE TUNING
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 6. HYBRID SEARCH ENGINE (v10.0)
+-- 6. HYBRID SEARCH ENGINE (v11.0)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -210,8 +216,15 @@ END;
 $$;
 
 -- 7. SECURITY & ACCESS (RLS)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT TO authenticated USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE TO authenticated USING (auth.uid() = id);
 
 DROP POLICY IF EXISTS "owner_all_docs" ON public.documents;
 CREATE POLICY "owner_all_docs" ON public.documents FOR ALL TO authenticated
@@ -338,7 +351,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v10.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v11.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"

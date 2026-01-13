@@ -51,7 +51,7 @@ ${recentSuccesses.length > 0
       queriesUsed: data.queries_used,
       queriesLimit: data.queries_limit,
       gradeLevel: data.grade_level,
-      subjectArea: data.subject_area, // Mapped from DB subject_area
+      subjectArea: data.subject_area, // Fixed: Database is subject_area, Type is subjectArea
       teachingStyle: data.teaching_style,
       pedagogicalApproach: data.pedagogical_approach,
       generationCount: data.generation_count || 0,

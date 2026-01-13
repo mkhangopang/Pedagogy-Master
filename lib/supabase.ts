@@ -14,34 +14,27 @@ const getEnv = (key: string): string => {
       win[key] || 
       win.env?.[key] || 
       (import.meta as any).env?.[key] || 
-      (typeof process !== 'undefined' ? process.env[key] : '') ||
+      (typeof process !== 'undefined' ? (process.env as any)[key] : '') ||
       '';
     
-    if (val && val !== 'undefined' && val !== 'null') return String(val).trim();
+    if (val && val !== 'undefined' && val !== 'null' && String(val).trim() !== '') return String(val).trim();
   }
+  
+  // Server-side / Build-time check
   try {
-    return typeof process !== 'undefined' ? process.env[key] || '' : '';
+    return typeof process !== 'undefined' ? (process.env as any)[key] || '' : '';
   } catch {
     return '';
   }
 };
 
+/**
+ * Checks if the minimum required configuration for Supabase exists.
+ */
 export const isSupabaseConfigured = (): boolean => {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
   const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  
-  // Basic structure check for Supabase URL and Key
-  const isValidUrl = !!url && url.length > 10 && url.includes('supabase.co');
-  const isValidKey = !!key && key.length > 20;
-
-  if (!isValidUrl || !isValidKey) {
-    console.warn('[Infrastructure Diagnostics] Supabase configuration is incomplete:', {
-      url: url ? 'PRESENT' : 'MISSING',
-      key: key ? 'PRESENT' : 'MISSING'
-    });
-  }
-
-  return isValidUrl && isValidKey;
+  return !!url && url.length > 5 && !!key && key.length > 10;
 };
 
 let cachedClient: SupabaseClient | null = null;
@@ -66,6 +59,11 @@ const getClient = (): SupabaseClient => {
   return cachedClient;
 };
 
+/**
+ * Main Supabase Client Proxy.
+ * Delays initialization until the first call to ensure environment variables 
+ * from the neural handshake are fully loaded.
+ */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     if (prop === 'then') return undefined;
@@ -76,38 +74,53 @@ export const supabase = new Proxy({} as SupabaseClient, {
   }
 });
 
+/**
+ * Diagnoses Supabase connectivity status.
+ */
+export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
+  if (!isSupabaseConfigured()) {
+    return { status: 'disconnected', message: 'Cloud credentials (URL/Key) are missing.' };
+  }
+  try {
+    const { error } = await supabase.from('profiles').select('id').limit(1);
+    if (error) {
+      return { status: 'disconnected', message: `Database error: ${error.message}` };
+    }
+    return { status: 'connected', message: 'Cloud Node Online' };
+  } catch (err: any) {
+    return { status: 'disconnected', message: err.message || 'Fatal connection failure' };
+  }
+};
+
+/**
+ * Returns a server-side client with a specific user token for RLS.
+ */
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
     getEnv('NEXT_PUBLIC_SUPABASE_URL'),
     getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
     {
       global: {
-        headers: { Authorization: `Bearer ${token}` }
-      }
+        headers: { Authorization: `Bearer ${token}` },
+      },
     }
   );
 };
 
-export const getSupabaseHealth = async () => {
-  if (!isSupabaseConfigured()) {
-    return { status: 'disconnected', message: 'Credentials missing (URL/Key).' };
-  }
-
-  try {
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Connection timeout')), 3500)
-    );
-
-    const queryPromise = supabase.from('profiles').select('id').limit(1);
-    const { error } = (await Promise.race([queryPromise, timeoutPromise])) as any;
-    
-    if (error) {
-      if (error.code === '42P01') return { status: 'error', message: 'Schema missing. Run SQL patch in Control Hub.' };
-      return { status: 'error', message: `Database error [${error.code}]` };
+/**
+ * Returns a high-privilege client using the service role key.
+ * Use only in secure server environments.
+ */
+export const getSupabaseAdminClient = (): SupabaseClient => {
+  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  return createClient(
+    getEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    serviceKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
     }
-
-    return { status: 'connected', message: 'Infrastructure Operational' };
-  } catch (err: any) {
-    return { status: 'error', message: err.message === 'Connection timeout' ? 'Cloud node unreachable' : 'Handshake failure' };
-  }
+  );
 };

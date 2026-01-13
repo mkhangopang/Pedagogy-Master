@@ -9,7 +9,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: [{ parts: [{ text: text || " " }] }]
+      content: { parts: [{ text: text || " " }] }
     });
 
     const result = response.embedding;
@@ -20,6 +20,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       return isFinite(n) ? n : 0;
     });
 
+    // Ensure we return a consistent 768-dimensional vector
     if (vector.length < 768) {
       return [...vector, ...new Array(768 - vector.length).fill(0)];
     }
@@ -46,7 +47,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       const promises = batchSlice.map(text => 
         ai.models.embedContent({
           model: "text-embedding-004",
-          contents: [{ parts: [{ text: text || " " }] }]
+          content: { parts: [{ text: text || " " }] }
         })
       );
 
@@ -63,6 +64,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     } catch (err: any) {
+      console.warn(`Batch slice starting at index ${i} failed, falling back to sequential:`, err);
       for (const text of batchSlice) {
         try {
           results.push(await generateEmbedding(text));

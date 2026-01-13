@@ -22,11 +22,14 @@ export async function processDocument(file: File): Promise<{
 
   try {
     if (type === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
-      // Dynamic import with @ts-ignore to prevent build-time declaration errors.
-      // @ts-ignore
-      const pdf = (await import('pdf-parse')).default;
+      // Dynamic import to prevent build-time declaration errors in environments that 
+      // check for browser compatibility.
+      const pdfModule = await import('pdf-parse');
+      // Handle potential differences in ESM/CJS interop for pdf-parse
+      // Cast to any to resolve "expression is not callable" error as types may not align perfectly with dynamic ESM imports.
+      const pdf: any = pdfModule.default || pdfModule;
       const data = await pdf(buffer);
-      text = data.text;
+      text = data.text || "";
       pageCount = data.numpages || 1;
     } else if (type.startsWith('text/') || filename.toLowerCase().endsWith('.txt') || filename.toLowerCase().endsWith('.csv')) {
       text = new TextDecoder().decode(arrayBuffer);
