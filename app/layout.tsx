@@ -1,4 +1,3 @@
-
 import React from 'react';
 import './globals.css';
 import type { Metadata } from 'next';
@@ -12,7 +11,7 @@ const jakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'Pedagogy Master - AI Pedagogical Assistant',
+  title: 'EduNexus AI - Intelligent Pedagogical Assistant',
   description: 'Advanced curriculum analysis and educational tool generation powered by Gemini AI.',
 };
 

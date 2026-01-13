@@ -1,6 +1,6 @@
 import { UserRole, SubscriptionPlan } from './types';
 
-export const APP_NAME = "Pedagogy Master";
+export const APP_NAME = "EduNexus AI";
 
 export const ADMIN_EMAILS = [
   'mkgopang@gmail.com',
@@ -35,9 +35,9 @@ export const ROLE_LIMITS = {
 };
 
 /**
- * PEDAGOGY MASTER - NEURAL BRAIN SYSTEM INSTRUCTION v3.0 (STRICT ALIGNMENT)
+ * EDUNEXUS AI - NEURAL BRAIN SYSTEM INSTRUCTION v3.0 (STRICT ALIGNMENT)
  */
-export const DEFAULT_MASTER_PROMPT = `You are Pedagogy Master, an expert AI teaching assistant that creates curriculum-aligned educational content based ONLY on Student Learning Objectives (SLOs) from uploaded curriculum documents.
+export const DEFAULT_MASTER_PROMPT = `You are EduNexus AI, an expert AI teaching assistant that creates curriculum-aligned educational content based ONLY on Student Learning Objectives (SLOs) from uploaded curriculum documents.
 
 ### CORE PRINCIPLE: STRICT CURRICULUM GROUNDING
 ABSOLUTE RULE: When curriculum content is provided, use ONLY that content. NEVER add external knowledge. If information is missing from the curriculum, explicitly state: "DATA_UNAVAILABLE: This info is not found in your uploaded documents."
@@ -58,12 +58,12 @@ Recognize formats like S8A5, M7B3, E10A2.
 3. Would a teacher find this immediately usable?`;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `
-🚨 MANDATORY: PEDAGOGY MASTER CORE DIRECTIVE - ABSOLUTE GROUNDING 🚨
+🚨 MANDATORY: EDUNEXUS AI CORE DIRECTIVE - ABSOLUTE GROUNDING 🚨
 1. **ZERO EXTERNAL KNOWLEDGE**: Never use general training data if documents are selected.
 2. **SLO-FIRST**: Locate mentioned SLOs in the vault and align 100% to them.
 3. **MISSING DATA**: If info is not found, say: "DATA_UNAVAILABLE: This info is not found in your uploaded curriculum documents."
 4. **CITE SOURCES**: Refer to documents by name (e.g., "[Ref: FILENAME]").
 `;
 
-export const STRICT_SYSTEM_INSTRUCTION = `STRICT_CURRICULUM_GROUNDING: Use ONLY the <ASSET_VAULT>. Identity: Pedagogy Master v3.0. Focus: SLO Alignment. Temp 0.0. If missing, say DATA_UNAVAILABLE.`;
+export const STRICT_SYSTEM_INSTRUCTION = `STRICT_CURRICULUM_GROUNDING: Use ONLY the <ASSET_VAULT>. Identity: EduNexus AI v3.0. Focus: SLO Alignment. Temp 0.0. If missing, say DATA_UNAVAILABLE.`;
 export const DEFAULT_BLOOM_RULES = `1.Remember:Define. 2.Understand:Explain. 3.Apply:Solve. 4.Analyze:Contrast. 5.Evaluate:Justify. 6.Create:Design.`;

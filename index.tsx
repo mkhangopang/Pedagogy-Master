@@ -1,4 +1,3 @@
-
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
@@ -60,7 +59,7 @@ const performSystemHandshake = () => {
     }
   });
 
-  console.log('--- Pedagogy Master: Neural Handshake ---');
+  console.log('--- EduNexus AI: Neural Handshake ---');
   console.table(statusReport);
 };
 
@@ -81,7 +80,7 @@ const startApp = async () => {
       );
     }
   } catch (error) {
-    console.error("Pedagogy Master: Startup Failure", error);
+    console.error("EduNexus AI: Startup Failure", error);
     const root = document.getElementById('root');
     if (root) {
       root.innerHTML = `<div style="padding: 40px; color: #ef4444; font-family: 'Plus Jakarta Sans', sans-serif; text-align: center; background: #fff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;">
