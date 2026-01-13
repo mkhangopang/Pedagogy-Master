@@ -1,7 +1,8 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { retrieveRelevantChunks, RetrievedChunk } from '../../../lib/rag/retriever';
 import { GoogleGenAI } from '@google/genai';
+import { retrieveHybridContext } from '../../../lib/rag/hybrid-retriever';
 import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE } from '../../../constants';
 
 export const runtime = 'nodejs';
@@ -9,14 +10,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL BRAIN CHAT ENGINE (v3.5)
- * FEATURE: ELASTIC SINDH CURRICULUM RESEARCH
- * 
- * Logic:
- * 1. Scans query for curriculum codes (SLOs).
- * 2. Checks user's personal PDF library (RAG).
- * 3. IF missing OR sparse: Activates Google Search Tool focused on Sindh/DCAR portals.
- * 4. Synthesizes final pedagogical response using Sindh Board standards.
+ * NEURAL BRAIN CHAT ENGINE (v4.0)
+ * INTEGRATED SINDH PORTAL SCRAPER + RAG
  */
 export async function POST(req: NextRequest) {
   try {
@@ -32,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Load active Neural Logic (Master Prompt)
+    // 1. Setup Brain Logic
     const { data: brainData } = await supabase
       .from('neural_brain')
       .select('master_prompt')
@@ -43,96 +38,99 @@ export async function POST(req: NextRequest) {
 
     const activeMasterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
 
-    // 2. SLO Intelligence: Detection
+    // 2. SLO Intelligence
     const sloRegex = /\b([A-Z]\d{1,2}[a-z]\d{1,2}|[A-Z]-\d{1,2}-\d{1,2}|\d\.\d\.\d)\b/gi;
-    const detectedSLOs = message.match(sloRegex);
-    const targetSLO = detectedSLOs?.[0];
+    const targetSLO = message.match(sloRegex)?.[0];
 
-    // 3. Local Neural Grid Search (PDF Library)
+    // 3. Document Filter
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name')
       .eq('user_id', user.id)
       .eq('is_selected', true);
     
-    let documentIds = selectedDocs?.map(d => d.id) || [];
-    
-    let localChunks: RetrievedChunk[] = [];
-    if (documentIds.length > 0) {
-      localChunks = await retrieveRelevantChunks(message, documentIds, supabase, 10, priorityDocumentId);
-    }
+    const documentIds = selectedDocs?.map(d => d.id) || [];
 
-    // 4. Elastic Decision Matrix
-    // Scrape if SLO is present but local PDF results are insufficient
-    const isLocalSparse = localChunks.length === 0 || (localChunks.length > 0 && localChunks[0].similarity < 0.28);
-    const shouldScrapeWeb = targetSLO && isLocalSparse;
-    const hasLocalGrounding = localChunks.length > 0;
+    // 4. Execute Hybrid Retrieval (Local PDF + Web Scrape)
+    const context = await retrieveHybridContext(message, documentIds, supabase, targetSLO);
 
-    // 5. Initialize Gemini 3 Synthesis Grid
+    // 5. Build Neural Prompt
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
     let systemInstruction = `${activeMasterPrompt}\n\n`;
     
-    if (shouldScrapeWeb) {
-      systemInstruction += `SINDH_CURRICULUM_RESEARCH_PROTOCOL: 
-      1. Objective [${targetSLO}] not found in user's PDF library.
-      2. USE GOOGLE_SEARCH to fetch official definition.
-      3. PRIMARY SOURCE: https://dcar.gos.pk/Sindh%20Curriculum.html (Directorate of Curriculum, Assessment and Research - Sindh).
-      4. SECONDARY SOURCES: stbb.gos.pk (Sindh Textbook Board), ncc.gov.pk.
-      5. Extract the exact Student Learning Outcome text.
-      6. CITE the source URL in your response.`;
-    } else if (hasLocalGrounding) {
-      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\nSTRICT_LOCAL_GROUNDING: Local PDF content detected. Priority given to uploaded assets.`;
+    // Inject Grounding Directives
+    if (context.groundingSource === 'local' || context.groundingSource === 'mixed') {
+      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\nVAULT_PRIORITY: Local documents are primary.`;
+    }
+    
+    if (context.webScrape) {
+      systemInstruction += `\nWEB_SCRAPE_DIRECTIVE: I have scraped the Sindh Curriculum portal for live data. Use the [SINDH_PORTAL_CONTEXT] below to align with Sindh Board standards.`;
     }
 
-    const contextVault = localChunks.map((c, i) => `[PDF_ASSET_NODE_${i+1}] ${c.text}`).join('\n\n');
+    // Assemble Memory Vault
+    let memoryVault = '';
     
-    const synthesisPrompt = shouldScrapeWeb 
-      ? `TEACHER_QUERY: "${message}"\nRESEARCH_TASK: Scrape official Sindh Curriculum definition for SLO ${targetSLO} and generate pedagogical response.`
-      : hasLocalGrounding 
-        ? `<MEMORY_VAULT>\n${contextVault}\n</MEMORY_VAULT>\n\nTEACHER_QUERY: "${message}"`
-        : message;
+    if (context.localChunks.length > 0) {
+      memoryVault += `# <LOCAL_PDF_VAULT>\n` + context.localChunks.map((c, i) => `[PDF_NODE_${i+1}] ${c.text}`).join('\n\n') + `\n\n`;
+    }
+    
+    if (context.webScrape) {
+      memoryVault += `# <SINDH_PORTAL_CONTEXT>\nSOURCE: ${context.webScrape.url}\nTITLE: ${context.webScrape.title}\nCONTENT: ${context.webScrape.text}\n\n`;
+    }
 
-    // Execute Synthesis with Search Tool
+    const synthesisPrompt = `${memoryVault}\n\nTEACHER_QUERY: "${message}"`;
+
+    // 6. Synthesis
     const result = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: {
         systemInstruction,
-        temperature: hasLocalGrounding ? 0.05 : 0.6,
-        tools: shouldScrapeWeb ? [{ googleSearch: {} }] : []
+        temperature: context.isGrounded ? 0.1 : 0.7,
+        // Fallback to Google Search only if even the targeted Sindh scrape failed
+        tools: (targetSLO && !context.webScrape && context.localChunks.length < 2) ? [{ googleSearch: {} }] : []
       }
     });
 
-    const responseText = result.text || "Synthesis Error: Node connection timed out.";
+    const responseText = result.text || "Synthesis error: Neural node connection lost.";
     
-    // Harvest Grounding metadata
-    const webSources = result.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const sourceLinks = webSources
+    // Extract Metadata for Grounding Display
+    const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const searchLinks = groundingChunks
       .filter((chunk: any) => chunk.web)
       .map((chunk: any) => `* [${chunk.web.title}](${chunk.web.uri})`)
       .join('\n');
 
+    // 7. Orchestrate Stream
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       async start(controller) {
-        if (shouldScrapeWeb) {
-          controller.enqueue(encoder.encode(`> *Neural Research Mode: SLO ${targetSLO} missing from library. Fetching from Sindh Curriculum Portal (DCAR)...*\n\n`));
-        } else if (hasLocalGrounding) {
-          controller.enqueue(encoder.encode(`> *Neural Sync Mode: Grounded in your uploaded PDF library assets.*\n\n`));
+        // Status Alerts
+        if (context.groundingSource === 'web' || context.groundingSource === 'mixed') {
+          controller.enqueue(encoder.encode(`> *Neural Research Mode: Scraped Sindh Curriculum Portal (dcar.gos.pk)...*\n\n`));
+        } else if (context.groundingSource === 'local') {
+          controller.enqueue(encoder.encode(`> *Neural Sync Mode: Grounded in your PDF library assets.*\n\n`));
         }
 
         controller.enqueue(encoder.encode(responseText));
 
-        if (sourceLinks) {
-          controller.enqueue(encoder.encode(`\n\n### Official Sindh Curriculum Sources:\n${sourceLinks}`));
+        // Source Footer
+        let footer = '';
+        if (context.webScrape) {
+          footer += `\n\n### Scraped Sindh Portal Context:\n* [${context.webScrape.title}](${context.webScrape.url})`;
         }
+        if (searchLinks) {
+          footer += `\n\n### Additional Web Sources:\n${searchLinks}`;
+        }
+        
+        if (footer) controller.enqueue(encoder.encode(footer));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error('❌ [Synthesis Fatal]:', error);
+    console.error('❌ [Neural Synthesis Fatal]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
