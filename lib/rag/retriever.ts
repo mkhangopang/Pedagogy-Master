@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 
@@ -34,12 +33,14 @@ export async function retrieveRelevantChunks(
     const sloMatch = query.match(/\b([A-Z]?)(\d{1,2})([a-z]?)(\d{1,2})\b/i);
     if (sloMatch) {
       const sloCode = sloMatch[0].toUpperCase();
-      const { data: sloChunks } = await supabase.rpc('find_slo_chunks', {
+      const { data: sloChunks, error: sloError } = await supabase.rpc('find_slo_chunks', {
         slo_code: sloCode,
         document_ids: documentIds
       });
       
-      if (sloChunks && sloChunks.length > 0) {
+      if (sloError) {
+        console.error('❌ [Retriever SLO Search Error]:', sloError);
+      } else if (sloChunks && sloChunks.length > 0) {
         console.log(`🎯 [Retriever] Direct SLO Match Found: ${sloCode}`);
         return sloChunks.map((d: any) => ({
           id: d.chunk_id,
@@ -65,7 +66,11 @@ export async function retrieveRelevantChunks(
     });
 
     if (error) {
-      console.error('[Retriever RPC Node Error]:', error);
+      console.error('❌ [Retriever RPC Node Error]:', error);
+      // Log specific hint for type mismatch
+      if (error.message?.includes('vector') && error.message?.includes('json')) {
+        console.error('CRITICAL: Retrieval failed due to type mismatch in document_chunks.embedding. Run SQL Patch v12.0.');
+      }
       return [];
     }
 

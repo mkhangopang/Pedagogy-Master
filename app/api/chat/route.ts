@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { retrieveRelevantChunks, RetrievedChunk } from '../../../lib/rag/retriever';
@@ -57,8 +56,10 @@ export async function POST(req: NextRequest) {
     // 3. Neural Semantic Memory Retrieval
     let retrievedChunks: RetrievedChunk[] = [];
     if (hasLibrary) {
-      // If no docs selected, search across all docs in the library
+      // If no docs selected explicitly, search across all docs in the library
       const targetIds = documentIds.length > 0 ? documentIds : (allDocs?.map(d => d.id) || []);
+      console.log(`📡 [Chat] Searching RAG for: ${targetIds.length} assets`);
+      
       retrievedChunks = await retrieveRelevantChunks(
         message, 
         targetIds, 
@@ -78,9 +79,9 @@ export async function POST(req: NextRequest) {
     let systemInstruction = `${activeMasterPrompt}\n\n`;
     
     if (isGrounded) {
-      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\nSTRICT_GROUNDING: Use the provided MEMORY_VAULT. Cite as [Memory Node X].`;
+      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\nSTRICT_GROUNDING: Use the provided MEMORY_VAULT. Cite as [Memory Node X]. If information is missing, explicitly state DATA_UNAVAILABLE.`;
     } else {
-      systemInstruction += `GENERAL_PEDAGOGY_MODE: The user's query did not match specific curriculum assets. Provide a world-class pedagogical response using your general training data, but add a brief note that this is not grounded in their uploaded documents.`;
+      systemInstruction += `GENERAL_PEDAGOGY_MODE: The user's query did not match specific curriculum assets. Provide a world-class pedagogical response using your general training data.`;
     }
 
     systemInstruction += `\n\nStyle: Markdown headers (1., 1.1), tables, bullet points. NO BOLD HEADINGS.`;
@@ -95,8 +96,8 @@ export async function POST(req: NextRequest) {
     }
 
     const synthesisPrompt = isGrounded 
-      ? `# MEMORY_VAULT (Matched Context):\n${contextVault}\n\n# TEACHER QUERY:\n"${message}"\n\nSynthesize response referencing nodes.`
-      : `# TEACHER QUERY (No Document Matches Found):\n"${message}"\n\nProvide general pedagogical assistance.`;
+      ? `# MEMORY_VAULT (Matched Context):\n${contextVault}\n\n# TEACHER QUERY:\n"${message}"\n\nSynthesize response based strictly on the nodes above. Cite sources like [Memory Node 1].`
+      : `# TEACHER QUERY (No Document Matches Found):\n"${message}"\n\nProvide general pedagogical assistance as no curriculum documents matched this specific query.`;
 
     const streamResponse = await ai.models.generateContentStream({
       model: 'gemini-3-flash-preview',
@@ -111,14 +112,15 @@ export async function POST(req: NextRequest) {
     return new Response(new ReadableStream({
       async start(controller) {
         try {
-          if (!isGrounded && hasLibrary) {
-            controller.enqueue(encoder.encode("> *Note: No direct matches found in your curriculum library. Providing general pedagogical guidance.*\n\n"));
-          } else if (!hasLibrary) {
+          if (isGrounded) {
+            controller.enqueue(encoder.encode(`> *Neural Grounding Active: Found ${retrievedChunks.length} matching curriculum segments.*\n\n`));
+          } else if (hasLibrary) {
+            controller.enqueue(encoder.encode("> *Neural Grounding Unavailable: No direct matches found in your library for this query. Providing general pedagogical guidance.*\n\n"));
+          } else {
              controller.enqueue(encoder.encode("> *Note: Your library is empty. Please upload documents to enable curriculum-grounded responses.*\n\n"));
           }
 
           for await (const chunk of streamResponse) {
-            // chunk.text is a property, not a method.
             if (chunk.text) {
               controller.enqueue(encoder.encode(chunk.text));
             }

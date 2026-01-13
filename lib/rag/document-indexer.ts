@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabase as defaultSupabase } from '../supabase';
 import { chunkDocument } from './chunking-strategy';
@@ -60,12 +59,15 @@ export async function indexDocumentForRAG(
 
     // 3. Grid Persistence
     // Wipe stale vector nodes
-    await supabase.from('document_chunks').delete().eq('document_id', documentId);
+    const { error: deleteError } = await supabase.from('document_chunks').delete().eq('document_id', documentId);
+    if (deleteError) {
+      console.error('❌ [Indexer Delete Error]:', deleteError);
+    }
 
     const insertData = chunks.map((chunk, idx) => {
       const embedding = embeddings[idx];
       
-      // Standard number array is best for Supabase JS client with pgvector
+      // We pass the embedding as a standard array. Supabase will attempt to cast it to vector(768).
       return {
         document_id: documentId,
         chunk_text: deepSanitize(chunk.text),
@@ -93,8 +95,13 @@ export async function indexDocumentForRAG(
         console.error(`[Indexer DB Batch Error] offset ${i}:`, insertError);
         
         // Check for specific column type mismatch errors
-        if (insertError.message?.includes('type json') || insertError.message?.includes('type jsonb')) {
-          throw new Error(`Database Schema Error: The 'embedding' column might be incorrectly typed as JSON. Please run the SQL Patch (v9.0) in Control Hub to fix this.`);
+        // If 'embedding' was accidentally created as JSONB, Postgres will complain about the array input.
+        const isSchemaError = insertError.message?.toLowerCase().includes('type json') || 
+                            insertError.message?.toLowerCase().includes('jsonb') || 
+                            insertError.code === '42804'; // Datatype mismatch
+
+        if (isSchemaError) {
+          throw new Error(`Database Schema Error: The 'embedding' column in the 'document_chunks' table is incorrectly typed (likely JSON/JSONB). For neural search, it MUST be type 'vector(768)'. Please run the updated SQL Patch (v12.0) in the Control Hub to fix this.`);
         }
         
         throw new Error(`Database rejected segments: ${insertError.message}`);

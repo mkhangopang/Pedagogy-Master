@@ -1,4 +1,3 @@
-
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -101,7 +100,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- PEDAGOGY MASTER: INFRASTRUCTURE REPAIR v11.0 (COMPLETE FIX)
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.0 (COMPLETE VECTOR FIX)
 -- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE "TYPE JSON" OR "VECTOR" ERRORS
 
 -- 1. ENABLE NEURAL ENGINE
@@ -172,12 +171,27 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- 4.1 NUCLEAR TYPE FIX: Convert 'embedding' from JSONB to VECTOR if miscreated
+DO $$ 
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = 'document_chunks' 
+        AND column_name = 'embedding' 
+        AND data_type = 'jsonb'
+    ) THEN
+        RAISE NOTICE 'Fixing misaligned JSONB column in document_chunks...';
+        ALTER TABLE public.document_chunks DROP COLUMN embedding;
+        ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
+    END IF;
+END $$;
+
 -- 5. PERFORMANCE TUNING
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
 USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 6. HYBRID SEARCH ENGINE (v11.0)
+-- 6. HYBRID SEARCH ENGINE (v12.0)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -351,7 +365,7 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v11.0</h3>
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.0</h3>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"
