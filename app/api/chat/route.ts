@@ -10,8 +10,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL BRAIN CHAT ENGINE (v4.0)
- * INTEGRATED SINDH PORTAL SCRAPER + RAG
+ * NEURAL BRAIN CHAT ENGINE (v5.0)
+ * PRIORITY: SINDH CURRICULUM PORTAL SCRAPING
  */
 export async function POST(req: NextRequest) {
   try {
@@ -51,32 +51,31 @@ export async function POST(req: NextRequest) {
     
     const documentIds = selectedDocs?.map(d => d.id) || [];
 
-    // 4. Execute Hybrid Retrieval (Local PDF + Web Scrape)
+    // 4. Execute Hybrid Retrieval (Prioritizing Sindh Scrape)
     const context = await retrieveHybridContext(message, documentIds, supabase, targetSLO);
 
-    // 5. Build Neural Prompt
+    // 5. Build Neural Prompt (Scraped Context is First)
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
     let systemInstruction = `${activeMasterPrompt}\n\n`;
     
-    // Inject Grounding Directives
-    if (context.groundingSource === 'local' || context.groundingSource === 'mixed') {
-      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\nVAULT_PRIORITY: Local documents are primary.`;
+    if (context.webScrape) {
+      systemInstruction += `\n🚨 PRIORITY_DIRECTIVE: Live data from the Sindh Curriculum Portal has been detected. This is the PRIMARY SOURCE OF TRUTH.`;
     }
     
-    if (context.webScrape) {
-      systemInstruction += `\nWEB_SCRAPE_DIRECTIVE: I have scraped the Sindh Curriculum portal for live data. Use the [SINDH_PORTAL_CONTEXT] below to align with Sindh Board standards.`;
+    if (context.groundingSource === 'local' || context.groundingSource === 'mixed') {
+      systemInstruction += `\n${NUCLEAR_GROUNDING_DIRECTIVE}\nLOCAL_AUGMENTATION: Use the user's PDF vault to personalize the delivery style.`;
     }
 
-    // Assemble Memory Vault
+    // Assemble Memory Vault - Scraped content at the TOP
     let memoryVault = '';
     
-    if (context.localChunks.length > 0) {
-      memoryVault += `# <LOCAL_PDF_VAULT>\n` + context.localChunks.map((c, i) => `[PDF_NODE_${i+1}] ${c.text}`).join('\n\n') + `\n\n`;
-    }
-    
     if (context.webScrape) {
-      memoryVault += `# <SINDH_PORTAL_CONTEXT>\nSOURCE: ${context.webScrape.url}\nTITLE: ${context.webScrape.title}\nCONTENT: ${context.webScrape.text}\n\n`;
+      memoryVault += `# <OFFICIAL_SINDH_PORTAL_CONTEXT>\nSOURCE: ${context.webScrape.url}\nTITLE: ${context.webScrape.title}\nIMPORTANT: Use this content first for all curriculum definitions.\nCONTENT:\n${context.webScrape.text}\n\n`;
+    }
+
+    if (context.localChunks.length > 0) {
+      memoryVault += `# <LOCAL_DOCUMENT_AUGMENTATION>\n` + context.localChunks.map((c, i) => `[LIB_NODE_${i+1}] ${c.text}`).join('\n\n') + `\n\n`;
     }
 
     const synthesisPrompt = `${memoryVault}\n\nTEACHER_QUERY: "${message}"`;
@@ -87,15 +86,13 @@ export async function POST(req: NextRequest) {
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: {
         systemInstruction,
-        temperature: context.isGrounded ? 0.1 : 0.7,
-        // Fallback to Google Search only if even the targeted Sindh scrape failed
+        temperature: context.isGrounded ? 0.05 : 0.7, // Lower temperature for higher grounding precision
         tools: (targetSLO && !context.webScrape && context.localChunks.length < 2) ? [{ googleSearch: {} }] : []
       }
     });
 
     const responseText = result.text || "Synthesis error: Neural node connection lost.";
     
-    // Extract Metadata for Grounding Display
     const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const searchLinks = groundingChunks
       .filter((chunk: any) => chunk.web)
@@ -106,11 +103,11 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       async start(controller) {
-        // Status Alerts
+        // Status Alerts reflect Priority
         if (context.groundingSource === 'web' || context.groundingSource === 'mixed') {
-          controller.enqueue(encoder.encode(`> *Neural Research Mode: Scraped Sindh Curriculum Portal (dcar.gos.pk)...*\n\n`));
+          controller.enqueue(encoder.encode(`> *Neural Priority: Synchronized with Official Sindh Curriculum Portal (Live)...*\n\n`));
         } else if (context.groundingSource === 'local') {
-          controller.enqueue(encoder.encode(`> *Neural Sync Mode: Grounded in your PDF library assets.*\n\n`));
+          controller.enqueue(encoder.encode(`> *Neural Sync: Grounded in Local PDF Assets...*\n\n`));
         }
 
         controller.enqueue(encoder.encode(responseText));
@@ -118,10 +115,10 @@ export async function POST(req: NextRequest) {
         // Source Footer
         let footer = '';
         if (context.webScrape) {
-          footer += `\n\n### Scraped Sindh Portal Context:\n* [${context.webScrape.title}](${context.webScrape.url})`;
+          footer += `\n\n### Official Sindh Portal Reference:\n* [${context.webScrape.title}](${context.webScrape.url})`;
         }
         if (searchLinks) {
-          footer += `\n\n### Additional Web Sources:\n${searchLinks}`;
+          footer += `\n\n### Additional Supplemental Sources:\n${searchLinks}`;
         }
         
         if (footer) controller.enqueue(encoder.encode(footer));

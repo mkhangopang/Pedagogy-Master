@@ -11,11 +11,11 @@ export interface HybridRetrievalResult {
 }
 
 /**
- * HYBRID CURRICULUM RETRIEVER (v4.0)
+ * HYBRID CURRICULUM RETRIEVER (v5.0 - SCRAPE PRIORITY)
  * Logic Flow:
- * 1. Check Local PDF library (Vector Search).
- * 2. If SLO confidence is low: Scrape Sindh Portal (Cheerio).
- * 3. Return combined intelligence package.
+ * 1. Identify SLO/Keywords.
+ * 2. Aggressively Scrape Sindh Portal (DCAR) immediately.
+ * 3. Augment with Local PDF library.
  */
 export async function retrieveHybridContext(
   message: string,
@@ -24,21 +24,24 @@ export async function retrieveHybridContext(
   targetSLO?: string
 ): Promise<HybridRetrievalResult> {
   
-  // 1. Local Search
+  // 1. Proactive Web Scrape (PRIORITY)
+  // We no longer check local confidence first; we always want the latest portal data if an SLO is detected.
+  let webScrape: ScrapedContent | null = null;
+  
+  // Target SLO is the primary trigger, but we also scrape for high-value curriculum keywords
+  const curriculumKeywords = /science|math|english|curriculum|standards|slo|syllabus/i;
+  const shouldScrape = targetSLO || curriculumKeywords.test(message);
+
+  if (shouldScrape) {
+    const searchQuery = targetSLO || message;
+    console.log(`🌐 [Hybrid Priority] Aggressive Scrape initiated for: ${searchQuery}`);
+    webScrape = await scrapeSindhCurriculum(searchQuery);
+  }
+
+  // 2. Local Document Augmentation
   let localChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     localChunks = await retrieveRelevantChunks(message, documentIds, supabase, 10);
-  }
-
-  const hasHighConfidenceLocal = localChunks.length > 0 && localChunks[0].similarity > 0.4;
-  
-  // 2. Targeted Web Scrape (Fallback for missing or low-confidence SLOs)
-  let webScrape: ScrapedContent | null = null;
-  
-  // Only scrape if we have an SLO code and local data is sparse
-  if (targetSLO && !hasHighConfidenceLocal) {
-    console.log(`🕵️ [Hybrid] Pivoting to Live Web Scrape for SLO: ${targetSLO}`);
-    webScrape = await scrapeSindhCurriculum(targetSLO);
   }
 
   const isGrounded = localChunks.length > 0 || webScrape !== null;
