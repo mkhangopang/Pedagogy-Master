@@ -8,7 +8,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const getEnv = (key: string): string => {
   if (typeof window !== 'undefined') {
     const win = window as any;
-    // Check injected process env first (from handshake)
+    // Check various injection points used by the neural handshake
     const val = 
       win.process?.env?.[key] || 
       win[key] || 
@@ -34,7 +34,7 @@ const getEnv = (key: string): string => {
 export const isSupabaseConfigured = (): boolean => {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
   const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  return !!url && url.length > 5 && !!key && key.length > 10;
+  return !!url && url.length > 10 && !!key && key.length > 10;
 };
 
 let cachedClient: SupabaseClient | null = null;
@@ -42,10 +42,8 @@ let cachedClient: SupabaseClient | null = null;
 const getClient = (): SupabaseClient => {
   if (cachedClient) return cachedClient;
 
-  // Fallback only used to prevent SDK crash during initialization; 
-  // actual calls are protected by isSupabaseConfigured.
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || 'https://placeholder-project.supabase.co';
-  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || 'placeholder-anon-key';
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || 'https://placeholder.supabase.co';
+  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || 'placeholder';
 
   cachedClient = createClient(url, anonKey, {
     auth: {
@@ -61,15 +59,19 @@ const getClient = (): SupabaseClient => {
 
 /**
  * Main Supabase Client Proxy.
- * Delays initialization until the first call to ensure environment variables 
- * from the neural handshake are fully loaded.
+ * Delays real initialization until the first access to property,
+ * allowing the Neural Handshake to populate environment variables first.
  */
 export const supabase = new Proxy({} as SupabaseClient, {
-  get: (target, prop) => {
+  get: (target, prop, receiver) => {
     if (prop === 'then') return undefined;
+    
     const client = getClient();
-    const value = (client as any)[prop];
-    if (typeof value === 'function') return value.bind(client);
+    const value = Reflect.get(client, prop, client);
+    
+    if (typeof value === 'function') {
+      return value.bind(client);
+    }
     return value;
   }
 });
@@ -79,12 +81,12 @@ export const supabase = new Proxy({} as SupabaseClient, {
  */
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) {
-    return { status: 'disconnected', message: 'Cloud credentials (URL/Key) are missing.' };
+    return { status: 'disconnected', message: 'Credentials missing in environment.' };
   }
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error) {
-      return { status: 'disconnected', message: `Database error: ${error.message}` };
+      return { status: 'disconnected', message: `Supabase error: ${error.message}` };
     }
     return { status: 'connected', message: 'Cloud Node Online' };
   } catch (err: any) {
@@ -93,7 +95,7 @@ export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disc
 };
 
 /**
- * Returns a server-side client with a specific user token for RLS.
+ * Returns a client with a specific user token for RLS.
  */
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
@@ -109,7 +111,6 @@ export const getSupabaseServerClient = (token: string): SupabaseClient => {
 
 /**
  * Returns a high-privilege client using the service role key.
- * Use only in secure server environments.
  */
 export const getSupabaseAdminClient = (): SupabaseClient => {
   const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');

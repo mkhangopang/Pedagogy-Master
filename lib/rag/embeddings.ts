@@ -7,9 +7,10 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+    // Use 'contents' plural as required by the EmbedContentParameters type in @google/genai.
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
-      content: { parts: [{ text: text || " " }] }
+      contents: { parts: [{ text: text || " " }] }
     });
 
     const result = response.embedding;
@@ -47,7 +48,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       const promises = batchSlice.map(text => 
         ai.models.embedContent({
           model: "text-embedding-004",
-          content: { parts: [{ text: text || " " }] }
+          contents: { parts: [{ text: text || " " }] }
         })
       );
 
