@@ -9,8 +9,14 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL BRAIN CHAT ENGINE (v2.2)
- * Enhanced grounding with strict prompt isolation.
+ * NEURAL BRAIN CHAT ENGINE (v3.5)
+ * FEATURE: ELASTIC SINDH CURRICULUM RESEARCH
+ * 
+ * Logic:
+ * 1. Scans query for curriculum codes (SLOs).
+ * 2. Checks user's personal PDF library (RAG).
+ * 3. IF missing OR sparse: Activates Google Search Tool focused on Sindh/DCAR portals.
+ * 4. Synthesizes final pedagogical response using Sindh Board standards.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -26,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Fetch active Neural Brain configuration
+    // 1. Load active Neural Logic (Master Prompt)
     const { data: brainData } = await supabase
       .from('neural_brain')
       .select('master_prompt')
@@ -37,12 +43,12 @@ export async function POST(req: NextRequest) {
 
     const activeMasterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
 
-    // 2. Identification of context
-    const { data: allDocs } = await supabase
-      .from('documents')
-      .select('id, name, rag_indexed')
-      .eq('user_id', user.id);
+    // 2. SLO Intelligence: Detection
+    const sloRegex = /\b([A-Z]\d{1,2}[a-z]\d{1,2}|[A-Z]-\d{1,2}-\d{1,2}|\d\.\d\.\d)\b/gi;
+    const detectedSLOs = message.match(sloRegex);
+    const targetSLO = detectedSLOs?.[0];
 
+    // 3. Local Neural Grid Search (PDF Library)
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name')
@@ -50,94 +56,83 @@ export async function POST(req: NextRequest) {
       .eq('is_selected', true);
     
     let documentIds = selectedDocs?.map(d => d.id) || [];
-    if (documentIds.length === 0 && allDocs && allDocs.length > 0) {
-      documentIds = allDocs.map(d => d.id);
-    }
     
-    const hasLibrary = allDocs && allDocs.length > 0;
-
-    // 3. Neural Semantic Memory Retrieval
-    let retrievedChunks: RetrievedChunk[] = [];
+    let localChunks: RetrievedChunk[] = [];
     if (documentIds.length > 0) {
-      console.log(`📡 [Chat] Searching RAG nodes for: ${documentIds.length} assets`);
-      
-      retrievedChunks = await retrieveRelevantChunks(
-        message, 
-        documentIds, 
-        supabase, 
-        12, 
-        priorityDocumentId
-      );
+      localChunks = await retrieveRelevantChunks(message, documentIds, supabase, 10, priorityDocumentId);
     }
 
-    const isGrounded = retrievedChunks.length > 0;
+    // 4. Elastic Decision Matrix
+    // Scrape if SLO is present but local PDF results are insufficient
+    const isLocalSparse = localChunks.length === 0 || (localChunks.length > 0 && localChunks[0].similarity < 0.28);
+    const shouldScrapeWeb = targetSLO && isLocalSparse;
+    const hasLocalGrounding = localChunks.length > 0;
 
-    // 4. Gemini Synthesis Execution
+    // 5. Initialize Gemini 3 Synthesis Grid
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
-    // Construct System Instruction with dynamic grounding modes
     let systemInstruction = `${activeMasterPrompt}\n\n`;
     
-    if (isGrounded) {
-      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\n`;
-      systemInstruction += `STRICT_PEDAGOGY: Use provided <MEMORY_VAULT> as the ONLY source of truth. Reference nodes as [Node X]. If the exact SLO detail is missing from the vault, explicitly state "INFO_NOT_IN_VAULT".`;
-    } else {
-      systemInstruction += `GENERAL_PEDAGOGY_MODE: User has no library matches. Provide expert educational advice using general knowledge. Mention that uploading documents would allow for curriculum-specific grounding.`;
+    if (shouldScrapeWeb) {
+      systemInstruction += `SINDH_CURRICULUM_RESEARCH_PROTOCOL: 
+      1. Objective [${targetSLO}] not found in user's PDF library.
+      2. USE GOOGLE_SEARCH to fetch official definition.
+      3. PRIMARY SOURCE: https://dcar.gos.pk/Sindh%20Curriculum.html (Directorate of Curriculum, Assessment and Research - Sindh).
+      4. SECONDARY SOURCES: stbb.gos.pk (Sindh Textbook Board), ncc.gov.pk.
+      5. Extract the exact Student Learning Outcome text.
+      6. CITE the source URL in your response.`;
+    } else if (hasLocalGrounding) {
+      systemInstruction += `${NUCLEAR_GROUNDING_DIRECTIVE}\nSTRICT_LOCAL_GROUNDING: Local PDF content detected. Priority given to uploaded assets.`;
     }
 
-    systemInstruction += `\n\nFormat: Use 1., 1.1 headings. No bold headings.`;
+    const contextVault = localChunks.map((c, i) => `[PDF_ASSET_NODE_${i+1}] ${c.text}`).join('\n\n');
+    
+    const synthesisPrompt = shouldScrapeWeb 
+      ? `TEACHER_QUERY: "${message}"\nRESEARCH_TASK: Scrape official Sindh Curriculum definition for SLO ${targetSLO} and generate pedagogical response.`
+      : hasLocalGrounding 
+        ? `<MEMORY_VAULT>\n${contextVault}\n</MEMORY_VAULT>\n\nTEACHER_QUERY: "${message}"`
+        : message;
 
-    // 5. Build Synthesis Prompt with Isolated Context
-    let contextVault = "";
-    if (isGrounded) {
-      contextVault = retrievedChunks.map((c, i) => (
-        `[MEMORY_NODE_${i+1}] (Ref: ${c.pageNumber || 'p.?'}, SLOs: ${c.sloCodes.join(', ') || 'N/A'})\nTEXT: ${c.text}`
-      )).join('\n\n---\n\n');
-    }
-
-    const synthesisPrompt = isGrounded 
-      ? `<MEMORY_VAULT>\n${contextVault}\n</MEMORY_VAULT>\n\n# TEACHER_QUERY: "${message}"\n\nSynthesize the above context to answer the query. Be specific.`
-      : `# TEACHER_QUERY: "${message}"\n\nNo curriculum matches were found in the library. Respond based on general educational principles.`;
-
-    const streamResponse = await ai.models.generateContentStream({
+    // Execute Synthesis with Search Tool
+    const result = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: {
         systemInstruction,
-        temperature: isGrounded ? 0.05 : 0.7, // Lower temp for grounded responses
+        temperature: hasLocalGrounding ? 0.05 : 0.6,
+        tools: shouldScrapeWeb ? [{ googleSearch: {} }] : []
       }
     });
+
+    const responseText = result.text || "Synthesis Error: Node connection timed out.";
+    
+    // Harvest Grounding metadata
+    const webSources = result.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sourceLinks = webSources
+      .filter((chunk: any) => chunk.web)
+      .map((chunk: any) => `* [${chunk.web.title}](${chunk.web.uri})`)
+      .join('\n');
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       async start(controller) {
-        try {
-          if (isGrounded) {
-            controller.enqueue(encoder.encode(`> *Neural Sync Active: Grounded in ${retrievedChunks.length} curriculum segments.*\n\n`));
-          } else if (hasLibrary) {
-            controller.enqueue(encoder.encode("> *Neural Grounding: No direct matches found in your library for this specific query. Providing general pedagogical guidance.*\n\n"));
-          } else {
-             controller.enqueue(encoder.encode("> *Note: Your library is empty. Upload documents to enable grounded responses.*\n\n"));
-          }
-
-          for await (const chunk of streamResponse) {
-            if (chunk.text) {
-              controller.enqueue(encoder.encode(chunk.text));
-            }
-          }
-        } catch (err) {
-          console.error('[Stream Failure]:', err);
-          controller.enqueue(encoder.encode("\n\n[Synthesis Interrupted: Remote Node Connection Error]"));
-        } finally {
-          controller.close();
+        if (shouldScrapeWeb) {
+          controller.enqueue(encoder.encode(`> *Neural Research Mode: SLO ${targetSLO} missing from library. Fetching from Sindh Curriculum Portal (DCAR)...*\n\n`));
+        } else if (hasLocalGrounding) {
+          controller.enqueue(encoder.encode(`> *Neural Sync Mode: Grounded in your uploaded PDF library assets.*\n\n`));
         }
+
+        controller.enqueue(encoder.encode(responseText));
+
+        if (sourceLinks) {
+          controller.enqueue(encoder.encode(`\n\n### Official Sindh Curriculum Sources:\n${sourceLinks}`));
+        }
+        controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error('[Chat Engine Fatal]:', error);
-    return NextResponse.json({ 
-      error: `Synthesis failure: ${error.message || 'Check Neural Connectivity'}` 
-    }, { status: 500 });
+    console.error('❌ [Synthesis Fatal]:', error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

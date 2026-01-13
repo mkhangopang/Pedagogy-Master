@@ -1,8 +1,7 @@
-
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { User, Bot, Copy, Check, Share2, ThumbsUp, ThumbsDown, Sparkles } from 'lucide-react';
+import { User, Bot, Copy, Check, Share2, ThumbsUp, ThumbsDown, Sparkles, Globe } from 'lucide-react';
 import { marked } from 'marked';
 import { APP_NAME } from '../../constants';
 
@@ -44,30 +43,26 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
     }
   };
 
-  const { body } = useMemo(() => {
-    const parts = content.split('--- Synthesis by Node:');
-    return { 
-      body: parts[0].trim()
-    };
-  }, [content]);
-
   const renderedHtml = useMemo(() => {
-    if (!body) return '';
+    if (!content) return '';
     try {
       marked.setOptions({
         gfm: true,
         breaks: true,
       });
 
-      const html = marked.parse(body) as string;
+      const html = marked.parse(content) as string;
       return html
         .replace(/<table>/g, '<div class="table-container"><table>')
-        .replace(/<\/table>/g, '</table></div>');
+        .replace(/<\/table>/g, '</table></div>')
+        .replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline flex items-center gap-1 inline-flex" ');
     } catch (e) {
       console.error("Markdown parse error:", e);
-      return body;
+      return content;
     }
-  }, [body]);
+  }, [content]);
+
+  const isWebSearch = content.includes('Neural Web Search Active');
 
   return (
     <div className={`flex w-full group animate-chat-turn ${isAi ? 'justify-start' : 'justify-end'} mb-12`}>
@@ -90,7 +85,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
             />
           </div>
           
-          {isAi && body && (
+          {isAi && content && (
             <div className="flex flex-wrap items-center gap-4 px-2 w-full">
               <div className="flex items-center gap-2">
                 <button 
@@ -111,8 +106,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
               </div>
 
               <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10">
-                <Sparkles size={10} className="text-indigo-500" />
-                {APP_NAME} Synthesis
+                {isWebSearch ? <Globe size={10} className="text-indigo-500" /> : <Sparkles size={10} className="text-indigo-500" />}
+                {isWebSearch ? 'Web Scraped' : 'Neural Grounded'}
               </div>
 
               <div className="flex items-center gap-1 ml-auto">

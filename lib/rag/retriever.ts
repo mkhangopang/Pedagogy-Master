@@ -11,8 +11,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * SEMANTIC RETRIEVER
- * Pulls the most relevant curriculum "memories" based on user query vector.
+ * SEMANTIC RETRIEVER (v3.0)
+ * Optimized for curriculum-specific RAG.
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -29,8 +29,7 @@ export async function retrieveRelevantChunks(
       ? priorityDocumentId 
       : null;
 
-    // 1. Direct SLO High-Precision Search (Regex based)
-    // Matches patterns like S8a5, M7b3, etc.
+    // 1. SLO Direct Lookup (Regex based)
     const sloRegex = /\b([A-Z]\d{1,2}[a-z]\d{1,2}|[A-Z]-\d{1,2}-\d{1,2}|\d\.\d\.\d)\b/gi;
     const foundCodes = query.match(sloRegex);
     
@@ -50,13 +49,13 @@ export async function retrieveRelevantChunks(
           id: c.id,
           text: c.chunk_text,
           sloCodes: c.slo_codes || [],
-          similarity: 1.0,
+          similarity: 0.95, // High confidence for direct matches
           pageNumber: c.page_number
         }));
       }
     }
 
-    // 2. Semantic Analysis (Neural Embeddings)
+    // 2. Semantic Vector Synthesis
     const queryEmbedding = await generateEmbedding(query);
 
     // 3. Hybrid Search Execution (Vector + Keyword)
@@ -73,7 +72,6 @@ export async function retrieveRelevantChunks(
       return directResults;
     }
 
-    // Combined results, prioritizing direct matches
     const semanticResults = (data || []).map((d: any) => ({
       id: d.chunk_id,
       text: d.chunk_text,
@@ -83,14 +81,14 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
 
-    // Filter results with a lower threshold to be more inclusive
-    // Many curriculum docs use unique wording that lowers standard similarity
-    const filteredSemantic = semanticResults.filter((r: any) => r.similarity > 0.15);
+    // Filter results using an adaptive threshold
+    const filteredSemantic = semanticResults.filter((r: any) => r.similarity > 0.2);
     
     const allResults = [...directResults, ...filteredSemantic];
     
-    // Remove duplicates by ID
-    const uniqueResults = Array.from(new Map(allResults.map(item => [item.id, item])).values());
+    // De-duplication and Priority Sorting
+    const uniqueResults = Array.from(new Map(allResults.map(item => [item.id, item])).values())
+      .sort((a, b) => b.similarity - a.similarity);
     
     console.log(`📡 [Retriever] Found ${uniqueResults.length} relevant curriculum segments.`);
     return uniqueResults.slice(0, maxChunks);
