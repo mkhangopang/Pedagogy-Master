@@ -1,3 +1,4 @@
+
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
@@ -61,7 +62,8 @@ import { createRoot } from 'react-dom/client';
 
 const startApp = async () => {
   try {
-    // Dynamic import of the main app component
+    // Fixed: Remove .tsx extension from module import path to satisfy TS compiler.
+    // TypeScript module resolution typically expects extensions to be omitted for source files.
     const { default: App } = await import('./app/page');
     const container = document.getElementById('root');
     if (container) {
