@@ -47,9 +47,9 @@ export async function fetchAndExtractPDF(key: string): Promise<string> {
   try {
     console.log(`📄 [R2] Fetching and parsing PDF: ${key}`);
     
-    // Dynamic import to prevent build-time ENOENT errors from pdf-parse internal tests.
-    // Explicitly cast to any for TS compiler stability.
-    const pdf = (await import('pdf-parse')).default as any;
+    // Dynamic import with @ts-ignore to prevent build-time ENOENT or declaration errors.
+    // @ts-ignore
+    const pdf = (await import('pdf-parse')).default;
     
     const command = new GetObjectCommand({
       Bucket: BUCKET_NAME,

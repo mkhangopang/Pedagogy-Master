@@ -1,18 +1,6 @@
 
-// Fix: Import Buffer to provide types for PDFParse which operates on Node.js Buffer objects.
-import { Buffer } from 'buffer';
-
 declare module 'pdf-parse' {
-  interface PDFData {
-    numpages: number;
-    numrender: number;
-    info: any;
-    metadata: any;
-    text: string;
-    version: string;
-  }
-  // PDFParse requires a Buffer as its first argument.
-  function PDFParse(dataBuffer: Buffer, options?: any): Promise<PDFData>;
+  function PDFParse(dataBuffer: any, options?: any): Promise<any>;
   export default PDFParse;
 }
 

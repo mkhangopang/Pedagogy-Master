@@ -22,9 +22,9 @@ export async function processDocument(file: File): Promise<{
 
   try {
     if (type === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
-      // Dynamic import to avoid build-time initialization errors. 
-      // Cast to any to handle environments where @types might be problematic.
-      const pdf = (await import('pdf-parse')).default as any;
+      // Dynamic import with @ts-ignore to prevent build-time declaration errors.
+      // @ts-ignore
+      const pdf = (await import('pdf-parse')).default;
       const data = await pdf(buffer);
       text = data.text;
       pageCount = data.numpages || 1;
