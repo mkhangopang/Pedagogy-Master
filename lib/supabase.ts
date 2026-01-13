@@ -1,3 +1,4 @@
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
@@ -7,6 +8,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const getEnv = (key: string): string => {
   if (typeof window !== 'undefined') {
     const win = window as any;
+    // Check injected process env first (from handshake)
     const val = 
       win.process?.env?.[key] || 
       win[key] || 
@@ -28,15 +30,14 @@ export const isSupabaseConfigured = (): boolean => {
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
   const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
   
-  const isValidUrl = !!url && url !== 'https://placeholder-project.supabase.co' && url.startsWith('http');
-  const isValidKey = !!key && key !== 'placeholder-anon-key' && key.length > 20;
+  // Basic structure check for Supabase URL and Key
+  const isValidUrl = !!url && url.length > 10 && url.includes('supabase.co');
+  const isValidKey = !!key && key.length > 20;
 
   if (!isValidUrl || !isValidKey) {
-    console.warn('[Infrastructure Diagnostics] Configuration check failed:', {
-      urlFound: !!url,
-      urlPlaceholder: url === 'https://placeholder-project.supabase.co',
-      keyFound: !!key,
-      keyLength: key?.length || 0
+    console.warn('[Infrastructure Diagnostics] Supabase configuration is incomplete:', {
+      url: url ? 'PRESENT' : 'MISSING',
+      key: key ? 'PRESENT' : 'MISSING'
     });
   }
 
@@ -48,6 +49,8 @@ let cachedClient: SupabaseClient | null = null;
 const getClient = (): SupabaseClient => {
   if (cachedClient) return cachedClient;
 
+  // Fallback only used to prevent SDK crash during initialization; 
+  // actual calls are protected by isSupabaseConfigured.
   const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || 'https://placeholder-project.supabase.co';
   const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || 'placeholder-anon-key';
 
