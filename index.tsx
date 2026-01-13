@@ -11,7 +11,16 @@ const performSystemHandshake = () => {
   win.process.env = win.process.env || {};
   win.__SYSTEM_DIAGNOSTICS = { keys: {} };
   
-  // Define standard keys and their common variants
+  // PRIMARY: Static checks to trigger Next.js build-time replacement
+  // We use literal strings here so the compiler sees them and replaces them with Vercel values
+  const staticEnv: Record<string, string | undefined> = {
+    'NEXT_PUBLIC_SUPABASE_URL': process.env.NEXT_PUBLIC_SUPABASE_URL,
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    'NEXT_PUBLIC_R2_PUBLIC_URL': process.env.NEXT_PUBLIC_R2_PUBLIC_URL,
+    'API_KEY': process.env.API_KEY || (process.env as any).NEXT_PUBLIC_GEMINI_API_KEY
+  };
+
+  // Define standard keys and their common variants for dynamic lookup fallback
   const keyMap: Record<string, string[]> = {
     'NEXT_PUBLIC_SUPABASE_URL': ['SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL', 'supabase_url'],
     'NEXT_PUBLIC_SUPABASE_ANON_KEY': ['SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_ANON_KEY', 'supabase_key'],
@@ -23,20 +32,22 @@ const performSystemHandshake = () => {
   const statusReport: Record<string, string> = {};
 
   Object.entries(keyMap).forEach(([standardKey, variants]) => {
-    let foundValue = '';
+    let foundValue = staticEnv[standardKey] || '';
 
-    // Check all variants in all possible scopes
-    for (const variant of variants) {
-      const val = 
-        win.process.env[variant] || 
-        win[variant] || 
-        win.env?.[variant] ||
-        metaEnv[variant] || 
-        (typeof process !== 'undefined' ? (process.env as any)[variant] : '');
+    if (!foundValue) {
+      // Check all variants in all possible scopes (Dynamic Fallback)
+      for (const variant of variants) {
+        const val = 
+          win.process.env[variant] || 
+          win[variant] || 
+          win.env?.[variant] ||
+          metaEnv[variant] || 
+          (typeof process !== 'undefined' ? (process.env as any)[variant] : '');
 
-      if (val && val !== 'undefined' && val !== 'null' && String(val).trim() !== '') {
-        foundValue = String(val).trim();
-        break;
+        if (val && val !== 'undefined' && val !== 'null' && String(val).trim() !== '') {
+          foundValue = String(val).trim();
+          break;
+        }
       }
     }
     

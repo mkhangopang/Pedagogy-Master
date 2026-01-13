@@ -1,11 +1,16 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Robust environment variable retrieval.
- * Prioritizes window.process.env (populated by handshake) over build-time process.env.
+ * Prioritizes static access for Next.js build-time replacement.
  */
 const getEnv = (key: string): string => {
+  // FAST PATH: Static access for browser bundles to pick up NEXT_PUBLIC_ vars
+  if (key === 'NEXT_PUBLIC_SUPABASE_URL' && process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY' && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (key === 'NEXT_PUBLIC_R2_PUBLIC_URL' && process.env.NEXT_PUBLIC_R2_PUBLIC_URL) return process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+  if (key === 'API_KEY' && process.env.API_KEY) return process.env.API_KEY;
+
   if (typeof window !== 'undefined') {
     const win = window as any;
     // Check various injection points used by the neural handshake
