@@ -2,7 +2,7 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
-const SINDH_CURRICULUM_URL = 'https://dcar.gos.pk/Sindh%20Curriculum.html';
+const SINDH_CURRICULUM_URL = 'https://dcar.gos.pk/Sindh%20Curriculum.html','https://dcar.gos.pk/Sindh-Curriculum/General%20Science%20Grade%20IV-VIII%2002%20May%202024.pdf';
 
 export interface ScrapedContent {
   source: string;
