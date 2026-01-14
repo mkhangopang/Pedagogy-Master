@@ -10,7 +10,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, AlertCircle, RefreshCw } from 'lucide-react';
+import { Loader2, Menu, AlertCircle, RefreshCw, X } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
@@ -249,14 +249,54 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
+      {/* Desktop Sidebar */}
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
+        <Sidebar 
+          currentView={currentView} 
+          onViewChange={setCurrentView} 
+          userProfile={userProfile} 
+          isCollapsed={isCollapsed} 
+          setIsCollapsed={setIsCollapsed} 
+          theme={theme} 
+          toggleTheme={toggleTheme} 
+        />
       </div>
+
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 z-[100] lg:hidden">
+          <div 
+            className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm animate-in fade-in duration-300" 
+            onClick={() => setIsSidebarOpen(false)} 
+          />
+          <div className="fixed inset-y-0 left-0 w-72 bg-indigo-950 shadow-2xl animate-in slide-in-from-left duration-300 border-r border-indigo-800/20">
+            <Sidebar 
+              currentView={currentView} 
+              onViewChange={(view) => {
+                setCurrentView(view);
+                setIsSidebarOpen(false);
+              }} 
+              userProfile={userProfile} 
+              isCollapsed={false} 
+              setIsCollapsed={() => {}} 
+              onClose={() => setIsSidebarOpen(false)}
+              theme={theme}
+              toggleTheme={toggleTheme}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {userProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400"><Menu size={24} /></button>
-          <span className="font-bold text-indigo-950 dark:text-white">{APP_NAME}</span>
+          <button 
+            onClick={() => setIsSidebarOpen(true)} 
+            className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+          >
+            <Menu size={24} />
+          </button>
+          <span className="font-bold text-indigo-950 dark:text-white tracking-tight">{APP_NAME}</span>
           <div className="w-10" />
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
