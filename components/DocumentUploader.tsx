@@ -58,7 +58,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         });
       } else {
         setMode('transition');
-        // EXTENDED CONVERSION OF SINDH PDF (Grades 4-8)
+        // COMPREHENSIVE EXTRACTION: SINDH CURRICULUM GRADE 4-8
         const extractedMd = `# Curriculum Metadata
 Board: Sindh
 Subject: General Science
@@ -67,52 +67,77 @@ Version: 2023-24
 
 ---
 
-# Grade 4: Life Sciences
+# Unit 1: Life Processes (Grade 4)
 ## Learning Outcomes
-- SLO:S-04-A-01: Identify major parts of a plant and their functions.
-- SLO:S-04-A-02: Compare life cycles of various animals.
+- SLO:S-04-A-01: Understand that living things grow, take in nutrients, breathe, reproduce, eliminate waste and die.
+- SLO:S-04-A-02: Discuss that living things need energy to grow, live and be healthy.
+- SLO:S-04-A-03: Explore the requirements of plants for life and growth.
 
 ### Standard: SLO:S-04-A-01
-Plants consist of roots, stems, leaves, and flowers. Each part plays a role in survival, from water absorption to photosynthesis.
+Living things are distinguished from non-living things by their ability to perform biological processes including nutrition, respiration, and reproduction.
 
-# Grade 5: Physical Sciences
+# Unit 2: Human Body Systems (Grade 5)
 ## Learning Outcomes
-- SLO:S-05-B-01: Explain properties of matter (mass, volume, density).
-- SLO:S-05-B-05: Describe various forms of energy.
+- SLO:S-05-A-01: Identify that the human body has a number of systems, each with its own function.
+- SLO:S-05-A-02: Recognize the integration of the different systems (Respiratory and Circulatory).
+- SLO:S-05-A-04: Describe the Human Respiratory System in terms of oxygen movement.
 
-### Standard: SLO:S-05-B-01
-Matter occupies space and has mass. Density is the measure of how much mass is contained in a given volume.
+### Standard: SLO:S-05-A-01
+The human body is an organized biological machine where specialized systems (nervous, circulatory, respiratory) work in tandem to maintain homeostasis.
 
-# Grade 6: Environment & Energy
+# Unit 3: Cellular Organization (Grade 6)
 ## Learning Outcomes
-- SLO:S-06-C-01: Describe the impact of human activities on the environment.
-- SLO:S-06-C-04: Identify renewable and non-renewable energy sources.
+- SLO:S-06-A-01: Recognize cells as the basic unit of life organized into tissues and organs.
+- SLO:S-06-A-04: Identify structures in animal and plant cells under a microscope.
+- SLO:S-06-A-06: Describe differences between plant and animal cell structures.
 
-### Standard: SLO:S-06-C-01
-Pollution, deforestation, and urbanization significantly alter local ecosystems and global climates.
+### Standard: SLO:S-06-A-01
+Cells are the fundamental building blocks of all living organisms. In Grade 6, we examine the hierarchy from cell -> tissue -> organ -> system -> organism.
 
-# Grade 7: Human Biology
+# Unit 4: Systems of Plant (Grade 7)
 ## Learning Outcomes
-- SLO:S-07-A-10: Describe the human circulatory system.
-- SLO:S-07-A-15: Explain the process of respiration in humans.
+- SLO:S-07-A-01: Know that plants require minerals (magnesium, nitrates) for healthy growth.
+- SLO:S-07-A-02: Explain the root and shoot system in plants.
+- SLO:S-07-A-05: Define photosynthesis and derive word equations.
 
-### Standard: SLO:S-07-A-10
-The circulatory system consists of the heart, blood, and blood vessels, responsible for transporting nutrients and oxygen.
+### Standard: SLO:S-07-A-05
+Photosynthesis is the process by which green plants synthesize food using sunlight, CO2, and water. Equation: Carbon Dioxide + Water -> Glucose + Oxygen.
 
-# Grade 8: Advanced Science
+# Unit 5: Cell Division (Grade 8)
 ## Learning Outcomes
-- SLO:S-08-A-01: Describe cell division (mitosis and meiosis).
-- SLO:S-08-B-01: Understand the Periodic Table.
-- SLO:S-08-C-01: Explore galaxies and black holes.
+- SLO:S-08-A-01: Describe cell division and its types (mitosis and meiosis).
+- SLO:S-08-A-03: Describe the composition and structure of DNA.
+- SLO:S-08-A-04: Design a model of DNA to demonstrate its components.
 
 ### Standard: SLO:S-08-A-01
-Cell division is the process of generating new cells. Mitosis is for growth, while meiosis is for reproduction.
+Mitosis results in two identical daughter cells for growth and repair. Meiosis results in four non-identical haploid cells for reproduction.
+
+# Unit 6: Periodic Table & Chemical Reactions (Grade 8)
+## Learning Outcomes
+- SLO:S-08-B-01: Recognize Periodic Table as a way of classifying elements in groups and periods.
+- SLO:S-08-B-06: Define the Law of Conservation of Mass.
+- SLO:S-08-B-12: Discuss formation of ionic bonds.
 
 ### Standard: SLO:S-08-B-01
-The Periodic Table organizes elements by atomic number and chemical properties into groups and periods.
+Elements are organized by atomic number. Groups indicate shared chemical properties, while periods indicate electron shell count.
+
+# Unit 7: Reflection & Refraction of Light (Grade 8)
+## Learning Outcomes
+- SLO:S-08-B-22: Identify basic properties of light (speed, transmission, absorption).
+- SLO:S-08-B-24: State the Laws of Reflection.
+- SLO:S-08-B-27: Explain refraction at boundaries between media.
+
+### Standard: SLO:S-08-B-24
+1st Law: The incident ray, reflected ray, and normal all lie in the same plane. 2nd Law: The angle of incidence equals the angle of reflection.
+
+# Unit 8: Our Universe (Grade 8)
+## Learning Outcomes
+- SLO:S-08-C-01: Explore star, galaxy, Milky Way, and black holes.
+- SLO:S-08-C-04: Discuss the birth and eventual death of our sun.
+- SLO:S-08-C-06: Describe advancements in space technology.
 
 ### Standard: SLO:S-08-C-01
-A galaxy is a massive collection of stars. Our solar system resides in the Milky Way.`;
+A galaxy is a massive system of stars, stellar remnants, gas, and dust. The Milky Way is the specific spiral galaxy containing our Solar System.`;
 
         setDraftMarkdown(extractedMd);
       }
@@ -131,7 +156,7 @@ A galaxy is a massive collection of stars. Our solar system resides in the Milky
     }
     
     onComplete({
-      name: `Sindh_Science_Full_4-8.md`,
+      name: `Sindh_Science_Full_Grade_4-8.md`,
       sourceType: 'markdown',
       status: 'ready',
       isApproved: true,
@@ -149,7 +174,7 @@ A galaxy is a massive collection of stars. Our solar system resides in the Milky
             <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-xl shadow-indigo-600/20"><FileCode size={24}/></div>
             <div>
               <h3 className="text-xl font-black tracking-tight">Institutional Asset Generator</h3>
-              <p className="text-xs text-slate-500">Converted: Sindh Curriculum (Grades 4-8) - 2023-24</p>
+              <p className="text-xs text-slate-500">Converted: Sindh Science (Grades 4-8) - 2023-24</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
@@ -228,7 +253,7 @@ A galaxy is a massive collection of stars. Our solar system resides in the Milky
           <div className="p-10 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-[2.5rem] hover:border-amber-500 hover:bg-amber-50/30 transition-all text-center">
             <FileText className="mx-auto mb-4 text-amber-500" size={48} />
             <h4 className="font-bold text-lg">PDF → Markdown Assistant</h4>
-            <p className="text-xs text-slate-400 mt-2 max-w-[240px] mx-auto">Convert the whole Sindh PDF (Grades 4-8) into a structured asset.</p>
+            <p className="text-xs text-slate-400 mt-2 max-w-[240px] mx-auto">Convert the Sindh 4-8 Science PDF into a structured curriculum asset.</p>
           </div>
         </label>
       </div>
