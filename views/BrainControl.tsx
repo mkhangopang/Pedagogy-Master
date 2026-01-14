@@ -101,43 +101,54 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.6 (FIXED SYNTAX)
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE 'authority column missing' ERRORS
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.7 (CRITICAL SCHEMA SYNC)
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE 'is_approved column missing' ERRORS
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 2. REPAIR DOCUMENTS TABLE SCHEMA
+-- This script adds missing columns and ensures PostgREST refreshes its schema cache.
 DO $$ 
 BEGIN
-    -- Fix 'authority' column (Critical for Sindh mapping)
+    -- Add 'is_approved' column (Boolean)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'is_approved') THEN
+        ALTER TABLE public.documents ADD COLUMN is_approved BOOLEAN DEFAULT FALSE;
+    END IF;
+
+    -- Add 'authority' column (Critical for Sindh mapping)
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'authority') THEN
         ALTER TABLE public.documents ADD COLUMN authority TEXT DEFAULT 'General';
     END IF;
 
-    -- Fix 'curriculum_name' column
+    -- Add 'curriculum_name' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'curriculum_name') THEN
         ALTER TABLE public.documents ADD COLUMN curriculum_name TEXT;
     END IF;
 
-    -- Fix 'version_year' column
+    -- Add 'version_year' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'version_year') THEN
         ALTER TABLE public.documents ADD COLUMN version_year TEXT;
     END IF;
 
-    -- Fix 'generated_json' column
+    -- Add 'generated_json' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'generated_json') THEN
         ALTER TABLE public.documents ADD COLUMN generated_json JSONB;
     END IF;
 
-    -- Fix 'source_type' column
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'source_type') THEN
-        ALTER TABLE public.documents ADD COLUMN source_type TEXT DEFAULT 'markdown';
+    -- Add 'storage_type' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'storage_type') THEN
+        ALTER TABLE public.documents ADD COLUMN storage_type TEXT DEFAULT 'supabase';
+    END IF;
+    
+    -- Add 'extracted_text' fallback column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'extracted_text') THEN
+        ALTER TABLE public.documents ADD COLUMN extracted_text TEXT;
     END IF;
 END $$;
 
--- 3. REFRESH SCHEMA CACHE
-COMMENT ON TABLE public.documents IS 'Institutional curriculum storage node';
+-- 3. REFRESH SCHEMA CACHE (Toggling comments triggers a refresh)
+COMMENT ON TABLE public.documents IS 'Unified curriculum repository with R2 and approval state';
 
 -- 4. VECTOR INFRASTRUCTURE FIX
 DO $$ 
@@ -159,8 +170,8 @@ UPDATE public.profiles
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 
--- FINAL VERIFICATION (No 'RAISE' at top level)
-SELECT 'Infrastructure Repair v12.6 Applied Successfully' as status;
+-- FINAL VERIFICATION
+SELECT 'Infrastructure Repair v12.7 Applied - Schema Sync Complete' as status;
 `;
 
   return (
@@ -233,9 +244,9 @@ SELECT 'Infrastructure Repair v12.6 Applied Successfully' as status;
             <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
                <ShieldAlert className="text-amber-600 shrink-0" size={24} />
                <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Sync Error Detected</h4>
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Schema Sync Error</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   Your library reported a missing 'authority' column. This is caused by a database schema drift. **To fix this immediately**, copy the SQL patch v12.6 below and run it in your Supabase SQL Editor.
+                   If you see 'Could not find the is_approved column', your database schema is out of date. **To fix this**, copy the SQL patch v12.7 below and run it in your Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -276,8 +287,8 @@ SELECT 'Infrastructure Repair v12.6 Applied Successfully' as status;
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.6</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (Authority Column Missing)</p>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.7</h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (is_approved column missing)</p>
                </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
