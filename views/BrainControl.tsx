@@ -101,20 +101,18 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.5 (URGENT FIX)
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.6 (FIXED SYNTAX)
 -- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE 'authority column missing' ERRORS
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 2. REPAIR DOCUMENTS TABLE SCHEMA
--- This block adds the 'authority' column which is missing in your current schema
 DO $$ 
 BEGIN
-    -- Fix 'authority' column
+    -- Fix 'authority' column (Critical for Sindh mapping)
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'authority') THEN
         ALTER TABLE public.documents ADD COLUMN authority TEXT DEFAULT 'General';
-        RAISE NOTICE 'Added authority column to documents table.';
     END IF;
 
     -- Fix 'curriculum_name' column
@@ -138,14 +136,13 @@ BEGIN
     END IF;
 END $$;
 
--- 3. REFRESH SCHEMA CACHE (Nuclear Option)
--- Running these triggers PostgREST to re-examine the table structure
-COMMENT ON TABLE public.documents IS 'Authoritative curriculum storage linked to R2';
+-- 3. REFRESH SCHEMA CACHE
+COMMENT ON TABLE public.documents IS 'Institutional curriculum storage node';
 
 -- 4. VECTOR INFRASTRUCTURE FIX
 DO $$ 
 BEGIN
-    -- Check for embedding type mismatch (Must be vector(768) for Gemini text-embedding-004)
+    -- Ensure embedding column is vector(768)
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'document_chunks' 
@@ -154,15 +151,16 @@ BEGIN
     ) THEN
         ALTER TABLE public.document_chunks DROP COLUMN embedding;
         ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
-        RAISE NOTICE 'Corrected embedding column type in document_chunks.';
     END IF;
 END $$;
 
--- 5. RE-INDEX GLOBAL PERMISSIONS
-UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
+-- 5. UPDATE ADMIN PERMISSIONS
+UPDATE public.profiles 
+SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 
-RAISE NOTICE 'Infrastructure Repair v12.5 Complete.';
+-- FINAL VERIFICATION (No 'RAISE' at top level)
+SELECT 'Infrastructure Repair v12.6 Applied Successfully' as status;
 `;
 
   return (
@@ -237,7 +235,7 @@ RAISE NOTICE 'Infrastructure Repair v12.5 Complete.';
                <div className="space-y-1">
                  <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Sync Error Detected</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   Your library reported a missing 'authority' column. This is caused by a database schema drift. **To fix this immediately**, copy the SQL patch v12.5 below and run it in your Supabase SQL Editor.
+                   Your library reported a missing 'authority' column. This is caused by a database schema drift. **To fix this immediately**, copy the SQL patch v12.6 below and run it in your Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -278,7 +276,7 @@ RAISE NOTICE 'Infrastructure Repair v12.5 Complete.';
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.5</h3>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.6</h3>
                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (Authority Column Missing)</p>
                </div>
                <button 
