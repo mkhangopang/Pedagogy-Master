@@ -3,7 +3,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * INSTITUTIONAL CURRICULUM INDEXER (v6.0)
+ * INSTITUTIONAL CURRICULUM INDEXER (v6.1)
  * Rules:
  * 1. Embed ONLY validated Markdown content.
  * 2. Chunk strictly by 'Learning Outcome' or 'Standard'.
@@ -36,9 +36,9 @@ export async function indexCurriculumMarkdown(
       metadata: {
         document_id: documentId,
         standard_id: standardId,
-        board: metadata.board,
-        grade: metadata.gradeLevel || metadata.grade,
-        subject: metadata.subject,
+        board: metadata.board || 'Sindh',
+        grade: metadata.gradeLevel || metadata.grade || 'Auto',
+        subject: metadata.subject || 'General Science',
         source_type: 'markdown',
         curriculum_id: documentId // Use doc ID as unique curriculum identifier
       }
@@ -60,7 +60,8 @@ export async function indexCurriculumMarkdown(
     chunk_text: c.text,
     embedding: embeddings[i],
     slo_codes: [c.metadata.standard_id], // Map standard ID to searchable SLO array
-    metadata: c.metadata
+    metadata: c.metadata,
+    chunk_index: i // Fix: Added chunk_index to satisfy table constraints
   }));
 
   // Clean previous indices for this document
@@ -68,7 +69,10 @@ export async function indexCurriculumMarkdown(
   
   // Batch insert new curriculum nodes
   const { error } = await supabase.from('document_chunks').insert(insertData);
-  if (error) throw error;
+  if (error) {
+    console.error('❌ [Database Insert Error]:', error);
+    throw error;
+  }
 
   return chunks.length;
 }

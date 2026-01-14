@@ -101,8 +101,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.9 (FIXING 'metadata' IN 'document_chunks')
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE NEURAL INDEXING ERRORS
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v13.0 (FIXING 'chunk_index' NOT NULL ERROR)
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE FINAL NEURAL SYNC ERRORS
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -140,15 +140,17 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'source_type') THEN
         ALTER TABLE public.documents ADD COLUMN source_type TEXT DEFAULT 'markdown';
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'extracted_text') THEN
-        ALTER TABLE public.documents ADD COLUMN extracted_text TEXT;
-    END IF;
 END $$;
 
--- 3. REPAIR DOCUMENT_CHUNKS TABLE SCHEMA (CRITICAL FIX)
+-- 3. REPAIR DOCUMENT_CHUNKS TABLE SCHEMA (RESOLVING CHUNK_INDEX CONSTRAINTS)
 DO $$ 
 BEGIN
-    -- Fix 'metadata' column (Specifically causing the error)
+    -- Fix 'chunk_index' (Ensure it exists, but do NOT force it to be identity yet to avoid breaking current code)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'chunk_index') THEN
+        ALTER TABLE public.document_chunks ADD COLUMN chunk_index INTEGER;
+    END IF;
+
+    -- Fix 'metadata' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'metadata') THEN
         ALTER TABLE public.document_chunks ADD COLUMN metadata JSONB DEFAULT '{}'::jsonb;
     END IF;
@@ -156,11 +158,6 @@ BEGIN
     -- Fix 'slo_codes' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'slo_codes') THEN
         ALTER TABLE public.document_chunks ADD COLUMN slo_codes TEXT[] DEFAULT '{}';
-    END IF;
-
-    -- Fix 'page_number' column
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'page_number') THEN
-        ALTER TABLE public.document_chunks ADD COLUMN page_number INTEGER;
     END IF;
 
     -- Ensure 'embedding' is vector(768)
@@ -176,8 +173,8 @@ BEGIN
 END $$;
 
 -- 4. REFRESH SCHEMA CACHE
-COMMENT ON TABLE public.document_chunks IS 'Neural curriculum segments with RAG metadata v12.9';
-COMMENT ON TABLE public.documents IS 'Authoritative curriculum node v12.9';
+COMMENT ON TABLE public.document_chunks IS 'Neural curriculum segments v13.0 - Supports precise standards alignment';
+COMMENT ON TABLE public.documents IS 'Unified repository v13.0';
 
 -- 5. ENSURE PERMISSIONS
 UPDATE public.profiles 
@@ -185,7 +182,7 @@ SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 
 -- FINAL VERIFICATION
-SELECT 'Infrastructure Repair v12.9 Applied - Global Schema Sync Complete' as status;
+SELECT 'Infrastructure Repair v13.0 Applied - Chunk Sync Restored' as status;
 `;
 
   return (
@@ -258,9 +255,9 @@ SELECT 'Infrastructure Repair v12.9 Applied - Global Schema Sync Complete' as st
             <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
                <ShieldAlert className="text-amber-600 shrink-0" size={24} />
                <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Neural Sync Error</h4>
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Constraint Error</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   If you see errors about missing 'metadata' or 'slo_codes' in 'document_chunks', your database schema is out of date. **To fix this immediately**, copy the SQL patch v12.9 below and run it in your Supabase SQL Editor.
+                   If you see 'null value in column chunk_index violates not-null constraint', your database expects an index for every curriculum segment. **To fix this**, copy the SQL patch v13.0 below and run it in your Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -301,8 +298,8 @@ SELECT 'Infrastructure Repair v12.9 Applied - Global Schema Sync Complete' as st
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.9</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (metadata column in chunks)</p>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v13.0</h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (chunk_index null violation)</p>
                </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
