@@ -1,129 +1,87 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
-import { supabase as defaultSupabase } from '../supabase';
-import { chunkDocument } from './chunking-strategy';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * AGGRESSIVE SANITATION
- * Removes null bytes (\u0000) and hidden control characters that crash 
- * the PostgreSQL JSON/Vector/Array input parsers during bulk ingestion.
+ * INSTITUTIONAL CURRICULUM INDEXER (v6.0)
+ * Rules:
+ * 1. Embed ONLY validated Markdown content.
+ * 2. Chunk strictly by 'Learning Outcome' or 'Standard'.
+ * 3. Attach rich pedagogical metadata for precise RAG.
  */
-function deepSanitize(text: string): string {
-  if (!text) return "";
-  return text
-    .replace(/\u0000/g, '') // Remove null bytes (critical for PDF extracts)
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '') // Control characters
-    .replace(/[\uFFFD\uFFFE\uFFFF]/g, '') // Invalid Unicode
-    .trim();
+export async function indexCurriculumMarkdown(
+  documentId: string,
+  content: string,
+  supabase: SupabaseClient,
+  metadata: any
+) {
+  console.log(`🧠 [Indexer] Initiating curriculum locking for doc: ${documentId}`);
+
+  // 1. Structural Slicing
+  // We slice by Standards (### Standard:) to ensure each chunk represents a single pedagogical atomic unit.
+  const standards = content.split('### Standard:');
+  const chunks: { text: string; metadata: any }[] = [];
+
+  // Skip the first split as it's typically metadata/headers
+  standards.slice(1).forEach(block => {
+    const lines = block.trim().split('\n');
+    const standardId = lines[0].trim();
+    const standardText = block.trim();
+
+    // Extract parent Unit info by searching backwards if necessary
+    // (In a production app, we'd use a more robust parser, but this fits the MD structure)
+    
+    chunks.push({
+      text: `### Standard: ${standardText}`,
+      metadata: {
+        document_id: documentId,
+        standard_id: standardId,
+        board: metadata.board,
+        grade: metadata.gradeLevel || metadata.grade,
+        subject: metadata.subject,
+        source_type: 'markdown',
+        curriculum_id: documentId // Use doc ID as unique curriculum identifier
+      }
+    });
+  });
+
+  if (chunks.length === 0) {
+    throw new Error("Institutional Error: No Standards identified in Markdown. Please ensure standards start with '### Standard: [ID]'.");
+  }
+
+  console.log(`📡 [Indexer] Syncing ${chunks.length} curriculum standards to vector plane...`);
+
+  // 2. Vector Synthesis
+  const embeddings = await generateEmbeddingsBatch(chunks.map(c => c.text));
+
+  // 3. PostgreSQL Persistence
+  const insertData = chunks.map((c, i) => ({
+    document_id: c.metadata.document_id,
+    chunk_text: c.text,
+    embedding: embeddings[i],
+    slo_codes: [c.metadata.standard_id], // Map standard ID to searchable SLO array
+    metadata: c.metadata
+  }));
+
+  // Clean previous indices for this document
+  await supabase.from('document_chunks').delete().eq('document_id', documentId);
+  
+  // Batch insert new curriculum nodes
+  const { error } = await supabase.from('document_chunks').insert(insertData);
+  if (error) throw error;
+
+  return chunks.length;
 }
 
 /**
- * NEURAL SYNCHRONIZER
- * Maps curriculum text to the high-dimensional vector grid.
+ * Unified indexing wrapper used across administrative and reindexing tasks.
  */
 export async function indexDocumentForRAG(
   documentId: string,
-  content: string | null,
-  r2Key: string | null,
-  supabase: SupabaseClient = defaultSupabase
-): Promise<void> {
-  console.log(`\n🧠 [Neural Sync] Initializing for document: ${documentId}`);
-  
-  try {
-    let rawText = content || "";
-    
-    if (!rawText) {
-      const { data: doc } = await supabase
-        .from('documents')
-        .select('extracted_text')
-        .eq('id', documentId)
-        .single();
-      rawText = doc?.extracted_text || "";
-    }
-
-    const documentText = deepSanitize(rawText);
-
-    if (documentText.length < 10) {
-      throw new Error('Neural Sync Failed: Document contains no extractable text.');
-    }
-    
-    // 1. Generate Logical Segments
-    const chunks = chunkDocument(documentText);
-    console.log(`✅ [Indexer] ${chunks.length} pedagogical units generated.`);
-    
-    // 2. Optimized Vector Synthesis
-    console.log(`✨ [Indexer] Synthesizing high-density vectors...`);
-    const chunkTexts = chunks.map(c => deepSanitize(c.text));
-    const embeddings = await generateEmbeddingsBatch(chunkTexts);
-    console.log(`✅ [Indexer] ${embeddings.length} semantic embeddings ready.`);
-
-    // 3. Grid Persistence
-    // Wipe stale vector nodes
-    const { error: deleteError } = await supabase.from('document_chunks').delete().eq('document_id', documentId);
-    if (deleteError) {
-      console.error('❌ [Indexer Delete Error]:', deleteError);
-    }
-
-    const insertData = chunks.map((chunk, idx) => {
-      const embedding = embeddings[idx];
-      
-      // We pass the embedding as a standard array. Supabase will attempt to cast it to vector(768).
-      return {
-        document_id: documentId,
-        chunk_text: deepSanitize(chunk.text),
-        chunk_index: chunk.index,
-        chunk_type: chunk.type,
-        slo_codes: (chunk.sloMentioned || [])
-          .map(s => deepSanitize(s))
-          .filter(s => s.length > 0 && s.length < 64),
-        keywords: (chunk.keywords || [])
-          .map(k => deepSanitize(k))
-          .filter(k => k.length > 0 && k.length < 64),
-        embedding: embedding || null
-      };
-    });
-    
-    // Insert in small batches to stay within Supabase/Edge gateway body limits
-    const dbBatchSize = 10;
-    for (let i = 0; i < insertData.length; i += dbBatchSize) {
-      const batch = insertData.slice(i, i + dbBatchSize);
-      const { error: insertError } = await supabase
-        .from('document_chunks')
-        .insert(batch);
-      
-      if (insertError) {
-        console.error(`[Indexer DB Batch Error] offset ${i}:`, insertError);
-        
-        // Check for specific column type mismatch errors
-        // If 'embedding' was accidentally created as JSONB, Postgres will complain about the array input.
-        const isSchemaError = insertError.message?.toLowerCase().includes('type json') || 
-                            insertError.message?.toLowerCase().includes('jsonb') || 
-                            insertError.code === '42804'; // Datatype mismatch
-
-        if (isSchemaError) {
-          throw new Error(`Database Schema Error: The 'embedding' column in the 'document_chunks' table is incorrectly typed (likely JSON/JSONB). For neural search, it MUST be type 'vector(768)'. Please run the updated SQL Patch (v12.0) in the Control Hub to fix this.`);
-        }
-        
-        throw new Error(`Database rejected segments: ${insertError.message}`);
-      }
-    }
-    
-    // 4. Finalize Global Status
-    await supabase.from('documents').update({
-      status: 'ready',
-      rag_indexed: true,
-      rag_indexed_at: new Date().toISOString(),
-      chunk_count: chunks.length,
-    }).eq('id', documentId);
-    
-    console.log(`🏁 [Neural Sync] Document synchronized with vector grid.`);
-    
-  } catch (error: any) {
-    console.error(`❌ [Neural Sync Fatal]:`, error);
-    await supabase.from('documents').update({ 
-      status: 'failed',
-      gemini_metadata: { last_error: error.message }
-    } as any).eq('id', documentId);
-    throw error;
-  }
+  content: string,
+  filePath: string | undefined,
+  supabase: SupabaseClient
+) {
+  // Pass filePath into metadata for consistent RAG context
+  return indexCurriculumMarkdown(documentId, content, supabase, { filePath });
 }

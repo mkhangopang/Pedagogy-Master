@@ -1,10 +1,11 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
-import { processDocument } from '../../../../lib/documents/document-processor';
-import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
+import { indexCurriculumMarkdown } from '../../../../lib/rag/document-indexer';
+import { generateCurriculumJson } from '../../../../lib/curriculum/json-generator';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,80 +17,70 @@ export async function POST(req: NextRequest) {
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Auth required' }, { status: 401 });
 
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    const { data: { user } } = await anonClient.auth.getUser(token);
+    if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const formData = await req.formData();
-    const file = formData.get('file') as File;
-    const userId = formData.get('userId') as string;
-
-    if (userId !== user.id) return NextResponse.json({ error: 'Identity mismatch' }, { status: 403 });
-    if (!file) return NextResponse.json({ error: 'Missing file' }, { status: 400 });
+    const body = await req.json(); // Handling JSON upload for MD text + Metadata
+    const { 
+      name, 
+      sourceType, 
+      extractedText, 
+      board, 
+      subject, 
+      grade, 
+      version 
+    } = body;
 
     const supabase = getSupabaseServerClient(token);
-    const timestamp = Date.now();
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const r2Key = `${userId}/${timestamp}_${sanitizedName}`;
     
-    const fileBuffer = Buffer.from(await file.arrayBuffer());
-
-    if (!isR2Configured() || !r2Client) {
-      throw new Error("Cloud infrastructure (R2) not configured.");
+    // FEATURE 2 & 3: Mandatory Validation already happened in UI, but we re-check here
+    if (sourceType !== 'markdown' || !extractedText) {
+      return NextResponse.json({ error: "Institutional Policy: Only Markdown curricula can be indexable." }, { status: 400 });
     }
 
-    // 1. Raw Storage
-    await r2Client.send(new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: r2Key,
-      Body: fileBuffer,
-      ContentType: file.type
-    }));
+    // FEATURE 4: Auto-Generate JSON
+    const generatedJson = generateCurriculumJson(extractedText);
 
-    // 2. Local Extraction
-    const processed = await processDocument(file);
-
-    // 3. Database Sync with Schema Awareness
+    // 1. Database Entry (Strict Metadata)
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
-      user_id: userId,
-      name: processed.filename,
-      file_path: r2Key,
-      mime_type: processed.type,
-      status: 'processing',
-      storage_type: 'r2',
-      is_selected: true,
-      extracted_text: processed.text,
-      rag_indexed: false // Error source if SQL patch not applied
+      user_id: user.id,
+      name,
+      sourceType: 'markdown',
+      status: 'ready',
+      isApproved: true,
+      extracted_text: extractedText,
+      curriculumName: `${subject} Grade ${grade}`,
+      authority: board,
+      subject,
+      gradeLevel: grade,
+      versionYear: version,
+      generatedJson,
+      version: 1
     }).select().single();
 
-    if (dbError) {
-      console.error('❌ [Database Sync Error]:', dbError);
-      if (dbError.code === '42703' || dbError.message.includes('rag_indexed')) {
-        throw new Error("Database Schema Mismatch: The 'rag_indexed' column is missing. Please go to 'Neural Brain' > 'Stack' and apply the SQL Patch to fix this.");
-      }
-      throw dbError;
-    }
+    if (dbError) throw dbError;
 
-    // 4. Neural Indexing
+    // 2. Neural Indexing (Markdown-Only)
+    // FEATURE 5: Chunking by Standard
     try {
-      console.log(`[Upload] Starting indexing for ${docData.id}`);
-      await indexDocumentForRAG(docData.id, processed.text, r2Key, supabase);
+      await indexCurriculumMarkdown(docData.id, extractedText, supabase, {
+        board, subject, grade, version
+      });
     } catch (indexErr: any) {
-      console.error(`❌ [Upload] Indexing failure:`, indexErr.message);
-      // We return success for upload even if indexing lags, user can retry sync in Library
+      console.error('❌ [Indexing Error]:', indexErr);
+      // We don't fail the whole upload, but mark as failed status
+      await supabase.from('documents').update({ status: 'failed' }).eq('id', docData.id);
+      return NextResponse.json({ error: indexErr.message }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
       id: docData.id,
-      name: processed.filename,
-      status: 'ready',
-      message: '📄 Curriculum asset ingested successfully.'
+      message: '🛡️ Curriculum Asset Grounded Successfully.'
     });
 
   } catch (error: any) {
     console.error('Ingestion Fatal Error:', error);
-    return NextResponse.json({ 
-      error: error.message || 'The neural node encountered a bottleneck during ingestion.' 
-    }, { status: 500 });
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

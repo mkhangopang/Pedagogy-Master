@@ -1,17 +1,17 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { GoogleGenAI } from '@google/genai';
-import { retrieveHybridContext } from '../../../lib/rag/hybrid-retriever';
-import { DEFAULT_MASTER_PROMPT, NUCLEAR_GROUNDING_DIRECTIVE } from '../../../constants';
+import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
+import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
+import { DEFAULT_MASTER_PROMPT } from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL BRAIN CHAT ENGINE (v5.0)
- * PRIORITY: SINDH CURRICULUM PORTAL SCRAPING
+ * NEURAL TUTOR ENGINE (v6.0 - CURRICULUM LOCKED)
+ * Enforces strict RAG: Generation ABORTS if no curriculum chunks are found.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -23,111 +23,90 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const body = await req.json();
-    const { message, priorityDocumentId } = body;
+    const { message, selectedCurriculumId, selectedStandardId } = body;
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Setup Brain Logic
-    const { data: brainData } = await supabase
-      .from('neural_brain')
-      .select('master_prompt')
-      .eq('is_active', true)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const activeMasterPrompt = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
-
-    // 2. SLO Intelligence
-    const sloRegex = /\b([A-Z]\d{1,2}[a-z]\d{1,2}|[A-Z]-\d{1,2}-\d{1,2}|\d\.\d\.\d)\b/gi;
-    const targetSLO = message.match(sloRegex)?.[0];
-
-    // 3. Document Filter
-    const { data: selectedDocs } = await supabase
-      .from('documents')
-      .select('id, name')
-      .eq('user_id', user.id)
-      .eq('is_selected', true);
+    // 1. Mandatory Retrieval (Targeted)
+    // We prioritize the selected standard ID or search the entire curriculum library for this user
+    const targetQuery = selectedStandardId || message;
+    const filterIds = selectedCurriculumId ? [selectedCurriculumId] : [];
     
-    const documentIds = selectedDocs?.map(d => d.id) || [];
+    // If no curriculum is selected, we fetch all ready/approved curriculum IDs for this user
+    let finalFilterIds = filterIds;
+    if (finalFilterIds.length === 0) {
+      const { data: userCurricula } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('status', 'ready')
+        .eq('sourceType', 'markdown');
+      finalFilterIds = userCurricula?.map(c => c.id) || [];
+    }
 
-    // 4. Execute Hybrid Retrieval (Prioritizing Sindh Scrape)
-    const context = await retrieveHybridContext(message, documentIds, supabase, targetSLO);
+    if (finalFilterIds.length === 0) {
+      return NextResponse.json({ 
+        error: "RAG_ABORT", 
+        message: "Institutional Guardrail: No active curriculum found. Please upload or select a Validated Markdown curriculum to begin." 
+      }, { status: 422 });
+    }
 
-    // 5. Build Neural Prompt (Scraped Context is First)
+    const chunks = await retrieveRelevantChunks(targetQuery, finalFilterIds, supabase, 6);
+
+    // 🚨 FEATURE 6: Hard-Fail Logic
+    if (chunks.length === 0) {
+      return NextResponse.json({ 
+        error: "NO_CONTEXT", 
+        message: "Institutional Guardrail: The requested topic or standard was not found in the authoritative curriculum context. Synthesis aborted to maintain standards alignment." 
+      }, { status: 422 });
+    }
+
+    // 2. Synthesis (Strictly Grounded)
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
     
-    let systemInstruction = `${activeMasterPrompt}\n\n`;
+    const contextVault = chunks.map((c, i) => `[CURRICULUM_CHUNK_${i+1}]\n${c.text}`).join('\n\n');
     
-    if (context.webScrape) {
-      systemInstruction += `\n🚨 PRIORITY_DIRECTIVE: Live data from the Sindh Curriculum Portal has been detected. This is the PRIMARY SOURCE OF TRUTH.`;
-    }
-    
-    if (context.groundingSource === 'local' || context.groundingSource === 'mixed') {
-      systemInstruction += `\n${NUCLEAR_GROUNDING_DIRECTIVE}\nLOCAL_AUGMENTATION: Use the user's PDF vault to personalize the delivery style.`;
-    }
+    const synthesisPrompt = `
+# AUTHORITATIVE_CURRICULUM_CONTEXT
+${contextVault}
 
-    // Assemble Memory Vault - Scraped content at the TOP
-    let memoryVault = '';
-    
-    if (context.webScrape) {
-      memoryVault += `# <OFFICIAL_SINDH_PORTAL_CONTEXT>\nSOURCE: ${context.webScrape.url}\nTITLE: ${context.webScrape.title}\nIMPORTANT: Use this content first for all curriculum definitions.\nCONTENT:\n${context.webScrape.text}\n\n`;
-    }
+# USER_REQUEST
+"${message}"
 
-    if (context.localChunks.length > 0) {
-      memoryVault += `# <LOCAL_DOCUMENT_AUGMENTATION>\n` + context.localChunks.map((c, i) => `[LIB_NODE_${i+1}] ${c.text}`).join('\n\n') + `\n\n`;
-    }
+CORE_DIRECTIVE: 
+1. Use ONLY the curriculum chunks above. 
+2. If the request cannot be answered by the context, state: "Context Insufficient for Standards Alignment."
+3. Format with 1. and 1.1 headers.
+`;
 
-    const synthesisPrompt = `${memoryVault}\n\nTEACHER_QUERY: "${message}"`;
-
-    // 6. Synthesis
     const result = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
-      config: {
-        systemInstruction,
-        temperature: context.isGrounded ? 0.05 : 0.7, // Lower temperature for higher grounding precision
-        tools: (targetSLO && !context.webScrape && context.localChunks.length < 2) ? [{ googleSearch: {} }] : []
+      config: { 
+        systemInstruction: "You are a Strict Curriculum Tutor. You hard-fail if content is not in the provided assets.",
+        temperature: 0.1 // High precision for curriculum alignment
       }
     });
 
-    const responseText = result.text || "Synthesis error: Neural node connection lost.";
-    
-    const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const searchLinks = groundingChunks
-      .filter((chunk: any) => chunk.web)
-      .map((chunk: any) => `* [${chunk.web.title}](${chunk.web.uri})`)
-      .join('\n');
+    const responseText = result.text || "Synthesis error.";
 
-    // 7. Orchestrate Stream
+    // 3. Status Stream
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
-      async start(controller) {
-        // Status Alerts reflect Priority
-        if (context.groundingSource === 'web' || context.groundingSource === 'mixed') {
-          controller.enqueue(encoder.encode(`> *Neural Priority: Synchronized with Official Sindh Curriculum Portal (Live)...*\n\n`));
-        } else if (context.groundingSource === 'local') {
-          controller.enqueue(encoder.encode(`> *Neural Sync: Grounded in Local PDF Assets...*\n\n`));
-        }
-
+      start(controller) {
+        controller.enqueue(encoder.encode(`> *Neural Sync: Grounded in Authoritative Markdown Standards...*\n\n`));
         controller.enqueue(encoder.encode(responseText));
-
-        // Source Footer
-        let footer = '';
-        if (context.webScrape) {
-          footer += `\n\n### Official Sindh Portal Reference:\n* [${context.webScrape.title}](${context.webScrape.url})`;
-        }
-        if (searchLinks) {
-          footer += `\n\n### Additional Supplemental Sources:\n${searchLinks}`;
-        }
         
-        if (footer) controller.enqueue(encoder.encode(footer));
+        // Citations
+        const citations = `\n\n### Authoritative Source References:\n` + 
+          chunks.slice(0, 2).map(c => `* [Standard ${c.sloCodes?.[0] || 'Ref'}] extracted from curriculum repository.`).join('\n');
+        
+        controller.enqueue(encoder.encode(citations));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error('❌ [Neural Synthesis Fatal]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
