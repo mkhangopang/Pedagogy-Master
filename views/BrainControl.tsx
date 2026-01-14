@@ -101,59 +101,79 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.7 (CRITICAL SCHEMA SYNC)
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE 'is_approved column missing' ERRORS
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.8 (FIXING 'version' COLUMN ERROR)
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE SCHEMA CACHE ERRORS
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 2. REPAIR DOCUMENTS TABLE SCHEMA
--- This script adds missing columns and ensures PostgREST refreshes its schema cache.
+-- This block adds all missing columns for the institutional metadata sync.
 DO $$ 
 BEGIN
-    -- Add 'is_approved' column (Boolean)
+    -- Fix 'version' column (Integer, specifically causing the error)
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'version') THEN
+        ALTER TABLE public.documents ADD COLUMN version INTEGER DEFAULT 1;
+    END IF;
+
+    -- Fix 'is_approved' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'is_approved') THEN
         ALTER TABLE public.documents ADD COLUMN is_approved BOOLEAN DEFAULT FALSE;
     END IF;
 
-    -- Add 'authority' column (Critical for Sindh mapping)
+    -- Fix 'authority' column (Sindh Curriculum)
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'authority') THEN
         ALTER TABLE public.documents ADD COLUMN authority TEXT DEFAULT 'General';
     END IF;
 
-    -- Add 'curriculum_name' column
+    -- Fix 'curriculum_name' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'curriculum_name') THEN
         ALTER TABLE public.documents ADD COLUMN curriculum_name TEXT;
     END IF;
 
-    -- Add 'version_year' column
+    -- Fix 'version_year' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'version_year') THEN
         ALTER TABLE public.documents ADD COLUMN version_year TEXT;
     END IF;
 
-    -- Add 'generated_json' column
+    -- Fix 'subject' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'subject') THEN
+        ALTER TABLE public.documents ADD COLUMN subject TEXT;
+    END IF;
+
+    -- Fix 'grade_level' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'grade_level') THEN
+        ALTER TABLE public.documents ADD COLUMN grade_level TEXT;
+    END IF;
+
+    -- Fix 'generated_json' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'generated_json') THEN
         ALTER TABLE public.documents ADD COLUMN generated_json JSONB;
     END IF;
 
-    -- Add 'storage_type' column
+    -- Fix 'storage_type' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'storage_type') THEN
         ALTER TABLE public.documents ADD COLUMN storage_type TEXT DEFAULT 'supabase';
     END IF;
+
+    -- Fix 'source_type' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'source_type') THEN
+        ALTER TABLE public.documents ADD COLUMN source_type TEXT DEFAULT 'markdown';
+    END IF;
     
-    -- Add 'extracted_text' fallback column
+    -- Fix 'extracted_text' fallback
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'extracted_text') THEN
         ALTER TABLE public.documents ADD COLUMN extracted_text TEXT;
     END IF;
 END $$;
 
--- 3. REFRESH SCHEMA CACHE (Toggling comments triggers a refresh)
-COMMENT ON TABLE public.documents IS 'Unified curriculum repository with R2 and approval state';
+-- 3. FORCE REFRESH SCHEMA CACHE
+-- Toggling a comment on the table forces the API gateway to reload the column definitions.
+COMMENT ON TABLE public.documents IS 'Unified repository v12.8 - Supporting Sindh 4-8 Science standards';
 
--- 4. VECTOR INFRASTRUCTURE FIX
+-- 4. VECTOR INFRASTRUCTURE CHECK
 DO $$ 
 BEGIN
-    -- Ensure embedding column is vector(768)
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'document_chunks' 
@@ -165,13 +185,13 @@ BEGIN
     END IF;
 END $$;
 
--- 5. UPDATE ADMIN PERMISSIONS
+-- 5. ENSURE PERMISSIONS
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 
--- FINAL VERIFICATION
-SELECT 'Infrastructure Repair v12.7 Applied - Schema Sync Complete' as status;
+-- FINAL STATUS REPORT
+SELECT 'Infrastructure Repair v12.8 Applied - Schema Node Synchronized' as status;
 `;
 
   return (
@@ -207,7 +227,7 @@ SELECT 'Infrastructure Repair v12.7 Applied - Schema Sync Complete' as status;
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-96 p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/5 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300"
+              className="w-full h-96 p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300"
             />
             <button onClick={handleSave} disabled={isSaving} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
               {isSaving ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20}/>}
@@ -244,9 +264,9 @@ SELECT 'Infrastructure Repair v12.7 Applied - Schema Sync Complete' as status;
             <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
                <ShieldAlert className="text-amber-600 shrink-0" size={24} />
                <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Schema Sync Error</h4>
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Sync Error Detected</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   If you see 'Could not find the is_approved column', your database schema is out of date. **To fix this**, copy the SQL patch v12.7 below and run it in your Supabase SQL Editor.
+                   If you see errors about missing columns like 'version', your database schema is out of date. **To fix this immediately**, copy the SQL patch v12.8 below and run it in your Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -287,8 +307,8 @@ SELECT 'Infrastructure Repair v12.7 Applied - Schema Sync Complete' as status;
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.7</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (is_approved column missing)</p>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.8</h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (Version column missing)</p>
                </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
