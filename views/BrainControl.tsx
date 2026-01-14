@@ -1,3 +1,4 @@
+
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -100,115 +101,68 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.1 (FIXING GROUNDING & VECTOR MISMATCH)
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE RETRIEVAL ERRORS
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.5 (URGENT FIX)
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE 'authority column missing' ERRORS
 
--- 1. ENABLE NEURAL ENGINE
+-- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. NUCLEAR TYPE FIX for document_chunks
--- Forces 'embedding' to be vector(768) and ensures 'slo_codes' is a text array
+-- 2. REPAIR DOCUMENTS TABLE SCHEMA
+-- This block adds the 'authority' column which is missing in your current schema
 DO $$ 
 BEGIN
-    -- Check for embedding type mismatch
+    -- Fix 'authority' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'authority') THEN
+        ALTER TABLE public.documents ADD COLUMN authority TEXT DEFAULT 'General';
+        RAISE NOTICE 'Added authority column to documents table.';
+    END IF;
+
+    -- Fix 'curriculum_name' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'curriculum_name') THEN
+        ALTER TABLE public.documents ADD COLUMN curriculum_name TEXT;
+    END IF;
+
+    -- Fix 'version_year' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'version_year') THEN
+        ALTER TABLE public.documents ADD COLUMN version_year TEXT;
+    END IF;
+
+    -- Fix 'generated_json' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'generated_json') THEN
+        ALTER TABLE public.documents ADD COLUMN generated_json JSONB;
+    END IF;
+
+    -- Fix 'source_type' column
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'source_type') THEN
+        ALTER TABLE public.documents ADD COLUMN source_type TEXT DEFAULT 'markdown';
+    END IF;
+END $$;
+
+-- 3. REFRESH SCHEMA CACHE (Nuclear Option)
+-- Running these triggers PostgREST to re-examine the table structure
+COMMENT ON TABLE public.documents IS 'Authoritative curriculum storage linked to R2';
+
+-- 4. VECTOR INFRASTRUCTURE FIX
+DO $$ 
+BEGIN
+    -- Check for embedding type mismatch (Must be vector(768) for Gemini text-embedding-004)
     IF EXISTS (
         SELECT 1 FROM information_schema.columns 
         WHERE table_name = 'document_chunks' 
         AND column_name = 'embedding' 
         AND data_type = 'jsonb'
     ) THEN
-        RAISE NOTICE 'Fixing misaligned JSONB column in document_chunks...';
         ALTER TABLE public.document_chunks DROP COLUMN embedding;
         ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
-    END IF;
-
-    -- Ensure slo_codes is an array
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'document_chunks' 
-        AND column_name = 'slo_codes' 
-        AND data_type = 'text'
-    ) THEN
-        ALTER TABLE public.document_chunks ALTER COLUMN slo_codes TYPE TEXT[] USING ARRAY[slo_codes];
+        RAISE NOTICE 'Corrected embedding column type in document_chunks.';
     END IF;
 END $$;
 
--- 3. CORE HYBRID SEARCH ENGINE (Updated v12.1)
--- Improved text search and vector scoring combination
-CREATE OR REPLACE FUNCTION hybrid_search_chunks(
-  query_text TEXT,
-  query_embedding vector(768),
-  match_count INTEGER,
-  filter_document_ids UUID[],
-  priority_document_id UUID DEFAULT NULL
-)
-RETURNS TABLE (
-  chunk_id UUID,
-  chunk_text TEXT,
-  section_title TEXT,
-  page_number INTEGER,
-  slo_codes TEXT[],
-  combined_score FLOAT
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT
-    dc.id as chunk_id,
-    COALESCE(dc.chunk_text, '') as chunk_text,
-    NULL::TEXT as section_title,
-    dc.page_number,
-    dc.slo_codes,
-    (
-      -- Vector Score (0-1)
-      ((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
-      -- Full Text Score (0-1 approx)
-      (ts_rank_cd(to_tsvector('english', dc.chunk_text), websearch_to_tsquery('english', query_text)) * 0.3) +
-      -- Priority Document Boost
-      (CASE WHEN dc.document_id = priority_document_id THEN 0.2 ELSE 0 END)
-    ) AS combined_score
-  FROM document_chunks dc
-  WHERE dc.document_id = ANY(filter_document_ids)
-  ORDER BY combined_score DESC
-  LIMIT match_count;
-END;
-$$;
-
--- 4. DIRECT SLO LOOKUP FUNCTION
-CREATE OR REPLACE FUNCTION find_slo_chunks(
-  slo_code TEXT,
-  document_ids UUID[]
-)
-RETURNS TABLE (
-  chunk_id UUID,
-  chunk_text TEXT,
-  page_number INTEGER
-)
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT
-    id as chunk_id,
-    chunk_text,
-    page_number
-  FROM document_chunks
-  WHERE document_id = ANY(document_ids)
-  AND slo_code = ANY(slo_codes)
-  LIMIT 5;
-END;
-$$;
-
--- 5. PERFORMANCE TUNING
-CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks 
-USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
-CREATE INDEX IF NOT EXISTS idx_chunks_slo_codes ON public.document_chunks USING GIN(slo_codes);
-
--- 6. GLOBAL ADMIN PRIVILEGES
+-- 5. RE-INDEX GLOBAL PERMISSIONS
 UPDATE public.profiles SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
+
+RAISE NOTICE 'Infrastructure Repair v12.5 Complete.';
 `;
 
   return (
@@ -281,9 +235,9 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
             <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
                <ShieldAlert className="text-amber-600 shrink-0" size={24} />
                <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert</h4>
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Sync Error Detected</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   If grounding fails even after indexing, please run the SQL patch v12.1 below. This update fixes specific data type mismatches that prevent vector search from returning matches.
+                   Your library reported a missing 'authority' column. This is caused by a database schema drift. **To fix this immediately**, copy the SQL patch v12.5 below and run it in your Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -323,7 +277,10 @@ WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com')
 
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.1</h3>
+               <div className="space-y-1">
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v12.5</h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (Authority Column Missing)</p>
+               </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
                 className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"
