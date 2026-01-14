@@ -40,9 +40,6 @@ export default function App() {
     if (savedTheme) {
       setTheme(savedTheme);
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
-      document.documentElement.classList.add('dark');
     }
   }, []);
 
@@ -82,7 +79,6 @@ export default function App() {
       const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
       
       let activeProfile: UserProfile;
-
       const defaultRole = isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER;
       const defaultPlan = isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE;
       const defaultLimit = isSystemAdmin ? 999999 : 30;
@@ -101,7 +97,7 @@ export default function App() {
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         };
         
-        supabase.from('profiles').insert([{
+        await supabase.from('profiles').insert([{
           id: userId,
           name: activeProfile.name,
           email: activeProfile.email,
@@ -111,32 +107,19 @@ export default function App() {
           queries_limit: activeProfile.queriesLimit
         }]);
       } else {
-        const needsCorrection = !isSystemAdmin && (profile.plan === SubscriptionPlan.ENTERPRISE || profile.role === UserRole.APP_ADMIN);
-        
         activeProfile = {
           id: profile.id,
           name: profile.name || 'Educator',
           email: profile.email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : (needsCorrection ? UserRole.TEACHER : profile.role as UserRole),
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (needsCorrection ? SubscriptionPlan.FREE : profile.plan as SubscriptionPlan),
+          role: isSystemAdmin ? UserRole.APP_ADMIN : profile.role as UserRole,
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : profile.plan as SubscriptionPlan,
           queriesUsed: profile.queries_used || 0,
-          queriesLimit: isSystemAdmin ? 999999 : (needsCorrection ? 30 : profile.queries_limit || 30),
-          gradeLevel: profile.grade_level || 'High School',
-          subjectArea: profile.subject_area || 'General',
-          teachingStyle: profile.teaching_style || 'balanced',
-          pedagogicalApproach: profile.pedagogical_approach || 'direct-instruction',
+          queriesLimit: isSystemAdmin ? 999999 : profile.queries_limit || 30,
+          gradeLevel: profile.grade_level,
+          subjectArea: profile.subject_area,
           generationCount: profile.generation_count || 0,
-          successRate: profile.success_rate || 0,
-          editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+          successRate: profile.success_rate || 0
         };
-
-        if (needsCorrection) {
-          await supabase.from('profiles').update({
-            role: activeProfile.role,
-            plan: activeProfile.plan,
-            queries_limit: activeProfile.queriesLimit
-          }).eq('id', userId);
-        }
       }
       
       setUserProfile(activeProfile);
@@ -156,18 +139,17 @@ export default function App() {
           gradeLevel: d.grade_level || 'Auto',
           sloTags: d.slo_tags || [],
           createdAt: d.created_at,
-          sourceType: d.sourceType || d.source_type || 'pdf_archival',
-          isApproved: d.isApproved ?? d.is_approved ?? false,
-          curriculumName: d.curriculumName || d.curriculum_name || d.name || 'Unnamed Curriculum',
+          sourceType: d.source_type || 'markdown',
+          isApproved: d.is_approved ?? false,
+          curriculumName: d.curriculum_name || d.name,
           authority: d.authority || 'General',
-          versionYear: d.versionYear || d.version_year || '2024',
+          versionYear: d.version_year || '2024',
           version: d.version || 1,
-          generatedJson: d.generatedJson || d.generated_json,
-          chunkCount: d.chunkCount || d.chunk_count,
-          documentSummary: d.documentSummary || d.document_summary,
-          difficultyLevel: d.difficultyLevel || d.difficulty_level,
-          geminiProcessed: d.geminiProcessed || d.gemini_processed,
-          isSelected: d.isSelected || d.is_selected || false
+          generatedJson: d.generated_json,
+          documentSummary: d.document_summary,
+          difficultyLevel: d.difficulty_level,
+          geminiProcessed: d.rag_indexed ?? false,
+          isSelected: d.is_selected ?? false
         })));
       }
     } catch (e: any) {}
@@ -192,13 +174,11 @@ export default function App() {
 
   useEffect(() => {
     paymentService.init();
-    
     const initSession = async () => {
       if (!isSupabaseConfigured() || !supabase) {
         setLoading(false);
         return;
       }
-
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         if (currentSession) {
@@ -216,119 +196,46 @@ export default function App() {
         setLoading(false);
       }
     };
-
     initSession();
-
-    let subscription: any = null;
-    if (isSupabaseConfigured() && supabase) {
-      const { data } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-        if (currentSession) {
-          setSession(currentSession);
-          fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-        } else {
-          setSession(null);
-          setUserProfile(null);
-          setDocuments([]);
-        }
-      });
-      subscription = data.subscription;
-    }
-
-    return () => {
-      if (subscription) subscription.unsubscribe();
-    };
   }, [checkDb, fetchBrain, fetchProfileAndDocs]);
 
-  const incrementQueries = useCallback(async () => {
-    if (!userProfile) return;
-    const newCount = userProfile.queriesUsed + 1;
-    setUserProfile(prev => prev ? { ...prev, queriesUsed: newCount } : null);
+  const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
+    setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
+    
     if (isActuallyConnected && isSupabaseConfigured() && supabase) {
-      await supabase.from('profiles').update({ queries_used: newCount }).eq('id', userProfile.id);
-    }
-  }, [userProfile, isActuallyConnected]);
-
-  const handleAddDocument = async (doc: any) => {
-    try {
-      const { data: { session: currentSession } } = await supabase.auth.getSession();
-      const response = await fetch('/api/docs/upload', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${currentSession?.access_token}`
-        },
-        body: JSON.stringify(doc)
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Upload failed');
-      }
-
-      // Refresh documents list
-      if (userProfile) {
-        await fetchProfileAndDocs(userProfile.id, userProfile.email);
-      }
-    } catch (error: any) {
-      alert(`Sync Error: ${error.message}`);
+      const dbUpdates: any = {};
+      if (updates.status) dbUpdates.status = updates.status;
+      if (updates.geminiProcessed !== undefined) dbUpdates.rag_indexed = updates.geminiProcessed;
+      if (updates.isSelected !== undefined) dbUpdates.is_selected = updates.isSelected;
+      if (updates.isApproved !== undefined) dbUpdates.is_approved = updates.isApproved;
+      if (updates.documentSummary !== undefined) dbUpdates.document_summary = updates.documentSummary;
+      if (updates.difficultyLevel !== undefined) dbUpdates.difficulty_level = updates.difficultyLevel;
+      
+      const { error } = await supabase.from('documents').update(dbUpdates).eq('id', id);
+      if (error) console.error("Persistence failed:", error.message);
     }
   };
 
   const renderView = () => {
     if (!userProfile) return null;
-    
     return (
-      <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400" size={32} /></div>}>
+      <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
         {(() => {
           switch (currentView) {
             case 'dashboard':
               return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             case 'documents':
-              return (
-                <DocumentsView 
-                  documents={documents} 
-                  userProfile={userProfile}
-                  onAddDocument={handleAddDocument} 
-                  onUpdateDocument={async (id, updates) => {
-                    setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-                    if (isActuallyConnected && isSupabaseConfigured() && supabase) {
-                      await supabase.from('documents').update(updates as any).eq('id', id);
-                    }
-                  }}
-                  onDeleteDocument={async (id) => {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    const response = await fetch('/api/docs/delete', {
-                      method: 'DELETE',
-                      headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${session?.access_token}`
-                      },
-                      body: JSON.stringify({ id })
-                    });
-                    if (response.ok) {
-                      setDocuments(prev => prev.filter(d => d.id !== id));
-                    }
-                  }}
-                  isConnected={isActuallyConnected}
-                />
-              );
+              return <DocumentsView documents={documents} userProfile={userProfile} onAddDocument={async (d) => { await fetchProfileAndDocs(userProfile.id, userProfile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
             case 'chat':
-              return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
+              return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
             case 'tools':
-              return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={incrementQueries} canQuery={userProfile.queriesUsed < userProfile.queriesLimit || userProfile.role === UserRole.APP_ADMIN} />;
+              return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
             case 'tracker':
               return <TrackerView user={userProfile} documents={documents} />;
             case 'brain':
               return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             case 'pricing':
-              return <PricingView currentPlan={userProfile.plan} onUpgrade={(plan) => {
-                const limit = plan === SubscriptionPlan.FREE ? 30 : 1000;
-                setUserProfile(prev => prev ? { ...prev, plan, queriesLimit: limit } : null);
-                if (isActuallyConnected && isSupabaseConfigured() && supabase) {
-                  supabase.from('profiles').update({ plan, queries_limit: limit }).eq('id', userProfile.id);
-                }
-                setCurrentView('dashboard');
-              }} />;
+              return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
             default:
               return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
           }
@@ -343,55 +250,15 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
-        <Sidebar 
-          currentView={currentView} 
-          onViewChange={setCurrentView} 
-          userProfile={userProfile} 
-          isCollapsed={isCollapsed} 
-          setIsCollapsed={setIsCollapsed} 
-          theme={theme}
-          toggleTheme={toggleTheme}
-        />
+        <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
       </div>
-
-      {isSidebarOpen && (
-        <div className="lg:hidden fixed inset-0 z-[500] flex">
-          <div className="fixed inset-0 bg-slate-900/60 dark:bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSidebarOpen(false)} />
-          <div className="relative w-[280px] h-full shadow-2xl animate-in slide-in-from-left duration-300">
-            <Sidebar 
-              currentView={currentView} 
-              onViewChange={setCurrentView} 
-              userProfile={userProfile} 
-              isCollapsed={false} 
-              setIsCollapsed={() => {}} 
-              onClose={() => setIsSidebarOpen(false)} 
-              theme={theme}
-              toggleTheme={toggleTheme}
-            />
-          </div>
-        </div>
-      )}
-
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {userProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
-        <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors">
-            <Menu size={24} />
-          </button>
+        <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800">
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400"><Menu size={24} /></button>
           <span className="font-bold text-indigo-950 dark:text-white">{APP_NAME}</span>
           <div className="w-10" />
         </header>
-
-        {healthStatus.status !== 'connected' && (
-          <div className="bg-rose-100 dark:bg-rose-900/30 border-b border-rose-200 dark:border-rose-800 px-4 py-2 flex items-center justify-center gap-3 text-rose-900 dark:text-rose-200 text-xs font-bold shrink-0">
-            <AlertCircle size={14} />
-            <span>Sync Warning: {healthStatus.message}</span>
-            <button onClick={checkDb} className="bg-rose-200 dark:bg-rose-800 hover:bg-rose-300 dark:hover:bg-rose-700 px-2 py-1 rounded-md flex items-center gap-1 transition-colors">
-              <RefreshCw size={10} /> Re-verify Cloud
-            </button>
-          </div>
-        )}
-
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           <div className="max-w-6xl mx-auto">{renderView()}</div>
         </main>
