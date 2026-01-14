@@ -157,7 +157,19 @@ export default function App() {
           subject: d.subject || 'General',
           gradeLevel: d.grade_level || 'Auto',
           sloTags: d.slo_tags || [],
-          createdAt: d.created_at
+          createdAt: d.created_at,
+          sourceType: d.sourceType || d.source_type || 'pdf_archival',
+          isApproved: d.isApproved ?? d.is_approved ?? false,
+          curriculumName: d.curriculumName || d.curriculum_name || d.name || 'Unnamed Curriculum',
+          authority: d.authority || 'General',
+          versionYear: d.versionYear || d.version_year || '2024',
+          version: d.version || 1,
+          generatedJson: d.generatedJson || d.generated_json,
+          chunkCount: d.chunkCount || d.chunk_count,
+          documentSummary: d.documentSummary || d.document_summary,
+          difficultyLevel: d.difficultyLevel || d.difficulty_level,
+          geminiProcessed: d.geminiProcessed || d.gemini_processed,
+          isSelected: d.isSelected || d.is_selected || false
         })));
       }
     } catch (e: any) {}
