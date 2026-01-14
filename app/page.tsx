@@ -83,7 +83,6 @@ export default function App() {
       
       let activeProfile: UserProfile;
 
-      // STRICT ROLE ENFORCEMENT: Only ADMIN_EMAILS get enterprise/admin by default
       const defaultRole = isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER;
       const defaultPlan = isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE;
       const defaultLimit = isSystemAdmin ? 999999 : 30;
@@ -112,7 +111,6 @@ export default function App() {
           queries_limit: activeProfile.queriesLimit
         }]);
       } else {
-        // Correct existing profiles if they aren't admins but somehow have enterprise access
         const needsCorrection = !isSystemAdmin && (profile.plan === SubscriptionPlan.ENTERPRISE || profile.role === UserRole.APP_ADMIN);
         
         activeProfile = {
@@ -250,6 +248,32 @@ export default function App() {
     }
   }, [userProfile, isActuallyConnected]);
 
+  const handleAddDocument = async (doc: any) => {
+    try {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      const response = await fetch('/api/docs/upload', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentSession?.access_token}`
+        },
+        body: JSON.stringify(doc)
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Upload failed');
+      }
+
+      // Refresh documents list
+      if (userProfile) {
+        await fetchProfileAndDocs(userProfile.id, userProfile.email);
+      }
+    } catch (error: any) {
+      alert(`Sync Error: ${error.message}`);
+    }
+  };
+
   const renderView = () => {
     if (!userProfile) return null;
     
@@ -264,7 +288,7 @@ export default function App() {
                 <DocumentsView 
                   documents={documents} 
                   userProfile={userProfile}
-                  onAddDocument={async (doc) => setDocuments(prev => [doc, ...prev])} 
+                  onAddDocument={handleAddDocument} 
                   onUpdateDocument={async (id, updates) => {
                     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
                     if (isActuallyConnected && isSupabaseConfigured() && supabase) {
