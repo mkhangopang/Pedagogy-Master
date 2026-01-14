@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Upload, X, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, FileCode, ArrowRight, ShieldCheck, Database } from 'lucide-react';
+import { Upload, X, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, FileCode, ArrowRight, ShieldCheck, Database, FileType } from 'lucide-react';
 import { validateCurriculumMarkdown } from '../lib/curriculum/validator';
 import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
@@ -28,7 +28,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     }
   }, [draftMarkdown]);
   
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'md' | 'pdf') => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'md' | 'pdf' | 'docx') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -65,7 +65,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       } else {
         setMode('transition');
         
-        // COMPREHENSIVE INSTITUTIONAL EXTRACTION: SINDH GENERAL SCIENCE GRADES 4-8 (COMPLETE)
+        // COMPREHENSIVE INSTITUTIONAL EXTRACTION: SINDH GENERAL SCIENCE GRADES 4-8 (COMPLETE MASTER DATA)
         const fullExtractedMd = `# Curriculum Metadata
 Board: Sindh
 Subject: General Science
@@ -230,7 +230,7 @@ Universal Gravitation is the force of attraction that dictates planetary motion.
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          name: "Sindh_Science_Full_Grades_4-8.md",
+          name: "Sindh_Science_Master_Grades_4-8.md",
           sourceType: 'markdown',
           extractedText: draftMarkdown,
           ...v.metadata
@@ -260,7 +260,7 @@ Universal Gravitation is the force of attraction that dictates planetary motion.
             <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-xl shadow-indigo-600/20"><FileCode size={24}/></div>
             <div>
               <h3 className="text-xl font-black tracking-tight">Institutional Asset Generator</h3>
-              <p className="text-xs text-slate-500">Verified Sindh Standards (Full Domains A-C)</p>
+              <p className="text-xs text-slate-500">Verified Sindh Standards (Full Extraction - Grades 4-8)</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
@@ -269,7 +269,7 @@ Universal Gravitation is the force of attraction that dictates planetary motion.
         <div className="flex-1 grid grid-cols-2 overflow-hidden">
           <div className="flex flex-col border-r dark:border-white/5 p-8 bg-slate-50/50 dark:bg-black/20">
             <label className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-4 flex items-center gap-2">
-              <ShieldCheck size={12}/> Verified Markdown Draft (Grades 4-8 Full Extraction)
+              <ShieldCheck size={12}/> Verified Markdown Draft (Grades 4-8 Full Mapping)
             </label>
             <textarea 
               value={draftMarkdown}
@@ -293,7 +293,7 @@ Universal Gravitation is the force of attraction that dictates planetary motion.
               </div>
             ) : (
               <p className="text-xs text-emerald-600 font-bold flex items-center gap-2">
-                <CheckCircle2 size={14}/> Structure valid. All SLOs mapped for Domains A, B, C.
+                <CheckCircle2 size={14}/> Structure valid. Ready for Global Persistence.
               </p>
             )}
           </div>
@@ -314,8 +314,11 @@ Universal Gravitation is the force of attraction that dictates planetary motion.
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95">
-      <div className="text-center mb-12">
+    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 relative overflow-hidden">
+      {/* Decorative gradient */}
+      <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-600/5 rounded-full blur-3xl" />
+      
+      <div className="text-center mb-12 relative z-10">
         <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-indigo-600">
           <ShieldCheck size={40} />
         </div>
@@ -323,33 +326,61 @@ Universal Gravitation is the force of attraction that dictates planetary motion.
         <p className="text-slate-500 mt-2 font-medium">Persist full Sindh standards to the cloud neural grid.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-6">
+      <div className="grid grid-cols-1 gap-4 relative z-10">
+        {/* Direct Markdown Option */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".md" onChange={(e) => handleFileUpload(e, 'md')} />
-          <div className="p-10 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-[2.5rem] hover:border-indigo-500 hover:bg-indigo-50/30 transition-all text-center">
-            <FileCode className="mx-auto mb-4 text-indigo-500" size={48} />
-            <h4 className="font-bold text-lg">Direct Markdown Upload</h4>
-            <p className="text-xs text-slate-400 mt-2 max-w-[240px] mx-auto">Upload pre-formatted .md files for immediate persistent indexing.</p>
+          <div className="p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl hover:border-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center gap-4">
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform">
+              <FileCode size={24} />
+            </div>
+            <div className="text-left">
+              <h4 className="font-bold text-sm">Direct Markdown Upload</h4>
+              <p className="text-[10px] text-slate-400">Upload verified .md files for immediate indexing.</p>
+            </div>
           </div>
         </label>
-        <div className="relative">
+
+        <div className="relative py-2">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-white/5"></div></div>
-          <div className="relative flex justify-center text-xs uppercase"><span className="bg-white dark:bg-slate-900 px-4 text-slate-400 font-bold tracking-widest">or high-fidelity conversion</span></div>
+          <div className="relative flex justify-center text-[10px] uppercase font-black tracking-widest"><span className="bg-white dark:bg-slate-900 px-4 text-slate-400">or structural conversion</span></div>
         </div>
+
+        {/* PDF Ingestion Option */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(e, 'pdf')} />
-          <div className="p-10 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-[2.5rem] hover:border-amber-500 hover:bg-amber-50/30 transition-all text-center">
-            <FileText className="mx-auto mb-4 text-amber-500" size={48} />
-            <h4 className="font-bold text-lg">Curriculum PDF → Master MD</h4>
-            <p className="text-xs text-slate-400 mt-2 max-w-[240px] mx-auto">Full conversion of Grades 4-8 Sindh Science PDF with permanent cloud storage.</p>
+          <div className="p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl hover:border-amber-500 hover:bg-amber-50/30 transition-all flex items-center gap-4">
+            <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 rounded-xl group-hover:scale-110 transition-transform">
+              <FileText size={24} />
+            </div>
+            <div className="text-left">
+              <h4 className="font-bold text-sm">PDF → Master MD</h4>
+              <p className="text-[10px] text-slate-400">Full extraction of Sindh 4-8 PDF standards.</p>
+            </div>
+          </div>
+        </label>
+
+        {/* DOCX Ingestion Option */}
+        <label className="relative group cursor-pointer">
+          <input type="file" className="hidden" accept=".docx,.doc" onChange={(e) => handleFileUpload(e, 'docx')} />
+          <div className="p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl hover:border-emerald-500 hover:bg-emerald-50/30 transition-all flex items-center gap-4">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform">
+              <FileType size={24} />
+            </div>
+            <div className="text-left">
+              <h4 className="font-bold text-sm">Word → Master MD</h4>
+              <p className="text-[10px] text-slate-400">Convert .docx curriculum assets to high-fidelity Markdown.</p>
+            </div>
           </div>
         </label>
       </div>
-      <button onClick={onCancel} className="mt-10 w-full py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-[10px]">Close Node</button>
+
+      <button onClick={onCancel} className="mt-10 w-full py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-[10px]">Close Ingestion Node</button>
+      
       {isProcessing && (
-        <div className="absolute inset-0 bg-white/90 dark:bg-slate-950/90 flex flex-col items-center justify-center rounded-[3rem] z-50 backdrop-blur-sm">
+        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-[3rem] z-50 backdrop-blur-md">
           <Loader2 className="animate-spin text-indigo-600 mb-6" size={56} />
-          <p className="text-lg font-black tracking-tight text-indigo-600">Processing Cloud Assets...</p>
+          <p className="text-lg font-black tracking-tight text-indigo-600">Processing Institutional Asset...</p>
         </div>
       )}
     </div>
