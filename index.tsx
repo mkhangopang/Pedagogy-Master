@@ -55,12 +55,14 @@ const performSystemHandshake = () => {
     if (foundValue) {
       // Inject into all standard locations
       win.process.env[standardKey] = foundValue;
+      win.process.env[standardKey.replace('NEXT_PUBLIC_', '')] = foundValue; // Ensure non-prefixed versions exist
       win[standardKey] = foundValue;
       
       // Specifically ensure API_KEY is available for the Gemini SDK
-      if (standardKey === 'API_KEY') {
+      if (standardKey === 'API_KEY' || standardKey === 'GEMINI_API_KEY') {
         win.process.env['API_KEY'] = foundValue;
         win['API_KEY'] = foundValue;
+        win.process.env['GEMINI_API_KEY'] = foundValue;
       }
       
       statusReport[standardKey] = 'LOADED';
