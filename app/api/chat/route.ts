@@ -4,14 +4,15 @@ import { GoogleGenAI } from '@google/genai';
 import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { DEFAULT_MASTER_PROMPT } from '../../../constants';
+import { resolveApiKey } from '../../../lib/env-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL TUTOR ENGINE (v6.0 - CURRICULUM LOCKED)
- * Enforces strict RAG: Generation ABORTS if no curriculum chunks are found.
+ * NEURAL TUTOR ENGINE (v7.0 - ADAPTIVE RAG)
+ * Fixes: Database column names, Dynamic Brain logic, and Retrieval fallback.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -27,79 +28,98 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Mandatory Retrieval (Targeted)
-    // We prioritize the selected standard ID or search the entire curriculum library for this user
+    // 1. Fetch the Active Neural Brain for System Instructions
+    const { data: brainData } = await supabase
+      .from('neural_brain')
+      .select('master_prompt')
+      .eq('is_active', true)
+      .order('version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const systemInstruction = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
+
+    // 2. Mandatory Retrieval (Adaptive)
     const targetQuery = selectedStandardId || message;
-    const filterIds = selectedCurriculumId ? [selectedCurriculumId] : [];
     
-    // If no curriculum is selected, we fetch all ready/approved curriculum IDs for this user
-    let finalFilterIds = filterIds;
+    // Identify filtering context
+    let finalFilterIds: string[] = selectedCurriculumId ? [selectedCurriculumId] : [];
+    
     if (finalFilterIds.length === 0) {
+      // FIX: Database column is 'source_type', not 'sourceType'
       const { data: userCurricula } = await supabase
         .from('documents')
         .select('id')
         .eq('user_id', user.id)
         .eq('status', 'ready')
-        .eq('sourceType', 'markdown');
+        .eq('source_type', 'markdown');
+        
       finalFilterIds = userCurricula?.map(c => c.id) || [];
     }
 
     if (finalFilterIds.length === 0) {
       return NextResponse.json({ 
         error: "RAG_ABORT", 
-        message: "Institutional Guardrail: No active curriculum found. Please upload or select a Validated Markdown curriculum to begin." 
+        message: "Institutional Guardrail: No Neural-Indexed curriculum assets found in your library. Please upload a Markdown curriculum to begin." 
       }, { status: 422 });
     }
 
-    const chunks = await retrieveRelevantChunks(targetQuery, finalFilterIds, supabase, 6);
+    // Attempt to retrieve chunks
+    const chunks = await retrieveRelevantChunks(targetQuery, finalFilterIds, supabase, 8);
 
-    // 🚨 FEATURE 6: Hard-Fail Logic
     if (chunks.length === 0) {
-      return NextResponse.json({ 
-        error: "NO_CONTEXT", 
-        message: "Institutional Guardrail: The requested topic or standard was not found in the authoritative curriculum context. Synthesis aborted to maintain standards alignment." 
-      }, { status: 422 });
+      // Second attempt with broader keywords if photosynthesis or specific topics fail
+      const broadQuery = message.split(' ').slice(0, 3).join(' ');
+      const fallbackChunks = await retrieveRelevantChunks(broadQuery, finalFilterIds, supabase, 4);
+      if (fallbackChunks.length === 0) {
+        return NextResponse.json({ 
+          error: "NO_CONTEXT", 
+          message: "Institutional Guardrail: The topic was not found in your curriculum context. Please ensure the relevant unit is indexed." 
+        }, { status: 422 });
+      }
+      chunks.push(...fallbackChunks);
     }
 
-    // 2. Synthesis (Strictly Grounded)
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+    // 3. Synthesis (Strictly Grounded)
+    const apiKey = resolveApiKey();
+    const ai = new GoogleGenAI({ apiKey });
     
-    const contextVault = chunks.map((c, i) => `[CURRICULUM_CHUNK_${i+1}]\n${c.text}`).join('\n\n');
+    const contextVault = chunks.map((c, i) => `[CURRICULUM_ASSET_NODE_${i+1}]\nSOURCE_SLO: ${c.sloCodes?.join(', ')}\nCONTENT: ${c.text}`).join('\n\n');
     
     const synthesisPrompt = `
-# AUTHORITATIVE_CURRICULUM_CONTEXT
+# AUTHORITATIVE_CURRICULUM_VAULT
 ${contextVault}
 
-# USER_REQUEST
+# USER_PEDAGOGICAL_REQUEST
 "${message}"
 
-CORE_DIRECTIVE: 
-1. Use ONLY the curriculum chunks above. 
-2. If the request cannot be answered by the context, state: "Context Insufficient for Standards Alignment."
-3. Format with 1. and 1.1 headers.
+STRICT_DIRECTIVES:
+1. You are a curriculum-locked pedagogical assistant.
+2. USE ONLY the VAULT content above to answer.
+3. Reference standards by their SLO codes (e.g., S-04-A-01).
+4. If the vault doesn't contain sufficient data for the specific grade level requested, explain why.
+5. Format response with professional educational headings (1., 1.1).
 `;
 
     const result = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: synthesisPrompt }] }],
       config: { 
-        systemInstruction: "You are a Strict Curriculum Tutor. You hard-fail if content is not in the provided assets.",
-        temperature: 0.1 // High precision for curriculum alignment
+        systemInstruction: `${systemInstruction}\n\nSTRICT_RAG_ENFORCEMENT: Response must be 100% grounded in provided curriculum nodes.`,
+        temperature: 0.1 
       }
     });
 
-    const responseText = result.text || "Synthesis error.";
+    const responseText = result.text || "Synthesis engine timed out.";
 
-    // 3. Status Stream
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode(`> *Neural Sync: Grounded in Authoritative Markdown Standards...*\n\n`));
+        controller.enqueue(encoder.encode(`> *Neural Sync Active: Grounding in ${chunks.length} curriculum nodes...*\n\n`));
         controller.enqueue(encoder.encode(responseText));
         
-        // Citations
-        const citations = `\n\n### Authoritative Source References:\n` + 
-          chunks.slice(0, 2).map(c => `* [Standard ${c.sloCodes?.[0] || 'Ref'}] extracted from curriculum repository.`).join('\n');
+        const citations = `\n\n### Neural Grounding References:\n` + 
+          chunks.slice(0, 3).map(c => `* **Standard ${c.sloCodes?.[0] || 'Uncoded'}** matched via ${(c.similarity * 100).toFixed(1)}% semantic proximity.`).join('\n');
         
         controller.enqueue(encoder.encode(citations));
         controller.close();
@@ -107,6 +127,7 @@ CORE_DIRECTIVE:
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Chat API Error:", error);
+    return NextResponse.json({ error: error.message || "Synthesis grid saturated." }, { status: 500 });
   }
 }
