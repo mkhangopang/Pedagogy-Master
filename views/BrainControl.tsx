@@ -100,7 +100,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v14.0
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v15.0
 -- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE RAG RETRIEVAL ISSUES
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
@@ -129,7 +129,9 @@ BEGIN
 END $$;
 
 -- 4. THE NEURAL ENGINE: HYBRID SEARCH RPC
--- This function is the core of your RAG system.
+-- First, drop existing function to avoid "OUT parameter signature mismatch" error
+DROP FUNCTION IF EXISTS hybrid_search_chunks(text, vector, integer, uuid[], uuid);
+
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
   query_text TEXT,
   query_embedding vector(768),
@@ -156,12 +158,12 @@ BEGIN
     (dc.metadata->>'page_number')::INT AS page_number,
     (dc.metadata->>'section_title') AS section_title,
     (
-      -- Vector Similarity (Cosine)
+      -- Vector Similarity (Cosine distance converted to similarity)
       (1 - (dc.embedding <=> query_embedding)) +
-      -- Keyword Boost (if query matches SLO codes)
-      CASE WHEN dc.slo_codes @> ARRAY[UPPER(REPLACE(query_text, ' ', ''))] THEN 0.5 ELSE 0 END +
-      -- Priority Document Boost
-      CASE WHEN dc.document_id = priority_document_id THEN 0.2 ELSE 0 END
+      -- AGGRESSIVE Keyword Boost (if query matches any SLO code in chunk)
+      CASE WHEN dc.slo_codes && ARRAY[UPPER(REPLACE(query_text, ' ', ''))] THEN 0.8 ELSE 0 END +
+      -- Priority Document Context Boost
+      CASE WHEN dc.document_id = priority_document_id THEN 0.3 ELSE 0 END
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
@@ -175,7 +177,7 @@ UPDATE public.profiles
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 
-SELECT 'Infrastructure Patch v14.0 Applied - Hybrid RAG Engine Online' as status;
+SELECT 'Infrastructure Patch v15.0 Applied - Hybrid RAG Engine Re-synchronized' as status;
 `;
 
   return (
@@ -248,9 +250,9 @@ SELECT 'Infrastructure Patch v14.0 Applied - Hybrid RAG Engine Online' as status
             <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
                <ShieldAlert className="text-amber-600 shrink-0" size={24} />
                <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Constraint Error</h4>
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Function Conflict</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   If you see 'null value in column chunk_index violates not-null constraint', your database expects an index for every curriculum segment. **To fix this**, copy the SQL patch v14.0 below and run it in your Supabase SQL Editor.
+                   If your SQL update failed with "cannot change return type of existing function", I have updated the script below to include a DROP command. **Copy and Run SQL Patch v15.0** to forcefully re-synchronize your neural search capabilities.
                  </p>
                </div>
             </div>
@@ -291,8 +293,8 @@ SELECT 'Infrastructure Patch v14.0 Applied - Hybrid RAG Engine Online' as status
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v14.0</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error & RAG RPC Missing</p>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v15.0</h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Fixes: RAG Context Disconnect & Signature Mismatch</p>
                </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
