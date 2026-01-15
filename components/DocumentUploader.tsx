@@ -189,11 +189,11 @@ ${rawText.substring(0, 35000)}` }] }],
               {isProcessing ? <BrainCircuit size={20} className="animate-pulse lg:w-6 lg:h-6" /> : <FileCode size={20} className="lg:w-6 lg:h-6" />}
             </div>
             <div className="min-w-0">
-              <h3 className="text-lg lg:text-xl font-black tracking-tight truncate">Institutional Asset Review</h3>
+              <h3 className="text-lg lg:text-xl font-black tracking-tight truncate text-slate-900 dark:text-white">Institutional Asset Review</h3>
               <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Audit synthesized standards for compliance.'}</p>
             </div>
           </div>
-          <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
+          <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-400"><X size={20}/></button>
         </div>
 
         <div className="flex-1 flex flex-col lg:grid lg:grid-cols-2 overflow-hidden">
@@ -204,7 +204,7 @@ ${rawText.substring(0, 35000)}` }] }],
             <textarea 
               value={draftMarkdown} 
               onChange={(e) => {setDraftMarkdown(e.target.value); setError(null);}} 
-              className="flex-1 p-4 lg:p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl font-mono text-[11px] lg:text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none" 
+              className="flex-1 p-4 lg:p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl font-mono text-[11px] lg:text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none text-slate-900 dark:text-slate-100" 
               readOnly={isProcessing} 
             />
           </div>
@@ -225,7 +225,7 @@ ${rawText.substring(0, 35000)}` }] }],
             <button 
               onClick={goBackToSelection} 
               disabled={isProcessing} 
-              className="flex-1 lg:flex-none px-6 py-3 text-slate-400 font-bold hover:text-slate-700 transition-colors text-sm disabled:opacity-50"
+              className="flex-1 lg:flex-none px-6 py-3 text-slate-400 font-bold hover:text-slate-700 dark:hover:text-slate-200 transition-colors text-sm disabled:opacity-50"
             >
               Back to Menu
             </button>
@@ -246,6 +246,17 @@ ${rawText.substring(0, 35000)}` }] }],
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[2rem] lg:rounded-[3rem] p-6 lg:p-12 w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 relative overflow-hidden">
+      <div className="flex items-center justify-between mb-8 lg:mb-10">
+        <button 
+          onClick={onCancel}
+          className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-2xl transition-all hover:shadow-lg active:scale-95 group"
+          title="Go Back"
+        >
+          <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
+        </button>
+        <div className="w-10" />
+      </div>
+
       <div className="text-center mb-8 lg:mb-12">
         <div className="w-16 h-16 lg:w-20 lg:h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl lg:rounded-[2rem] flex items-center justify-center mx-auto mb-4 lg:mb-6 text-indigo-600 shadow-xl shadow-indigo-500/10">
           <ShieldCheck className="w-8 h-8 lg:w-10 lg:h-10" />
@@ -255,26 +266,26 @@ ${rawText.substring(0, 35000)}` }] }],
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:gap-4">
-        {/* Validated Markdown & DOCX Option */}
+        {/* Combined Validated Markdown & Word (Master MD flow) */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".md,.docx" onChange={(e) => {
-            const isDocx = e.target.files?.[0]?.name.endsWith('.docx');
+            const fileName = e.target.files?.[0]?.name.toLowerCase() || "";
+            const isDocx = fileName.endsWith('.docx');
             handleFileUpload(e, isDocx ? 'docx' : 'md');
           }} />
-          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center gap-4">
+          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-indigo-500 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-all flex items-center gap-4">
             <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform"><FileCode size={20} className="lg:w-6 lg:h-6" /></div>
             <div className="text-left flex-1">
               <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">Validated Markdown / Word</h4>
-              <p className="text-[10px] text-slate-400">Direct sync for .md and .docx assets.</p>
+              <p className="text-[10px] text-slate-400">Master MD synthesis for .md and .docx assets.</p>
             </div>
             <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>
         </label>
 
-        {/* High-Density PDF Option */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(e, 'pdf')} />
-          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-amber-500 hover:bg-amber-50/30 transition-all flex items-center gap-4">
+          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-amber-500 hover:bg-amber-50/30 dark:hover:bg-amber-900/10 transition-all flex items-center gap-4">
             <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 rounded-xl group-hover:scale-110 transition-transform"><FileText size={20} className="lg:w-6 lg:h-6" /></div>
             <div className="text-left flex-1">
               <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">High-Density PDF → Neural</h4>
@@ -284,14 +295,13 @@ ${rawText.substring(0, 35000)}` }] }],
           </div>
         </label>
 
-        {/* Word Document Dedicated Option */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".docx,.doc" onChange={(e) => handleFileUpload(e, 'docx')} />
-          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-emerald-500 hover:bg-emerald-50/30 transition-all flex items-center gap-4">
+          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-emerald-500 hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10 transition-all flex items-center gap-4">
             <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform"><FileType size={20} className="lg:w-6 lg:h-6" /></div>
             <div className="text-left flex-1">
               <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">Legacy Word (.doc) → Neural</h4>
-              <p className="text-[10px] text-slate-400">Adaptive conversion for raw documents.</p>
+              <p className="text-[10px] text-slate-400">Adaptive conversion for raw legacy documents.</p>
             </div>
             <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>

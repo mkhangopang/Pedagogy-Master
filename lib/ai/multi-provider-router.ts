@@ -49,11 +49,11 @@ export async function generateAIResponse(
   // 3. RETRIEVAL (RAG Core)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 12, priorityDocumentId);
+    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 15, priorityDocumentId);
     console.log(`[RAG DEBUG] Retrieved Chunks: ${retrievedChunks.length}`);
   }
   
-  // 4. Build Authoritative Context (FIX: Following Diagnostic Prompt recommendations)
+  // 4. Build Authoritative Context (FIX: Following Diagnostic Prompt recommendations for explicit injection)
   let contextVault = "";
   const isGrounded = retrievedChunks.length > 0;
   const hasMetadata = selectedDocs && selectedDocs.length > 0;
@@ -82,15 +82,16 @@ RELEVANCE: ${(chunk.similarity * 100).toFixed(1)}%
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 6. Synthesis Prompt Injection (MOST CRITICAL FIX)
+  // 6. Synthesis Prompt Injection (ABOVE User Query)
   const fullPrompt = `You are the Pedagogy Master AI with access to indexed curriculum context.
 
-${contextVault}
+## CURRICULUM CONTEXT:
+${contextVault || "NO DIRECT VAULT NODES MATCHED. USE GLOBAL PEDAGOGY STANDARDS."}
 
 ## INSTRUCTION:
-Use the provided curriculum context ABOVE to answer the user's query. ALWAYS cite specific standards, units, and SLOs from the context nodes. If the context doesn't contain relevant information, inform the user you are falling back to general pedagogy but mention the active assets in the vault.
+Use the curriculum context provided ABOVE to answer the user's query. ALWAYS cite specific standards, units, and SLOs from the context nodes. If the context doesn't contain the specific answer, use it as a grounding framework and bridge with pedagogical expertise.
 
-${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### PEDAGOGY_MODE: Global Standards (Vault Search yielded no direct matches).'}
+${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### PEDAGOGY_MODE: Global Standards.'}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
@@ -113,7 +114,7 @@ ${lengthGuideline}
     activeSystem = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
   }
 
-  const finalSystemInstruction = `${activeSystem}\n\nSTRICT_PROTOCOL: If CURRICULUM CONTEXT is provided, you MUST use it. Never claim you don't have access to documents if metadata is present. Prioritize Sindh DCAR standards.`;
+  const finalSystemInstruction = `${activeSystem}\n\nSTRICT_PROTOCOL: If CURRICULUM CONTEXT is present, you MUST prioritize it. Never claim lack of access if metadata is listed.`;
   
   const result = await synthesize(
     fullPrompt, 
