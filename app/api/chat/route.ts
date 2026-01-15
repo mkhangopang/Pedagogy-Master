@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL TUTOR ENGINE (v8.0 - ADAPTIVE RAG)
- * Persona: Pedagogy Master Multi-Agent AI
+ * NEURAL TUTOR ENGINE (v9.0 - PEDAGOGY MASTER)
+ * Force-maps all responses to curriculum standards.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -28,35 +28,33 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Fetch Selected Context
-    // We look for specifically selected documents OR the priority one
+    // 1. Identify Context (Library Search)
     const { data: selectedDocs } = await supabase
       .from('documents')
-      .select('id, name')
+      .select('id, name, authority')
       .eq('user_id', user.id)
       .or(`is_selected.eq.true${priorityDocumentId ? `,id.eq.${priorityDocumentId}` : ''}`)
       .eq('status', 'ready');
 
     const finalFilterIds = selectedDocs?.map(d => d.id) || [];
-    const hasSelection = finalFilterIds.length > 0;
+    const hasContext = finalFilterIds.length > 0;
 
-    // 2. Adaptive Retrieval
+    // 2. Retrieval (Curriculum Grounding)
     let contextVault = "";
     let chunks: any[] = [];
 
-    if (hasSelection) {
-      console.log(`🔍 [RAG] Searching across ${finalFilterIds.length} assets...`);
+    if (hasContext) {
       chunks = await retrieveRelevantChunks(message, finalFilterIds, supabase, 10, priorityDocumentId);
       
       if (chunks.length > 0) {
-        contextVault = "### 📚 AUTHORITATIVE CURRICULUM VAULT (LOCKED CONTEXT):\n";
+        contextVault = "### 📚 AUTHORITATIVE CURRICULUM VAULT (LOCKED):\n";
         chunks.forEach((c, i) => {
-          contextVault += `[NODE_${i+1}] | SOURCE: ${c.sloCodes?.join(', ') || 'General'}\nCONTENT: ${c.text}\n\n`;
+          contextVault += `[ASSET_NODE_${i+1}] SOURCE: ${c.sloCodes?.join(', ')}\nCONTENT: ${c.text}\n\n`;
         });
       }
     }
 
-    // 3. System Persona Synthesis
+    // 3. System Brain Setup
     const { data: brainData } = await supabase
       .from('neural_brain')
       .select('master_prompt')
@@ -67,23 +65,24 @@ export async function POST(req: NextRequest) {
 
     const basePersona = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
     
-    // Construct Enhanced System Instruction
+    // Explicit Grounding Logic
     const systemInstruction = `
 ${basePersona}
 
-## ADAPTIVE RAG STATE
-${chunks.length > 0 ? '🟢 CONTEXT_LOCKED: Ground responses strictly in provided nodes.' : '🟡 GENERAL_MODE: No specific nodes found for query. Provide high-quality general guidance.'}
+## ACTIVE NEURAL STATE
+- CONTEXT_AVAILABLE: ${chunks.length > 0 ? 'TRUE' : 'FALSE'}
+- TARGET_AUTHORITY: ${selectedDocs?.[0]?.authority || 'General'}
+- FORCED_MARKDOWN: You MUST use "# Unit: [Name]" for all headers.
 
 ${chunks.length > 0 ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
 `;
 
-    // 4. Remote Neural Call
+    // 4. Remote Neural Call (Defaulting to Gemini for highest reasoning)
     const apiKey = resolveApiKey();
     const ai = new GoogleGenAI({ apiKey });
     
-    // Prepare contents with history
     const contents: any[] = [];
-    history.slice(-6).forEach((h: any) => {
+    history.slice(-4).forEach((h: any) => {
       contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
     });
     
@@ -92,6 +91,8 @@ ${contextVault}
 
 # USER QUERY
 "${message}"
+
+(Instruction: If this is an SLO query like S-08-A-03, provide a full curriculum-aligned response using # Unit: formatting.)
 `;
     
     contents.push({ role: 'user', parts: [{ text: finalPrompt }] });
@@ -103,26 +104,25 @@ ${contextVault}
         systemInstruction,
         temperature: chunks.length > 0 ? 0.1 : 0.6,
         topK: 40,
-        topP: 0.95
       }
     });
 
-    const responseText = result.text || "Synthesis error: Empty stream.";
+    const responseText = result.text || "Neural connection reset.";
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
         if (chunks.length > 0) {
-          controller.enqueue(encoder.encode(`> *Neural Grid: Grounded in ${chunks.length} curriculum segments from "${selectedDocs?.[0]?.name}"...*\n\n`));
-        } else if (hasSelection) {
-          controller.enqueue(encoder.encode(`> *Alert: No direct matches in selected curriculum. Providing general pedagogical logic...*\n\n`));
+          controller.enqueue(encoder.encode(`> *Neural Sync: Grounding in "${selectedDocs?.[0]?.name}" [${chunks.length} nodes]...*\n\n`));
+        } else if (hasContext) {
+          controller.enqueue(encoder.encode(`> *Alert: No direct matches in curriculum. Using general pedagogical logic...*\n\n`));
         }
         
         controller.enqueue(encoder.encode(responseText));
         
         if (chunks.length > 0) {
           const refs = `\n\n### Neural Grounding References:\n` + 
-            chunks.slice(0, 3).map(c => `* **Standard ${c.sloCodes?.[0] || 'Node'}** (${(c.similarity * 100).toFixed(0)}% match)`).join('\n');
+            chunks.slice(0, 3).map(c => `* **SLO ${c.sloCodes?.[0] || 'Metadata'}** retrieved from ${selectedDocs?.find(d=>d.id === finalFilterIds[0])?.name || 'Curriculum Library'}`).join('\n');
           controller.enqueue(encoder.encode(refs));
         }
         
@@ -132,9 +132,6 @@ ${contextVault}
 
   } catch (error: any) {
     console.error("Chat Error:", error);
-    return NextResponse.json({ 
-      error: "RAG_ABORT", 
-      message: error.message || "The synthesis grid encountered a bottleneck." 
-    }, { status: 500 });
+    return NextResponse.json({ error: "RAG_ABORT", message: "Grid saturation. Please re-select curriculum and retry." }, { status: 500 });
   }
 }

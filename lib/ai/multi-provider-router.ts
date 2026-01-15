@@ -68,37 +68,38 @@ export async function generateAIResponse(
   if (cached) return { text: cached, provider: 'cache' };
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
-  const preferredProvider = MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini';
-
-  // 1. Identify Context
+  
+  // 1. Identify Context (Selection OR Priority)
   const { data: selectedDocs } = await supabase
     .from('documents')
-    .select('id, name, rag_indexed, status')
+    .select('id, name')
     .eq('user_id', userId)
-    .eq('is_selected', true);
+    .or(`is_selected.eq.true${priorityDocumentId ? `,id.eq.${priorityDocumentId}` : ''}`);
   
-  const documentIds = selectedDocs && selectedDocs.length > 0 
-    ? selectedDocs.map(d => d.id) 
-    : [];
+  const documentIds = selectedDocs?.map(d => d.id) || [];
+  const hasSelection = documentIds.length > 0;
 
   // 2. RAG Memory Retrieval
   let retrievedChunks: RetrievedChunk[] = [];
-  if (documentIds.length > 0) {
+  if (hasSelection) {
     retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 12, priorityDocumentId);
   }
   
-  const docParts = await fetchMultimodalContext(userId, supabase);
-  const isGrounded = retrievedChunks.length > 0 || docParts.length > 0;
+  const isGrounded = retrievedChunks.length > 0;
+  
+  // Force high-fidelity Gemini when RAG is active to ensure standard compliance
+  const preferredProvider = isGrounded ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
 
+  const docParts = await fetchMultimodalContext(userId, supabase);
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 3. Memory Vault Construction (CURRICULUM LOCKED)
+  // 3. Memory Vault Construction
   let contextVault = "";
   if (isGrounded) {
-    contextVault = "### 📚 AUTHORITATIVE CURRICULUM VAULT (LOCKED CONTEXT):\n";
+    contextVault = "### 📚 AUTHORITATIVE CURRICULUM VAULT (LOCKED):\n";
     retrievedChunks.forEach((chunk, idx) => {
-      contextVault += `[CHUNK_${idx + 1}] | Standards: ${chunk.sloCodes?.join(', ') || 'N/A'}\n${chunk.text}\n\n`;
+      contextVault += `[CHUNK_${idx + 1}] | SLO: ${chunk.sloCodes?.join(', ') || 'N/A'}\n${chunk.text}\n\n`;
     });
   }
 
@@ -108,15 +109,14 @@ ${contextVault}
 # USER QUERY:
 "${userPrompt}"
 
-${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### GENERAL_PEDAGOGY_WARNING: No relevant curriculum nodes found. Proceeding with high-quality general educational logic.'}
-${isGrounded ? '- RESPONSE RULE: Use ONLY information found in the AUTHORITATIVE VAULT above.' : ''}
-${isGrounded ? '- RESPONSE RULE: Map all activities directly to the detected SLOs.' : ''}
+${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### GENERAL_PEDAGOGY_WARNING: No specific curriculum nodes found. Provide general high-quality logic.'}
+${isGrounded ? '- MANDATORY: Response MUST follow hierarchical Markdown (# Unit:, ## Standard:).' : ''}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 `;
 
-  // Fetch active system prompt if not provided
+  // Fetch active system prompt
   let activeSystem = customSystem;
   if (!activeSystem) {
     const { data: brain } = await supabase
@@ -129,7 +129,7 @@ ${lengthGuideline}
     activeSystem = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
   }
 
-  const finalSystemInstruction = `${activeSystem}\n\nPEDAGOGICAL_CONSTRAINT: Use structured Markdown. Strictly prioritize Sindh DCAR standards if present. Temperature ${isGrounded ? '0.1' : '0.6'}.`;
+  const finalSystemInstruction = `${activeSystem}\n\nPEDAGOGICAL_LOCK: If context provided, ignore general knowledge. Strictly follow Sindh dcar.gos.pk standards. Temperature ${isGrounded ? '0.1' : '0.6'}.`;
   
   const result = await synthesize(
     finalPrompt, 

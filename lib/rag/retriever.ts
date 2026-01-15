@@ -12,8 +12,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * SEMANTIC RETRIEVER (v4.0 - FLEXIBLE)
- * Optimized for curriculum-specific RAG.
+ * SEMANTIC RETRIEVER (v5.0 - ULTRA FLEXIBLE)
+ * Optimized for high-recall curriculum grounding.
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -23,7 +23,7 @@ export async function retrieveRelevantChunks(
   priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
-  console.log(`🔍 [Retriever] Querying neural plane: "${query.substring(0, 40)}..."`);
+  console.log(`🔍 [Retriever] Neural Scan: "${query.substring(0, 50)}..."`);
   
   try {
     const sanitizedPriorityId = (priorityDocumentId && /^[0-9a-fA-F-]{36}$/.test(priorityDocumentId)) 
@@ -37,27 +37,27 @@ export async function retrieveRelevantChunks(
     let directResults: RetrievedChunk[] = [];
     if (foundCodes && foundCodes.length > 0) {
       const codeToSearch = foundCodes[0].toUpperCase();
-      console.log(`🎯 [Retriever] SLO Code Detected: ${codeToSearch}`);
+      console.log(`🎯 [Retriever] Pattern Hit: ${codeToSearch}`);
       
       const { data: sloChunks } = await supabase
         .from('document_chunks')
         .select('id, chunk_text, slo_codes, page_number')
         .in('document_id', documentIds)
         .contains('slo_codes', [codeToSearch])
-        .limit(3);
+        .limit(4);
 
       if (sloChunks && sloChunks.length > 0) {
         directResults = sloChunks.map(c => ({
           id: c.id,
           text: c.chunk_text,
           sloCodes: c.slo_codes || [],
-          similarity: 1.0, // Absolute match
+          similarity: 1.0, 
           pageNumber: c.page_number
         }));
       }
     }
 
-    // 2. HYBRID SEMANTIC SEARCH
+    // 2. HYBRID SEMANTIC SEARCH (Vector Plane)
     const queryEmbedding = await generateEmbedding(query);
 
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
@@ -82,16 +82,16 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
 
-    // ADAPTIVE THRESHOLD: Lowered to 0.15 for better coverage of curriculum concepts
-    const filteredSemantic = semanticResults.filter((r: any) => r.similarity > 0.15);
+    // ADAPTIVE THRESHOLD: 0.10 ensures we find content even in dense pedagogical docs
+    const filteredSemantic = semanticResults.filter((r: any) => r.similarity > 0.10);
     
     const allResults = [...directResults, ...filteredSemantic];
     
-    // De-duplication
+    // De-duplication + Priority Sorting
     const uniqueResults = Array.from(new Map(allResults.map(item => [item.id, item])).values())
       .sort((a, b) => b.similarity - a.similarity);
     
-    console.log(`📡 [Retriever] Returned ${uniqueResults.length} curriculum segments.`);
+    console.log(`📡 [Retriever] Found ${uniqueResults.length} curriculum nodes.`);
     return uniqueResults.slice(0, maxChunks);
 
   } catch (err) {
