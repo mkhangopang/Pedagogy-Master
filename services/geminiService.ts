@@ -57,18 +57,22 @@ export const geminiService = {
     const token = await this.getAuthToken();
 
     try {
-      // Direct synthesis requests now target the specialized /api/chat route for RAG-grounded responses.
+      // FIX: Ensure history and priorityDocumentId are passed to the backend
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${token}` 
+        },
         body: JSON.stringify({
           message,
+          history,
           priorityDocumentId
         })
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Synthesis link lost." }));
+        const errorData = await response.json().catch(() => ({ error: "Synthesis node failure." }));
         yield `AI Alert: ${parseAIError(errorData)}`;
         return;
       }
