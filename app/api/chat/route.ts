@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/request';
+import { NextRequest, NextResponse } from 'next/server';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 
@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * WORLD-CLASS TUTOR CHAT ENGINE (v13.0)
+ * WORLD-CLASS TUTOR CHAT ENGINE (v14.0)
  * Uses unified RAG router for absolute context consistency.
+ * Corrected import from 'next/server' to fix build error.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
         if (metadata?.isGrounded) {
           controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Context locked to Authoritative Vault (${metadata.chunksUsed} nodes active). Generating aligned response...*\n\n`));
         } else {
-          controller.enqueue(encoder.encode(`> *⚡ Neural Note: No matching curriculum nodes found. Synthesizing using Global Pedagogical Standards...*\n\n`));
+          controller.enqueue(encoder.encode(`> *⚡ Neural Note: No matching curriculum nodes found in your library. Synthesizing using Global Pedagogical Standards...*\n\n`));
         }
         
         controller.enqueue(encoder.encode(text));

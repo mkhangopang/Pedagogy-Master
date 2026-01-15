@@ -62,7 +62,7 @@ export const PROVIDER_FUNCTIONS = {
 
 export const MODEL_SPECIALIZATION: Record<string, string> = {
   'lookup': 'gemini',
-  'teaching': 'grok',
+  'teaching': 'grok', // Grok specialized for pedagogical teaching strategies
   'lesson_plan': 'gemini',
   'assessment': 'cerebras',
   'differentiation': 'sambanova',
@@ -93,10 +93,12 @@ export async function synthesize(
       .sort((a, b) => {
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
-        // Grounded interactions ALWAYS favor Gemini or Grok for reasoning
+        
+        // Grounded interactions (Authoritative Vault) ALWAYS favor top-tier reasoning
         if (hasDocs) {
-          if (a.name === 'gemini') return -1;
-          if (a.name === 'grok') return -1;
+          const topTier = ['gemini', 'grok'];
+          if (topTier.includes(a.name) && !topTier.includes(b.name)) return -1;
+          if (!topTier.includes(a.name) && topTier.includes(b.name)) return 1;
         }
         return 0;
       });

@@ -11,8 +11,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * SEMANTIC RETRIEVER (v13.0 - NEURAL SYNC ENHANCED)
- * Robust matching for Sindh/International standards (e.g. S8.C3, S-08-A-05).
+ * SEMANTIC RETRIEVER (v14.0 - NEURAL SYNC PRO)
+ * Robust matching for Sindh/International standards (e.g. S8.C3, S-08-A-05, Grade 8).
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -36,7 +36,7 @@ export async function retrieveRelevantChunks(
     const dotMatches = query.match(/([A-Z]\d+)\.([A-Z]\d+)/gi) || [];
     boostTags.push(...dotMatches.map(m => m.toUpperCase()));
 
-    // Pattern 2: Alphanumeric clusters (S8A5, s8 a5)
+    // Pattern 2: Alphanumeric clusters (S8A5, s8 a5, S-08-C-03)
     const sloRegex = /([A-Z])[\s.-]?(\d{1,2})[\s.-]?([A-Z])[\s.-]?(\d{1,2})/gi;
     const matches = Array.from(query.matchAll(sloRegex));
     
@@ -50,13 +50,13 @@ export async function retrieveRelevantChunks(
         `${letter1}${num1}${letter2}${num2}`,
         `${letter1}${num1.toString().padStart(2, '0')}${letter2}${num2.toString().padStart(2, '0')}`,
         `${letter1}-${num1}-${letter2}-${num2}`,
-        `${letter1}.${letter2}${num2}`, // Format like S8.C3
-        `${letter1}${num1}.${letter2}${num2}`, // Full S8.C3
+        `${letter1}.${letter2}${num2}`, 
+        `${letter1}${num1}.${letter2}${num2}`,
         m[0].toUpperCase().replace(/[\s.-]/g, '')
       );
     });
 
-    // Pattern 3: Simple Hierarchical
+    // Pattern 3: Simple Hierarchical (8.1, 8.1.2)
     const hierMatches = query.match(/\b\d+\.\d+(?:\.\d+)?(?:\.\d+)?\b/g) || [];
     boostTags.push(...hierMatches);
 
@@ -89,6 +89,8 @@ export async function retrieveRelevantChunks(
     }));
     
     console.log(`📡 [Retriever] Syncing ${uniqueResults.length} curriculum nodes for synthesis.`);
+    
+    // Explicit typing for sort parameters to fix potential build issues
     return uniqueResults.sort((a: RetrievedChunk, b: RetrievedChunk) => b.similarity - a.similarity);
 
   } catch (err) {
