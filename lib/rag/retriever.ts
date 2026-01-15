@@ -11,8 +11,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * SEMANTIC RETRIEVER (v12.0 - PRODUCTION STABLE)
- * Resolves build errors and implements high-fidelity curriculum matching.
+ * SEMANTIC RETRIEVER (v13.0 - NEURAL SYNC ENHANCED)
+ * Robust matching for Sindh/International standards (e.g. S8.C3, S-08-A-05).
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -29,11 +29,15 @@ export async function retrieveRelevantChunks(
       ? priorityDocumentId 
       : null;
 
-    // 1. ROBUST SLO TAG EXTRACTION
+    // 1. NEURAL SLO TAG EXTRACTION
     const boostTags: string[] = [];
     
-    // Pattern: S8A5, S-08-A-05, s8 a5
-    const sloRegex = /([A-Z])[\s-]?(\d{1,2})[\s-]?([A-Z])[\s-]?(\d{1,2})/gi;
+    // Pattern 1: Dot-separated (e.g. S8.C3, 8.1.2)
+    const dotMatches = query.match(/([A-Z]\d+)\.([A-Z]\d+)/gi) || [];
+    boostTags.push(...dotMatches.map(m => m.toUpperCase()));
+
+    // Pattern 2: Alphanumeric clusters (S8A5, s8 a5)
+    const sloRegex = /([A-Z])[\s.-]?(\d{1,2})[\s.-]?([A-Z])[\s.-]?(\d{1,2})/gi;
     const matches = Array.from(query.matchAll(sloRegex));
     
     matches.forEach(m => {
@@ -42,22 +46,22 @@ export async function retrieveRelevantChunks(
       const letter2 = m[3].toUpperCase();
       const num2 = parseInt(m[4], 10);
 
-      // Generate variants for database overlap check
       boostTags.push(
-        `${letter1}${num1}${letter2}${num2}`, // S8A5
-        `${letter1}${num1.toString().padStart(2, '0')}${letter2}${num2.toString().padStart(2, '0')}`, // S08A05
-        `${letter1}-${num1}-${letter2}-${num2}`, // S-8-A-5
-        `${letter1} ${num1} ${letter2} ${num2}`, // S 8 A 5
-        m[0].toUpperCase().replace(/\s+/g, '') // Cleaned raw match
+        `${letter1}${num1}${letter2}${num2}`,
+        `${letter1}${num1.toString().padStart(2, '0')}${letter2}${num2.toString().padStart(2, '0')}`,
+        `${letter1}-${num1}-${letter2}-${num2}`,
+        `${letter1}.${letter2}${num2}`, // Format like S8.C3
+        `${letter1}${num1}.${letter2}${num2}`, // Full S8.C3
+        m[0].toUpperCase().replace(/[\s.-]/g, '')
       );
     });
 
-    // Support hierarchical numeric codes (e.g., 8.1.2)
+    // Pattern 3: Simple Hierarchical
     const hierMatches = query.match(/\b\d+\.\d+(?:\.\d+)?(?:\.\d+)?\b/g) || [];
     boostTags.push(...hierMatches);
 
     const finalBoostTags = Array.from(new Set(boostTags.map(t => t.trim()).filter(t => t.length >= 2)));
-    console.log(`🎯 [Retriever] Active Boost Tags:`, finalBoostTags);
+    console.log(`🎯 [Retriever] Identified SLO Tokens:`, finalBoostTags);
 
     // 2. HYBRID SEMANTIC SEARCH
     const queryEmbedding = await generateEmbedding(query);
@@ -75,7 +79,6 @@ export async function retrieveRelevantChunks(
       return [];
     }
 
-    // Explicit typing for 'uniqueResults' to prevent "implicitly has any" build errors
     const uniqueResults: RetrievedChunk[] = (data || []).map((d: any) => ({
       id: d.chunk_id,
       text: d.chunk_text,
@@ -85,9 +88,7 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
     
-    console.log(`📡 [Retriever] Synced ${uniqueResults.length} curriculum nodes for reasoning.`);
-    
-    // Explicitly typed sort parameters to satisfy TypeScript production build
+    console.log(`📡 [Retriever] Syncing ${uniqueResults.length} curriculum nodes for synthesis.`);
     return uniqueResults.sort((a: RetrievedChunk, b: RetrievedChunk) => b.similarity - a.similarity);
 
   } catch (err) {

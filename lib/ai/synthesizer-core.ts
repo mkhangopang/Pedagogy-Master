@@ -8,17 +8,46 @@ import { callHyperbolic } from './providers/hyperbolic';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
-import { isGeminiEnabled } from '../env-server';
+import { isGeminiEnabled, resolveApiKey } from '../env-server';
 
+/**
+ * NEURAL PROVIDER CONFIGURATION
+ * Now integrates Vercel AI Gateway for high-reliability synthesis.
+ */
 export const PROVIDERS: ProviderConfig[] = [
-  { name: 'gemini', rpm: 15, rpd: 1500, enabled: isGeminiEnabled() },
+  { name: 'gemini', rpm: 20, rpd: 2000, enabled: isGeminiEnabled() },
+  { name: 'grok', rpm: 30, rpd: 500, enabled: !!process.env.AI_GATEWAY_API_KEY },
   { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
-  { name: 'sambanova', rpm: 100, rpd: 999999, enabled: !!process.env.SAMBANOVA_API_KEY },
-  { name: 'cerebras', rpm: 120, rpd: 999999, enabled: !!process.env.CEREBRAS_API_KEY },
-  { name: 'hyperbolic', rpm: 50, rpd: 999999, enabled: !!process.env.HYPERBOLIC_API_KEY },
   { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
   { name: 'openrouter', rpm: 50, rpd: 200, enabled: !!process.env.OPENROUTER_API_KEY },
 ];
+
+/**
+ * AI GATEWAY ADAPTER (Vercel/OpenRouter Fallback)
+ */
+async function callGrok(prompt: string, history: any[], system: string, hasDocs: boolean): Promise<string> {
+  const apiKey = process.env.AI_GATEWAY_API_KEY;
+  if (!apiKey) throw new Error('AI_GATEWAY_API_KEY missing');
+
+  // We route through the gateway to access Grok/X.AI models
+  const res = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      model: 'grok-beta',
+      messages: [
+        { role: 'system', content: system },
+        ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
+        { role: 'user', content: prompt }
+      ], 
+      temperature: hasDocs ? 0.1 : 0.7 
+    })
+  });
+
+  if (!res.ok) throw new Error(`Grok Node Failure: ${res.status}`);
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
 
 export const PROVIDER_FUNCTIONS = {
   deepseek: callDeepSeek,
@@ -28,11 +57,12 @@ export const PROVIDER_FUNCTIONS = {
   groq: callGroq,
   openrouter: callOpenRouter,
   gemini: callGemini,
+  grok: callGrok
 };
 
 export const MODEL_SPECIALIZATION: Record<string, string> = {
   'lookup': 'gemini',
-  'teaching': 'deepseek',
+  'teaching': 'grok',
   'lesson_plan': 'gemini',
   'assessment': 'cerebras',
   'differentiation': 'sambanova',
@@ -63,9 +93,10 @@ export async function synthesize(
       .sort((a, b) => {
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
-        if (docParts.length > 0) {
+        // Grounded interactions ALWAYS favor Gemini or Grok for reasoning
+        if (hasDocs) {
           if (a.name === 'gemini') return -1;
-          if (b.name === 'gemini') return 1;
+          if (a.name === 'grok') return -1;
         }
         return 0;
       });
@@ -85,6 +116,6 @@ export async function synthesize(
         console.error(`Node failure: ${config.name}`); 
       }
     }
-    throw new Error("Neural Grid Exhausted.");
+    throw new Error("Neural Grid Exhausted. All nodes offline.");
   });
 }
