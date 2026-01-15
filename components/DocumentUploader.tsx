@@ -70,7 +70,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
   };
 
   const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.API_KEY || (window as any).API_KEY;
     if (!apiKey) throw new Error("Neural Node Offline: API_KEY missing.");
     const ai = new GoogleGenAI({ apiKey });
     

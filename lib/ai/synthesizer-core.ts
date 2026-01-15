@@ -8,13 +8,14 @@ import { callHyperbolic } from './providers/hyperbolic';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
-import { isGeminiEnabled, resolveApiKey } from '../env-server';
+import { isGeminiEnabled } from '../env-server';
 
 /**
  * NEURAL PROVIDER CONFIGURATION
- * Now integrates Vercel AI Gateway for high-reliability synthesis.
+ * Integrates world-class models including ChatGPT via the AI Gateway.
  */
 export const PROVIDERS: ProviderConfig[] = [
+  { name: 'chatgpt', rpm: 50, rpd: 5000, enabled: !!process.env.AI_GATEWAY_API_KEY },
   { name: 'gemini', rpm: 20, rpd: 2000, enabled: isGeminiEnabled() },
   { name: 'grok', rpm: 30, rpd: 500, enabled: !!process.env.AI_GATEWAY_API_KEY },
   { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
@@ -23,13 +24,38 @@ export const PROVIDERS: ProviderConfig[] = [
 ];
 
 /**
- * AI GATEWAY ADAPTER (Vercel/OpenRouter Fallback)
+ * ChatGPT / OpenAI ADAPTER via AI Gateway
+ */
+async function callChatGPT(prompt: string, history: any[], system: string, hasDocs: boolean): Promise<string> {
+  const apiKey = process.env.AI_GATEWAY_API_KEY;
+  if (!apiKey) throw new Error('AI_GATEWAY_API_KEY missing - ChatGPT Node Offline');
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: system },
+        ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
+        { role: 'user', content: prompt }
+      ], 
+      temperature: hasDocs ? 0.1 : 0.7 
+    })
+  });
+
+  if (!res.ok) throw new Error(`ChatGPT Node Failure: ${res.status}`);
+  const data = await res.json();
+  return data.choices[0].message.content;
+}
+
+/**
+ * GROK ADAPTER
  */
 async function callGrok(prompt: string, history: any[], system: string, hasDocs: boolean): Promise<string> {
   const apiKey = process.env.AI_GATEWAY_API_KEY;
   if (!apiKey) throw new Error('AI_GATEWAY_API_KEY missing');
 
-  // We route through the gateway to access Grok/X.AI models
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -50,6 +76,7 @@ async function callGrok(prompt: string, history: any[], system: string, hasDocs:
 }
 
 export const PROVIDER_FUNCTIONS = {
+  chatgpt: callChatGPT,
   deepseek: callDeepSeek,
   cerebras: callCerebras,
   sambanova: callSambaNova,
@@ -62,8 +89,8 @@ export const PROVIDER_FUNCTIONS = {
 
 export const MODEL_SPECIALIZATION: Record<string, string> = {
   'lookup': 'gemini',
-  'teaching': 'grok', // Grok specialized for pedagogical teaching strategies
-  'lesson_plan': 'gemini',
+  'teaching': 'chatgpt', // Specialized for high-fidelity instruction
+  'lesson_plan': 'chatgpt', 
   'assessment': 'cerebras',
   'differentiation': 'sambanova',
   'general': 'groq',
@@ -94,9 +121,8 @@ export async function synthesize(
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
         
-        // Grounded interactions (Authoritative Vault) ALWAYS favor top-tier reasoning
         if (hasDocs) {
-          const topTier = ['gemini', 'grok'];
+          const topTier = ['chatgpt', 'gemini'];
           if (topTier.includes(a.name) && !topTier.includes(b.name)) return -1;
           if (!topTier.includes(a.name) && topTier.includes(b.name)) return 1;
         }
