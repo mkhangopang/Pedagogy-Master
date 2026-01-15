@@ -13,48 +13,50 @@ export interface ValidationResult {
 }
 
 /**
- * Adaptive Markdown Validator (v7.0)
- * Enforces a hierarchical structure while allowing flexible formatting.
+ * Adaptive Markdown Validator (v8.0)
+ * Optimized for Sindh & International Standards.
  */
 export function validateCurriculumMarkdown(content: string): ValidationResult {
   const errors: string[] = [];
   
-  // 1. Metadata Presence
+  // 1. Metadata Presence (Compulsory)
   if (!content.includes('# Curriculum Metadata')) {
-    errors.push("Missing '# Curriculum Metadata' header at the top.");
+    errors.push("Header '# Curriculum Metadata' is missing.");
   }
 
-  // 2. Metadata Extraction (Adaptive Regex)
+  // 2. Metadata Extraction (Flexible Key-Value)
   const boardMatch = content.match(/Board:\s*([^\n\r]+)/i);
   const subjectMatch = content.match(/Subject:\s*([^\n\r]+)/i);
   const gradeMatch = content.match(/Grade:\s*([^\n\r]+)/i);
   const versionMatch = content.match(/Version:\s*([^\n\r]+)/i);
 
-  if (!boardMatch) errors.push("Metadata 'Board:' is missing.");
-  if (!subjectMatch) errors.push("Metadata 'Subject:' is missing.");
-  if (!gradeMatch) errors.push("Metadata 'Grade:' is missing.");
+  if (!boardMatch) errors.push("Metadata 'Board:' missing.");
+  if (!subjectMatch) errors.push("Metadata 'Subject:' missing.");
+  if (!gradeMatch) errors.push("Metadata 'Grade:' missing.");
 
-  // 3. Structural Hierarchy (Units)
-  // Adaptive check for Unit headers (allows Unit 1, Unit: 1, Unit - 1, etc)
-  const unitRegex = /^#\s+(Unit|Chapter|Section|Module)\s*[:\d-]*\s*(.+)/gim;
+  // 3. Adaptive Hierarchical Sections
+  // Allows # Unit, ## Unit, ### Unit, # Grade, # Domain etc.
+  const unitRegex = /^#{1,3}\s+(Unit|Chapter|Section|Module|Domain|Grade|Grade\s+\w+)\b/gim;
   const unitMatches = Array.from(content.matchAll(unitRegex));
   
   if (unitMatches.length === 0) {
-    errors.push("Missing hierarchical sections. Please use '# Unit: [Name]' to group content.");
+    errors.push("No hierarchy found. Curriculum must be organized into '# Unit' or '# Domain' sections.");
   }
 
-  // 4. Learning Outcomes / SLOs
+  // 4. Adaptive SLO Detection
+  // Matches patterns like: - SLO:S-04-A-01, - SLO: S8a5, etc.
   const sloRegex = /^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/gim;
   const sloMatches = Array.from(content.matchAll(sloRegex));
   if (sloMatches.length === 0) {
-    errors.push("No Student Learning Objectives (SLOs) detected. Format: '- SLO:CODE: Description'");
+    errors.push("No Student Learning Objectives (SLOs) detected. Requirement: '- SLO:CODE: Description'");
   }
 
-  // 5. Standards / Detailed Breakdown
-  const standardRegex = /^### Standard:\s*([^\n\r]+)/gim;
+  // 5. Standards Grid Compliance
+  // Every curriculum must have Standards for RAG chunking.
+  const standardRegex = /^#{2,4}\s+Standard:\s*([^\n\r]+)/gim;
   const standardMatches = Array.from(content.matchAll(standardRegex));
   if (standardMatches.length === 0) {
-    errors.push("Missing '### Standard: [ID]' sections for detailed RAG indexing.");
+    errors.push("Missing '### Standard: [ID]' sections required for neural tutoring.");
   }
 
   return {

@@ -1,7 +1,7 @@
 
 /**
- * ADAPTIVE CURRICULUM JSON GENERATOR (v3.0)
- * Converts hierarchical Markdown into a searchable pedagogical grid.
+ * ADAPTIVE CURRICULUM JSON GENERATOR (v4.0)
+ * Optimized for multi-level hierarchical curricula.
  */
 export function generateCurriculumJson(markdown: string) {
   const lines = markdown.split('\n');
@@ -16,17 +16,17 @@ export function generateCurriculumJson(markdown: string) {
   lines.forEach(line => {
     const trimmed = line.trim();
     
-    // Adaptive Unit Detection
-    if (trimmed.startsWith('# Unit') || trimmed.startsWith('# Chapter') || trimmed.startsWith('# Module')) {
+    // Adaptive Unit/Domain Detection (1-3 hashes)
+    if (trimmed.match(/^#{1,3}\s+(Unit|Chapter|Module|Section|Domain|Grade|Grade\s+\w+)\b/i)) {
       if (currentUnit) result.units.push(currentUnit);
       currentUnit = {
-        title: trimmed.replace(/^#\s+(Unit|Chapter|Module|Section)[:\s\d-]*/i, '').trim(),
+        title: trimmed.replace(/^#{1,3}\s+(Unit|Chapter|Module|Section|Domain|Grade)[:\s\d-]*/i, '').trim(),
         outcomes: [],
         standards: []
       };
     }
     
-    // Adaptive SLO Detection (e.g., - SLO:S1: Text or - SLO: S1: Text)
+    // Adaptive SLO Detection
     const sloMatch = trimmed.match(/^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/i);
     if (sloMatch && currentUnit) {
       currentUnit.outcomes.push({
@@ -36,9 +36,9 @@ export function generateCurriculumJson(markdown: string) {
       result.totalOutcomes++;
     }
 
-    // Adaptive Standard Detection
-    if (trimmed.startsWith('### Standard:')) {
-      const id = trimmed.replace('### Standard:', '').trim();
+    // Adaptive Standard Detection (2-4 hashes)
+    if (trimmed.match(/^#{2,4}\s+Standard:/i)) {
+      const id = trimmed.replace(/^#{2,4}\s+Standard:\s*/i, '').trim();
       if (currentUnit) {
         currentUnit.standards.push({ id });
         result.totalStandards++;

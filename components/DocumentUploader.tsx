@@ -56,18 +56,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         }
         return fullText;
       } else {
-        // Modern DOCX extraction via Mammoth
         const options = { arrayBuffer: arrayBuffer };
         const result = await mammoth.extractRawText(options);
-        
-        if (result.messages.length > 0) {
-          console.warn('Mammoth extraction messages:', result.messages);
-        }
-        
         if (!result.value || result.value.trim().length === 0) {
           throw new Error("Word file content extraction returned an empty buffer.");
         }
-        
         return result.value;
       }
     } catch (e: any) {
@@ -77,47 +70,53 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
   };
 
   const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
-    // Resolve API Key from the handshake-populated process.env or global scope
     const apiKey = process.env.API_KEY || (window as any).API_KEY || (process.env as any).GEMINI_API_KEY;
-    if (!apiKey) throw new Error("Neural Node Offline: API_KEY is missing from environment. Ensure GEMINI_API_KEY is set in Vercel and you have redeployed.");
+    if (!apiKey) throw new Error("Neural Node Offline: API_KEY is missing from environment.");
     
     const ai = new GoogleGenAI({ apiKey });
     
     const prompt = `
       You are the World-Class Curriculum Ingestion Engineer for EduNexus AI. 
-      Your task is to transform raw, messy curriculum text into a highly structured "Master Markdown" file.
+      Your task is to transform raw, messy curriculum text (like Sindh Science Grade IV-VIII) into a highly structured "Master Markdown" file.
 
-      ### CORE RULES:
+      ### CORE ARCHITECTURAL RULES:
       1. MANDATORY METADATA: Start with the "# Curriculum Metadata" header.
-      2. HIERARCHICAL ADAPTATION: Even if the source is not organized by units, you MUST group content logically into "# Unit X: [Theme]" sections.
-      3. SLO FOCUS: Extract every Student Learning Objective. Format them exactly as: "- SLO:[CODE]: [Full Objective Text]".
-      4. STANDARDS GRID: Every unit must have a detailed breakdown using "### Standard: [CODE]" headers.
+      2. HIERARCHICAL ADAPTATION: Group content into "# Unit X: [Theme]" sections. If the source uses "Domains", treat each major Domain or Grade as a Unit.
+      3. SLO EXTRACTION: Extract every Student Learning Objective. Format exactly as: "- SLO:[CODE]: [Text]".
+      4. COMPULSORY STANDARDS: For EVERY SLO extracted, you MUST create a corresponding "### Standard: [CODE]" section. This is critical for the neural search grid.
+
+      ### EXAMPLE MAPPING:
+      Input: "S-04-A-01 Understand that living things grow..."
+      Output: 
+      ## Learning Outcomes
+      - SLO:S-04-A-01: Understand that living things grow...
+      ### Standard: S-04-A-01
+      [Provide pedagogical context here]
 
       ### EXPECTED SCHEMA:
       # Curriculum Metadata
-      Board: [Detect Board Name e.g. Sindh, FBISE, Cambridge]
+      Board: [Detect Board e.g. Sindh]
       Subject: [Detect Subject]
-      Grade: [Detect Grade]
-      Version: [Detect Year/Version]
+      Grade: [Detect Grade Range]
+      Version: [Detect Year]
       ---
-      # Unit 1: [Logical Unit Name]
+      # Unit 1: [Name]
       ## Learning Outcomes
-      - SLO:[CODE]: [Exact Pedagogical Outcome]
+      - SLO:[CODE]: [Objective]
       
       ### Standard: [CODE]
-      [Provide detailed instructional context, keywords, and pedagogical notes for this standard here]
-      ---
+      [Pedagogical details...]
 
-      RAW CURRICULUM DATA:
-      ${rawText.substring(0, 40000)}
+      RAW DATA:
+      ${rawText.substring(0, 45000)}
     `;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1, // Ultra-high fidelity for institutional data
-        systemInstruction: "You are an expert pedagogical architect. You never miss an SLO and you always maintain a perfect hierarchical markdown structure."
+        temperature: 0.1,
+        systemInstruction: "You are a pedagogical data architect. You ensure every curriculum objective is uniquely indexed and structured for RAG."
       }
     });
 
@@ -130,7 +129,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
     setIsProcessing(true);
     setError(null);
-    setProcStage(`Mounting ${file.name} to neural node...`);
+    setProcStage(`Mounting ${file.name} to adaptive neural node...`);
 
     try {
       if (type === 'md') {
@@ -160,13 +159,12 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       } else {
         setMode('transition');
         const rawText = await extractRawText(file, type);
-        setProcStage('Neural grid synthesizing curriculum nodes...');
+        setProcStage('Synthesizing adaptive standards grid...');
         const masterMd = await synthesizeMasterMarkdown(rawText, file.name);
         setDraftMarkdown(masterMd);
       }
     } catch (err: any) {
       setError(err.message);
-      console.error("Uploader Critical Path:", err);
     } finally {
       setIsProcessing(false);
       setProcStage('');
@@ -181,14 +179,14 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     }
 
     setIsProcessing(true);
-    setProcStage('Committing assets to global cloud R2 grid...');
+    setProcStage('Committing adaptive assets to cloud...');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          name: "Curriculum_Asset_" + Date.now() + ".md",
+          name: "Curriculum_Standard_" + Date.now() + ".md",
           sourceType: 'markdown',
           extractedText: draftMarkdown,
           ...v.metadata
@@ -197,10 +195,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Global sync interrupted.");
-      
-      onComplete({ id: result.id, name: `Master Curriculum (Adaptive Synthesis)`, status: 'ready' });
+      onComplete({ id: result.id, name: `Curriculum Asset (Verified)`, status: 'ready' });
     } catch (err: any) {
-      setError(`Neural Persistence Failure: ${err.message}`);
+      setError(`Persistence Failure: ${err.message}`);
     } finally {
       setIsProcessing(false);
       setProcStage('');
@@ -217,7 +214,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             </div>
             <div className="min-w-0">
               <h3 className="text-lg lg:text-xl font-black tracking-tight truncate">Institutional Asset Review</h3>
-              <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Audit the adaptive synthesis before finalizing ingestion.'}</p>
+              <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Audit the neural synthesis for standard compliance.'}</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
@@ -232,7 +229,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
               value={draftMarkdown}
               onChange={(e) => {setDraftMarkdown(e.target.value); setError(null);}}
               className="flex-1 p-4 lg:p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl font-mono text-[11px] lg:text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none"
-              placeholder={isProcessing ? "Synthesizing curriculum standards..." : "Waiting for neural stream..."}
+              placeholder={isProcessing ? "Synthesizing curriculum standards..." : "Wait for synthesis..."}
               readOnly={isProcessing}
             />
           </div>
@@ -266,8 +263,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
               className="flex-1 lg:flex-none px-8 lg:px-12 py-3 bg-indigo-600 text-white rounded-xl lg:rounded-2xl font-black shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
             >
               {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Database size={18}/>}
-              <span className="hidden sm:inline">Finalize Ingestion</span>
-              <span className="sm:hidden">Finalize</span>
+              <span>Finalize Ingestion</span>
               <ArrowRight size={18} className="hidden sm:block"/>
             </button>
           </div>
@@ -315,7 +311,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             </div>
             <div className="text-left">
               <h4 className="font-bold text-xs lg:text-sm">High-Density PDF → Neural</h4>
-              <p className="text-[10px] text-slate-400">Institutional extraction of complex PDFs.</p>
+              <p className="text-[10px] text-slate-400">Institutional extraction of complex standards.</p>
             </div>
           </div>
         </label>
