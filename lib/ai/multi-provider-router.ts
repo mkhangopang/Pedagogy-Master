@@ -100,7 +100,7 @@ ${lengthGuideline}
     activeSystem = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
   }
 
-  const finalSystemInstruction = `${activeSystem}\n\nSTRICT_GROUNDING: If AUTHORITATIVE_VAULT_METADATA is present, you HAVE ACCESS to the curriculum. Never claim otherwise. You are grounded in the provided ASSETS and NODES.`;
+  const finalSystemInstruction = `${activeSystem}\n\nSTRICT_GROUNDING: If AUTHORITATIVE_VAULT_METADATA is present, you HAVE ACCESS to the curriculum. Never claim otherwise. You are grounded in the provided ASSETS and NODES. Do not use internet resources.`;
   
   const result = await synthesize(
     finalPrompt, 

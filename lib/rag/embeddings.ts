@@ -1,19 +1,19 @@
 import { GoogleGenAI } from "@google/genai";
-import { resolveApiKey } from "../env-server";
 
 /**
- * VECTOR SYNTHESIS ENGINE
- * Corrected: Changed 'contents' to 'content' to match @google/genai spec for embedContent.
+ * VECTOR SYNTHESIS ENGINE (v17.5)
+ * Corrected: Changed 'content' to 'contents' to match SDK spec.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = resolveApiKey();
-  if (!apiKey) throw new Error('Neural Node Error: API key missing for embeddings.');
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error('Neural Node Error: API_KEY missing for embeddings.');
 
   try {
     const ai = new GoogleGenAI({ apiKey });
+    // The SDK requires 'contents' for the parameter name
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
-      content: { parts: [{ text: text || " " }] } // Fixed: Use 'content' for embedContent
+      contents: { parts: [{ text: text || " " }] } 
     });
 
     const result = response.embedding;
@@ -24,6 +24,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       return isFinite(n) ? n : 0;
     });
 
+    // Ensure 768-dimension alignment for pgvector compatibility
     if (vector.length < 768) {
       return [...vector, ...new Array(768 - vector.length).fill(0)];
     }
@@ -37,8 +38,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   if (!texts.length) return [];
   
-  const apiKey = resolveApiKey();
-  if (!apiKey) throw new Error('Neural Node Error: API key missing for batch embeddings.');
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error('Neural Node Error: API_KEY missing for batch embeddings.');
   
   const ai = new GoogleGenAI({ apiKey });
   const CONCURRENCY_LIMIT = 5; 
@@ -50,7 +51,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       const promises = batchSlice.map(text => 
         ai.models.embedContent({
           model: "text-embedding-004",
-          content: { parts: [{ text: text || " " }] } // Fixed: Use 'content'
+          contents: { parts: [{ text: text || " " }] }
         })
       );
 
@@ -63,11 +64,13 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
         return v.slice(0, 768);
       });
       results.push(...vectors);
+      
+      // Prevent rate-limit spikes on batching
       if (i + CONCURRENCY_LIMIT < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     } catch (err: any) {
-      console.warn(`Batch slice starting at index ${i} failed, falling back to sequential:`, err);
+      console.warn(`Batch slice at index ${i} failed, using sequential fallback:`, err.message);
       for (const text of batchSlice) {
         try {
           results.push(await generateEmbedding(text));
