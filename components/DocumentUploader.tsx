@@ -84,33 +84,40 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     const ai = new GoogleGenAI({ apiKey });
     
     const prompt = `
-      You are the Official Curriculum Data Engineer for EduNexus AI. 
-      Transform the following raw text into a production-ready "Master Markdown" file.
+      You are the World-Class Curriculum Ingestion Engineer for EduNexus AI. 
+      Your task is to transform raw, messy curriculum text into a highly structured "Master Markdown" file.
 
-      STRICT OUTPUT SCHEMA:
+      ### CORE RULES:
+      1. MANDATORY METADATA: Start with the "# Curriculum Metadata" header.
+      2. HIERARCHICAL ADAPTATION: Even if the source is not organized by units, you MUST group content logically into "# Unit X: [Theme]" sections.
+      3. SLO FOCUS: Extract every Student Learning Objective. Format them exactly as: "- SLO:[CODE]: [Full Objective Text]".
+      4. STANDARDS GRID: Every unit must have a detailed breakdown using "### Standard: [CODE]" headers.
+
+      ### EXPECTED SCHEMA:
       # Curriculum Metadata
-      Board: [Detected]
-      Subject: [Detected]
-      Grade: [Detected]
-      Version: 2023-24
+      Board: [Detect Board Name e.g. Sindh, FBISE, Cambridge]
+      Subject: [Detect Subject]
+      Grade: [Detect Grade]
+      Version: [Detect Year/Version]
       ---
-      # Unit X: [Unit Name]
+      # Unit 1: [Logical Unit Name]
       ## Learning Outcomes
-      - SLO:[CODE]: [Pedagogical Outcome]
-      ---
+      - SLO:[CODE]: [Exact Pedagogical Outcome]
+      
       ### Standard: [CODE]
-      [Deep pedagogical breakdown for institutional archiving...]
+      [Provide detailed instructional context, keywords, and pedagogical notes for this standard here]
+      ---
 
-      RAW DATA FROM ${fileName}:
-      ${rawText.substring(0, 35000)}
+      RAW CURRICULUM DATA:
+      ${rawText.substring(0, 40000)}
     `;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1, // High fidelity requirement
-        systemInstruction: "You are an institutional curriculum architect specializing in SLO mapping."
+        temperature: 0.1, // Ultra-high fidelity for institutional data
+        systemInstruction: "You are an expert pedagogical architect. You never miss an SLO and you always maintain a perfect hierarchical markdown structure."
       }
     });
 
@@ -123,7 +130,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
     setIsProcessing(true);
     setError(null);
-    setProcStage(`Mounting ${file.name} to extraction node...`);
+    setProcStage(`Mounting ${file.name} to neural node...`);
 
     try {
       if (type === 'md') {
@@ -181,7 +188,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({
-          name: "Synthesis_Node_" + Date.now() + ".md",
+          name: "Curriculum_Asset_" + Date.now() + ".md",
           sourceType: 'markdown',
           extractedText: draftMarkdown,
           ...v.metadata
@@ -191,7 +198,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Global sync interrupted.");
       
-      onComplete({ id: result.id, name: `Master Curriculum (Neural Generated)`, status: 'ready' });
+      onComplete({ id: result.id, name: `Master Curriculum (Adaptive Synthesis)`, status: 'ready' });
     } catch (err: any) {
       setError(`Neural Persistence Failure: ${err.message}`);
     } finally {
@@ -210,7 +217,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             </div>
             <div className="min-w-0">
               <h3 className="text-lg lg:text-xl font-black tracking-tight truncate">Institutional Asset Review</h3>
-              <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Audit the neural synthesis before persistence.'}</p>
+              <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Audit the adaptive synthesis before finalizing ingestion.'}</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
@@ -219,13 +226,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         <div className="flex-1 flex flex-col lg:grid lg:grid-cols-2 overflow-hidden">
           <div className="flex flex-col border-b lg:border-b-0 lg:border-r dark:border-white/5 p-4 lg:p-8 bg-slate-50/50 dark:bg-black/20 h-1/2 lg:h-full">
             <label className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-3 flex items-center gap-2">
-              <ShieldCheck size={12}/> AI Synthesized Source
+              <ShieldCheck size={12}/> AI Synthesized Source (Editable)
             </label>
             <textarea 
               value={draftMarkdown}
               onChange={(e) => {setDraftMarkdown(e.target.value); setError(null);}}
               className="flex-1 p-4 lg:p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl font-mono text-[11px] lg:text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none"
-              placeholder={isProcessing ? "Synthesizing curriculum standards..." : "Wait for synthesis..."}
+              placeholder={isProcessing ? "Synthesizing curriculum standards..." : "Waiting for neural stream..."}
               readOnly={isProcessing}
             />
           </div>
@@ -240,14 +247,14 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         <div className="p-4 lg:p-8 border-t dark:border-white/5 bg-slate-50 dark:bg-slate-900/50 flex flex-col lg:flex-row items-center justify-between gap-4">
           <div className="w-full lg:max-w-md">
             {error ? (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900 shadow-sm">
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900 shadow-sm animate-bounce">
                 <p className="text-xs text-rose-600 font-bold flex items-center gap-2">
                   <AlertCircle size={14}/> {error}
                 </p>
               </div>
             ) : (
               <p className="text-[10px] lg:text-xs text-emerald-600 font-bold flex items-center gap-2">
-                <CheckCircle2 size={14}/> {draftMarkdown ? 'Curriculum Structure Verified.' : procStage || 'Synthesis Pending.'}
+                <CheckCircle2 size={14}/> {draftMarkdown ? 'Adaptive Structure Synthesized.' : procStage || 'Synthesis Pending.'}
               </p>
             )}
           </div>
@@ -278,7 +285,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
           <ShieldCheck className="w-8 h-8 lg:w-10 lg:h-10" />
         </div>
         <h3 className="text-2xl lg:text-3xl font-black tracking-tight">Institutional Ingestion</h3>
-        <p className="text-sm lg:text-base text-slate-500 mt-2 font-medium">Map local institutional assets to the global standards grid.</p>
+        <p className="text-sm lg:text-base text-slate-500 mt-2 font-medium">Map any curriculum asset to the adaptive standards grid.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:gap-4 relative z-10">
@@ -290,7 +297,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             </div>
             <div className="text-left">
               <h4 className="font-bold text-xs lg:text-sm">Validated Markdown (.md)</h4>
-              <p className="text-[10px] text-slate-400">Direct sync for pre-formatted curricula.</p>
+              <p className="text-[10px] text-slate-400">Direct sync for pre-formatted assets.</p>
             </div>
           </div>
         </label>
@@ -308,7 +315,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             </div>
             <div className="text-left">
               <h4 className="font-bold text-xs lg:text-sm">High-Density PDF → Neural</h4>
-              <p className="text-[10px] text-slate-400">Institutional extraction of complex standards.</p>
+              <p className="text-[10px] text-slate-400">Institutional extraction of complex PDFs.</p>
             </div>
           </div>
         </label>
@@ -321,7 +328,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             </div>
             <div className="text-left">
               <h4 className="font-bold text-xs lg:text-sm">Word Document → Neural</h4>
-              <p className="text-[10px] text-slate-400">World-class conversion for unformatted assets.</p>
+              <p className="text-[10px] text-slate-400">Adaptive conversion for raw documents.</p>
             </div>
           </div>
         </label>
@@ -332,7 +339,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       {isProcessing && (
         <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-3xl lg:rounded-[3rem] z-50 backdrop-blur-md">
           <Loader2 className="animate-spin text-indigo-600 mb-4 lg:mb-6 w-10 h-10 lg:w-14 lg:h-14" />
-          <p className="text-base lg:text-lg font-black tracking-tight text-indigo-600">Mounting Institutional Assets...</p>
+          <p className="text-base lg:text-lg font-black tracking-tight text-indigo-600">Adaptive Ingestion Active...</p>
           <p className="text-[10px] lg:text-sm font-medium text-slate-400 mt-2 px-6 text-center">{procStage}</p>
         </div>
       )}

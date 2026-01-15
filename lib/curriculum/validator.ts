@@ -13,54 +13,58 @@ export interface ValidationResult {
 }
 
 /**
- * Institutional Markdown Validator (v6.0)
- * Enforces strict template structure: Metadata -> Units -> Outcomes -> Standards
+ * Adaptive Markdown Validator (v7.0)
+ * Enforces a hierarchical structure while allowing flexible formatting.
  */
 export function validateCurriculumMarkdown(content: string): ValidationResult {
   const errors: string[] = [];
   
-  // 1. Mandatory Header Check
+  // 1. Metadata Presence
   if (!content.includes('# Curriculum Metadata')) {
-    errors.push("Missing required top-level header: '# Curriculum Metadata'");
+    errors.push("Missing '# Curriculum Metadata' header at the top.");
   }
 
-  // 2. Metadata Field Extraction & Validation
-  const board = content.match(/Board:\s*(.+)/i)?.[1];
-  const subject = content.match(/Subject:\s*(.+)/i)?.[1];
-  const grade = content.match(/Grade:\s*(.+)/i)?.[1];
-  const version = content.match(/Version:\s*(.+)/i)?.[1];
+  // 2. Metadata Extraction (Adaptive Regex)
+  const boardMatch = content.match(/Board:\s*([^\n\r]+)/i);
+  const subjectMatch = content.match(/Subject:\s*([^\n\r]+)/i);
+  const gradeMatch = content.match(/Grade:\s*([^\n\r]+)/i);
+  const versionMatch = content.match(/Version:\s*([^\n\r]+)/i);
 
-  if (!board) errors.push("Metadata field 'Board:' is missing or empty.");
-  if (!subject) errors.push("Metadata field 'Subject:' is missing or empty.");
-  if (!grade) errors.push("Metadata field 'Grade:' is missing or empty.");
+  if (!boardMatch) errors.push("Metadata 'Board:' is missing.");
+  if (!subjectMatch) errors.push("Metadata 'Subject:' is missing.");
+  if (!gradeMatch) errors.push("Metadata 'Grade:' is missing.");
 
-  // 3. Structural Integrity
-  const unitCount = (content.match(/^# Unit/gm) || []).length;
-  if (unitCount === 0) errors.push("No '# Unit' headers detected. A curriculum must have at least one unit.");
+  // 3. Structural Hierarchy (Units)
+  // Adaptive check for Unit headers (allows Unit 1, Unit: 1, Unit - 1, etc)
+  const unitRegex = /^#\s+(Unit|Chapter|Section|Module)\s*[:\d-]*\s*(.+)/gim;
+  const unitMatches = Array.from(content.matchAll(unitRegex));
+  
+  if (unitMatches.length === 0) {
+    errors.push("Missing hierarchical sections. Please use '# Unit: [Name]' to group content.");
+  }
 
-  const outcomeCount = (content.match(/^## Learning Outcomes/gm) || []).length;
-  if (outcomeCount === 0) errors.push("Missing '## Learning Outcomes' sections under units.");
+  // 4. Learning Outcomes / SLOs
+  const sloRegex = /^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/gim;
+  const sloMatches = Array.from(content.matchAll(sloRegex));
+  if (sloMatches.length === 0) {
+    errors.push("No Student Learning Objectives (SLOs) detected. Format: '- SLO:CODE: Description'");
+  }
 
-  // 4. Standard ID Constraint
-  const standardMatches = content.match(/^### Standard:\s*([A-Z0-9.-]+)/gm);
-  if (!standardMatches) {
-    errors.push("No Standards identified. Every standard must be prefixed with '### Standard: [ID]'.");
-  } else {
-    // Check for ID formatting (Should not be empty)
-    standardMatches.forEach(match => {
-      const id = match.replace('### Standard:', '').trim();
-      if (!id) errors.push("Detected an empty 'Standard' ID. All standards must have unique alphanumeric IDs.");
-    });
+  // 5. Standards / Detailed Breakdown
+  const standardRegex = /^### Standard:\s*([^\n\r]+)/gim;
+  const standardMatches = Array.from(content.matchAll(standardRegex));
+  if (standardMatches.length === 0) {
+    errors.push("Missing '### Standard: [ID]' sections for detailed RAG indexing.");
   }
 
   return {
     isValid: errors.length === 0,
     errors,
-    metadata: board && subject && grade && version ? {
-      board: board.trim(),
-      subject: subject.trim(),
-      grade: grade.trim(),
-      version: version.trim()
+    metadata: boardMatch && subjectMatch && gradeMatch ? {
+      board: boardMatch[1].trim(),
+      subject: subjectMatch[1].trim(),
+      grade: gradeMatch[1].trim(),
+      version: versionMatch ? versionMatch[1].trim() : "2024"
     } : undefined
   };
 }
