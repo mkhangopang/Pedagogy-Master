@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Upload, FileText, Plus, Target, 
   Loader2, AlertCircle, CheckCircle2, X,
-  Database, Check, Trash2, ExternalLink, Globe, Sparkles, BrainCircuit, RefreshCw
+  Database, Check, Trash2, ExternalLink, Globe, Sparkles, BrainCircuit, RefreshCw, Layers, ListChecks
 } from 'lucide-react';
 import { Document, SubscriptionPlan, UserProfile, UserRole } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -43,7 +44,7 @@ const Documents: React.FC<DocumentsProps> = ({
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from('documents')
-        .select('id, status, document_summary, difficulty_level, rag_indexed')
+        .select('id, status, document_summary, difficulty_level, rag_indexed, generated_json')
         .in('id', processingDocs.map(d => d.id));
 
       if (data) {
@@ -53,7 +54,8 @@ const Documents: React.FC<DocumentsProps> = ({
               status: updated.status as any,
               documentSummary: updated.document_summary,
               difficultyLevel: updated.difficulty_level,
-              geminiProcessed: updated.rag_indexed
+              geminiProcessed: updated.rag_indexed,
+              generatedJson: updated.generated_json
             });
           }
         });
@@ -151,6 +153,7 @@ const Documents: React.FC<DocumentsProps> = ({
           const isIndexing = indexingId === doc.id;
           const isProcessing = doc.status === 'processing';
           const isReady = doc.status === 'ready' || doc.status === 'completed';
+          const stats = doc.generatedJson || {};
 
           return (
             <div key={doc.id} className={`bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group ${isDeleting ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
@@ -207,6 +210,17 @@ const Documents: React.FC<DocumentsProps> = ({
                       </span>
                     )}
                  </div>
+
+                 {isReady && stats.totalOutcomes > 0 && (
+                   <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-50 dark:border-white/5">
+                      <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase">
+                        <ListChecks size={10} className="text-indigo-500" /> {stats.totalOutcomes} SLOs
+                      </div>
+                      <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase">
+                        <Layers size={10} className="text-amber-500" /> {stats.units?.length || 0} Units
+                      </div>
+                   </div>
+                 )}
 
                  {doc.documentSummary && (
                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed font-medium">
