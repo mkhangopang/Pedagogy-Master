@@ -11,7 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL INGESTION GATEWAY (v16.0)
+ * NEURAL INGESTION GATEWAY (v17.0)
+ * Authoritative node for curriculum asset synchronization.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -36,28 +37,26 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     
     if (sourceType !== 'markdown' || !extractedText) {
-      return NextResponse.json({ error: "Institutional Policy: Only Markdown curricula can be indexable." }, { status: 400 });
+      return NextResponse.json({ error: "Policy: Only high-fidelity Markdown can be indexed for neural grounding." }, { status: 400 });
     }
 
-    // 1. STORAGE
+    // 1. CLOUD STORAGE PERSISTENCE
     let filePath = `curricula/${user.id}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
     
     if (!isR2Configured() || !r2Client) {
-      throw new Error("Cloudflare R2 is not configured. Infrastructure node offline.");
+      throw new Error("Cloudflare R2 node unreachable. Check infrastructure config.");
     }
 
-    const uploadParams = {
+    await r2Client.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: filePath,
       Body: Buffer.from(extractedText),
       ContentType: 'text/markdown',
-    };
-    await r2Client.send(new PutObjectCommand(uploadParams));
+    }));
 
-    // 2. JSON
+    // 2. METADATA SYNCHRONIZATION
     const generatedJson = generateCurriculumJson(extractedText);
 
-    // 3. METADATA
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       user_id: user.id,
       name,
@@ -68,34 +67,34 @@ export async function POST(req: NextRequest) {
       file_path: filePath,
       storage_type: 'r2',
       curriculum_name: name || `${subject} Grade ${grade}`,
-      authority: board || 'Sindh', 
-      subject: subject || 'General Science',
-      grade_level: grade || '4-8',
-      version_year: version || '2023-24',
+      authority: board || 'General', 
+      subject: subject || 'General',
+      grade_level: grade || 'Auto',
+      version_year: version || '2024',
       generated_json: generatedJson,
       version: 1,
-      is_selected: true // Auto-select new ingestions
+      is_selected: true
     }).select().single();
 
-    if (dbError) throw new Error(`Cloud Metadata Sync Failed: ${dbError.message}`);
+    if (dbError) throw new Error(`Metadata Sync Error: ${dbError.message}`);
 
-    // 4. NEURAL INDEXING
+    // 3. NEURAL VECTOR INDEXING
     try {
       await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
       await supabase.from('documents').update({ status: 'ready', rag_indexed: true }).eq('id', docData.id);
     } catch (indexErr: any) {
-      console.error('❌ [Neural Indexing Error]:', indexErr);
+      console.error('❌ [Indexing Error]:', indexErr);
       await supabase.from('documents').update({ status: 'failed' }).eq('id', docData.id);
     }
 
     return NextResponse.json({
       success: true,
       id: docData.id,
-      message: '🛡️ Institutional Asset Grounded.'
+      message: '🛡️ Asset Grounded to Vector Grid.'
     });
 
   } catch (error: any) {
-    console.error('Ingestion Fatal Error:', error);
+    console.error('Ingestion Fatal:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

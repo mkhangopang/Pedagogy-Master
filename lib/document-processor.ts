@@ -1,7 +1,4 @@
-/**
- * DEPRECATED: Direct document processing is now handled via the unified /api/ai route
- * utilizing Gemini's native multimodal capabilities on the server.
+/** 
+ * DEPRECATED: Functionality migrated to lib/rag/document-indexer.ts for unified RAG orchestration.
  */
-export const processDocument = async () => {
-  throw new Error("Use geminiService with /api/ai for document tasks.");
-};
+export const processDocument = async () => { throw new Error("Use document-indexer.ts"); };

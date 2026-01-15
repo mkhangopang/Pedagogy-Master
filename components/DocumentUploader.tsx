@@ -209,10 +209,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
           <div className="flex items-center gap-4">
             <button 
               onClick={goBackToSelection}
-              className="p-2 lg:p-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+              className="p-2 lg:p-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all group"
               title="Back to Selection"
             >
-              <ArrowLeft size={20} />
+              <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
             </button>
             <div className="p-2 lg:p-3 bg-indigo-600 rounded-xl lg:rounded-2xl text-white shadow-xl shadow-indigo-600/20">
               {isProcessing ? <BrainCircuit size={20} className="animate-pulse lg:w-6 lg:h-6" /> : <FileCode size={20} className="lg:w-6 lg:h-6" />}
@@ -261,7 +261,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             )}
           </div>
           <div className="flex w-full lg:w-auto gap-3">
-            <button onClick={goBackToSelection} className="flex-1 lg:flex-none px-6 py-3 text-slate-400 font-bold hover:text-slate-700 transition-colors text-sm">Back</button>
+            <button 
+              onClick={goBackToSelection} 
+              disabled={isProcessing}
+              className="flex-1 lg:flex-none px-6 py-3 text-slate-400 font-bold hover:text-slate-700 dark:hover:text-slate-200 transition-colors text-sm disabled:opacity-50"
+            >
+              Back to Menu
+            </button>
             <button 
               onClick={handleFinalApproval}
               disabled={isProcessing || !draftMarkdown}

@@ -11,8 +11,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * SEMANTIC RETRIEVER (v16.0 - NEURAL SYNC PRO)
- * Robust matching for Sindh/International standards (e.g. S8.C3, S-08-A-05).
+ * HIGH-PRECISION SEMANTIC RETRIEVER (v17.0)
+ * Robust matching for Sindh/International standards with Token Boosting.
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -36,7 +36,7 @@ export async function retrieveRelevantChunks(
     const dotMatches = query.match(/([A-Z]\d+)\.([A-Z]\d+)/gi) || [];
     boostTags.push(...dotMatches.map(m => m.toUpperCase()));
 
-    // Pattern 2: Alphanumeric clusters (S8A5, s8 a5, S-08-C-03)
+    // Pattern 2: Alphanumeric clusters (S8A5, S-08-C-03)
     const sloRegex = /([A-Z])[\s.-]?(\d{1,2})[\s.-]?([A-Z])[\s.-]?(\d{1,2})/gi;
     const matches = Array.from(query.matchAll(sloRegex));
     

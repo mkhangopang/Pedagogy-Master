@@ -8,9 +8,6 @@ import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core'
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
-/**
- * Returns the current status and capacity of all AI providers.
- */
 export function getProviderStatus() {
   return PROVIDERS.map(p => ({
     name: p.name,
@@ -31,13 +28,12 @@ export async function generateAIResponse(
   customSystem?: string,
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
-  // 1. Cache Check
   const cached = responseCache.get(userPrompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
   
-  // 2. Resolve Grounding Assets
+  // 1. RESOLVE SELECTED DOCUMENTS
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, authority, document_summary, grade_level, subject')
@@ -47,36 +43,35 @@ export async function generateAIResponse(
   
   const documentIds = selectedDocs?.map(d => d.id) || [];
   
-  // 3. RAG High-Precision Retrieval
+  // 2. RETRIEVE KNOWLEDGE NODES
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 12, priorityDocumentId);
+    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 15, priorityDocumentId);
   }
   
-  // 4. Build Context Vault
-  // We MUST include document metadata as a static bridge to prevent "I don't have access" hallucinations
+  // 3. SYNTHESIZE AUTHORITATIVE CONTEXT
   let contextVault = "";
   const hasMetadata = selectedDocs && selectedDocs.length > 0;
   const hasChunks = retrievedChunks.length > 0;
 
   if (hasMetadata) {
-    contextVault = `### AUTHORITATIVE_VAULT_METADATA\n`;
+    contextVault = `### 🏛️ AUTHORITATIVE_VAULT_METADATA\n`;
     selectedDocs.forEach(d => {
-      contextVault += `ASSET: ${d.name} | AUTHORITY: ${d.authority || 'Sindh DCAR'} | SUBJECT: ${d.subject}\nCORE_SUMMARY: ${d.document_summary || 'Curriculum resource node.'}\n\n`;
+      contextVault += `ASSET: ${d.name} | AUTHORITY: ${d.authority} | SUBJECT: ${d.subject}\nSUMMARY: ${d.document_summary || 'Curriculum resource node.'}\n\n`;
     });
     contextVault += `### END_METADATA\n\n`;
   }
 
   if (hasChunks) {
-    contextVault += `### AUTHORITATIVE_CURRICULUM_NODES\n`;
+    contextVault += `### 📚 KNOWLEDGE_NODES\n`;
     retrievedChunks.forEach((chunk, idx) => {
-      contextVault += `[NODE_${idx + 1}] SLO_TAGS: ${chunk.sloCodes?.join(', ')}\nCONTENT: ${chunk.text}\n\n`;
+      contextVault += `[NODE_${idx + 1}] SLOs: ${chunk.sloCodes?.join(', ') || 'N/A'}\nCONTENT: ${chunk.text}\n\n`;
     });
     contextVault += `### END_NODES\n`;
   }
 
-  // 5. Orchestration
-  const preferredProvider = (documentIds.length > 0) ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
+  // 4. ORCHESTRATE MODEL
+  const preferredProvider = (hasMetadata || toolType) ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
@@ -86,13 +81,13 @@ ${contextVault}
 # USER_QUERY:
 "${userPrompt}"
 
-${hasChunks ? NUCLEAR_GROUNDING_DIRECTIVE : '### PEDAGOGY_MODE: Global Standards. (Note: No direct curriculum matches found in vault).'}
+${hasChunks ? NUCLEAR_GROUNDING_DIRECTIVE : '### PEDAGOGY_MODE: Global Standards (Note: No specific nodes matched in vault).'}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 `;
 
-  // 6. System Instruction Synthesis
+  // 5. SYSTEM REINFORCEMENT
   let activeSystem = customSystem;
   if (!activeSystem) {
     const { data: brain } = await supabase
@@ -105,11 +100,11 @@ ${lengthGuideline}
     activeSystem = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
   }
 
-  const finalSystemInstruction = `${activeSystem}\n\nSTRICT_PROTOCOL: If AUTHORITATIVE_VAULT_METADATA is present, YOU HAVE ACCESS to the curriculum. Never claim otherwise. Synthesize using the provided NODES and METADATA.`;
+  const finalSystemInstruction = `${activeSystem}\n\nSTRICT_GROUNDING: If AUTHORITATIVE_VAULT_METADATA is present, you HAVE ACCESS to the curriculum. Never claim otherwise. You are grounded in the provided ASSETS and NODES.`;
   
   const result = await synthesize(
     finalPrompt, 
-    history.slice(-8), 
+    history.slice(-10), 
     hasChunks, 
     [], 
     preferredProvider, 

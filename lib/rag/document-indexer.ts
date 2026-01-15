@@ -2,8 +2,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v16.0)
- * Optimized for high-fidelity curriculum grounding and Sindh DCAR standards.
+ * WORLD-CLASS NEURAL INDEXER (v17.0)
+ * Single authoritative source for document processing and RAG synchronization.
  */
 export async function indexCurriculumMarkdown(
   documentId: string,
@@ -17,19 +17,16 @@ export async function indexCurriculumMarkdown(
     throw new Error("Neural Index Fail: Content too sparse for meaningful synthesis.");
   }
 
-  // 1. DUAL-STRATEGY CHUNKING
-  // Strategy A: Structural Blocks (Units/Standards)
-  // Strategy B: Sliding Window (Contextual Fragments)
-  
-  const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|Domain|Grade|SLO:))/gim);
+  // 1. NEURAL DUAL-STRATEGY CHUNKING
   const rawChunks: { text: string; sloCodes: string[] }[] = [];
 
-  // Structural Processing
+  // Strategy A: Structural Splitting (Headers & SLOs)
+  const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|Domain|Grade|SLO:))/gim);
   blocks.forEach((block) => {
     const trimmed = block.trim();
     if (trimmed.length < 20) return;
 
-    // Aggressive SLO Extraction (S8.C3, 8.1.2, S8-A-05)
+    // Deep Extract SLO Codes (e.g., S8.C3, 8.1.2, S8-A-05)
     const sloRegex = /(?:Standard:|SLO)\s*[:\s]*([A-Z0-9\.-]{2,15})/gi;
     const codes = Array.from(trimmed.matchAll(sloRegex))
       .map(m => m[1].trim().toUpperCase())
@@ -44,18 +41,17 @@ export async function indexCurriculumMarkdown(
     });
   });
 
-  // Fragment Processing (Ensures conceptual continuity)
+  // Strategy B: Overlapping Sliding Window (Conceptual Integrity)
   const words = content.split(/\s+/);
   const windowSize = 400;
   const overlap = 150;
-  
   for (let i = 0; i < words.length; i += (windowSize - overlap)) {
     const fragmentText = words.slice(i, i + windowSize).join(' ');
-    if (fragmentText.length < 200) continue;
+    if (fragmentText.length < 250) continue;
     
     rawChunks.push({
-      text: `[NEURAL_FRAGMENT] ${fragmentText}`,
-      sloCodes: ['CONTEXT_NODE']
+      text: `[CONTEXT_NODE] ${fragmentText}`,
+      sloCodes: ['GLOBAL_CONTEXT']
     });
   }
 
@@ -64,22 +60,23 @@ export async function indexCurriculumMarkdown(
   // 2. BATCH VECTOR SYNTHESIS
   const embeddings = await generateEmbeddingsBatch(rawChunks.map(c => c.text));
 
-  // 3. ATOMIC PERSISTENCE
+  // 3. PERSISTENCE LAYER
   const insertData = rawChunks.map((c, i) => ({
     document_id: documentId,
     chunk_text: c.text,
     embedding: embeddings[i],
     slo_codes: c.sloCodes,
     metadata: { 
-      board: metadata.board || 'Sindh',
-      subject: metadata.subject || 'General',
+      board: metadata.board || 'General',
+      subject: metadata.subject || 'Curriculum',
       grade: metadata.grade || 'Auto',
-      processed_at: new Date().toISOString() 
+      processed_at: new Date().toISOString(),
+      index: i
     },
     chunk_index: i
   }));
 
-  // Clean-wipe existing nodes for this asset before fresh sync
+  // Wipe stale nodes
   await supabase.from('document_chunks').delete().eq('document_id', documentId);
   
   const { error } = await supabase.from('document_chunks').insert(insertData);

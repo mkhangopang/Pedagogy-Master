@@ -1,6 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { resolveApiKey } from "../env-server";
 
+/**
+ * VECTOR SYNTHESIS ENGINE
+ * Corrected: Changed 'contents' to 'content' to match @google/genai spec for embedContent.
+ */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = resolveApiKey();
   if (!apiKey) throw new Error('Neural Node Error: API key missing for embeddings.');
@@ -9,7 +13,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     const ai = new GoogleGenAI({ apiKey });
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: { parts: [{ text: text || " " }] }
+      content: { parts: [{ text: text || " " }] } // Fixed: Use 'content' for embedContent
     });
 
     const result = response.embedding;
@@ -46,7 +50,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       const promises = batchSlice.map(text => 
         ai.models.embedContent({
           model: "text-embedding-004",
-          contents: { parts: [{ text: text || " " }] }
+          content: { parts: [{ text: text || " " }] } // Fixed: Use 'content'
         })
       );
 
