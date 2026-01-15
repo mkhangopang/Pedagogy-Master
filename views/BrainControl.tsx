@@ -1,4 +1,3 @@
-
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -101,88 +100,82 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v13.0 (FIXING 'chunk_index' NOT NULL ERROR)
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE FINAL NEURAL SYNC ERRORS
+  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v14.0
+-- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE RAG RETRIEVAL ISSUES
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. REPAIR DOCUMENTS TABLE SCHEMA
+-- 2. REPAIR DOCUMENTS TABLE
 DO $$ 
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'version') THEN
-        ALTER TABLE public.documents ADD COLUMN version INTEGER DEFAULT 1;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'is_approved') THEN
-        ALTER TABLE public.documents ADD COLUMN is_approved BOOLEAN DEFAULT FALSE;
-    END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'authority') THEN
         ALTER TABLE public.documents ADD COLUMN authority TEXT DEFAULT 'General';
     END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'curriculum_name') THEN
-        ALTER TABLE public.documents ADD COLUMN curriculum_name TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'version_year') THEN
-        ALTER TABLE public.documents ADD COLUMN version_year TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'subject') THEN
-        ALTER TABLE public.documents ADD COLUMN subject TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'grade_level') THEN
-        ALTER TABLE public.documents ADD COLUMN grade_level TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'generated_json') THEN
-        ALTER TABLE public.documents ADD COLUMN generated_json JSONB;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'storage_type') THEN
-        ALTER TABLE public.documents ADD COLUMN storage_type TEXT DEFAULT 'supabase';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'source_type') THEN
-        ALTER TABLE public.documents ADD COLUMN source_type TEXT DEFAULT 'markdown';
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'is_selected') THEN
+        ALTER TABLE public.documents ADD COLUMN is_selected BOOLEAN DEFAULT FALSE;
     END IF;
 END $$;
 
--- 3. REPAIR DOCUMENT_CHUNKS TABLE SCHEMA (RESOLVING CHUNK_INDEX CONSTRAINTS)
+-- 3. REPAIR DOCUMENT_CHUNKS (VECTORS)
 DO $$ 
 BEGIN
-    -- Fix 'chunk_index' (Ensure it exists, but do NOT force it to be identity yet to avoid breaking current code)
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'chunk_index') THEN
-        ALTER TABLE public.document_chunks ADD COLUMN chunk_index INTEGER;
-    END IF;
-
-    -- Fix 'metadata' column
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'metadata') THEN
-        ALTER TABLE public.document_chunks ADD COLUMN metadata JSONB DEFAULT '{}'::jsonb;
-    END IF;
-
-    -- Fix 'slo_codes' column
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'slo_codes') THEN
         ALTER TABLE public.document_chunks ADD COLUMN slo_codes TEXT[] DEFAULT '{}';
     END IF;
-
-    -- Ensure 'embedding' is vector(768)
-    IF EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'document_chunks' 
-        AND column_name = 'embedding' 
-        AND data_type != 'USER-DEFINED'
-    ) THEN
-        ALTER TABLE public.document_chunks DROP COLUMN embedding;
-        ALTER TABLE public.document_chunks ADD COLUMN embedding vector(768);
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'chunk_index') THEN
+        ALTER TABLE public.document_chunks ADD COLUMN chunk_index INTEGER;
     END IF;
 END $$;
 
--- 4. REFRESH SCHEMA CACHE
-COMMENT ON TABLE public.document_chunks IS 'Neural curriculum segments v13.0 - Supports precise standards alignment';
-COMMENT ON TABLE public.documents IS 'Unified repository v13.0';
+-- 4. THE NEURAL ENGINE: HYBRID SEARCH RPC
+-- This function is the core of your RAG system.
+CREATE OR REPLACE FUNCTION hybrid_search_chunks(
+  query_text TEXT,
+  query_embedding vector(768),
+  match_count INT,
+  filter_document_ids UUID[],
+  priority_document_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+  chunk_id UUID,
+  chunk_text TEXT,
+  slo_codes TEXT[],
+  page_number INT,
+  section_title TEXT,
+  combined_score FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    dc.id AS chunk_id,
+    dc.chunk_text,
+    dc.slo_codes,
+    (dc.metadata->>'page_number')::INT AS page_number,
+    (dc.metadata->>'section_title') AS section_title,
+    (
+      -- Vector Similarity (Cosine)
+      (1 - (dc.embedding <=> query_embedding)) +
+      -- Keyword Boost (if query matches SLO codes)
+      CASE WHEN dc.slo_codes @> ARRAY[UPPER(REPLACE(query_text, ' ', ''))] THEN 0.5 ELSE 0 END +
+      -- Priority Document Boost
+      CASE WHEN dc.document_id = priority_document_id THEN 0.2 ELSE 0 END
+    ) AS combined_score
+  FROM document_chunks dc
+  WHERE dc.document_id = ANY(filter_document_ids)
+  ORDER BY combined_score DESC
+  LIMIT match_count;
+END;
+$$;
 
--- 5. ENSURE PERMISSIONS
+-- 5. ADMIN PERMISSIONS
 UPDATE public.profiles 
 SET role = 'app_admin', plan = 'enterprise', queries_limit = 999999
 WHERE email IN ('mkgopang@gmail.com', 'admin@edunexus.ai', 'fasi.2001@live.com');
 
--- FINAL VERIFICATION
-SELECT 'Infrastructure Repair v13.0 Applied - Chunk Sync Restored' as status;
+SELECT 'Infrastructure Patch v14.0 Applied - Hybrid RAG Engine Online' as status;
 `;
 
   return (
@@ -257,7 +250,7 @@ SELECT 'Infrastructure Repair v13.0 Applied - Chunk Sync Restored' as status;
                <div className="space-y-1">
                  <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Constraint Error</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   If you see 'null value in column chunk_index violates not-null constraint', your database expects an index for every curriculum segment. **To fix this**, copy the SQL patch v13.0 below and run it in your Supabase SQL Editor.
+                   If you see 'null value in column chunk_index violates not-null constraint', your database expects an index for every curriculum segment. **To fix this**, copy the SQL patch v14.0 below and run it in your Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -298,8 +291,8 @@ SELECT 'Infrastructure Repair v13.0 Applied - Chunk Sync Restored' as status;
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v13.0</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error (chunk_index null violation)</p>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v14.0</h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Resolves: Sync Error & RAG RPC Missing</p>
                </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 

@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { rateLimiter } from './rate-limiter';
 import { responseCache } from './response-cache';
@@ -69,7 +68,7 @@ export async function generateAIResponse(
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
   
-  // 1. Identify Context
+  // 1. Identify Context (Prioritizing explicit selection or priority)
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, authority')
@@ -80,7 +79,7 @@ export async function generateAIResponse(
   const documentIds = selectedDocs && selectedDocs.length > 0 ? selectedDocs.map(d => d.id) : [];
   const priorityDoc = selectedDocs?.find(d => d.id === priorityDocumentId);
 
-  // 2. RAG Memory Retrieval (Aggressive)
+  // 2. RAG Memory Retrieval (Aggressive Matching)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 15, priorityDocumentId);
@@ -88,17 +87,17 @@ export async function generateAIResponse(
   
   const isGrounded = retrievedChunks.length > 0;
   
-  // Force Gemini for complex pedagogical tools when grounded
-  const preferredProvider = (isGrounded && toolType) ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
+  // CRITICAL FIX: If context is selected for a tool task, FORCE Gemini to avoid generic Groq fallbacks
+  const preferredProvider = (documentIds.length > 0 || toolType) ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
 
   const docParts = await fetchMultimodalContext(userId, supabase);
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 3. Memory Vault Construction (Unified Tagging)
+  // 3. Memory Vault Construction (XML-style for model clarity)
   let contextVault = "";
   if (isGrounded) {
-    contextVault = `<AUTHORITATIVE_VAULT>\nTargeting Asset: ${priorityDoc?.name || 'Curriculum Library'}\n\n`;
+    contextVault = `<AUTHORITATIVE_VAULT>\nTargeting Asset: ${priorityDoc?.name || 'Active Selection'}\n\n`;
     retrievedChunks.forEach((chunk, idx) => {
       contextVault += `[NODE_${idx + 1}] SLO_TAGS: ${chunk.sloCodes?.join(', ')}\nCONTENT: ${chunk.text}\n\n`;
     });
@@ -111,8 +110,8 @@ ${contextVault}
 # USER QUERY:
 "${userPrompt}"
 
-${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### GENERAL_MODE: Provide high-quality general guidance.'}
-${isGrounded ? `- INSTRUCTION: Use only SLO data from the <AUTHORITATIVE_VAULT>.` : ''}
+${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### GENERAL_PEDAGOGY_MODE: Providing high-quality guidance without document grounding.'}
+${isGrounded ? `- INSTRUCTION: Use only curriculum data from the <AUTHORITATIVE_VAULT> above.` : ''}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
@@ -131,12 +130,11 @@ ${lengthGuideline}
     activeSystem = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
   }
 
-  // Inject strict temperature control for grounded responses
-  const finalSystemInstruction = `${activeSystem}\n\nGROUNDING_PROTOCOL: Status ${isGrounded ? 'STRICT' : 'GENERAL'}. Temp ${isGrounded ? '0.1' : '0.6'}.`;
+  const finalSystemInstruction = `${activeSystem}\n\nNEURAL_GRID_STATUS: ${isGrounded ? 'GROUNDED_STRICT' : 'GENERAL'}. Temperature ${isGrounded ? '0.1' : '0.6'}.`;
   
   const result = await synthesize(
     finalPrompt, 
-    history.slice(-8), // More context for complex chats
+    history.slice(-8), 
     isGrounded, 
     docParts, 
     preferredProvider, 
