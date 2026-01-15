@@ -1,10 +1,9 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
-import { indexCurriculumMarkdown } from '../../../../lib/rag/document-indexer';
+import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 import { generateCurriculumJson } from '../../../../lib/curriculum/json-generator';
 
 export const runtime = 'nodejs';
@@ -12,8 +11,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL INGESTION GATEWAY
- * Logic: Save Markdown to Cloudflare R2 -> Store Metadata in Supabase -> Trigger Vector Embedding
+ * NEURAL INGESTION GATEWAY (v16.0)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -41,39 +39,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Institutional Policy: Only Markdown curricula can be indexable." }, { status: 400 });
     }
 
-    // 1. PHYSICAL STORAGE IN CLOUDFLARE R2 (Target bucket: 'documents')
+    // 1. STORAGE
     let filePath = `curricula/${user.id}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
     
     if (!isR2Configured() || !r2Client) {
       throw new Error("Cloudflare R2 is not configured. Infrastructure node offline.");
     }
 
-    try {
-      const uploadParams = {
-        Bucket: R2_BUCKET, // This is 'documents' based on your lib/r2.ts
-        Key: filePath,
-        Body: Buffer.from(extractedText),
-        ContentType: 'text/markdown',
-      };
-      await r2Client.send(new PutObjectCommand(uploadParams));
-      console.log(`✅ [R2 Storage] Asset persisted to ${R2_BUCKET}/${filePath}`);
-    } catch (r2Err: any) {
-      console.error('R2 Primary Storage Failed:', r2Err);
-      throw new Error(`Cloudflare Storage Error: ${r2Err.message}`);
-    }
+    const uploadParams = {
+      Bucket: R2_BUCKET,
+      Key: filePath,
+      Body: Buffer.from(extractedText),
+      ContentType: 'text/markdown',
+    };
+    await r2Client.send(new PutObjectCommand(uploadParams));
 
-    // 2. NAVIGABLE JSON GENERATION (For UI Context)
+    // 2. JSON
     const generatedJson = generateCurriculumJson(extractedText);
 
-    // 3. DATABASE RECORD (Metadata & R2 Pointer)
-    // We map 'board' to 'authority' to satisfy the Sindh Curriculum requirements
+    // 3. METADATA
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       user_id: user.id,
       name,
       source_type: 'markdown',
       status: 'processing',
       is_approved: true,
-      extracted_text: extractedText, // Redundant fallback for quick RAG access
+      extracted_text: extractedText,
       file_path: filePath,
       storage_type: 'r2',
       curriculum_name: name || `${subject} Grade ${grade}`,
@@ -82,35 +73,25 @@ export async function POST(req: NextRequest) {
       grade_level: grade || '4-8',
       version_year: version || '2023-24',
       generated_json: generatedJson,
-      version: 1
+      version: 1,
+      is_selected: true // Auto-select new ingestions
     }).select().single();
 
-    if (dbError) {
-      // If the error contains 'authority', it confirms the schema drift
-      if (dbError.message.includes('authority')) {
-        console.error('CRITICAL: Database schema mismatch. "authority" column missing.');
-      }
-      throw new Error(`Cloud Metadata Sync Failed: ${dbError.message}`);
-    }
+    if (dbError) throw new Error(`Cloud Metadata Sync Failed: ${dbError.message}`);
 
-    // 4. NEURAL VECTOR INDEXING (Asynchronous process)
+    // 4. NEURAL INDEXING
     try {
-      await indexCurriculumMarkdown(docData.id, extractedText, supabase, {
-        board, subject, grade, version
-      });
-      
-      // Update status to ready once vector grid is updated
-      await supabase.from('documents').update({ status: 'ready' }).eq('id', docData.id);
+      await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
+      await supabase.from('documents').update({ status: 'ready', rag_indexed: true }).eq('id', docData.id);
     } catch (indexErr: any) {
       console.error('❌ [Neural Indexing Error]:', indexErr);
       await supabase.from('documents').update({ status: 'failed' }).eq('id', docData.id);
-      return NextResponse.json({ error: `Sync Warning: Document saved to R2 but neural indexing failed: ${indexErr.message}` }, { status: 500 });
     }
 
     return NextResponse.json({
       success: true,
       id: docData.id,
-      message: '🛡️ Institutional Asset Grounded & Saved to Cloudflare R2.'
+      message: '🛡️ Institutional Asset Grounded.'
     });
 
   } catch (error: any) {

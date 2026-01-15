@@ -2,10 +2,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * INSTITUTIONAL CURRICULUM INDEXER (v9.0 - SMART SLO DETECTION)
- * Rules:
- * 1. Parse 'Standard:' blocks for specific IDs.
- * 2. Scan content for '- SLO: [CODE]' patterns to tag chunks.
+ * WORLD-CLASS NEURAL INDEXER (v16.0)
+ * Optimized for high-fidelity curriculum grounding and Sindh DCAR standards.
  */
 export async function indexCurriculumMarkdown(
   documentId: string,
@@ -13,83 +11,81 @@ export async function indexCurriculumMarkdown(
   supabase: SupabaseClient,
   metadata: any
 ) {
-  console.log(`🧠 [Indexer] Initiating neural locking for doc: ${documentId}`);
+  console.log(`🧠 [Indexer] Neural Locking Asset: ${documentId}`);
 
-  // 1. SPLIT INTO PEDAGOGICAL BLOCKS
-  // We split by 'Standard:' headers but keep the headers in the text
-  const blocks = content.split(/(?=^(?:#{2,4}\s+)?Standard:)/gim);
-  const chunks: { text: string; sloCodes: string[]; metadata: any }[] = [];
+  if (!content || content.length < 50) {
+    throw new Error("Neural Index Fail: Content too sparse for meaningful synthesis.");
+  }
 
-  blocks.forEach((block, i) => {
-    const trimmedBlock = block.trim();
-    if (!trimmedBlock || trimmedBlock.length < 20) return;
+  // 1. DUAL-STRATEGY CHUNKING
+  // Strategy A: Structural Blocks (Units/Standards)
+  // Strategy B: Sliding Window (Contextual Fragments)
+  
+  const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|Domain|Grade|SLO:))/gim);
+  const rawChunks: { text: string; sloCodes: string[] }[] = [];
 
-    // Extract Standard ID if present (e.g. Standard: S8A5)
-    const standardMatch = trimmedBlock.match(/Standard:\s*([^\n\r]+)/i);
-    const standardId = standardMatch ? standardMatch[1].trim().toUpperCase() : null;
+  // Structural Processing
+  blocks.forEach((block) => {
+    const trimmed = block.trim();
+    if (trimmed.length < 20) return;
 
-    // Scan block for internal SLO codes (e.g. - SLO:S8A5)
-    const sloRegex = /- SLO\s*[:\s]*([^:\s]+)/gi;
-    const internalCodes = Array.from(trimmedBlock.matchAll(sloRegex)).map(m => m[1].trim().toUpperCase());
+    // Aggressive SLO Extraction (S8.C3, 8.1.2, S8-A-05)
+    const sloRegex = /(?:Standard:|SLO)\s*[:\s]*([A-Z0-9\.-]{2,15})/gi;
+    const codes = Array.from(trimmed.matchAll(sloRegex))
+      .map(m => m[1].trim().toUpperCase())
+      .filter(c => c.length >= 2);
     
-    const sloCodes = Array.from(new Set([
-      ...(standardId ? [standardId] : []),
-      ...internalCodes
-    ])).filter(c => c.length > 2);
+    const hierarchyRegex = /\b\d+\.\d+(?:\.\d+)?\b/g;
+    const hierarchyCodes = trimmed.match(hierarchyRegex) || [];
 
-    chunks.push({
-      text: trimmedBlock,
-      sloCodes: sloCodes.length > 0 ? sloCodes : ['GENERAL'],
-      metadata: {
-        document_id: documentId,
-        block_index: i,
-        board: metadata.board || 'Institutional',
-        grade: metadata.grade || 'Auto',
-        subject: metadata.subject || 'General'
-      }
+    rawChunks.push({
+      text: trimmed,
+      sloCodes: Array.from(new Set([...codes, ...hierarchyCodes]))
     });
   });
 
-  // Fallback: If no blocks identified, chunk by SLO lines
-  if (chunks.length === 0) {
-    const lines = content.split('\n');
-    lines.forEach((line, i) => {
-      if (line.trim().startsWith('- SLO:')) {
-        const codeMatch = line.match(/- SLO\s*[:\s]*([^:\s]+)/i);
-        const code = codeMatch ? codeMatch[1].trim().toUpperCase() : `SLO_${i}`;
-        chunks.push({
-          text: line,
-          sloCodes: [code],
-          metadata: { document_id: documentId, line_index: i }
-        });
-      }
+  // Fragment Processing (Ensures conceptual continuity)
+  const words = content.split(/\s+/);
+  const windowSize = 400;
+  const overlap = 150;
+  
+  for (let i = 0; i < words.length; i += (windowSize - overlap)) {
+    const fragmentText = words.slice(i, i + windowSize).join(' ');
+    if (fragmentText.length < 200) continue;
+    
+    rawChunks.push({
+      text: `[NEURAL_FRAGMENT] ${fragmentText}`,
+      sloCodes: ['CONTEXT_NODE']
     });
   }
 
-  if (chunks.length === 0) throw new Error("Neural Index Fail: No standard blocks or SLO nodes detected.");
+  console.log(`📡 [Indexer] Syncing ${rawChunks.length} nodes to Vector Plane...`);
 
-  console.log(`📡 [Indexer] Syncing ${chunks.length} smart nodes to vector grid...`);
+  // 2. BATCH VECTOR SYNTHESIS
+  const embeddings = await generateEmbeddingsBatch(rawChunks.map(c => c.text));
 
-  // 2. BATCH EMBEDDING SYNTHESIS
-  const embeddings = await generateEmbeddingsBatch(chunks.map(c => c.text));
-
-  // 3. PERSISTENCE
-  const insertData = chunks.map((c, i) => ({
+  // 3. ATOMIC PERSISTENCE
+  const insertData = rawChunks.map((c, i) => ({
     document_id: documentId,
     chunk_text: c.text,
     embedding: embeddings[i],
     slo_codes: c.sloCodes,
-    metadata: c.metadata,
+    metadata: { 
+      board: metadata.board || 'Sindh',
+      subject: metadata.subject || 'General',
+      grade: metadata.grade || 'Auto',
+      processed_at: new Date().toISOString() 
+    },
     chunk_index: i
   }));
 
-  // Clear existing nodes for this doc before fresh sync
+  // Clean-wipe existing nodes for this asset before fresh sync
   await supabase.from('document_chunks').delete().eq('document_id', documentId);
   
   const { error } = await supabase.from('document_chunks').insert(insertData);
   if (error) throw error;
 
-  return chunks.length;
+  return rawChunks.length;
 }
 
 export async function indexDocumentForRAG(
@@ -98,6 +94,14 @@ export async function indexDocumentForRAG(
   filePath: string | undefined,
   supabase: SupabaseClient
 ) {
-  // Use metadata defaults if not provided
-  return indexCurriculumMarkdown(documentId, content, supabase, { filePath });
+  const boardMatch = content.match(/Board:\s*([^\n\r]+)/i);
+  const subjectMatch = content.match(/Subject:\s*([^\n\r]+)/i);
+  const gradeMatch = content.match(/Grade:\s*([^\n\r]+)/i);
+
+  return indexCurriculumMarkdown(documentId, content, supabase, { 
+    filePath,
+    board: boardMatch?.[1]?.trim(),
+    subject: subjectMatch?.[1]?.trim(),
+    grade: gradeMatch?.[1]?.trim()
+  });
 }

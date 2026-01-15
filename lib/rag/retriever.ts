@@ -11,8 +11,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * SEMANTIC RETRIEVER (v14.0 - NEURAL SYNC PRO)
- * Robust matching for Sindh/International standards (e.g. S8.C3, S-08-A-05, Grade 8).
+ * SEMANTIC RETRIEVER (v16.0 - NEURAL SYNC PRO)
+ * Robust matching for Sindh/International standards (e.g. S8.C3, S-08-A-05).
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -88,10 +88,7 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
     
-    console.log(`📡 [Retriever] Syncing ${uniqueResults.length} curriculum nodes for synthesis.`);
-    
-    // Explicit typing for sort parameters to fix potential build issues
-    return uniqueResults.sort((a: RetrievedChunk, b: RetrievedChunk) => b.similarity - a.similarity);
+    return uniqueResults.sort((a, b) => b.similarity - a.similarity);
 
   } catch (err) {
     console.error('[Retriever Fatal]:', err);

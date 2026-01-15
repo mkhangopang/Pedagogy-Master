@@ -1,19 +1,16 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, FileType, BrainCircuit, Sparkles } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, FileType, BrainCircuit, Sparkles, ArrowLeft } from 'lucide-react';
 import { validateCurriculumMarkdown } from '../lib/curriculum/validator';
 import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 import { GoogleGenAI } from '@google/genai';
 
-// Institutional extraction nodes
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Global Worker configuration for high-fidelity PDF parsing
 if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   const version = '4.4.168';
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
@@ -198,11 +195,25 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     }
   };
 
+  const goBackToSelection = () => {
+    setMode('selection');
+    setDraftMarkdown('');
+    setPreviewHtml('');
+    setError(null);
+  };
+
   if (mode === 'transition') {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-3xl lg:rounded-[3rem] p-1 w-full max-w-6xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[90vh] lg:h-[85vh] overflow-hidden">
         <div className="flex items-center justify-between p-4 lg:p-8 border-b dark:border-white/5">
           <div className="flex items-center gap-4">
+            <button 
+              onClick={goBackToSelection}
+              className="p-2 lg:p-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
+              title="Back to Selection"
+            >
+              <ArrowLeft size={20} />
+            </button>
             <div className="p-2 lg:p-3 bg-indigo-600 rounded-xl lg:rounded-2xl text-white shadow-xl shadow-indigo-600/20">
               {isProcessing ? <BrainCircuit size={20} className="animate-pulse lg:w-6 lg:h-6" /> : <FileCode size={20} className="lg:w-6 lg:h-6" />}
             </div>
@@ -250,7 +261,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             )}
           </div>
           <div className="flex w-full lg:w-auto gap-3">
-            <button onClick={onCancel} className="flex-1 lg:flex-none px-6 py-3 text-slate-400 font-bold hover:text-slate-700 transition-colors text-sm">Discard</button>
+            <button onClick={goBackToSelection} className="flex-1 lg:flex-none px-6 py-3 text-slate-400 font-bold hover:text-slate-700 transition-colors text-sm">Back</button>
             <button 
               onClick={handleFinalApproval}
               disabled={isProcessing || !draftMarkdown}
