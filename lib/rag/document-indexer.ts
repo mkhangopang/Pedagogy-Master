@@ -3,9 +3,9 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * INSTITUTIONAL CURRICULUM INDEXER (v7.0 - ADAPTIVE)
+ * INSTITUTIONAL CURRICULUM INDEXER (v8.0 - ADAPTIVE)
  * Rules:
- * 1. Chunk by 'Standard' headers (2-4 hashes).
+ * 1. Chunk by 'Standard' headers (Hash optional).
  * 2. Fallback to SLO lines if standards are sparse.
  */
 export async function indexCurriculumMarkdown(
@@ -16,8 +16,8 @@ export async function indexCurriculumMarkdown(
 ) {
   console.log(`🧠 [Indexer] Initiating adaptive locking for doc: ${documentId}`);
 
-  // Adaptive splitting on Standard headers (any level of hashes)
-  const blocks = content.split(/^#{2,4}\s+Standard:/gim);
+  // Adaptive splitting on Standard headers (Hash is now optional in indexer too)
+  const blocks = content.split(/^(?:#{2,4}\s+)?Standard:/gim);
   const chunks: { text: string; metadata: any }[] = [];
 
   // Skip lead block (usually metadata)

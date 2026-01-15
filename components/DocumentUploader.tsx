@@ -56,6 +56,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         }
         return fullText;
       } else {
+        // Modern DOCX extraction via Mammoth
         const options = { arrayBuffer: arrayBuffer };
         const result = await mammoth.extractRawText(options);
         if (!result.value || result.value.trim().length === 0) {
@@ -77,37 +78,31 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     
     const prompt = `
       You are the World-Class Curriculum Ingestion Engineer for EduNexus AI. 
-      Your task is to transform raw, messy curriculum text (like Sindh Science Grade IV-VIII) into a highly structured "Master Markdown" file.
+      Your task is to transform raw curriculum data into a highly structured, adaptive "Master Markdown" file for a neural search grid.
 
-      ### CORE ARCHITECTURAL RULES:
-      1. MANDATORY METADATA: Start with the "# Curriculum Metadata" header.
-      2. HIERARCHICAL ADAPTATION: Group content into "# Unit X: [Theme]" sections. If the source uses "Domains", treat each major Domain or Grade as a Unit.
-      3. SLO EXTRACTION: Extract every Student Learning Objective. Format exactly as: "- SLO:[CODE]: [Text]".
-      4. COMPULSORY STANDARDS: For EVERY SLO extracted, you MUST create a corresponding "### Standard: [CODE]" section. This is critical for the neural search grid.
+      ### ADAPTIVE STRUCTURING RULES:
+      1. MANDATORY HEADERS: You MUST use '#' for major headings. Never leave 'Unit X' or 'Grade X' as plain text. Prepend '#' to every Unit/Section.
+      2. HIERARCHICAL MAPPING: Organize by '# Unit X: [Theme]'. If the source has 'Domains' or 'Grades', map them as Units.
+      3. SLO EXTRACTION: Detect every Student Learning Objective. Format: "- SLO:[CODE]: [Text]". 
+      4. INSTITUTIONAL LABELLING: For every SLO, you MUST create a '### Standard: [CODE]' section.
+      5. DEEP INSIGHTS: Inside each Standard block, add "Insight:" labels for pedagogical approach, difficulty, and cross-curricular links.
 
-      ### EXAMPLE MAPPING:
-      Input: "S-04-A-01 Understand that living things grow..."
-      Output: 
-      ## Learning Outcomes
-      - SLO:S-04-A-01: Understand that living things grow...
-      ### Standard: S-04-A-01
-      [Provide pedagogical context here]
-
-      ### EXPECTED SCHEMA:
+      ### EXPECTED SCHEMA (Strict Compliance Required):
       # Curriculum Metadata
-      Board: [Detect Board e.g. Sindh]
-      Subject: [Detect Subject]
-      Grade: [Detect Grade Range]
-      Version: [Detect Year]
+      Board: [Detected Board]
+      Subject: [Detected Subject]
+      Grade: [Detected Grade]
+      Version: [Detected Version]
       ---
-      # Unit 1: [Name]
+      # Unit 1: [Theme Name]
       ## Learning Outcomes
-      - SLO:[CODE]: [Objective]
-      
-      ### Standard: [CODE]
-      [Pedagogical details...]
+      - SLO:[CODE]: [Exact Objective]
 
-      RAW DATA:
+      ### Standard: [CODE]
+      Insight: [Adaptive context regarding this SLO's complexity and teaching methodology]
+      ---
+
+      RAW DATA INPUT:
       ${rawText.substring(0, 45000)}
     `;
 
@@ -115,8 +110,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1,
-        systemInstruction: "You are a pedagogical data architect. You ensure every curriculum objective is uniquely indexed and structured for RAG."
+        temperature: 0.1, // Precision mode
+        systemInstruction: "You are an institutional data architect. You never miss a '#' header and ensure every objective is perfectly categorized."
       }
     });
 
@@ -214,7 +209,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
             </div>
             <div className="min-w-0">
               <h3 className="text-lg lg:text-xl font-black tracking-tight truncate">Institutional Asset Review</h3>
-              <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Audit the neural synthesis for standard compliance.'}</p>
+              <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Audit the adaptive synthesis for standard compliance.'}</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>

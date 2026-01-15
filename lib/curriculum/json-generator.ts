@@ -1,7 +1,7 @@
 
 /**
- * ADAPTIVE CURRICULUM JSON GENERATOR (v4.0)
- * Optimized for multi-level hierarchical curricula.
+ * ADAPTIVE CURRICULUM JSON GENERATOR (v5.0)
+ * Optimized for robustness and missing hash-marker resilience.
  */
 export function generateCurriculumJson(markdown: string) {
   const lines = markdown.split('\n');
@@ -16,11 +16,11 @@ export function generateCurriculumJson(markdown: string) {
   lines.forEach(line => {
     const trimmed = line.trim();
     
-    // Adaptive Unit/Domain Detection (1-3 hashes)
-    if (trimmed.match(/^#{1,3}\s+(Unit|Chapter|Module|Section|Domain|Grade|Grade\s+\w+)\b/i)) {
+    // Adaptive Unit/Domain Detection (Resilient to missing hashes)
+    if (trimmed.match(/^(?:#{1,3}\s+)?(Unit|Chapter|Module|Section|Domain|Grade|Grade\s+\w+)\b/i)) {
       if (currentUnit) result.units.push(currentUnit);
       currentUnit = {
-        title: trimmed.replace(/^#{1,3}\s+(Unit|Chapter|Module|Section|Domain|Grade)[:\s\d-]*/i, '').trim(),
+        title: trimmed.replace(/^(?:#{1,3}\s+)?(Unit|Chapter|Module|Section|Domain|Grade)[:\s\d-]*/i, '').trim(),
         outcomes: [],
         standards: []
       };
@@ -36,9 +36,9 @@ export function generateCurriculumJson(markdown: string) {
       result.totalOutcomes++;
     }
 
-    // Adaptive Standard Detection (2-4 hashes)
-    if (trimmed.match(/^#{2,4}\s+Standard:/i)) {
-      const id = trimmed.replace(/^#{2,4}\s+Standard:\s*/i, '').trim();
+    // Adaptive Standard Detection (Resilient to missing hashes)
+    if (trimmed.match(/^(?:#{2,4}\s+)?Standard:/i)) {
+      const id = trimmed.replace(/^(?:#{2,4}\s+)?Standard:\s*/i, '').trim();
       if (currentUnit) {
         currentUnit.standards.push({ id });
         result.totalStandards++;

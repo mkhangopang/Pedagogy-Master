@@ -13,8 +13,8 @@ export interface ValidationResult {
 }
 
 /**
- * Adaptive Markdown Validator (v8.0)
- * Optimized for Sindh & International Standards.
+ * Adaptive Markdown Validator (v9.0)
+ * Ultra-Robust version for Sindh & International Standards.
  */
 export function validateCurriculumMarkdown(content: string): ValidationResult {
   const errors: string[] = [];
@@ -35,12 +35,12 @@ export function validateCurriculumMarkdown(content: string): ValidationResult {
   if (!gradeMatch) errors.push("Metadata 'Grade:' missing.");
 
   // 3. Adaptive Hierarchical Sections
-  // Allows # Unit, ## Unit, ### Unit, # Grade, # Domain etc.
-  const unitRegex = /^#{1,3}\s+(Unit|Chapter|Section|Module|Domain|Grade|Grade\s+\w+)\b/gim;
+  // Robust check: Allows # Unit OR Unit X at start of line
+  const unitRegex = /^(?:#{1,3}\s+)?(Unit|Chapter|Section|Module|Domain|Grade|Grade\s+\w+)\b/gim;
   const unitMatches = Array.from(content.matchAll(unitRegex));
   
   if (unitMatches.length === 0) {
-    errors.push("No hierarchy found. Curriculum must be organized into '# Unit' or '# Domain' sections.");
+    errors.push("No hierarchy found. Curriculum must be organized into units or domains (e.g. # Unit 1).");
   }
 
   // 4. Adaptive SLO Detection
@@ -52,11 +52,11 @@ export function validateCurriculumMarkdown(content: string): ValidationResult {
   }
 
   // 5. Standards Grid Compliance
-  // Every curriculum must have Standards for RAG chunking.
-  const standardRegex = /^#{2,4}\s+Standard:\s*([^\n\r]+)/gim;
+  // Adaptive standard detection
+  const standardRegex = /^(?:#{2,4}\s+)?Standard:\s*([^\n\r]+)/gim;
   const standardMatches = Array.from(content.matchAll(standardRegex));
   if (standardMatches.length === 0) {
-    errors.push("Missing '### Standard: [ID]' sections required for neural tutoring.");
+    errors.push("Missing 'Standard: [ID]' blocks required for neural indexing.");
   }
 
   return {
