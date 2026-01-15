@@ -9,9 +9,16 @@ import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 import { GoogleGenAI } from '@google/genai';
 
-// External Parser Interfaces
-declare const pdfjsLib: any;
-declare const mammoth: any;
+// Correct imports from import-map
+import * as mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Set up the PDF.js worker
+// @ts-ignore
+if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  // @ts-ignore
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.mjs`;
+}
 
 interface DocumentUploaderProps {
   userId: string;
@@ -35,9 +42,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
   }, [draftMarkdown]);
 
   const extractRawText = async (file: File, type: 'pdf' | 'docx'): Promise<string> => {
-    if (type === 'pdf') {
-      try {
-        const arrayBuffer = await file.arrayBuffer();
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      
+      if (type === 'pdf') {
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
         const pdf = await loadingTask.promise;
         let fullText = '';
@@ -48,22 +56,25 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
           fullText += `[Page ${i}]\n${pageText}\n\n`;
         }
         return fullText;
-      } catch (e) {
-        throw new Error("PDF Parsing failed. Ensure file is not encrypted.");
-      }
-    } else {
-      try {
-        const arrayBuffer = await file.arrayBuffer();
+      } else {
+        // Docx logic
         const result = await mammoth.extractRawText({ arrayBuffer });
-        return result.value;
-      } catch (e) {
-        throw new Error("Word document conversion failed.");
+        if (!result.value && result.messages.length > 0) {
+          throw new Error(result.messages[0].message);
+        }
+        return result.value || "";
       }
+    } catch (e: any) {
+      console.error(`Extraction error for ${type}:`, e);
+      throw new Error(`${type.toUpperCase()} Parsing failed: ${e.message || 'Unknown error'}`);
     }
   };
 
   const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+    const apiKey = (process.env.API_KEY || (window as any).API_KEY);
+    if (!apiKey) throw new Error("API Key not found. Please check settings.");
+    
+    const ai = new GoogleGenAI({ apiKey });
     
     const prompt = `
       You are the Official Curriculum Data Engineer for EduNexus AI. 
@@ -91,14 +102,14 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       [Detailed pedagogical breakdown...]
 
       RAW TEXT:
-      ${rawText.substring(0, 40000)}
+      ${rawText.substring(0, 30000)}
     `;
 
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1, // High precision for curriculum mapping
+        temperature: 0.1,
         systemInstruction: "You are an expert in curriculum standards mapping and institutional data conversion."
       }
     });
@@ -112,7 +123,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
     setIsProcessing(true);
     setError(null);
-    setProcStage('Initializing conversion node...');
+    setMode('transition'); // Switch immediately to show progress in transition view
+    setProcStage(`Extracting raw bytes from ${file.name}...`);
 
     try {
       if (type === 'md') {
@@ -120,8 +132,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         const validation = validateCurriculumMarkdown(text);
         if (!validation.isValid) {
           setDraftMarkdown(text);
-          setMode('transition');
           setError(`Structural Validation Error: ${validation.errors[0]}`);
+          setIsProcessing(false);
           return;
         }
         const { data: { session } } = await supabase.auth.getSession();
@@ -139,10 +151,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         if (!response.ok) throw new Error(result.error || "Persistence failed.");
         onComplete({ id: result.id, name: file.name, status: 'ready' });
       } else {
-        setMode('transition');
-        setProcStage(`Extracting raw bytes from ${file.name}...`);
         const rawText = await extractRawText(file, type);
-        
         setProcStage('Gemini 3 synthesizing curriculum structure...');
         const masterMd = await synthesizeMasterMarkdown(rawText, file.name);
         setDraftMarkdown(masterMd);
@@ -191,63 +200,66 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
   if (mode === 'transition') {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-1 w-full max-w-6xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[85vh]">
-        <div className="flex items-center justify-between p-8 border-b dark:border-white/5">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl lg:rounded-[3rem] p-1 w-full max-w-6xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[90vh] lg:h-[85vh] overflow-hidden">
+        <div className="flex items-center justify-between p-4 lg:p-8 border-b dark:border-white/5">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-xl shadow-indigo-600/20">
-              {isProcessing ? <BrainCircuit size={24} className="animate-pulse" /> : <FileCode size={24}/>}
+            <div className="p-2 lg:p-3 bg-indigo-600 rounded-xl lg:rounded-2xl text-white shadow-xl shadow-indigo-600/20">
+              {isProcessing ? <BrainCircuit size={20} className="animate-pulse lg:w-6 lg:h-6" /> : <FileCode size={20} className="lg:w-6 lg:h-6" />}
             </div>
-            <div>
-              <h3 className="text-xl font-black tracking-tight">Institutional Asset Synthesizer</h3>
-              <p className="text-xs text-slate-500">{isProcessing ? procStage : 'Review synthesized standards before persistence.'}</p>
+            <div className="min-w-0">
+              <h3 className="text-lg lg:text-xl font-black tracking-tight truncate">Institutional Synthesizer</h3>
+              <p className="text-[10px] lg:text-xs text-slate-500 truncate">{isProcessing ? procStage : 'Review synthesized standards before persistence.'}</p>
             </div>
           </div>
           <button onClick={onCancel} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"><X size={20}/></button>
         </div>
 
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 overflow-hidden">
-          <div className="flex flex-col border-r dark:border-white/5 p-8 bg-slate-50/50 dark:bg-black/20">
-            <label className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-4 flex items-center gap-2">
+        <div className="flex-1 flex flex-col lg:grid lg:grid-cols-2 overflow-hidden">
+          <div className="flex flex-col border-b lg:border-b-0 lg:border-r dark:border-white/5 p-4 lg:p-8 bg-slate-50/50 dark:bg-black/20 h-1/2 lg:h-full">
+            <label className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-3 flex items-center gap-2">
               <ShieldCheck size={12}/> Neural Markdown Draft
             </label>
             <textarea 
               value={draftMarkdown}
               onChange={(e) => {setDraftMarkdown(e.target.value); setError(null);}}
-              className="flex-1 p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
-              placeholder="Synthesizing curriculum nodes..."
+              className="flex-1 p-4 lg:p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl font-mono text-[11px] lg:text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none"
+              placeholder={isProcessing ? "Synthesizing curriculum nodes..." : "Paste or edit curriculum Markdown here..."}
+              readOnly={isProcessing}
             />
           </div>
-          <div className="flex flex-col p-8 bg-white dark:bg-slate-900 overflow-y-auto custom-scrollbar">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4 flex items-center gap-2">
+          <div className="flex flex-col p-4 lg:p-8 bg-white dark:bg-slate-900 overflow-y-auto custom-scrollbar h-1/2 lg:h-full">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3 flex items-center gap-2">
               <Sparkles size={12} className="text-amber-500" /> Pedagogical Preview
             </label>
-            <div className="prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+            <div className="prose dark:prose-invert max-w-none text-xs lg:text-sm" dangerouslySetInnerHTML={{ __html: previewHtml || '<p class="text-slate-400 italic">Synthesizing standards preview...</p>' }} />
           </div>
         </div>
 
-        <div className="p-8 border-t dark:border-white/5 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
-          <div className="max-w-md">
+        <div className="p-4 lg:p-8 border-t dark:border-white/5 bg-slate-50 dark:bg-slate-900/50 flex flex-col lg:flex-row items-center justify-between gap-4">
+          <div className="w-full lg:max-w-md">
             {error ? (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-100 dark:border-rose-900">
-                <p className="text-xs text-rose-500 font-bold flex items-center gap-2 animate-pulse">
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl border border-rose-200 dark:border-rose-900">
+                <p className="text-xs text-rose-600 font-bold flex items-center gap-2">
                   <AlertCircle size={14}/> {error}
                 </p>
               </div>
             ) : (
-              <p className="text-xs text-emerald-600 font-bold flex items-center gap-2">
-                <CheckCircle2 size={14}/> {draftMarkdown ? 'Structure valid. Verified by Gemini 3 Node.' : 'Extracting data...'}
+              <p className="text-[10px] lg:text-xs text-emerald-600 font-bold flex items-center gap-2">
+                <CheckCircle2 size={14}/> {draftMarkdown ? 'Verified by Gemini 3 Node.' : procStage || 'Ready for Sync.'}
               </p>
             )}
           </div>
-          <div className="flex gap-4">
-            <button onClick={onCancel} className="px-8 py-4 text-slate-400 font-bold hover:text-slate-700 transition-colors">Discard</button>
+          <div className="flex w-full lg:w-auto gap-3">
+            <button onClick={onCancel} className="flex-1 lg:flex-none px-6 py-3 text-slate-400 font-bold hover:text-slate-700 transition-colors text-sm">Discard</button>
             <button 
               onClick={handleFinalApproval}
               disabled={isProcessing || !draftMarkdown}
-              className="px-12 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+              className="flex-1 lg:flex-none px-8 lg:px-12 py-3 bg-indigo-600 text-white rounded-xl lg:rounded-2xl font-black shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
             >
               {isProcessing ? <Loader2 size={18} className="animate-spin" /> : <Database size={18}/>}
-              Finalize Global Sync <ArrowRight size={18}/>
+              <span className="hidden sm:inline">Finalize Global Sync</span>
+              <span className="sm:hidden">Finalize</span>
+              <ArrowRight size={18} className="hidden sm:block"/>
             </button>
           </div>
         </div>
@@ -256,70 +268,70 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 relative overflow-hidden">
+    <div className="bg-white dark:bg-slate-900 rounded-[2rem] lg:rounded-[3rem] p-6 lg:p-12 w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 relative overflow-hidden">
       <div className="absolute top-0 right-0 w-40 h-40 bg-indigo-600/5 rounded-full blur-3xl" />
       
-      <div className="text-center mb-12 relative z-10">
-        <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-indigo-600">
-          <ShieldCheck size={40} />
+      <div className="text-center mb-8 lg:mb-12 relative z-10">
+        <div className="w-16 h-16 lg:w-20 lg:h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl lg:rounded-[2rem] flex items-center justify-center mx-auto mb-4 lg:mb-6 text-indigo-600">
+          <ShieldCheck className="w-8 h-8 lg:w-10 lg:h-10" />
         </div>
-        <h3 className="text-3xl font-black tracking-tight">Curriculum Ingestion</h3>
-        <p className="text-slate-500 mt-2 font-medium">Persist institutional standards to the cloud neural grid.</p>
+        <h3 className="text-2xl lg:text-3xl font-black tracking-tight">Curriculum Ingestion</h3>
+        <p className="text-sm lg:text-base text-slate-500 mt-2 font-medium">Persist institutional standards to the cloud neural grid.</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 relative z-10">
+      <div className="grid grid-cols-1 gap-3 lg:gap-4 relative z-10">
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".md" onChange={(e) => handleFileUpload(e, 'md')} />
-          <div className="p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl hover:border-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center gap-4">
+          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center gap-4">
             <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform">
-              <FileCode size={24} />
+              <FileCode size={20} className="lg:w-6 lg:h-6" />
             </div>
             <div className="text-left">
-              <h4 className="font-bold text-sm">Direct Markdown Upload</h4>
-              <p className="text-[10px] text-slate-400">Upload verified .md files for immediate indexing.</p>
+              <h4 className="font-bold text-xs lg:text-sm">Direct Markdown Upload</h4>
+              <p className="text-[10px] text-slate-400">Verified .md files.</p>
             </div>
           </div>
         </label>
 
         <div className="relative py-2">
           <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-white/5"></div></div>
-          <div className="relative flex justify-center text-[10px] uppercase font-black tracking-widest"><span className="bg-white dark:bg-slate-900 px-4 text-slate-400">or structural conversion</span></div>
+          <div className="relative flex justify-center text-[9px] lg:text-[10px] uppercase font-black tracking-widest"><span className="bg-white dark:bg-slate-900 px-4 text-slate-400">or neural conversion</span></div>
         </div>
 
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(e, 'pdf')} />
-          <div className="p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl hover:border-amber-500 hover:bg-amber-50/30 transition-all flex items-center gap-4">
+          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-amber-500 hover:bg-amber-50/30 transition-all flex items-center gap-4">
             <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 rounded-xl group-hover:scale-110 transition-transform">
-              <FileText size={24} />
+              <FileText size={20} className="lg:w-6 lg:h-6" />
             </div>
             <div className="text-left">
-              <h4 className="font-bold text-sm">PDF → Neural Synthesis</h4>
-              <p className="text-[10px] text-slate-400">High-fidelity extraction of complex standards.</p>
+              <h4 className="font-bold text-xs lg:text-sm">PDF → Neural Synthesis</h4>
+              <p className="text-[10px] text-slate-400">Complex institutional PDFs.</p>
             </div>
           </div>
         </label>
 
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".docx,.doc" onChange={(e) => handleFileUpload(e, 'docx')} />
-          <div className="p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl hover:border-emerald-500 hover:bg-emerald-50/30 transition-all flex items-center gap-4">
+          <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-emerald-500 hover:bg-emerald-50/30 transition-all flex items-center gap-4">
             <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform">
-              <FileType size={24} />
+              <FileType size={20} className="lg:w-6 lg:h-6" />
             </div>
             <div className="text-left">
-              <h4 className="font-bold text-sm">Word → Neural Synthesis</h4>
-              <p className="text-[10px] text-slate-400">World-class conversion for unformatted text.</p>
+              <h4 className="font-bold text-xs lg:text-sm">Word → Neural Synthesis</h4>
+              <p className="text-[10px] text-slate-400">High-fidelity text conversion.</p>
             </div>
           </div>
         </label>
       </div>
 
-      <button onClick={onCancel} className="mt-10 w-full py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-[10px]">Close Ingestion Node</button>
+      <button onClick={onCancel} className="mt-8 lg:mt-10 w-full py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-[10px]">Close Ingestion Node</button>
       
-      {isProcessing && (
-        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-[3rem] z-50 backdrop-blur-md">
-          <Loader2 className="animate-spin text-indigo-600 mb-6" size={56} />
-          <p className="text-lg font-black tracking-tight text-indigo-600">Processing Cloud Assets...</p>
-          <p className="text-sm font-medium text-slate-400 mt-2">{procStage}</p>
+      {isProcessing && mode !== 'transition' && (
+        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-3xl lg:rounded-[3rem] z-50 backdrop-blur-md">
+          <Loader2 className="animate-spin text-indigo-600 mb-4 lg:mb-6 w-10 h-10 lg:w-14 lg:h-14" />
+          <p className="text-base lg:text-lg font-black tracking-tight text-indigo-600">Processing Cloud Assets...</p>
+          <p className="text-[10px] lg:text-sm font-medium text-slate-400 mt-2 px-6 text-center">{procStage}</p>
         </div>
       )}
     </div>
