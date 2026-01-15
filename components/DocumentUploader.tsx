@@ -56,7 +56,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         }
         return fullText;
       } else {
-        // Modern DOCX extraction via Mammoth
         const options = { arrayBuffer: arrayBuffer };
         const result = await mammoth.extractRawText(options);
         if (!result.value || result.value.trim().length === 0) {
@@ -80,14 +79,14 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       You are the World-Class Curriculum Ingestion Engineer for EduNexus AI. 
       Your task is to transform raw curriculum data into a highly structured, adaptive "Master Markdown" file for a neural search grid.
 
-      ### ADAPTIVE STRUCTURING RULES:
-      1. MANDATORY HEADERS: You MUST use '#' for major headings. Never leave 'Unit X' or 'Grade X' as plain text. Prepend '#' to every Unit/Section.
+      ### ADAPTIVE STRUCTURING RULES (MANDATORY):
+      1. HEADERS: You MUST use '#' for major headings. Never leave 'Unit X' or 'Grade X' as plain text. Every Unit MUST start with '# Unit: [Name]'.
       2. HIERARCHICAL MAPPING: Organize by '# Unit X: [Theme]'. If the source has 'Domains' or 'Grades', map them as Units.
       3. SLO EXTRACTION: Detect every Student Learning Objective. Format: "- SLO:[CODE]: [Text]". 
-      4. INSTITUTIONAL LABELLING: For every SLO, you MUST create a '### Standard: [CODE]' section.
-      5. DEEP INSIGHTS: Inside each Standard block, add "Insight:" labels for pedagogical approach, difficulty, and cross-curricular links.
+      4. STANDARDS BLOCKS: For every SLO, you MUST create a '### Standard: [CODE]' section.
+      5. METADATA: Start with '# Curriculum Metadata' and include Board, Subject, Grade, Version.
 
-      ### EXPECTED SCHEMA (Strict Compliance Required):
+      ### EXPECTED SCHEMA:
       # Curriculum Metadata
       Board: [Detected Board]
       Subject: [Detected Subject]
@@ -99,7 +98,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       - SLO:[CODE]: [Exact Objective]
 
       ### Standard: [CODE]
-      Insight: [Adaptive context regarding this SLO's complexity and teaching methodology]
+      [Context and pedagogical details for RAG indexing]
       ---
 
       RAW DATA INPUT:
@@ -110,8 +109,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
       model: 'gemini-3-flash-preview',
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1, // Precision mode
-        systemInstruction: "You are an institutional data architect. You never miss a '#' header and ensure every objective is perfectly categorized."
+        temperature: 0.1,
+        systemInstruction: "You are an institutional data architect. You ensure every curriculum objective is perfectly categorized using Markdown headers (# for Unit, ### for Standard)."
       }
     });
 

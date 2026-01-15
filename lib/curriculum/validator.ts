@@ -13,7 +13,7 @@ export interface ValidationResult {
 }
 
 /**
- * Adaptive Markdown Validator (v9.0)
+ * Adaptive Markdown Validator (v10.0)
  * Ultra-Robust version for Sindh & International Standards.
  */
 export function validateCurriculumMarkdown(content: string): ValidationResult {
@@ -35,12 +35,12 @@ export function validateCurriculumMarkdown(content: string): ValidationResult {
   if (!gradeMatch) errors.push("Metadata 'Grade:' missing.");
 
   // 3. Adaptive Hierarchical Sections
-  // Robust check: Allows # Unit OR Unit X at start of line
-  const unitRegex = /^(?:#{1,3}\s+)?(Unit|Chapter|Section|Module|Domain|Grade|Grade\s+\w+)\b/gim;
+  // Robust check: Allows # Unit, ## Unit, ### Unit, or even "Grade IV: Unit 1" style if at start of line
+  const unitRegex = /^(?:#{1,3}\s+)?(?:Grade\s+[IVXLCDM]+\s*[:-])?\s*(Unit|Chapter|Section|Module|Domain|Grade|Grade\s+\w+)\b/gim;
   const unitMatches = Array.from(content.matchAll(unitRegex));
   
   if (unitMatches.length === 0) {
-    errors.push("No hierarchy found. Curriculum must be organized into units or domains (e.g. # Unit 1).");
+    errors.push("No hierarchy found. Curriculum must be organized into units or domains using '# Unit' headers.");
   }
 
   // 4. Adaptive SLO Detection
@@ -48,15 +48,15 @@ export function validateCurriculumMarkdown(content: string): ValidationResult {
   const sloRegex = /^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/gim;
   const sloMatches = Array.from(content.matchAll(sloRegex));
   if (sloMatches.length === 0) {
-    errors.push("No Student Learning Objectives (SLOs) detected. Requirement: '- SLO:CODE: Description'");
+    errors.push("No Student Learning Objectives (SLOs) detected. Format: '- SLO:CODE: Description'");
   }
 
   // 5. Standards Grid Compliance
-  // Adaptive standard detection
+  // Adaptive standard detection: Looks for headers that signify a chunkable standard
   const standardRegex = /^(?:#{2,4}\s+)?Standard:\s*([^\n\r]+)/gim;
   const standardMatches = Array.from(content.matchAll(standardRegex));
   if (standardMatches.length === 0) {
-    errors.push("Missing 'Standard: [ID]' blocks required for neural indexing.");
+    errors.push("Missing 'Standard: [ID]' blocks required for RAG indexing.");
   }
 
   return {
