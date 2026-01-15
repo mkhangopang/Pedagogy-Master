@@ -122,7 +122,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
     setIsProcessing(true);
     setError(null);
-    setMode('transition');
     setProcStage(`Mounting ${file.name} to extraction node...`);
 
     try {
@@ -131,6 +130,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         const validation = validateCurriculumMarkdown(text);
         if (!validation.isValid) {
           setDraftMarkdown(text);
+          setMode('transition');
           setError(`Structural Validation Fail: ${validation.errors[0]}`);
           setIsProcessing(false);
           return;
@@ -150,6 +150,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
         if (!response.ok) throw new Error(result.error || "Persistence node failed.");
         onComplete({ id: result.id, name: file.name, status: 'ready' });
       } else {
+        setMode('transition');
         const rawText = await extractRawText(file, type);
         setProcStage('Neural grid synthesizing curriculum nodes...');
         const masterMd = await synthesizeMasterMarkdown(rawText, file.name);
@@ -327,7 +328,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
       <button onClick={onCancel} className="mt-8 lg:mt-10 w-full py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-[10px]">Disconnect Ingestion Node</button>
       
-      {isProcessing && mode !== 'transition' && (
+      {isProcessing && (
         <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-3xl lg:rounded-[3rem] z-50 backdrop-blur-md">
           <Loader2 className="animate-spin text-indigo-600 mb-4 lg:mb-6 w-10 h-10 lg:w-14 lg:h-14" />
           <p className="text-base lg:text-lg font-black tracking-tight text-indigo-600">Mounting Institutional Assets...</p>
