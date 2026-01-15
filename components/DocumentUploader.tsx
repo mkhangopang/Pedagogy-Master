@@ -77,8 +77,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
   };
 
   const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
-    const apiKey = (process.env.API_KEY || (window as any).API_KEY);
-    if (!apiKey) throw new Error("Neural Node Offline: API_KEY is missing from environment.");
+    // Resolve API Key from the handshake-populated process.env or global scope
+    const apiKey = process.env.API_KEY || (window as any).API_KEY;
+    if (!apiKey) throw new Error("Neural Node Offline: API_KEY is missing from environment. Ensure GEMINI_API_KEY is set in Vercel.");
     
     const ai = new GoogleGenAI({ apiKey });
     

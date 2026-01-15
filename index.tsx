@@ -1,3 +1,4 @@
+
 /**
  * PLATFORM SYNC
  * Synchronizes public environment keys into the application scope.
@@ -17,7 +18,7 @@ const performSystemHandshake = () => {
     'NEXT_PUBLIC_SUPABASE_URL': process.env.NEXT_PUBLIC_SUPABASE_URL,
     'NEXT_PUBLIC_SUPABASE_ANON_KEY': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     'NEXT_PUBLIC_R2_PUBLIC_URL': process.env.NEXT_PUBLIC_R2_PUBLIC_URL,
-    'API_KEY': process.env.API_KEY || (process.env as any).NEXT_PUBLIC_GEMINI_API_KEY
+    'API_KEY': process.env.API_KEY || (process.env as any).GEMINI_API_KEY || (process.env as any).NEXT_PUBLIC_GEMINI_API_KEY
   };
 
   // Define standard keys and their common variants for dynamic lookup fallback
