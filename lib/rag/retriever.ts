@@ -12,8 +12,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * SEMANTIC RETRIEVER (v6.0 - INSTITUTIONAL GRADE)
- * Optimized for complex hierarchical curriculum codes (e.g., S-08-A-03).
+ * SEMANTIC RETRIEVER (v7.0 - FUZZY SLO MATCH)
+ * Handles spaces and case differences in curriculum codes (e.g., "s8 a5" -> "S8A5").
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -23,29 +23,31 @@ export async function retrieveRelevantChunks(
   priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
-  console.log(`🔍 [Retriever] Scanning Neural Plane: "${query.substring(0, 60)}..."`);
+  // Normalize Query: "slo s8 a5" -> "SLOS8A5" for internal pattern matching
+  const normalizedQuery = query.toUpperCase().replace(/\s+/g, '');
+  console.log(`🔍 [Retriever] Normalized Search: "${normalizedQuery}"`);
   
   try {
     const sanitizedPriorityId = (priorityDocumentId && /^[0-9a-fA-F-]{36}$/.test(priorityDocumentId)) 
       ? priorityDocumentId 
       : null;
 
-    // 1. HIGH-PRECISION SLO MATCH (Extended Regex)
-    // Matches: S-08-A-03, S08a3, 8.1.2, 4.1.2.1, Grade-IV-A
-    const sloRegex = /\b([A-Z](?:-\d{1,2})?(?:-[A-Z])?(?:-\d{1,2})?|[A-Z]\d{1,2}[a-z]\d{1,2}|\d+\.\d+(?:\.\d+)?(?:\.\d+)?)\b/gi;
-    const foundCodes = query.match(sloRegex);
+    // 1. FUZZY SLO MATCHING (Regex with optional separators)
+    // Supports: S-08-A-03, S8a5, 8.1.2, S 8 A 5
+    const sloRegex = /([A-Z])[\s-]?(\d{1,2})[\s-]?([A-Z]|[a-z])[\s-]?(\d{1,2})/gi;
+    const matches = Array.from(query.matchAll(sloRegex));
     
     let directResults: RetrievedChunk[] = [];
-    if (foundCodes && foundCodes.length > 0) {
-      // Prioritize the last code found (often the most specific in a tool query)
-      const codeToSearch = foundCodes[foundCodes.length - 1].toUpperCase();
-      console.log(`🎯 [Retriever] SLO Pattern Identified: ${codeToSearch}`);
+    if (matches.length > 0) {
+      // Reconstruct standard format: S8A5
+      const codeToSearch = `${matches[0][1]}${matches[0][2]}${matches[0][3]}${matches[0][4]}`.toUpperCase();
+      console.log(`🎯 [Retriever] SLO Detected: ${codeToSearch}`);
       
       const { data: sloChunks } = await supabase
         .from('document_chunks')
         .select('id, chunk_text, slo_codes, page_number')
         .in('document_id', documentIds)
-        .contains('slo_codes', [codeToSearch])
+        .or(`slo_codes.cs.{${codeToSearch}},slo_codes.cs.{${matches[0][0].toUpperCase()}}`)
         .limit(6);
 
       if (sloChunks && sloChunks.length > 0) {
@@ -59,10 +61,9 @@ export async function retrieveRelevantChunks(
       }
     }
 
-    // 2. HYBRID SEMANTIC SEARCH
+    // 2. HYBRID SEMANTIC VECTOR SEARCH
     const queryEmbedding = await generateEmbedding(query);
 
-    // If a priority doc is selected, we perform an additional targeted search
     const { data, error } = await supabase.rpc('hybrid_search_chunks', {
       query_text: query,
       query_embedding: queryEmbedding, 
@@ -85,12 +86,12 @@ export async function retrieveRelevantChunks(
       sectionTitle: d.section_title
     }));
 
-    // ADAPTIVE THRESHOLD: 0.08 to catch loose matches in complex pedagogical text
-    const filteredSemantic = semanticResults.filter((r: any) => r.similarity > 0.08);
+    // ADAPTIVE THRESHOLD: 0.05 - extremely high recall for pedagogical text
+    const filteredSemantic = semanticResults.filter((r: any) => r.similarity > 0.05);
     
     const allResults = [...directResults, ...filteredSemantic];
     
-    // De-duplication and Weighting
+    // De-duplication + Weighting
     const uniqueResults = Array.from(new Map(allResults.map(item => [item.id, item])).values())
       .sort((a, b) => b.similarity - a.similarity);
     

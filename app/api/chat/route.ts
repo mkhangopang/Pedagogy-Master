@@ -11,8 +11,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL TUTOR ENGINE (v9.0 - PEDAGOGY MASTER)
- * Force-maps all responses to curriculum standards.
+ * NEURAL TUTOR ENGINE (v9.5 - UNIVERSAL GROUNDING)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -28,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Identify Context (Library Search)
+    // 1. Resolve Document Context
     const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name, authority')
@@ -37,24 +36,24 @@ export async function POST(req: NextRequest) {
       .eq('status', 'ready');
 
     const finalFilterIds = selectedDocs?.map(d => d.id) || [];
-    const hasContext = finalFilterIds.length > 0;
-
-    // 2. Retrieval (Curriculum Grounding)
+    
+    // 2. Retrieval (Unified XML Vault)
     let contextVault = "";
     let chunks: any[] = [];
 
-    if (hasContext) {
-      chunks = await retrieveRelevantChunks(message, finalFilterIds, supabase, 10, priorityDocumentId);
+    if (finalFilterIds.length > 0) {
+      chunks = await retrieveRelevantChunks(message, finalFilterIds, supabase, 12, priorityDocumentId);
       
       if (chunks.length > 0) {
-        contextVault = "### 📚 AUTHORITATIVE CURRICULUM VAULT (LOCKED):\n";
+        contextVault = `<AUTHORITATIVE_VAULT>\n`;
         chunks.forEach((c, i) => {
-          contextVault += `[ASSET_NODE_${i+1}] SOURCE: ${c.sloCodes?.join(', ')}\nCONTENT: ${c.text}\n\n`;
+          contextVault += `[CHUNK_${i+1}] SOURCE: ${c.sloCodes?.join(', ') || 'Global'}\nCONTENT: ${c.text}\n\n`;
         });
+        contextVault += `</AUTHORITATIVE_VAULT>\n`;
       }
     }
 
-    // 3. System Brain Setup
+    // 3. System Instruction Assembly
     const { data: brainData } = await supabase
       .from('neural_brain')
       .select('master_prompt')
@@ -65,24 +64,22 @@ export async function POST(req: NextRequest) {
 
     const basePersona = brainData?.master_prompt || DEFAULT_MASTER_PROMPT;
     
-    // Explicit Grounding Logic
     const systemInstruction = `
 ${basePersona}
 
-## ACTIVE NEURAL STATE
-- CONTEXT_AVAILABLE: ${chunks.length > 0 ? 'TRUE' : 'FALSE'}
-- TARGET_AUTHORITY: ${selectedDocs?.[0]?.authority || 'General'}
-- FORCED_MARKDOWN: You MUST use "# Unit: [Name]" for all headers.
+## NEURAL STATE: ${chunks.length > 0 ? 'GROUNDED_MODE' : 'GENERAL_MODE'}
+- TARGET_AUTHORITY: ${selectedDocs?.[0]?.authority || 'International'}
 
 ${chunks.length > 0 ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
+- MANDATORY: If <AUTHORITATIVE_VAULT> exists, do NOT use outside knowledge for SLO codes.
 `;
 
-    // 4. Remote Neural Call (Defaulting to Gemini for highest reasoning)
+    // 4. Remote Neural Call (Gemini)
     const apiKey = resolveApiKey();
     const ai = new GoogleGenAI({ apiKey });
     
     const contents: any[] = [];
-    history.slice(-4).forEach((h: any) => {
+    history.slice(-6).forEach((h: any) => {
       contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
     });
     
@@ -91,8 +88,6 @@ ${contextVault}
 
 # USER QUERY
 "${message}"
-
-(Instruction: If this is an SLO query like S-08-A-03, provide a full curriculum-aligned response using # Unit: formatting.)
 `;
     
     contents.push({ role: 'user', parts: [{ text: finalPrompt }] });
@@ -104,25 +99,24 @@ ${contextVault}
         systemInstruction,
         temperature: chunks.length > 0 ? 0.1 : 0.6,
         topK: 40,
+        topP: 0.95
       }
     });
 
-    const responseText = result.text || "Neural connection reset.";
+    const responseText = result.text || "Connection reset.";
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
         if (chunks.length > 0) {
-          controller.enqueue(encoder.encode(`> *Neural Sync: Grounding in "${selectedDocs?.[0]?.name}" [${chunks.length} nodes]...*\n\n`));
-        } else if (hasContext) {
-          controller.enqueue(encoder.encode(`> *Alert: No direct matches in curriculum. Using general pedagogical logic...*\n\n`));
+          controller.enqueue(encoder.encode(`> *Neural Grid Sync: Grounded in "${selectedDocs?.[0]?.name}" [${chunks.length} nodes matched]...*\n\n`));
         }
         
         controller.enqueue(encoder.encode(responseText));
         
         if (chunks.length > 0) {
-          const refs = `\n\n### Neural Grounding References:\n` + 
-            chunks.slice(0, 3).map(c => `* **SLO ${c.sloCodes?.[0] || 'Metadata'}** retrieved from ${selectedDocs?.find(d=>d.id === finalFilterIds[0])?.name || 'Curriculum Library'}`).join('\n');
+          const refs = `\n\n### Neural References:\n` + 
+            chunks.slice(0, 2).map(c => `* **Standard ${c.sloCodes?.[0] || 'Node'}** (${(c.similarity * 100).toFixed(0)}% semantic match)`).join('\n');
           controller.enqueue(encoder.encode(refs));
         }
         
@@ -132,6 +126,6 @@ ${contextVault}
 
   } catch (error: any) {
     console.error("Chat Error:", error);
-    return NextResponse.json({ error: "RAG_ABORT", message: "Grid saturation. Please re-select curriculum and retry." }, { status: 500 });
+    return NextResponse.json({ error: "RAG_ABORT" }, { status: 500 });
   }
 }
