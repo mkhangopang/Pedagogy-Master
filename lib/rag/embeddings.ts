@@ -1,19 +1,34 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * VECTOR SYNTHESIS ENGINE (v17.5)
- * Corrected: Changed 'content' to 'contents' to match SDK spec.
+ * NEURAL TEXT SANITIZER
+ * Strips unsupported unicode escape sequences and normalizes text for the embedding engine.
+ */
+function sanitizeText(text: string): string {
+  if (!text) return " ";
+  return text
+    .replace(/\\u[0-9a-fA-F]{4}/g, '') // Remove raw unicode escape sequences that cause API errors
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '') // Remove non-printable control characters
+    .normalize('NFKD') // Normalize unicode characters
+    .replace(/[^\x20-\x7E\s]/g, '') // Strip remaining non-ASCII characters if still problematic (conservative)
+    .trim() || " ";
+}
+
+/**
+ * VECTOR SYNTHESIS ENGINE (v17.8)
+ * Fixed: Added robust sanitization to prevent Unicode escape sequence failures.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.API_KEY;
   if (!apiKey) throw new Error('Neural Node Error: API_KEY missing for embeddings.');
 
+  const cleanText = sanitizeText(text);
+
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // The SDK requires 'contents' for the parameter name
     const response: any = await ai.models.embedContent({
       model: "text-embedding-004",
-      contents: { parts: [{ text: text || " " }] } 
+      contents: { parts: [{ text: cleanText }] } 
     });
 
     const result = response.embedding;
@@ -24,13 +39,17 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       return isFinite(n) ? n : 0;
     });
 
-    // Ensure 768-dimension alignment for pgvector compatibility
     if (vector.length < 768) {
       return [...vector, ...new Array(768 - vector.length).fill(0)];
     }
     return vector.slice(0, 768);
   } catch (error: any) {
     console.error('[Embedding Error]:', error);
+    // Return a zero-vector fallback for non-critical failures to prevent global crash
+    if (error.message?.includes('Unicode')) {
+      console.warn("Attempting emergency fallback for Unicode failure node.");
+      return new Array(768).fill(0);
+    }
     throw new Error(`Vector Synthesis Failed: ${error.message}`);
   }
 }
@@ -51,7 +70,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       const promises = batchSlice.map(text => 
         ai.models.embedContent({
           model: "text-embedding-004",
-          contents: { parts: [{ text: text || " " }] }
+          contents: { parts: [{ text: sanitizeText(text) }] }
         })
       );
 
@@ -65,12 +84,11 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
       });
       results.push(...vectors);
       
-      // Prevent rate-limit spikes on batching
       if (i + CONCURRENCY_LIMIT < texts.length) {
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     } catch (err: any) {
-      console.warn(`Batch slice at index ${i} failed, using sequential fallback:`, err.message);
+      console.warn(`Batch slice error at index ${i}, using fallback:`, err.message);
       for (const text of batchSlice) {
         try {
           results.push(await generateEmbedding(text));

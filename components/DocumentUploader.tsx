@@ -42,6 +42,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     setDraftMarkdown('');
     setPreviewHtml('');
     setError(null);
+    setIsProcessing(false);
+    setProcStage('');
   };
 
   const extractRawText = async (file: File, type: 'pdf' | 'docx'): Promise<string> => {
@@ -82,7 +84,8 @@ RULES:
 1. Use '#' for Units.
 2. Use '## Learning Outcomes'.
 3. Use '### Standard: [ID]' for RAG indexing.
-4. Extract all SLOs exactly as written.
+4. Extract all Student Learning Objectives (SLOs) exactly as written.
+5. Create a Curriculum Metadata header at the top.
 
 INPUT FILENAME: ${fileName}
 RAW DATA:
@@ -244,54 +247,70 @@ ${rawText.substring(0, 35000)}` }] }],
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[2rem] lg:rounded-[3rem] p-6 lg:p-12 w-full max-w-2xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 relative overflow-hidden">
       <div className="text-center mb-8 lg:mb-12">
-        <div className="w-16 h-16 lg:w-20 lg:h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl lg:rounded-[2rem] flex items-center justify-center mx-auto mb-4 lg:mb-6 text-indigo-600">
+        <div className="w-16 h-16 lg:w-20 lg:h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl lg:rounded-[2rem] flex items-center justify-center mx-auto mb-4 lg:mb-6 text-indigo-600 shadow-xl shadow-indigo-500/10">
           <ShieldCheck className="w-8 h-8 lg:w-10 lg:h-10" />
         </div>
-        <h3 className="text-2xl lg:text-3xl font-black tracking-tight">Institutional Ingestion</h3>
+        <h3 className="text-2xl lg:text-3xl font-black tracking-tight text-slate-900 dark:text-white">Institutional Ingestion</h3>
         <p className="text-sm lg:text-base text-slate-500 mt-2 font-medium">Map assets to the adaptive standards grid.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:gap-4">
+        {/* Validated Markdown & DOCX Option */}
         <label className="relative group cursor-pointer">
-          <input type="file" className="hidden" accept=".md" onChange={(e) => handleFileUpload(e, 'md')} />
+          <input type="file" className="hidden" accept=".md,.docx" onChange={(e) => {
+            const isDocx = e.target.files?.[0]?.name.endsWith('.docx');
+            handleFileUpload(e, isDocx ? 'docx' : 'md');
+          }} />
           <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-indigo-500 hover:bg-indigo-50/30 transition-all flex items-center gap-4">
             <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform"><FileCode size={20} className="lg:w-6 lg:h-6" /></div>
-            <div className="text-left">
-              <h4 className="font-bold text-xs lg:text-sm">Validated Markdown (.md)</h4>
-              <p className="text-[10px] text-slate-400">Direct sync for pre-formatted assets.</p>
+            <div className="text-left flex-1">
+              <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">Validated Markdown / Word</h4>
+              <p className="text-[10px] text-slate-400">Direct sync for .md and .docx assets.</p>
             </div>
+            <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>
         </label>
 
+        {/* High-Density PDF Option */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(e, 'pdf')} />
           <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-amber-500 hover:bg-amber-50/30 transition-all flex items-center gap-4">
             <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 rounded-xl group-hover:scale-110 transition-transform"><FileText size={20} className="lg:w-6 lg:h-6" /></div>
-            <div className="text-left">
-              <h4 className="font-bold text-xs lg:text-sm">High-Density PDF → Neural</h4>
+            <div className="text-left flex-1">
+              <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">High-Density PDF → Neural</h4>
               <p className="text-[10px] text-slate-400">Institutional extraction of complex standards.</p>
             </div>
+            <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>
         </label>
 
+        {/* Word Document Dedicated Option */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".docx,.doc" onChange={(e) => handleFileUpload(e, 'docx')} />
           <div className="p-4 lg:p-6 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl hover:border-emerald-500 hover:bg-emerald-50/30 transition-all flex items-center gap-4">
             <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform"><FileType size={20} className="lg:w-6 lg:h-6" /></div>
-            <div className="text-left">
-              <h4 className="font-bold text-xs lg:text-sm">Word Document (.docx)</h4>
+            <div className="text-left flex-1">
+              <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">Legacy Word (.doc) → Neural</h4>
               <p className="text-[10px] text-slate-400">Adaptive conversion for raw documents.</p>
             </div>
+            <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>
         </label>
       </div>
 
-      <button onClick={onCancel} className="mt-8 lg:mt-10 w-full py-4 text-slate-400 font-bold hover:text-slate-600 transition-colors uppercase tracking-widest text-[10px]">Disconnect Ingestion Node</button>
+      <button 
+        onClick={onCancel} 
+        className="mt-8 lg:mt-10 w-full py-4 text-slate-400 font-bold hover:text-slate-600 dark:hover:text-slate-300 transition-colors uppercase tracking-widest text-[10px] flex items-center justify-center gap-2"
+      >
+        <ArrowLeft size={12} />
+        Disconnect Ingestion Node
+      </button>
       
       {isProcessing && (
-        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-3xl lg:rounded-[3rem] z-50 backdrop-blur-md">
+        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-3xl lg:rounded-[3rem] z-50 backdrop-blur-md animate-in fade-in">
           <Loader2 className="animate-spin text-indigo-600 mb-4 w-10 h-10 lg:w-14 lg:h-14" />
-          <p className="text-base lg:text-lg font-black tracking-tight text-indigo-600">Adaptive Ingestion Active...</p>
+          <p className="text-base lg:text-lg font-black tracking-tight text-indigo-600">Neural Sync Active...</p>
+          <p className="text-[10px] lg:text-xs font-bold text-slate-400 mt-2">{procStage}</p>
         </div>
       )}
     </div>
