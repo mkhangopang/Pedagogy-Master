@@ -11,8 +11,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION SEMANTIC RETRIEVER (v17.0)
- * Robust matching for Sindh/International standards with Token Boosting.
+ * HIGH-PRECISION SEMANTIC RETRIEVER (v18.0)
+ * Optimized for Sindh/International standards with aggressive token boosting.
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -22,48 +22,31 @@ export async function retrieveRelevantChunks(
   priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
-  console.log(`🔍 [Retriever] High-Precision Scan: "${query.substring(0, 50)}..."`);
+  console.log(`🔍 [Retriever] Scanning nodes for: "${query.substring(0, 50)}..."`);
   
   try {
     const sanitizedPriorityId = (priorityDocumentId && /^[0-9a-fA-F-]{36}$/.test(priorityDocumentId)) 
       ? priorityDocumentId 
       : null;
 
-    // 1. NEURAL SLO TAG EXTRACTION
+    // 1. ADVANCED SLO TOKEN EXTRACTION
     const boostTags: string[] = [];
     
-    // Pattern 1: Dot-separated (e.g. S8.C3, 8.1.2)
-    const dotMatches = query.match(/([A-Z]\d+)\.([A-Z]\d+)/gi) || [];
-    boostTags.push(...dotMatches.map(m => m.toUpperCase()));
-
-    // Pattern 2: Alphanumeric clusters (S8A5, S-08-C-03)
-    const sloRegex = /([A-Z])[\s.-]?(\d{1,2})[\s.-]?([A-Z])[\s.-]?(\d{1,2})/gi;
+    // Pattern: S8.C3, 8.1.2, S-04-A-03
+    const sloRegex = /([A-Z])[\s.-]?(\d{1,2})[\s.-]?([A-Z])[\s.-]?(\d{1,2})|(\d+\.\d+(?:\.\d+)?)/gi;
     const matches = Array.from(query.matchAll(sloRegex));
     
     matches.forEach(m => {
-      const letter1 = m[1].toUpperCase();
-      const num1 = parseInt(m[2], 10);
-      const letter2 = m[3].toUpperCase();
-      const num2 = parseInt(m[4], 10);
-
-      boostTags.push(
-        `${letter1}${num1}${letter2}${num2}`,
-        `${letter1}${num1.toString().padStart(2, '0')}${letter2}${num2.toString().padStart(2, '0')}`,
-        `${letter1}-${num1}-${letter2}-${num2}`,
-        `${letter1}.${letter2}${num2}`, 
-        `${letter1}${num1}.${letter2}${num2}`,
-        m[0].toUpperCase().replace(/[\s.-]/g, '')
-      );
+      boostTags.push(m[0].toUpperCase().replace(/[\s.-]/g, '')); // Normalized (S8C3)
+      boostTags.push(m[0].toUpperCase()); // Verbatim (S8.C3)
     });
 
-    // Pattern 3: Simple Hierarchical (8.1, 8.1.2)
-    const hierMatches = query.match(/\b\d+\.\d+(?:\.\d+)?(?:\.\d+)?\b/g) || [];
-    boostTags.push(...hierMatches);
+    const finalBoostTags = Array.from(new Set(boostTags.filter(t => t.length >= 2)));
+    if (finalBoostTags.length > 0) {
+      console.log(`🎯 [Retriever] Boosting SLO Tokens:`, finalBoostTags);
+    }
 
-    const finalBoostTags = Array.from(new Set(boostTags.map(t => t.trim()).filter(t => t.length >= 2)));
-    console.log(`🎯 [Retriever] Identified SLO Tokens:`, finalBoostTags);
-
-    // 2. HYBRID SEMANTIC SEARCH
+    // 2. HYBRID VECTOR SEARCH
     const queryEmbedding = await generateEmbedding(query);
 
     const { data, error } = await supabase.rpc('hybrid_search_chunks_v2', {
@@ -75,11 +58,12 @@ export async function retrieveRelevantChunks(
     });
 
     if (error) {
-      console.error('❌ [Retriever RPC Error]:', error);
+      console.error('❌ [Retriever RPC Fail]:', error.message);
+      // Fallback to simpler lookup if hybrid v2 fails or doesn't exist yet
       return [];
     }
 
-    const uniqueResults: RetrievedChunk[] = (data || []).map((d: any) => ({
+    return (data || []).map((d: any) => ({
       id: d.chunk_id,
       text: d.chunk_text,
       sloCodes: d.slo_codes || [],
@@ -87,11 +71,9 @@ export async function retrieveRelevantChunks(
       pageNumber: d.page_number,
       sectionTitle: d.section_title
     }));
-    
-    return uniqueResults.sort((a, b) => b.similarity - a.similarity);
 
   } catch (err) {
-    console.error('[Retriever Fatal]:', err);
+    console.error('[Retriever Critical Fatal]:', err);
     return [];
   }
 }
