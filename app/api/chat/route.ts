@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
@@ -11,8 +10,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL TUTOR ENGINE (v10.0 - STABLE GROUNDING)
- * Robust context access for indexed documents.
+ * NEURAL TUTOR ENGINE (v11.0 - ROBUST GROUNDING)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -29,29 +27,27 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
 
     // 1. Resolve Document Context (Check for both ready and completed)
-    const { data: selectedDocs, error: docFetchError } = await supabase
+    const { data: selectedDocs } = await supabase
       .from('documents')
       .select('id, name, authority')
       .eq('user_id', user.id)
       .or(`is_selected.eq.true${priorityDocumentId ? `,id.eq.${priorityDocumentId}` : ''}`)
       .in('status', ['ready', 'completed']);
 
-    if (docFetchError) console.error('Doc Fetch Error:', docFetchError);
-
     const finalFilterIds = selectedDocs?.map(d => d.id) || [];
-    console.log(`🤖 [Chat API] User: ${user.email} | Active Assets: ${finalFilterIds.length}`);
+    console.log(`🤖 [Chat API] Active Assets: ${finalFilterIds.length} | Priority: ${priorityDocumentId || 'None'}`);
     
     // 2. Retrieval (XML Unified Vault)
     let contextVault = "";
     let chunks: any[] = [];
 
     if (finalFilterIds.length > 0) {
-      chunks = await retrieveRelevantChunks(message, finalFilterIds, supabase, 15, priorityDocumentId);
+      chunks = await retrieveRelevantChunks(message, finalFilterIds, supabase, 12, priorityDocumentId);
       
       if (chunks.length > 0) {
         contextVault = `<AUTHORITATIVE_VAULT>\n`;
         chunks.forEach((c, i) => {
-          contextVault += `[CHUNK_${i+1}] SOURCE: ${c.sloCodes?.join(', ') || 'General'}\nCONTENT: ${c.text}\n\n`;
+          contextVault += `[NODE_${i+1}] SOURCE_SLOS: ${c.sloCodes?.join(', ') || 'Global'}\nCONTENT: ${c.text}\n\n`;
         });
         contextVault += `</AUTHORITATIVE_VAULT>\n`;
       }
@@ -73,32 +69,31 @@ ${basePersona}
 
 ## NEURAL STATE: ${chunks.length > 0 ? 'GROUNDED_MODE' : 'GENERAL_MODE'}
 - TARGET_AUTHORITY: ${selectedDocs?.[0]?.authority || 'General'}
-- DATA_STATUS: ${chunks.length > 0 ? `SYNCED (${chunks.length} nodes)` : 'UNSYNCED'}
+- SYNCED_NODES: ${chunks.length}
 
 ${chunks.length > 0 ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
-- MANDATORY: If <AUTHORITATIVE_VAULT> exists, you have DIRECT ACCESS to the curriculum. Never say "I don't have access".
-- CITATION: Mention the document name "${selectedDocs?.[0]?.name || 'the curriculum'}" in your answer.
+- MANDATORY: If <AUTHORITATIVE_VAULT> exists, you have DIRECT ACCESS to curriculum standards. Cite the document "${selectedDocs?.[0]?.name || 'the active file'}".
 `;
 
     // 4. Remote Neural Call (Gemini)
     const apiKey = resolveApiKey();
-    if (!apiKey) throw new Error("API Key configuration missing.");
+    if (!apiKey) throw new Error("Synthesis node offline: API Key missing.");
     
     const ai = new GoogleGenAI({ apiKey });
     
     const contents: any[] = [];
-    history.slice(-8).forEach((h: any) => {
+    history.slice(-10).forEach((h: any) => {
       contents.push({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] });
     });
     
     const finalPrompt = `
 ${contextVault}
 
-# USER QUERY
+# USER COMMAND:
 "${message}"
 `;
     
-    // Handle history/message sequence logic
+    // Non-alternating role collapse logic
     if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
       contents[contents.length - 1].parts[0].text += `\n\n${finalPrompt}`;
     } else {
@@ -116,20 +111,20 @@ ${contextVault}
       }
     });
 
-    const responseText = result.text || "Synthesis error: Model returned no data. Possible safety filter or token limit.";
+    const responseText = result.text || `Synthesis bottleneck. The model was unable to generate a response for this query. (Status: ${chunks.length > 0 ? 'Grounded' : 'General'})`;
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
         if (chunks.length > 0) {
-          controller.enqueue(encoder.encode(`> *Neural Sync: Accessing ${chunks.length} curriculum nodes from "${selectedDocs?.[0]?.name}"...*\n\n`));
+          controller.enqueue(encoder.encode(`> *Neural Sync: Successfully retrieved ${chunks.length} nodes from "${selectedDocs?.[0]?.name}"...*\n\n`));
         }
         
         controller.enqueue(encoder.encode(responseText));
         
         if (chunks.length > 0) {
-          const refs = `\n\n### Grounding References:\n` + 
-            chunks.slice(0, 3).map(c => `* **Standard ${c.sloCodes?.[0] || 'Node'}** - ${(c.similarity * 100).toFixed(0)}% relevant match`).join('\n');
+          const refs = `\n\n### Grounding Profile:\n` + 
+            chunks.slice(0, 3).map(c => `* **Standard ${c.sloCodes?.[0] || 'Asset'}** (${(c.similarity * 100).toFixed(0)}% match)`).join('\n');
           controller.enqueue(encoder.encode(refs));
         }
         
@@ -140,7 +135,7 @@ ${contextVault}
   } catch (error: any) {
     console.error("❌ [CHAT ROUTE ERROR]:", error);
     return NextResponse.json({ 
-      error: "RAG_ABORT: " + (error.message || "Unknown synthesis failure") 
+      error: "RAG_NODE_DISCONNECT: " + (error.message || "Unknown error") 
     }, { status: 500 });
   }
 }
