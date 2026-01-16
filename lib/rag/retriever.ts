@@ -11,14 +11,15 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION SEMANTIC RETRIEVER (v18.0)
+ * HIGH-PRECISION SEMANTIC RETRIEVER (v18.1)
  * Optimized for Sindh/International standards with aggressive token boosting.
+ * FIX: Enforced explicit array wrapping for filter_document_ids in Supabase RPC.
  */
 export async function retrieveRelevantChunks(
   query: string,
   documentIds: string[],
   supabase: SupabaseClient,
-  maxChunks: number = 10,
+  maxChunks: number = 12,
   priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
@@ -49,17 +50,18 @@ export async function retrieveRelevantChunks(
     // 2. HYBRID VECTOR SEARCH
     const queryEmbedding = await generateEmbedding(query);
 
+    // CRITICAL FIX: The RPC parameters must strictly match the database function signature.
+    // filter_document_ids MUST be an array of UUIDs.
     const { data, error } = await supabase.rpc('hybrid_search_chunks_v2', {
-      query_embedding: queryEmbedding, 
-      match_count: maxChunks,
-      filter_document_ids: documentIds,
+      query_embedding: queryEmbedding,
+      match_count: maxChunks, 
+      filter_document_ids: Array.isArray(documentIds) ? documentIds : [documentIds], // Ensure it is an ARRAY
       priority_document_id: sanitizedPriorityId,
-      boost_tags: finalBoostTags
+      boost_tags: finalBoostTags || []
     });
 
     if (error) {
       console.error('❌ [Retriever RPC Fail]:', error.message);
-      // Fallback to simpler lookup if hybrid v2 fails or doesn't exist yet
       return [];
     }
 
