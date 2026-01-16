@@ -22,7 +22,6 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
     e.preventDefault();
     if (honeypot) return;
 
-    // Check configuration at the time of action to allow Next.js to load env vars
     if (!isSupabaseConfigured()) {
       setError("Infrastructure node not yet initialized. Please check your environment variables (NEXT_PUBLIC_SUPABASE_URL and KEY) and redeploy.");
       return;
@@ -34,7 +33,12 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
     try {
       if (view === 'login') {
         const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
-        if (authError) throw authError;
+        if (authError) {
+           if (authError.message.includes('Email not confirmed')) {
+             throw new Error("Confirmation Pending: Please check your inbox or disable 'Confirm Email' in Supabase Auth settings.");
+           }
+           throw authError;
+        }
         if (data.user) onSession(data.user);
       } else if (view === 'signup') {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
@@ -101,7 +105,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
               <label className="text-sm font-semibold text-slate-600 ml-1">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="name@school.edu" required />
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-900" placeholder="name@school.edu" required />
               </div>
             </div>
 
@@ -113,7 +117,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none" placeholder="••••••••" required />
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-slate-900" placeholder="••••••••" required />
                 </div>
               </div>
             )}

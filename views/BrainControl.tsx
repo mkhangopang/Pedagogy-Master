@@ -100,8 +100,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v20.0
--- TARGET: Pedagogical Tool Factory Logic & Tag-Aware RAG
+  const sqlSchema = `-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v21.0
+-- TARGET: Auth Resilience & Tag-Aware RAG
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -186,7 +186,18 @@ CREATE TABLE IF NOT EXISTS public.slo_database (
     UNIQUE(document_id, slo_code)
 );
 
--- 6. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
+-- 6. NEURAL_BRAIN TABLE
+CREATE TABLE IF NOT EXISTS public.neural_brain (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    master_prompt TEXT NOT NULL,
+    bloom_rules TEXT,
+    version INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. THE NEURAL ENGINE: HYBRID SEARCH RPC v2
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v2(
   query_embedding vector(768),
   match_count INT,
@@ -224,6 +235,29 @@ BEGIN
   LIMIT match_count;
 END;
 $$;
+
+-- 8. GLOBAL RLS OVERRIDE (Production Ready)
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
+CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own documents" ON documents;
+CREATE POLICY "Users can manage own documents" ON documents FOR ALL USING (auth.uid() = user_id);
+
+ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own chunks" ON document_chunks;
+CREATE POLICY "Users can manage own chunks" ON document_chunks FOR ALL 
+USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
+
+ALTER TABLE slo_database ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own slo_database" ON slo_database;
+CREATE POLICY "Users can manage own slo_database" ON slo_database FOR ALL
+USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
 `;
 
   return (
@@ -298,7 +332,7 @@ $$;
                <div className="space-y-1">
                  <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Command Center</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   The SQL block below contains the **complete v20.0 architecture**. If a table is marked as ERR_404, copy the SQL and run it in the Supabase SQL Editor.
+                   The SQL block below contains the **complete v21.0 architecture**. If a table is marked as ERR_404 or Signup fails, copy the SQL and run it in the Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -338,7 +372,7 @@ $$;
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v20.0</h3>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v21.0</h3>
                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Full System DDL & RPC Engines</p>
                </div>
                <button 

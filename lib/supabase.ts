@@ -5,15 +5,13 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
  * Prioritizes static access for Next.js build-time replacement.
  */
 const getEnv = (key: string): string => {
-  // FAST PATH: Static access for browser bundles to pick up NEXT_PUBLIC_ vars
+  // FAST PATH: Static access for browser bundles
   if (key === 'NEXT_PUBLIC_SUPABASE_URL' && process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY' && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (key === 'NEXT_PUBLIC_R2_PUBLIC_URL' && process.env.NEXT_PUBLIC_R2_PUBLIC_URL) return process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
-  if (key === 'API_KEY' && process.env.API_KEY) return process.env.API_KEY;
 
   if (typeof window !== 'undefined') {
     const win = window as any;
-    // Check various injection points used by the neural handshake
+    // Check various injection points used by the neural handshake (index.tsx)
     const val = 
       win.process?.env?.[key] || 
       win[key] || 
@@ -47,8 +45,13 @@ let cachedClient: SupabaseClient | null = null;
 const getClient = (): SupabaseClient => {
   if (cachedClient) return cachedClient;
 
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || 'https://placeholder.supabase.co';
-  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || 'placeholder';
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+
+  if (!url || !anonKey || url.includes('placeholder')) {
+    // Return a dummy client that will fail gracefully or allow setup
+    return createClient('https://placeholder-url.supabase.co', 'placeholder-key');
+  }
 
   cachedClient = createClient(url, anonKey, {
     auth: {
@@ -64,8 +67,6 @@ const getClient = (): SupabaseClient => {
 
 /**
  * Main Supabase Client Proxy.
- * Delays real initialization until the first access to property,
- * allowing the Neural Handshake to populate environment variables first.
  */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop, receiver) => {
@@ -91,6 +92,7 @@ export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disc
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error) {
+      if (error.code === '42P01') return { status: 'disconnected', message: 'Table "profiles" does not exist. Run SQL in Hub.' };
       return { status: 'disconnected', message: `Supabase error: ${error.message}` };
     }
     return { status: 'connected', message: 'Cloud Node Online' };
@@ -99,9 +101,6 @@ export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disc
   }
 };
 
-/**
- * Returns a client with a specific user token for RLS.
- */
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
     getEnv('NEXT_PUBLIC_SUPABASE_URL'),
@@ -110,23 +109,6 @@ export const getSupabaseServerClient = (token: string): SupabaseClient => {
       global: {
         headers: { Authorization: `Bearer ${token}` },
       },
-    }
-  );
-};
-
-/**
- * Returns a high-privilege client using the service role key.
- */
-export const getSupabaseAdminClient = (): SupabaseClient => {
-  const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY') || getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  return createClient(
-    getEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    serviceKey,
-    {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false
-      }
     }
   );
 };
