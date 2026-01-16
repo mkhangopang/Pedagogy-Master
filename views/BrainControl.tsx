@@ -100,36 +100,93 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: ULTIMATE INFRASTRUCTURE PATCH v20.0
+  const sqlSchema = `-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v20.0
 -- TARGET: Pedagogical Tool Factory Logic & Tag-Aware RAG
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. REPAIR DOCUMENTS TABLE (SELECTION & INDEXING FLAGS)
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'rag_indexed') THEN
-        ALTER TABLE public.documents ADD COLUMN rag_indexed BOOLEAN DEFAULT FALSE;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'is_selected') THEN
-        ALTER TABLE public.documents ADD COLUMN is_selected BOOLEAN DEFAULT FALSE;
-    END IF;
-END $$;
+-- 2. PROFILES TABLE (Adaptive Intelligence Hub)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+    name TEXT,
+    email TEXT,
+    role TEXT DEFAULT 'teacher',
+    plan TEXT DEFAULT 'free',
+    queries_used INTEGER DEFAULT 0,
+    queries_limit INTEGER DEFAULT 30,
+    grade_level TEXT,
+    subject_area TEXT,
+    teaching_style TEXT,
+    pedagogical_approach TEXT,
+    generation_count INTEGER DEFAULT 0,
+    success_rate DOUBLE PRECISION DEFAULT 0,
+    edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}',
+    active_doc_id UUID,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 3. REPAIR DOCUMENT_CHUNKS (SLO TAGGING SUPPORT)
-DO $$ 
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'slo_codes') THEN
-        ALTER TABLE public.document_chunks ADD COLUMN slo_codes TEXT[] DEFAULT '{}';
-    END IF;
-END $$;
+-- 3. DOCUMENTS TABLE (Curriculum Assets)
+CREATE TABLE IF NOT EXISTS public.documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    source_type TEXT DEFAULT 'markdown',
+    status TEXT DEFAULT 'processing',
+    is_approved BOOLEAN DEFAULT FALSE,
+    extracted_text TEXT,
+    file_path TEXT,
+    storage_type TEXT DEFAULT 'r2',
+    curriculum_name TEXT,
+    authority TEXT,
+    subject TEXT,
+    grade_level TEXT,
+    version_year TEXT,
+    generated_json JSONB,
+    version INTEGER DEFAULT 1,
+    is_selected BOOLEAN DEFAULT FALSE,
+    rag_indexed BOOLEAN DEFAULT FALSE,
+    document_summary TEXT,
+    difficulty_level TEXT,
+    gemini_metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 4. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
--- Optimized for Tool Factory logic: High-precision SLO matching
-DROP FUNCTION IF EXISTS hybrid_search_chunks(text, vector, integer, uuid[], uuid);
-DROP FUNCTION IF EXISTS hybrid_search_chunks_v2(vector, integer, uuid[], uuid, text[]);
+-- 4. DOCUMENT_CHUNKS TABLE (Vector Grid Nodes)
+CREATE TABLE IF NOT EXISTS public.document_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES public.documents ON DELETE CASCADE,
+    chunk_text TEXT NOT NULL,
+    embedding vector(768),
+    slo_codes TEXT[] DEFAULT '{}',
+    chunk_index INTEGER,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
+-- 5. SLO_DATABASE TABLE (Structured Curriculum Knowledge)
+CREATE TABLE IF NOT EXISTS public.slo_database (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES public.documents ON DELETE CASCADE,
+    slo_code TEXT NOT NULL,
+    slo_full_text TEXT NOT NULL,
+    subject TEXT,
+    grade_level TEXT,
+    bloom_level TEXT,
+    cognitive_complexity TEXT,
+    teaching_strategies TEXT[] DEFAULT '{}',
+    assessment_ideas TEXT[] DEFAULT '{}',
+    prerequisite_concepts TEXT[] DEFAULT '{}',
+    common_misconceptions TEXT[] DEFAULT '{}',
+    keywords TEXT[] DEFAULT '{}',
+    page_number INTEGER,
+    extraction_confidence DOUBLE PRECISION,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(document_id, slo_code)
+);
+
+-- 6. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v2(
   query_embedding vector(768),
   match_count INT,
@@ -146,6 +203,7 @@ RETURNS TABLE (
   combined_score FLOAT
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
 AS $$
 BEGIN
   RETURN QUERY
@@ -156,20 +214,9 @@ BEGIN
     (dc.metadata->>'page_number')::INT AS page_number,
     (dc.metadata->>'section_title') AS section_title,
     (
-      -- Semantic Vector Similarity (Cosine converted to similarity)
       (1 - (dc.embedding <=> query_embedding)) +
-      
-      -- MASSIVE SLO TAG BOOST (Crucial for seeding Tool Generation)
-      CASE 
-        WHEN dc.slo_codes && boost_tags THEN 5.0 -- Massive weight to ensure the specific SLO definition is retrieved
-        ELSE 0 
-      END +
-      
-      -- Priority Document context weighting
-      CASE 
-        WHEN dc.document_id = priority_document_id THEN 0.5 
-        ELSE 0 
-      END
+      CASE WHEN dc.slo_codes && boost_tags THEN 5.0 ELSE 0 END +
+      CASE WHEN dc.document_id = priority_document_id THEN 0.5 ELSE 0 END
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
@@ -177,11 +224,6 @@ BEGIN
   LIMIT match_count;
 END;
 $$;
-
--- 5. ENSURE RLS BYPASS FOR INTERNAL RPC
-ALTER FUNCTION hybrid_search_chunks_v2(vector, integer, uuid[], uuid, text[]) SECURITY DEFINER;
-
-SELECT 'Infrastructure Patch v20.0 Applied - Pedagogical Tool Factory Online' as status;
 `;
 
   return (
@@ -254,9 +296,9 @@ SELECT 'Infrastructure Patch v20.0 Applied - Pedagogical Tool Factory Online' as
             <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
                <ShieldAlert className="text-amber-600 shrink-0" size={24} />
                <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Tool Factory Fix</h4>
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Command Center</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   The latest synthesis engine requires 'hybrid_search_chunks_v2' for tag-aware grounding. **Copy and Run the SQL patch below** to ensure the RAG engine can extract precise SLO definitions as seeds for tool generation.
+                   The SQL block below contains the **complete v20.0 architecture**. If a table is marked as ERR_404, copy the SQL and run it in the Supabase SQL Editor.
                  </p>
                </div>
             </div>
@@ -271,10 +313,9 @@ SELECT 'Infrastructure Patch v20.0 Applied - Pedagogical Tool Factory Online' as
               ))}
             </div>
 
-            {/* System Actions for Admins */}
             <div className="mt-12 pt-10 border-t border-slate-100 dark:border-white/5">
                <h2 className="text-xl font-bold flex items-center gap-3 dark:text-white mb-6">
-                 <Zap size={20} className="text-amber-500" /> Neural Synchronization
+                 <Zap size={20} className="text-amber-50" /> System Re-synchronization
                </h2>
                <div className="flex flex-col md:flex-row gap-4 items-start">
                   <button 
@@ -283,7 +324,7 @@ SELECT 'Infrastructure Patch v20.0 Applied - Pedagogical Tool Factory Online' as
                     className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-3 shadow-xl shadow-indigo-600/20 disabled:opacity-50"
                   >
                     {isIndexing ? <RefreshCw className="animate-spin" size={18} /> : <Database size={18} />}
-                    Bulk Re-index All Documents
+                    Sync All Curriculum Nodes
                   </button>
                   {indexStatus && (
                     <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-white/5 text-xs font-medium text-slate-500 max-w-md animate-in slide-in-from-left-4">
@@ -298,7 +339,7 @@ SELECT 'Infrastructure Patch v20.0 Applied - Pedagogical Tool Factory Online' as
             <div className="flex justify-between items-center">
                <div className="space-y-1">
                  <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v20.0</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Fixes: Precise SLO Seeding & Tool Generation Flow</p>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Full System DDL & RPC Engines</p>
                </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
