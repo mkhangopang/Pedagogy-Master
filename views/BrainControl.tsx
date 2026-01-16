@@ -1,4 +1,3 @@
-
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
@@ -101,13 +100,24 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
-  const sqlSchema = `-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v16.0 (TAG ENHANCED RAG)
--- RUN THIS IN SUPABASE SQL EDITOR TO RESOLVE RAG CONTEXT ACCESS ISSUES
+  const sqlSchema = `-- EDUNEXUS AI: ULTIMATE INFRASTRUCTURE PATCH v20.0
+-- TARGET: Pedagogical Tool Factory Logic & Tag-Aware RAG
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. REPAIR DOCUMENT_CHUNKS (TAG BOOSTING SUPPORT)
+-- 2. REPAIR DOCUMENTS TABLE (SELECTION & INDEXING FLAGS)
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'rag_indexed') THEN
+        ALTER TABLE public.documents ADD COLUMN rag_indexed BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'documents' AND column_name = 'is_selected') THEN
+        ALTER TABLE public.documents ADD COLUMN is_selected BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;
+
+-- 3. REPAIR DOCUMENT_CHUNKS (SLO TAGGING SUPPORT)
 DO $$ 
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'slo_codes') THEN
@@ -115,8 +125,8 @@ BEGIN
     END IF;
 END $$;
 
--- 3. THE NEURAL ENGINE: HYBRID SEARCH RPC v2
--- Optimized for high-precision SLO matching and priority document boosting
+-- 4. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
+-- Optimized for Tool Factory logic: High-precision SLO matching
 DROP FUNCTION IF EXISTS hybrid_search_chunks(text, vector, integer, uuid[], uuid);
 DROP FUNCTION IF EXISTS hybrid_search_chunks_v2(vector, integer, uuid[], uuid, text[]);
 
@@ -146,12 +156,20 @@ BEGIN
     (dc.metadata->>'page_number')::INT AS page_number,
     (dc.metadata->>'section_title') AS section_title,
     (
-      -- Vector Similarity (Cosine distance converted to similarity)
+      -- Semantic Vector Similarity (Cosine converted to similarity)
       (1 - (dc.embedding <=> query_embedding)) +
-      -- EXPLICIT TAG BOOST (Massive weight if chunk matches identified SLOs from query)
-      CASE WHEN dc.slo_codes && boost_tags THEN 1.0 ELSE 0 END +
-      -- Priority Document Context Boost
-      CASE WHEN dc.document_id = priority_document_id THEN 0.3 ELSE 0 END
+      
+      -- MASSIVE SLO TAG BOOST (Crucial for seeding Tool Generation)
+      CASE 
+        WHEN dc.slo_codes && boost_tags THEN 5.0 -- Massive weight to ensure the specific SLO definition is retrieved
+        ELSE 0 
+      END +
+      
+      -- Priority Document context weighting
+      CASE 
+        WHEN dc.document_id = priority_document_id THEN 0.5 
+        ELSE 0 
+      END
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
@@ -160,9 +178,10 @@ BEGIN
 END;
 $$;
 
--- 4. FIX DOCUMENT STATUS VIEWS
--- Ensure the dashboard and chat queries don't exclude 'completed' status docs
-SELECT 'Infrastructure Patch v16.0 Applied - Tag-Aware RAG Engine Online' as status;
+-- 5. ENSURE RLS BYPASS FOR INTERNAL RPC
+ALTER FUNCTION hybrid_search_chunks_v2(vector, integer, uuid[], uuid, text[]) SECURITY DEFINER;
+
+SELECT 'Infrastructure Patch v20.0 Applied - Pedagogical Tool Factory Online' as status;
 `;
 
   return (
@@ -235,9 +254,9 @@ SELECT 'Infrastructure Patch v16.0 Applied - Tag-Aware RAG Engine Online' as sta
             <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
                <ShieldAlert className="text-amber-600 shrink-0" size={24} />
                <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Context Fix</h4>
+                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Alert: Tool Factory Fix</h4>
                  <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   The latest synthesis engine (v16.0) requires the new 'hybrid_search_chunks_v2' function for tag-aware grounding. **Copy and Run the SQL patch below** to enable deep access to your SLO data.
+                   The latest synthesis engine requires 'hybrid_search_chunks_v2' for tag-aware grounding. **Copy and Run the SQL patch below** to ensure the RAG engine can extract precise SLO definitions as seeds for tool generation.
                  </p>
                </div>
             </div>
@@ -278,8 +297,8 @@ SELECT 'Infrastructure Patch v16.0 Applied - Tag-Aware RAG Engine Online' as sta
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
                <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v16.0</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Fixes: Context Disconnect & SLO Boost</p>
+                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v20.0</h3>
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Fixes: Precise SLO Seeding & Tool Generation Flow</p>
                </div>
                <button 
                 onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
