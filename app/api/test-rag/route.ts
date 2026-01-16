@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
@@ -53,14 +52,14 @@ export async function GET(req: NextRequest) {
       timestamp: new Date().toISOString(),
       activeVault: selectedDocs,
       resultsFound: chunks.length,
-      // Fix: Mapping properties to match RetrievedChunk interface (chunk_id, chunk_text, combined_score, etc.)
+      // Fix: Implement null safety with coalescing operators to prevent build failure
       chunks: chunks.map(c => ({
         id: c.chunk_id,
-        text: c.chunk_text.substring(0, 300) + '...',
-        similarity: (c.combined_score * 100).toFixed(1) + '%',
-        slos: c.slo_codes,
-        section: c.section_title,
-        page: c.page_number
+        text: (c.chunk_text || '').substring(0, 300) + '...',
+        similarity: ((c.combined_score ?? 0) * 100).toFixed(1) + '%',
+        slos: c.slo_codes ?? [],
+        section: c.section_title ?? 'General',
+        page: c.page_number ?? 0
       }))
     });
 

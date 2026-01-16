@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * PEDAGOGY MASTER CHAT ENGINE (v24.0 - PRODUCTION FIX)
+ * PEDAGOGY MASTER CHAT ENGINE (v25.0 - PRODUCTION FIX)
  * Implements authoritative grounding for tool generation.
  */
 export async function POST(req: NextRequest) {
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
 
     // 1. Resolve user's selected curriculum document
-    const { data: selectedDoc, error: docError } = await supabase
+    const { data: selectedDoc } = await supabase
       .from('documents')
       .select('id, name, file_path')
       .eq('user_id', user.id)
@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
       .eq('rag_indexed', true)
       .single();
 
+    // Fix: Explicitly type to resolve "implicitly has type any[]" error
     let retrievedChunks: RetrievedChunk[] = [];
     const docIdToUse = priorityDocumentId || selectedDoc?.id;
 
