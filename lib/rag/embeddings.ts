@@ -16,7 +16,7 @@ function sanitizeText(text: string): string {
 }
 
 /**
- * VECTOR SYNTHESIS ENGINE (v21.0)
+ * VECTOR SYNTHESIS ENGINE (v23.0)
  * MODEL: text-embedding-004 (768 dimensions)
  * CRITICAL: This MUST be consistent between indexing and query.
  */
@@ -32,20 +32,34 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     
-    // Correct format according to system guidelines
+    // Call the embedding model
     const response = await ai.models.embedContent({
       model: "text-embedding-004", 
       contents: { parts: [{ text: cleanText }] } 
     });
 
-    const result = response.embedding;
-    if (!result?.values) throw new Error("Invalid vector response.");
+    // Handle different possible response structures defensively to bypass TS build errors
+    let vector: number[] = [];
+    const responseAny = response as any;
 
-    const vector = result.values;
+    if (responseAny.embedding?.values) {
+      // Standard response structure
+      vector = responseAny.embedding.values;
+    } else if (responseAny.embeddings?.[0]?.values) {
+      // Alternative/Batch response structure
+      vector = responseAny.embeddings[0].values;
+    } else {
+      console.error('❌ Unexpected embedding response structure:', Object.keys(response));
+      throw new Error('Invalid embedding response format');
+    }
+
+    if (!vector || vector.length === 0) {
+      throw new Error("Invalid vector values returned.");
+    }
 
     // Enforce 768d dimensionality
     if (vector.length !== 768) {
-      console.warn(`[Embedder] Dimension mismatch: expected 768, got ${vector.length}. Padding...`);
+      console.warn(`[Embedder] Dimension mismatch: expected 768, got ${vector.length}. Standardizing...`);
       if (vector.length < 768) {
         return [...vector, ...new Array(768 - vector.length).fill(0)];
       }
@@ -65,14 +79,14 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   const embeddings: number[][] = [];
   
-  // We process sequentially to ensure reliability on edge nodes
+  // Sequential processing for reliability on serverless edge nodes
   for (const text of texts) {
     const embedding = await generateEmbedding(text);
-    if (embedding.length === 768) {
+    if (embedding && embedding.length === 768) {
       embeddings.push(embedding);
     } else {
-      console.warn('Skipping invalid embedding for chunk.');
-      embeddings.push(new Array(768).fill(0)); // Fallback
+      console.warn('Fallback: Generating zero-vector for failed embedding chunk.');
+      embeddings.push(new Array(768).fill(0));
     }
   }
   
