@@ -1,4 +1,4 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v24.0
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v25.0
 -- TARGET: RAG Resilience & Diagnostic Monitoring
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
@@ -104,7 +104,15 @@ END;
 $$;
 
 -- 6. DIAGNOSTIC VIEW: RAG HEALTH
+-- Enhanced to track unique SLOs per asset
 CREATE OR REPLACE VIEW rag_health_report AS
+WITH slo_stats AS (
+    SELECT 
+        document_id, 
+        count(DISTINCT unnest(slo_codes)) as distinct_slos
+    FROM document_chunks
+    GROUP BY document_id
+)
 SELECT 
     d.id,
     d.name,
@@ -112,8 +120,10 @@ SELECT
     d.rag_indexed,
     d.is_selected,
     count(dc.id) as chunk_count,
+    COALESCE(ss.distinct_slos, 0) as distinct_slo_count,
     CASE 
         WHEN d.rag_indexed = true AND count(dc.id) = 0 THEN 'BROKEN: Missing Chunks'
+        WHEN d.rag_indexed = true AND COALESCE(ss.distinct_slos, 0) = 0 THEN 'WARNING: No SLOs Tagged'
         WHEN d.rag_indexed = false AND count(dc.id) > 0 THEN 'WARNING: Partial Sync'
         WHEN d.is_selected = true AND d.rag_indexed = false THEN 'CRITICAL: Selected but Unindexed'
         WHEN count(dc.id) > 0 THEN 'HEALTHY'
@@ -121,7 +131,8 @@ SELECT
     END as health_status
 FROM documents d
 LEFT JOIN document_chunks dc ON d.id = dc.document_id
-GROUP BY d.id, d.name, d.status, d.rag_indexed, d.is_selected;
+LEFT JOIN slo_stats ss ON d.id = ss.document_id
+GROUP BY d.id, d.name, d.status, d.rag_indexed, d.is_selected, ss.distinct_slos;
 
 -- 7. DIAGNOSTIC RPC: EXTENSION CHECK
 CREATE OR REPLACE FUNCTION get_extension_status(ext TEXT)

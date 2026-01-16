@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v23.0)
+ * WORLD-CLASS NEURAL INDEXER (v24.0)
  * Synchronizes curriculum content with the vector search grid.
  */
 export async function indexDocumentForRAG(
@@ -47,11 +47,19 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number) {
-      const sloRegex = /(?:Standard:|SLO)\s*[:\s]*([A-Z0-9\.-]{2,15})/gi;
+      // Improved Regex: Anchors to prefixes but captures the actual code pattern
+      // Matches Standard: SLO:S-04-A-01 or SLO: S8A5 etc.
+      const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
       const codes: string[] = [];
       let match;
+      
       while ((match = sloRegex.exec(text)) !== null) {
-        codes.push(match[1].toUpperCase().replace(/-/g, ''));
+        const rawCode = match[1].toUpperCase();
+        // CLEANUP: 1. Strip hyphens/dots for search 2. Filter out literals
+        const cleaned = rawCode.replace(/[-\.]/g, '');
+        if (cleaned && cleaned !== 'SLO' && cleaned !== 'UNIT' && cleaned.length > 1) {
+          codes.push(cleaned);
+        }
       }
       
       // Try to find a section title
@@ -69,7 +77,6 @@ export async function indexDocumentForRAG(
     }
 
     // 3. Contextual Sliding Window (Fallback Coverage)
-    // If we only got one huge chunk, the splitting above might have failed.
     if (rawChunks.length <= 1) {
        console.log(`[Indexer] Single-block document detected. Applying sliding window...`);
        const words = content.split(/\s+/);
