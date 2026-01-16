@@ -1,7 +1,6 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { retrieveRelevantChunks, extractSLOCodes } from '../../../lib/rag/retriever';
+import { retrieveRelevantChunks, extractSLOCodes, RetrievedChunk } from '../../../lib/rag/retriever';
 import { synthesize } from '../../../lib/ai/synthesizer-core';
 import { 
   DEFAULT_MASTER_PROMPT, 
@@ -13,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * PEDAGOGY MASTER CHAT ENGINE (v22.0 - PRODUCTION FIX)
+ * PEDAGOGY MASTER CHAT ENGINE (v24.0 - PRODUCTION FIX)
  * Implements authoritative grounding for tool generation.
  */
 export async function POST(req: NextRequest) {
@@ -28,31 +27,30 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { message, toolType, history = [], priorityDocumentId } = body;
 
+    if (!message) {
+      return NextResponse.json({ error: 'Message required' }, { status: 400 });
+    }
+
+    console.log('💬 User query:', message);
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Resolve selected document (Priority given to UI focus, then database selection)
-    let selectedDocId = priorityDocumentId;
-    if (!selectedDocId) {
-      const { data: doc } = await supabase
-        .from('documents')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('is_selected', true)
-        .eq('rag_indexed', true)
-        .single();
-      selectedDocId = doc?.id;
-    }
+    // 1. Resolve user's selected curriculum document
+    const { data: selectedDoc, error: docError } = await supabase
+      .from('documents')
+      .select('id, name, file_path')
+      .eq('user_id', user.id)
+      .eq('is_selected', true)
+      .eq('rag_indexed', true)
+      .single();
 
-    if (!selectedDocId) {
-      console.warn('⚠️ No active curriculum asset found for user:', user.id);
-    }
+    let retrievedChunks: RetrievedChunk[] = [];
+    const docIdToUse = priorityDocumentId || selectedDoc?.id;
 
-    // 2. Retrieve curriculum context via RAG
-    let retrievedChunks = [];
-    if (selectedDocId) {
+    if (docIdToUse) {
+      // 2. Retrieve curriculum context via RAG
       retrievedChunks = await retrieveRelevantChunks({
         query: message,
-        documentId: selectedDocId,
+        documentId: docIdToUse,
         supabase,
         matchCount: 5
       });
@@ -63,9 +61,17 @@ export async function POST(req: NextRequest) {
     const extractedSLOs = extractSLOCodes(message);
 
     if (retrievedChunks.length > 0) {
-      const vaultContent = retrievedChunks
-        .map((chunk, i) => `[SLO NODE ${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'General'}\nOBJECTIVE: ${chunk.chunk_text.substring(0, 400)}\n---`)
-        .join('\n');
+      // Build minimal SLO context
+      const contextChunks = retrievedChunks.slice(0, 3);
+      const sloContext = contextChunks.map((chunk, idx) => `
+[SLO NODE ${idx + 1}]
+SLO_CODES: ${chunk.slo_codes?.join(', ') || 'None'}
+OBJECTIVE: ${chunk.chunk_text.substring(0, 400)}...
+---
+      `).join('\n');
+
+      console.log('✅ Using', contextChunks.length, 'chunks for context');
+      console.log('🎯 Priority SLOs:', extractedSLOs);
 
       finalPrompt = `
 ${NUCLEAR_GROUNDING_DIRECTIVE}
@@ -73,23 +79,24 @@ ${NUCLEAR_GROUNDING_DIRECTIVE}
 ${DEFAULT_MASTER_PROMPT}
 
 <AUTHORITATIVE_VAULT>
-${vaultContent}
+${sloContext}
 </AUTHORITATIVE_VAULT>
 
 TOOL REQUEST TYPE: ${toolType || 'pedagogical_synthesis'}
 USER QUERY: ${message}
 
 GENERATION INSTRUCTIONS:
-- Use the SLO definitions in the vault as the basis for all generated content.
-- CREATE a structured pedagogical tool (Lesson Plan, Quiz, or Rubric).
-- DO NOT just summarize the document; SYNTHESIZE new material.
-- Apply 5E Model and Bloom's Taxonomy.
+- Use the SLO definitions in the vault above as your learning objectives.
+- Generate a STRUCTURED pedagogical tool (not a document summary).
+- Apply 5E Model, Bloom's Taxonomy, and UDL principles.
+- Create NEW instructional content appropriate for the grade level.
 `;
     } else {
+      console.warn('⚠️ No matching curriculum nodes found or no document selected, using fallback');
       finalPrompt = `
 ${DEFAULT_MASTER_PROMPT}
 
-⚡ Neural Note: No matching curriculum nodes found. Synthesizing using Global Pedagogical Standards.
+⚡ Neural Note: No matching curriculum context found. Synthesizing using Global Pedagogical Standards.
 
 TOOL REQUEST TYPE: ${toolType || 'general'}
 USER QUERY: ${message}
@@ -110,8 +117,7 @@ USER QUERY: ${message}
     return new Response(new ReadableStream({
       start(controller) {
         if (retrievedChunks.length > 0) {
-          // Fix: encoder.encode should be used instead of encoder.enqueue
-          controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Grounded in ${retrievedChunks.length} curriculum nodes for SLOs: ${extractedSLOs.join(', ') || 'Detected'}.*\n\n`));
+          controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Grounded in curriculum for SLOs: ${extractedSLOs.join(', ') || 'Detected'}.*\n\n`));
         }
         controller.enqueue(encoder.encode(result.text));
         controller.enqueue(encoder.encode(`\n\n*Synthesis Node: ${result.provider}*`));
@@ -121,6 +127,9 @@ USER QUERY: ${message}
 
   } catch (error: any) {
     console.error("❌ Chat API Fatal Error:", error);
-    return new Response(`Synthesis error: ${error.message || 'Grid connection lost'}.`, { status: 200 });
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error',
+      details: error.message 
+    }), { status: 500 });
   }
 }

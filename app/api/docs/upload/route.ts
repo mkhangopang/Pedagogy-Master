@@ -39,14 +39,18 @@ export async function POST(req: NextRequest) {
       ContentType: 'text/markdown',
     }));
 
-    // 2. ATOMIC EXCLUSIVE SELECTION (Fix 7)
-    // Deselect all previous documents to ensure the neural brain focuses on exactly ONE asset.
+    // 2. ATOMIC EXCLUSIVE SELECTION (Fix 5)
+    // ✅ CRITICAL: Unselect all other documents first
     const { error: unselectError } = await supabase
       .from('documents')
       .update({ is_selected: false })
       .eq('user_id', user.id);
     
-    if (unselectError) console.warn('Failed to unselect previous assets:', unselectError);
+    if (unselectError) {
+      console.error('Failed to unselect previous documents:', unselectError);
+    } else {
+      console.log('✅ Unselected all previous documents for user');
+    }
 
     const generatedJson = generateCurriculumJson(extractedText);
 
@@ -66,7 +70,7 @@ export async function POST(req: NextRequest) {
       grade_level: grade || 'Auto',
       version_year: version || '2024',
       generated_json: generatedJson,
-      is_selected: true, // Auto-select new document
+      is_selected: true, // This is now the only selected document
       rag_indexed: false
     }).select().single();
 

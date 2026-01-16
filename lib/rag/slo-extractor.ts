@@ -30,9 +30,6 @@ export function extractSLOCodes(query: string): string[] {
     }
   });
   
-  if (matches.length > 0) {
-    console.log('🎯 [SLO Extractor] Identified Codes:', matches);
-  }
-  
+  console.log('🎯 [SLO Extractor] Identified Codes:', matches);
   return matches;
 }

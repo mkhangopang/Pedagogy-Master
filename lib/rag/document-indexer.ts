@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v26.0)
+ * WORLD-CLASS NEURAL INDEXER (v27.0)
  * Synchronizes curriculum content with the vector search grid.
  */
 export async function indexDocumentForRAG(
@@ -104,18 +104,23 @@ export async function indexDocumentForRAG(
     
     if (chunkRecords.length > 0) {
       const { error: insertError } = await supabase.from('document_chunks').insert(chunkRecords);
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error('Failed to insert chunks:', insertError);
+        throw insertError;
+      }
     }
 
-    // 6. CRITICAL COMMIT: Set rag_indexed to TRUE
+    // 6. CRITICAL COMMIT: Set rag_indexed to TRUE (Fix 4)
     const { error: updateError } = await supabase.from('documents').update({ 
       status: 'ready', 
       rag_indexed: true 
     }).eq('id', documentId);
     
-    if (updateError) throw updateError;
-
-    console.log(`✅ [Indexer] Sync success for ${documentId}. Document is now ready for RAG.`);
+    if (updateError) {
+      console.error('Failed to update rag_indexed flag:', updateError);
+    } else {
+      console.log(`✅ [Indexer] Sync success for ${documentId}. Document marked as rag_indexed.`);
+    }
 
     return { success: true, chunkCount: chunkRecords.length };
 
