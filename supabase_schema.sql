@@ -1,4 +1,4 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v25.0
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v26.0
 -- TARGET: RAG Resilience & Diagnostic Monitoring
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
@@ -104,13 +104,19 @@ END;
 $$;
 
 -- 6. DIAGNOSTIC VIEW: RAG HEALTH
--- Enhanced to track unique SLOs per asset
+-- v26 Fix: Refactored SLO stats to use LATERAL unnest to prevent aggregate error 0A000
 CREATE OR REPLACE VIEW rag_health_report AS
-WITH slo_stats AS (
+WITH flattened_slos AS (
     SELECT 
         document_id, 
-        count(DISTINCT unnest(slo_codes)) as distinct_slos
+        unnest(slo_codes) as slo
     FROM document_chunks
+),
+slo_stats AS (
+    SELECT 
+        document_id, 
+        count(DISTINCT slo) as distinct_slos
+    FROM flattened_slos
     GROUP BY document_id
 )
 SELECT 
