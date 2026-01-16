@@ -16,9 +16,10 @@ export async function callGemini(
 
   try {
     const ai = new GoogleGenAI({ apiKey });
+    // guidelines specify gemini-3-flash-preview for text tasks
     const modelName = 'gemini-3-flash-preview';
 
-    // Build contents array for multi-turn
+    // 1. Prepare history in strict turn sequence
     const contents: any[] = [];
     const processedHistory = history.slice(-6);
     
@@ -29,46 +30,73 @@ export async function callGemini(
       });
     });
 
-    // Final prompt parts
+    // 2. Prepare the current user turn
     const currentParts: any[] = [];
+    
+    // Add multimodal parts if provided
     if (docParts && docParts.length > 0) {
       docParts.forEach(part => {
         if (part.inlineData) currentParts.push(part);
       });
     }
+    
+    // Add the textual command
     currentParts.push({ text: fullPrompt });
 
-    // Ensure we follow user-model-user pattern
+    // 3. Append to contents following turn sequence rules
     if (contents.length === 0 || contents[contents.length - 1].role === 'model') {
       contents.push({ role: 'user', parts: currentParts });
     } else {
       contents[contents.length - 1].parts.push(...currentParts);
     }
 
-    console.log(`📡 [Gemini Node] Dispatching to ${modelName}.`);
+    console.log(`📡 [Gemini Node] Dispatching to ${modelName}. Mode: ${hasDocuments ? 'Grounded' : 'Standard'}`);
 
+    // 4. Call SDK with explicit safety settings to allow pedagogical scientific content
     const result = await ai.models.generateContent({
       model: modelName, 
       contents,
       config: { 
-        systemInstruction: systemInstruction || "You are a pedagogical assistant.", 
-        temperature: hasDocuments ? 0.1 : 0.7,
+        systemInstruction: systemInstruction || "You are a world-class pedagogical assistant.", 
+        temperature: hasDocuments ? 0.15 : 0.7,
         topK: 40,
-        topP: 0.95
+        topP: 0.95,
+        // CRITICAL FIX: Block none to prevent biology/science curriculum being blocked by safety filters
+        safetySettings: [
+          { category: 'HATE_SPEECH', threshold: 'BLOCK_NONE' },
+          { category: 'SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+          { category: 'HARASSMENT', threshold: 'BLOCK_NONE' },
+          { category: 'DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+        ]
       }
     });
 
-    if (!result || !result.text) {
+    // 5. Safe text extraction
+    // result.text is a getter that returns the combined text parts
+    const generatedText = result.text;
+
+    if (!generatedText) {
       const candidate = (result as any).candidates?.[0];
-      if (candidate?.finishReason === 'SAFETY') {
-        return "🛡️ AI Synthesis Blocked: Content triggered safety filters.";
+      const reason = candidate?.finishReason;
+      
+      if (reason === 'SAFETY') {
+        return "🛡️ AI Synthesis Interrupted: The pedagogical content triggered an internal safety filter. This is common with sensitive curriculum topics like health or biology. Please rephrase the request.";
       }
-      return "Synthesis error: Remote node returned empty response. Check curriculum tags.";
+      
+      if (reason === 'RECITATION') {
+        return "⚠️ AI Citation Alert: The synthesis node detected it was reciting curriculum text verbatim. Try asking for an original lesson plan based on the content instead.";
+      }
+
+      console.warn(`⚠️ [Gemini Node] Empty response. Finish Reason: ${reason}`);
+      return "Synthesis error: The neural node returned an empty response. Check if your curriculum context is too extensive.";
     }
 
-    return result.text;
+    return generatedText;
   } catch (error: any) {
-    console.error("❌ [Gemini Node] Exception:", error.message);
+    console.error("❌ [Gemini Node] Fatal Exception:", error.message);
+    if (error.message?.includes('429')) {
+      throw new Error("Neural Grid Saturated: API quota exceeded. Please wait a few moments.");
+    }
     throw error;
   }
 }
