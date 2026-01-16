@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v21.0
--- TARGET: Auth Resilience & Tag-Aware RAG
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v22.0
+-- TARGET: RAG Resilience & Diagnostic Monitoring
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -63,39 +63,7 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. SLO_DATABASE TABLE (Structured Curriculum Knowledge)
-CREATE TABLE IF NOT EXISTS public.slo_database (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID REFERENCES public.documents ON DELETE CASCADE,
-    slo_code TEXT NOT NULL,
-    slo_full_text TEXT NOT NULL,
-    subject TEXT,
-    grade_level TEXT,
-    bloom_level TEXT,
-    cognitive_complexity TEXT,
-    teaching_strategies TEXT[] DEFAULT '{}',
-    assessment_ideas TEXT[] DEFAULT '{}',
-    prerequisite_concepts TEXT[] DEFAULT '{}',
-    common_misconceptions TEXT[] DEFAULT '{}',
-    keywords TEXT[] DEFAULT '{}',
-    page_number INTEGER,
-    extraction_confidence DOUBLE PRECISION,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(document_id, slo_code)
-);
-
--- 6. NEURAL_BRAIN TABLE
-CREATE TABLE IF NOT EXISTS public.neural_brain (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    master_prompt TEXT NOT NULL,
-    bloom_rules TEXT,
-    version INTEGER DEFAULT 1,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 7. THE NEURAL ENGINE: HYBRID SEARCH RPC v2
+-- 5. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v2(
   query_embedding vector(768),
   match_count INT,
@@ -120,8 +88,8 @@ BEGIN
     dc.id AS chunk_id,
     dc.chunk_text,
     dc.slo_codes,
-    (dc.metadata->>'page_number')::INT AS page_number,
-    (dc.metadata->>'section_title') AS section_title,
+    COALESCE((dc.metadata->>'page_number')::INT, 0) AS page_number,
+    COALESCE(dc.metadata->>'section_title', 'General') AS section_title,
     (
       (1 - (dc.embedding <=> query_embedding)) +
       CASE WHEN dc.slo_codes && boost_tags THEN 5.0 ELSE 0 END +
@@ -129,30 +97,37 @@ BEGIN
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
+    AND dc.embedding IS NOT NULL
   ORDER BY combined_score DESC
   LIMIT match_count;
 END;
 $$;
 
--- 8. GLOBAL RLS OVERRIDE (Auth Fix)
+-- 6. DIAGNOSTIC VIEW: RAG HEALTH
+CREATE OR REPLACE VIEW rag_health_report AS
+SELECT 
+    d.id,
+    d.name,
+    d.status,
+    d.rag_indexed,
+    count(dc.id) as chunk_count,
+    CASE 
+        WHEN d.rag_indexed = true AND count(dc.id) = 0 THEN 'BROKEN: Marked indexed but no chunks'
+        WHEN d.rag_indexed = false AND count(dc.id) > 0 THEN 'WARNING: Chunks exist but not marked indexed'
+        WHEN count(dc.id) > 0 THEN 'HEALTHY'
+        ELSE 'PENDING'
+    END as health_status
+FROM documents d
+LEFT JOIN document_chunks dc ON d.id = dc.document_id
+GROUP BY d.id, d.name, d.status, d.rag_indexed;
+
+-- 7. RLS POLICIES
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
-CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
 
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own documents" ON documents;
 CREATE POLICY "Users can manage own documents" ON documents FOR ALL USING (auth.uid() = user_id);
 
 ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own chunks" ON document_chunks;
 CREATE POLICY "Users can manage own chunks" ON document_chunks FOR ALL 
-USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
-
-ALTER TABLE slo_database ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own slo_database" ON slo_database;
-CREATE POLICY "Users can manage own slo_database" ON slo_database FOR ALL
 USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
