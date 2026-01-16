@@ -8,12 +8,13 @@ import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core'
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
+// Added getProviderStatus to expose neural grid health metrics
 export function getProviderStatus() {
   return PROVIDERS.map(p => ({
     name: p.name,
     enabled: p.enabled,
-    remaining: rateLimiter.getRemainingRequests(p.name, p),
-    limits: { rpm: p.rpm, rpd: p.rpd }
+    limits: { rpm: p.rpm, rpd: p.rpd },
+    remaining: rateLimiter.getRemainingRequests(p.name, p)
   }));
 }
 
@@ -32,94 +33,69 @@ export async function generateAIResponse(
   const cached = responseCache.get(userPrompt, history);
   if (cached) return { text: cached, provider: 'cache' };
 
-  console.log(`[RAG DEBUG] Initializing Synthesis for Query: "${userPrompt.substring(0, 50)}..."`);
+  console.log(`[RAG DEBUG] Initializing Synthesis for User: ${userId}`);
   const queryAnalysis = analyzeUserQuery(userPrompt);
   
   // 2. Resolve Grounding Assets
+  // FIX: Explicitly check for rag_indexed = true and correct status
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, authority, document_summary, grade_level, subject')
     .eq('user_id', userId)
+    .eq('rag_indexed', true)
     .or(`is_selected.eq.true${priorityDocumentId ? `,id.eq.${priorityDocumentId}` : ''}`)
     .in('status', ['ready', 'completed']);
   
   const documentIds = selectedDocs?.map(d => d.id) || [];
-  console.log(`[RAG DEBUG] Active Documents In Vault: ${documentIds.length}`);
   
   // 3. RETRIEVAL (RAG Core)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 15, priorityDocumentId);
-    console.log(`[RAG DEBUG] Retrieved Chunks: ${retrievedChunks.length}`);
+    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 12, priorityDocumentId);
   }
   
-  // 4. Build Authoritative Context (FIX: Following Diagnostic Prompt recommendations for explicit injection)
+  // 4. Build Authoritative Context (PROMPT CONSTRUCTION)
   let contextVault = "";
-  const isGrounded = retrievedChunks.length > 0;
-  const hasMetadata = selectedDocs && selectedDocs.length > 0;
-
-  if (hasMetadata) {
-    contextVault += `## RETRIEVED CURRICULUM ASSET METADATA:\n`;
-    selectedDocs.forEach(d => {
-      contextVault += `ASSET: ${d.name} | AUTHORITY: ${d.authority || 'Sindh DCAR'} | GRADE: ${d.grade_level}\nSUMMARY: ${d.document_summary || 'Curriculum resource node.'}\n\n`;
-    });
-  }
-
-  if (isGrounded) {
-    contextVault += `## RETRIEVED CURRICULUM CONTEXT NODES:\n`;
+  if (retrievedChunks.length > 0) {
     retrievedChunks.forEach((chunk, i) => {
-      contextVault += `[CURRICULUM CHUNK ${i + 1}]
-SLO_CODES: ${chunk.sloCodes?.join(', ') || 'Global'}
-CONTENT: ${chunk.text}
-RELEVANCE: ${(chunk.similarity * 100).toFixed(1)}%
----
-`;
+      contextVault += `[CURRICULUM CHUNK ${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'None'}\nCONTENT: ${chunk.chunk_text}\n---\n`;
     });
   }
 
   // 5. Orchestrate Model Selection
-  const preferredProvider = (isGrounded || toolType) ? 'chatgpt' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
+  const preferredProvider = (retrievedChunks.length > 0 || toolType) ? 'chatgpt' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 6. Synthesis Prompt Injection (ABOVE User Query)
-  const fullPrompt = `You are the Pedagogy Master AI with access to indexed curriculum context.
+  // 6. Synthesis Prompt Injection (ABOVE User Query as requested)
+  const masterSystem = customSystem || DEFAULT_MASTER_PROMPT;
 
-## CURRICULUM CONTEXT:
-${contextVault || "NO DIRECT VAULT NODES MATCHED. USE GLOBAL PEDAGOGY STANDARDS."}
+  const fullPrompt = `
+## RETRIEVED CURRICULUM CONTEXT:
+${contextVault || "NO MATCHING CURRICULUM NODES FOUND. USE GLOBAL PEDAGOGY STANDARDS."}
 
-## INSTRUCTION:
-Use the curriculum context provided ABOVE to answer the user's query. ALWAYS cite specific standards, units, and SLOs from the context nodes. If the context doesn't contain the specific answer, use it as a grounding framework and bridge with pedagogical expertise.
+## MASTER SYSTEM PROMPT:
+${masterSystem}
 
-${isGrounded ? NUCLEAR_GROUNDING_DIRECTIVE : '### PEDAGOGY_MODE: Global Standards.'}
+## USER QUERY:
+${userPrompt}
+
+## INSTRUCTIONS:
+You MUST use the CURRICULUM CHUNKS provided ABOVE to answer. If the answer is in the chunks, cite the specific SLO codes verbatim. If context nodes are present, do not use external knowledge that contradicts them.
+
+${retrievedChunks.length > 0 ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 
-## USER QUERY:
-"${userPrompt}"
-
 ## YOUR RESPONSE:`;
 
-  // 7. System Reinforcement
-  let activeSystem = customSystem;
-  if (!activeSystem) {
-    const { data: brain } = await supabase
-      .from('neural_brain')
-      .select('master_prompt')
-      .eq('is_active', true)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    activeSystem = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
-  }
-
-  const finalSystemInstruction = `${activeSystem}\n\nSTRICT_PROTOCOL: If CURRICULUM CONTEXT is present, you MUST prioritize it. Never claim lack of access if metadata is listed.`;
+  const finalSystemInstruction = `You are a world-class pedagogy assistant. ALWAYS prioritize provided curriculum nodes.`;
   
   const result = await synthesize(
     fullPrompt, 
     history.slice(-10), 
-    isGrounded, 
+    retrievedChunks.length > 0, 
     [], 
     preferredProvider, 
     finalSystemInstruction
@@ -131,10 +107,10 @@ ${lengthGuideline}
     ...result,
     metadata: {
       chunksUsed: retrievedChunks.length,
-      isGrounded: documentIds.length > 0,
+      isGrounded: retrievedChunks.length > 0,
       sources: retrievedChunks.map(c => ({
-        similarity: c.similarity,
-        sloCodes: c.sloCodes
+        similarity: c.combined_score,
+        sloCodes: c.slo_codes
       }))
     }
   };

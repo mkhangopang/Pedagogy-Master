@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * NEURAL INGESTION GATEWAY (v17.0)
- * Authoritative node for curriculum asset synchronization.
+ * NEURAL INGESTION GATEWAY (v18.6)
+ * Updates: Enforces strict single-selection and ensures rag_indexed flag is committed.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -55,6 +55,9 @@ export async function POST(req: NextRequest) {
     }));
 
     // 2. METADATA SYNCHRONIZATION
+    // FIX: Clear previous selection to ensure only one document is active context
+    await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+
     const generatedJson = generateCurriculumJson(extractedText);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -73,18 +76,30 @@ export async function POST(req: NextRequest) {
       version_year: version || '2024',
       generated_json: generatedJson,
       version: 1,
-      is_selected: true
+      is_selected: true,
+      rag_indexed: false // Set to true only AFTER successful vector indexing
     }).select().single();
 
     if (dbError) throw new Error(`Metadata Sync Error: ${dbError.message}`);
 
     // 3. NEURAL VECTOR INDEXING
     try {
-      await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
-      await supabase.from('documents').update({ status: 'ready', rag_indexed: true }).eq('id', docData.id);
+      console.log(`📡 [Indexer] Starting RAG synchronization for doc: ${docData.id}`);
+      const chunkCount = await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
+      console.log(`✅ [Indexer] Successfully synced ${chunkCount} nodes for doc: ${docData.id}`);
+      
+      // FIX: Commit successful indexing flag
+      await supabase.from('documents').update({ 
+        status: 'ready', 
+        rag_indexed: true 
+      }).eq('id', docData.id);
+      
     } catch (indexErr: any) {
       console.error('❌ [Indexing Error]:', indexErr);
-      await supabase.from('documents').update({ status: 'failed' }).eq('id', docData.id);
+      await supabase.from('documents').update({ 
+        status: 'failed', 
+        rag_indexed: false 
+      }).eq('id', docData.id);
     }
 
     return NextResponse.json({

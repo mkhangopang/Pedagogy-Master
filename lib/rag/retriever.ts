@@ -2,38 +2,42 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 
 export interface RetrievedChunk {
-  id: string;
-  text: string;
-  sloCodes: string[];
-  similarity: number;
-  sectionTitle?: string;
-  pageNumber?: number;
+  chunk_id: string;
+  chunk_text: string;
+  slo_codes: string[];
+  combined_score: number;
+  section_title?: string;
+  page_number?: number;
 }
 
 /**
- * HIGH-PRECISION SEMANTIC RETRIEVER (v18.1)
- * Optimized for Sindh/International standards with aggressive token boosting.
- * FIX: Enforced explicit array wrapping for filter_document_ids in Supabase RPC.
+ * HIGH-PRECISION SEMANTIC RETRIEVER (v18.5)
+ * Optimized for curriculum standards with aggressive token boosting.
+ * FIX: Strictly aligned with hybrid_search_chunks_v2 SQL signature.
  */
 export async function retrieveRelevantChunks(
   query: string,
   documentIds: string[],
   supabase: SupabaseClient,
-  maxChunks: number = 12,
+  matchCount: number = 12,
   priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
-  console.log(`🔍 [Retriever] Scanning nodes for: "${query.substring(0, 50)}..."`);
-  
-  try {
-    const sanitizedPriorityId = (priorityDocumentId && /^[0-9a-fA-F-]{36}$/.test(priorityDocumentId)) 
-      ? priorityDocumentId 
-      : null;
+  const sanitizedDocIds = Array.isArray(documentIds) ? documentIds : [documentIds];
+  const sanitizedPriorityId = (priorityDocumentId && /^[0-9a-fA-F-]{36}$/.test(priorityDocumentId)) 
+    ? priorityDocumentId 
+    : null;
 
+  console.log('📡 [RAG Retrieval Debug]:', {
+    docCount: sanitizedDocIds.length,
+    queryPreview: query.substring(0, 50),
+    matchCount: matchCount,
+    priorityId: sanitizedPriorityId
+  });
+
+  try {
     // 1. ADVANCED SLO TOKEN EXTRACTION
     const boostTags: string[] = [];
-    
-    // Pattern: S8.C3, 8.1.2, S-04-A-03
     const sloRegex = /([A-Z])[\s.-]?(\d{1,2})[\s.-]?([A-Z])[\s.-]?(\d{1,2})|(\d+\.\d+(?:\.\d+)?)/gi;
     const matches = Array.from(query.matchAll(sloRegex));
     
@@ -48,30 +52,53 @@ export async function retrieveRelevantChunks(
     }
 
     // 2. HYBRID VECTOR SEARCH
+    // MODEL: text-embedding-004 (Confirmed 768 Dimensions)
     const queryEmbedding = await generateEmbedding(query);
 
-    // CRITICAL FIX: The RPC parameters must strictly match the database function signature.
-    // filter_document_ids MUST be an array of UUIDs.
+    /**
+     * CRITICAL FIX: The RPC parameters must strictly match the database function signature.
+     * filter_document_ids MUST be an array of UUIDs (uuid[]).
+     * All 5 parameters are explicitly passed.
+     */
     const { data, error } = await supabase.rpc('hybrid_search_chunks_v2', {
       query_embedding: queryEmbedding,
-      match_count: maxChunks, 
-      filter_document_ids: Array.isArray(documentIds) ? documentIds : [documentIds], // Ensure it is an ARRAY
-      priority_document_id: sanitizedPriorityId,
-      boost_tags: finalBoostTags || []
+      match_count: matchCount, 
+      filter_document_ids: sanitizedDocIds, // uuid[]
+      priority_document_id: sanitizedPriorityId, // uuid (optional)
+      boost_tags: finalBoostTags || [] // text[] (optional)
     });
 
     if (error) {
-      console.error('❌ [Retriever RPC Fail]:', error.message);
+      console.error('❌ [Retriever RPC Fail]:', {
+        message: error.message,
+        hint: error.hint,
+        details: error.details,
+        params: {
+          filter_document_ids: sanitizedDocIds,
+          match_count: matchCount,
+          boost_tags: finalBoostTags
+        }
+      });
       return [];
     }
 
+    const chunksFound = data?.length || 0;
+    console.log(`✅ [Retriever] Chunks retrieved: ${chunksFound}`);
+    
+    if (chunksFound > 0) {
+      console.log(`📊 [Retriever] High-Relevance Match:`, {
+        slo: data[0].slo_codes,
+        score: data[0].combined_score
+      });
+    }
+
     return (data || []).map((d: any) => ({
-      id: d.chunk_id,
-      text: d.chunk_text,
-      sloCodes: d.slo_codes || [],
-      similarity: d.combined_score,
-      pageNumber: d.page_number,
-      sectionTitle: d.section_title
+      chunk_id: d.chunk_id,
+      chunk_text: d.chunk_text,
+      slo_codes: d.slo_codes || [],
+      combined_score: d.combined_score,
+      page_number: d.page_number,
+      section_title: d.section_title
     }));
 
   } catch (err) {

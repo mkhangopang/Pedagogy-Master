@@ -7,9 +7,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * WORLD-CLASS TUTOR CHAT ENGINE (v14.0)
- * Uses unified RAG router for absolute context consistency.
- * Corrected import from 'next/server' to fix build error.
+ * WORLD-CLASS TUTOR CHAT ENGINE (v15.0)
+ * FIX: Enforces grounding check and provides explicit retrieval feedback.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -25,7 +24,17 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // Fetch the active brain to get latest pedagogical instructions
+    // 1. Verify existence of active/indexed curriculum to guide the synthesizer
+    const { data: activeDoc } = await supabase
+      .from('documents')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('is_selected', true)
+      .eq('rag_indexed', true)
+      .limit(1)
+      .maybeSingle();
+
+    // 2. Fetch the active brain
     const { data: brainData } = await supabase
       .from('neural_brain')
       .select('master_prompt')
@@ -34,33 +43,35 @@ export async function POST(req: NextRequest) {
       .limit(1)
       .maybeSingle();
 
-    // Use unified synthesizer for consistency across Chat and Tools
+    // 3. Execute Unified Synthesis
     const { text, provider, metadata } = await generateAIResponse(
       message,
       history,
       user.id,
       supabase,
-      "", // No extra adaptive context needed for standard chat
+      "", 
       undefined,
       undefined,
       brainData?.master_prompt,
-      priorityDocumentId
+      priorityDocumentId || activeDoc?.id
     );
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
+        // ENHANCED: Clear UI messaging regarding retrieval success
         if (metadata?.isGrounded) {
           controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Context locked to Authoritative Vault (${metadata.chunksUsed} nodes active). Generating aligned response...*\n\n`));
         } else {
-          controller.enqueue(encoder.encode(`> *⚡ Neural Note: No matching curriculum nodes found in your library. Synthesizing using Global Pedagogical Standards...*\n\n`));
+          controller.enqueue(encoder.encode(`> *⚡ Neural Note: No matching curriculum nodes found in your library for this specific query. Synthesizing using Global Pedagogical Standards...*\n\n`));
         }
         
         controller.enqueue(encoder.encode(text));
         
-        if (metadata?.isGrounded && metadata.sources.length > 0) {
+        if (metadata?.isGrounded && metadata.sources?.length > 0) {
+          const topSources = metadata.sources.slice(0, 3);
           const refs = `\n\n---\n**Grounding Profile:**\n` + 
-            metadata.sources.slice(0, 3).map((s: any) => `* Standard: **${s.sloCodes?.[0] || 'Curriculum'}** (Relevance: ${(s.similarity * 100).toFixed(0)}%)`).join('\n');
+            topSources.map((s: any) => `* Standard: **${s.sloCodes?.[0] || 'Curriculum'}** (Match: ${(s.similarity * 100).toFixed(0)}%)`).join('\n');
           controller.enqueue(encoder.encode(refs));
         }
         

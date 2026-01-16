@@ -15,8 +15,9 @@ function sanitizeText(text: string): string {
 }
 
 /**
- * VECTOR SYNTHESIS ENGINE (v17.8)
- * Fixed: Added robust sanitization to prevent Unicode escape sequence failures.
+ * VECTOR SYNTHESIS ENGINE (v18.0)
+ * MODEL: text-embedding-004 (768 dimensions)
+ * This model MUST be used consistently for both indexing and retrieval.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.API_KEY;
@@ -27,7 +28,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response: any = await ai.models.embedContent({
-      model: "text-embedding-004",
+      model: "text-embedding-004", // REQUIRED MODEL
       contents: { parts: [{ text: cleanText }] } 
     });
 
@@ -39,13 +40,13 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       return isFinite(n) ? n : 0;
     });
 
+    // Ensure 768 dimensions for PostgreSQL consistency
     if (vector.length < 768) {
       return [...vector, ...new Array(768 - vector.length).fill(0)];
     }
     return vector.slice(0, 768);
   } catch (error: any) {
     console.error('[Embedding Error]:', error);
-    // Return a zero-vector fallback for non-critical failures to prevent global crash
     if (error.message?.includes('Unicode')) {
       console.warn("Attempting emergency fallback for Unicode failure node.");
       return new Array(768).fill(0);
@@ -69,7 +70,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     try {
       const promises = batchSlice.map(text => 
         ai.models.embedContent({
-          model: "text-embedding-004",
+          model: "text-embedding-004", // REQUIRED MODEL
           contents: { parts: [{ text: sanitizeText(text) }] }
         })
       );
