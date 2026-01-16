@@ -62,11 +62,12 @@ export async function callGemini(
         topK: 40,
         topP: 0.95,
         // CRITICAL FIX: Block none to prevent biology/science curriculum being blocked by safety filters
+        // Using full HarmCategory strings required by @google/genai v1.x
         safetySettings: [
-          { category: 'HATE_SPEECH', threshold: 'BLOCK_NONE' },
-          { category: 'SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-          { category: 'HARASSMENT', threshold: 'BLOCK_NONE' },
-          { category: 'DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+          { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+          { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
         ]
       }
     });
