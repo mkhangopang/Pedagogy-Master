@@ -41,7 +41,13 @@ export async function retrieveHybridContext(
   // 2. Local Document Augmentation
   let localChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    localChunks = await retrieveRelevantChunks(message, documentIds, supabase, 10);
+    // Fix: retrieveRelevantChunks expects a single object argument with specific keys.
+    localChunks = await retrieveRelevantChunks({
+      query: message,
+      documentId: documentIds[0],
+      supabase,
+      matchCount: 10
+    });
   }
 
   const isGrounded = localChunks.length > 0 || webScrape !== null;

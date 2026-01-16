@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v24.0)
+ * WORLD-CLASS NEURAL INDEXER (v26.0)
  * Synchronizes curriculum content with the vector search grid.
  */
 export async function indexDocumentForRAG(
@@ -12,7 +12,7 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient
 ) {
   if (!content || content.length < 50) {
-    console.warn(`[Indexer] Document ${documentId} content too sparse to index (${content?.length} chars).`);
+    console.warn(`[Indexer] Document ${documentId} content too sparse to index.`);
     throw new Error("Content too sparse for neural indexing.");
   }
 
@@ -28,14 +28,12 @@ export async function indexDocumentForRAG(
     const rawChunks: { text: string; sloCodes: string[]; metadata: any }[] = [];
 
     // 2. Structural Splitting Logic (Curriculum Aware)
-    // We split by standard markers but also ensure chunks don't get too large
     const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|SLO:))/gim);
     
     blocks.forEach((block, index) => {
       let trimmed = block.trim();
       if (trimmed.length < 20) return;
 
-      // Further split huge blocks if they don't have natural markers
       if (trimmed.length > 3000) {
         const subblocks = trimmed.match(/.{1,2500}(\s|$)/g) || [trimmed];
         subblocks.forEach((sb, si) => {
@@ -47,22 +45,19 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number) {
-      // Improved Regex: Anchors to prefixes but captures the actual code pattern
-      // Matches Standard: SLO:S-04-A-01 or SLO: S8A5 etc.
+      // Robust Regex for standard markers
       const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
       const codes: string[] = [];
       let match;
       
       while ((match = sloRegex.exec(text)) !== null) {
         const rawCode = match[1].toUpperCase();
-        // CLEANUP: 1. Strip hyphens/dots for search 2. Filter out literals
         const cleaned = rawCode.replace(/[-\.]/g, '');
         if (cleaned && cleaned !== 'SLO' && cleaned !== 'UNIT' && cleaned.length > 1) {
           codes.push(cleaned);
         }
       }
       
-      // Try to find a section title
       const titleMatch = text.match(/^(?:#{1,4}\s+)?(.+)/m);
       
       return { 
@@ -76,9 +71,8 @@ export async function indexDocumentForRAG(
       };
     }
 
-    // 3. Contextual Sliding Window (Fallback Coverage)
+    // 3. Fallback: Sliding Window for small/unstructured assets
     if (rawChunks.length <= 1) {
-       console.log(`[Indexer] Single-block document detected. Applying sliding window...`);
        const words = content.split(/\s+/);
        for (let i = 0; i < words.length; i += 250) {
          const slice = words.slice(i, i + 400).join(' ');
@@ -86,19 +80,17 @@ export async function indexDocumentForRAG(
            rawChunks.push({ 
              text: slice, 
              sloCodes: [], 
-             metadata: { section_title: "Sliding Window Segment", chunk_index: rawChunks.length } 
+             metadata: { section_title: "Sliding Window", chunk_index: rawChunks.length } 
            });
          }
        }
     }
 
-    console.log(`💎 [Indexer] Generated ${rawChunks.length} nodes for embedding.`);
-
-    // 4. Batch Embedding Synthesis
+    // 4. Vector Synthesis
     const texts = rawChunks.map(c => c.text);
     const embeddings = await generateEmbeddingsBatch(texts);
 
-    // 5. Vector Grid Synchronization
+    // 5. Grid Sync
     const chunkRecords = rawChunks.map((chunk, i) => ({
       document_id: documentId,
       chunk_text: chunk.text,
@@ -108,19 +100,14 @@ export async function indexDocumentForRAG(
       metadata: chunk.metadata
     }));
 
-    // Reset local grid for this asset
-    const { error: deleteError } = await supabase.from('document_chunks').delete().eq('document_id', documentId);
-    if (deleteError) console.error("[Indexer] Delete failed:", deleteError);
+    await supabase.from('document_chunks').delete().eq('document_id', documentId);
     
     if (chunkRecords.length > 0) {
       const { error: insertError } = await supabase.from('document_chunks').insert(chunkRecords);
-      if (insertError) {
-        console.error("[Indexer] Insert failed:", insertError);
-        throw insertError;
-      }
+      if (insertError) throw insertError;
     }
 
-    // 6. Global Commit
+    // 6. CRITICAL COMMIT: Set rag_indexed to TRUE
     const { error: updateError } = await supabase.from('documents').update({ 
       status: 'ready', 
       rag_indexed: true 
@@ -128,11 +115,13 @@ export async function indexDocumentForRAG(
     
     if (updateError) throw updateError;
 
-    console.log(`✅ [Indexer] Synchronized ${chunkRecords.length} nodes successfully.`);
+    console.log(`✅ [Indexer] Sync success for ${documentId}. Document is now ready for RAG.`);
+
+    return { success: true, chunkCount: chunkRecords.length };
 
   } catch (error: any) {
-    console.error("❌ [Indexer] Fatal Error:", error);
-    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
+    console.error("❌ [Indexer] Fatal:", error);
+    await supabase.from('documents').update({ status: 'failed', rag_indexed: false }).eq('id', documentId);
     throw error;
   }
 }

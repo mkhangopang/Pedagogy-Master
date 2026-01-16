@@ -2,21 +2,22 @@ import { GoogleGenAI } from "@google/genai";
 
 /**
  * NEURAL TEXT SANITIZER
+ * Ensures input strings don't crash the embedding node.
  */
 function sanitizeText(text: string): string {
   if (!text) return " ";
   return text
-    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ') // Remove control characters
-    .replace(/\\u[0-9a-fA-F]{4}/g, '') // Remove unicode escapes
+    .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ') 
+    .replace(/\\u[0-9a-fA-F]{4}/g, '') 
     .normalize('NFKD')
-    .replace(/[^\x20-\x7E\s]/g, '') // Keep ASCII
+    .replace(/[^\x20-\x7E\s]/g, '') 
     .replace(/\s+/g, ' ')
     .trim() || " ";
 }
 
 /**
- * VECTOR SYNTHESIS ENGINE (v19.0)
- * MODEL: text-embedding-004 (768 dimensions)
+ * VECTOR SYNTHESIS ENGINE (v20.0 - PRODUCTION)
+ * MODEL: text-embedding-004 (Fixed at 768 dimensions)
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const apiKey = process.env.API_KEY;
@@ -27,7 +28,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey });
     const response: any = await ai.models.embedContent({
-      model: "text-embedding-004", // REQUIRED MODEL (768d)
+      model: "text-embedding-004", 
       contents: { parts: [{ text: cleanText }] } 
     });
 
@@ -36,6 +37,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 
     const vector = result.values.map((v: any) => isFinite(Number(v)) ? Number(v) : 0);
 
+    // Enforce strict 768d dimensionality for pgvector compliance
     if (vector.length < 768) {
       return [...vector, ...new Array(768 - vector.length).fill(0)];
     }
@@ -80,7 +82,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
         await new Promise(resolve => setTimeout(resolve, 200));
       }
     } catch (err: any) {
-      console.warn(`Batch error at ${i}, using single-node fallback:`, err.message);
+      console.warn(`[Embedder] Batch node error, falling back to sequential...`);
       for (const text of batchSlice) {
         try { results.push(await generateEmbedding(text)); } 
         catch { results.push(new Array(768).fill(0)); }

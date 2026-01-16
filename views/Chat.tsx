@@ -32,7 +32,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [isLoading, setIsLoading] = useState(false);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [currentValidation, setCurrentValidation] = useState<LessonValidation | null>(null);
-  const [focusedDocId, setFocusedDocId] = useState<string | null>(null); // New: Tracking focus
+  const [focusedDocId, setFocusedDocId] = useState<string | null>(null); 
   
   const [diffResults, setDiffResults] = useState<Record<string, DifferentiatedLesson | null>>({ below: null, at: null, above: null });
   const [diffLoading, setDiffLoading] = useState(false);
@@ -52,6 +52,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
 
   useEffect(() => {
     setLocalDocs(documents);
+    const selected = documents.find(d => d.isSelected);
+    if (selected) setFocusedDocId(selected.id);
   }, [documents]);
 
   useEffect(() => {
@@ -61,24 +63,21 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
+    // EXCLUSIVE SELECTION MODE: Only one document allowed for RAG precision
     const updated = localDocs.map(d => ({ 
       ...d, 
-      isSelected: d.id === docId ? !d.isSelected : d.isSelected 
+      isSelected: d.id === docId ? !d.isSelected : false 
     }));
     setLocalDocs(updated);
     
-    // Update focus on toggle to prioritize the last document clicked
     const targetDoc = updated.find(d => d.id === docId);
-    if (targetDoc?.isSelected) {
-      setFocusedDocId(docId);
-    } else if (focusedDocId === docId) {
-      const remainingSelected = updated.find(d => d.isSelected);
-      setFocusedDocId(remainingSelected?.id || null);
-    }
+    setFocusedDocId(targetDoc?.isSelected ? docId : null);
 
-    await supabase.from('documents')
-      .update({ is_selected: targetDoc?.isSelected || false })
-      .eq('id', docId);
+    // Sync state with cloud node
+    await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+    if (targetDoc?.isSelected) {
+      await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+    }
   };
 
   const handleToolSelect = (tool: string) => {
@@ -174,7 +173,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           content: m.content 
         }));
 
-      // Passing focusedDocId to prioritize chunks from that document
       const stream = geminiService.chatWithDocumentStream(
         msgContent,
         {},
@@ -219,7 +217,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       `}>
         <div className="p-4 space-y-6">
           <div className="flex items-center justify-between">
-             <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Curriculum Context</h3>
+             <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Curriculum Assets</h3>
              <div className="flex items-center gap-2">
                <Sparkles size={14} className="text-indigo-400" />
                <button onClick={() => setShowSidebar(false)} className="md:hidden p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg">
@@ -231,7 +229,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           
           <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
             <p className="text-[10px] text-indigo-400 font-bold leading-relaxed">
-              Curriculum context ensures the AI uses your specific documents as its primary knowledge base.
+              <b>PRO TIP:</b> Grounding is locked to one document for maximum SLO precision.
             </p>
           </div>
         </div>
@@ -257,7 +255,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Synthesis Hub</span>
             </div>
             {selectedDocsCount > 0 && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full animate-pulse">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                 <ShieldCheck size={12} className="text-emerald-500" />
                 <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Strict Grounding Active</span>
               </div>
@@ -279,9 +277,9 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                 <div className="space-y-2">
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight text-center">Pedagogy Master Neural</h2>
                   <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
-                    {selectedDocsCount > 0 
-                      ? `Locked to ${selectedDocsCount} curriculum assets. All responses will be grounded in your documents.`
-                      : 'Ready for curriculum-aligned synthesis. How can I assist your teaching today?'}
+                    {focusedDocId 
+                      ? `Neural sync active for your curriculum. Ask for a lesson plan or quiz on a specific SLO.`
+                      : 'Select a curriculum asset from the sidebar to enable precision standards-aligned synthesis.'}
                   </p>
                 </div>
                 <SuggestedPrompts onSelect={handleSend} />

@@ -1,14 +1,20 @@
+
 import { NextRequest, NextResponse } from 'next/server';
-import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
+import { retrieveRelevantChunks, extractSLOCodes } from '../../../lib/rag/retriever';
+import { synthesize } from '../../../lib/ai/synthesizer-core';
+import { 
+  DEFAULT_MASTER_PROMPT, 
+  NUCLEAR_GROUNDING_DIRECTIVE 
+} from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * PEDAGOGY MASTER CHAT ENGINE (v21.0)
- * Thin orchestrator for the high-precision synthesis grid.
+ * PEDAGOGY MASTER CHAT ENGINE (v22.0 - PRODUCTION FIX)
+ * Implements authoritative grounding for tool generation.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -24,34 +30,97 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // Delegate all retrieval and prompt construction to the Multi-Provider Router
-    // This prevents double-nested templates that trigger model refusal/safety blocks.
-    const { text, provider, metadata } = await generateAIResponse(
-      message,
+    // 1. Resolve selected document (Priority given to UI focus, then database selection)
+    let selectedDocId = priorityDocumentId;
+    if (!selectedDocId) {
+      const { data: doc } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('is_selected', true)
+        .eq('rag_indexed', true)
+        .single();
+      selectedDocId = doc?.id;
+    }
+
+    if (!selectedDocId) {
+      console.warn('⚠️ No active curriculum asset found for user:', user.id);
+    }
+
+    // 2. Retrieve curriculum context via RAG
+    let retrievedChunks = [];
+    if (selectedDocId) {
+      retrievedChunks = await retrieveRelevantChunks({
+        query: message,
+        documentId: selectedDocId,
+        supabase,
+        matchCount: 5
+      });
+    }
+
+    // 3. Build high-precision prompt
+    let finalPrompt: string;
+    const extractedSLOs = extractSLOCodes(message);
+
+    if (retrievedChunks.length > 0) {
+      const vaultContent = retrievedChunks
+        .map((chunk, i) => `[SLO NODE ${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'General'}\nOBJECTIVE: ${chunk.chunk_text.substring(0, 400)}\n---`)
+        .join('\n');
+
+      finalPrompt = `
+${NUCLEAR_GROUNDING_DIRECTIVE}
+
+${DEFAULT_MASTER_PROMPT}
+
+<AUTHORITATIVE_VAULT>
+${vaultContent}
+</AUTHORITATIVE_VAULT>
+
+TOOL REQUEST TYPE: ${toolType || 'pedagogical_synthesis'}
+USER QUERY: ${message}
+
+GENERATION INSTRUCTIONS:
+- Use the SLO definitions in the vault as the basis for all generated content.
+- CREATE a structured pedagogical tool (Lesson Plan, Quiz, or Rubric).
+- DO NOT just summarize the document; SYNTHESIZE new material.
+- Apply 5E Model and Bloom's Taxonomy.
+`;
+    } else {
+      finalPrompt = `
+${DEFAULT_MASTER_PROMPT}
+
+⚡ Neural Note: No matching curriculum nodes found. Synthesizing using Global Pedagogical Standards.
+
+TOOL REQUEST TYPE: ${toolType || 'general'}
+USER QUERY: ${message}
+`;
+    }
+
+    // 4. AI Synthesis call
+    const result = await synthesize(
+      finalPrompt,
       history,
-      user.id,
-      supabase,
-      "", // Adaptive context handled inside router if needed
-      undefined,
-      toolType,
-      undefined, // Uses default Master Prompt from Brain
-      priorityDocumentId
+      retrievedChunks.length > 0,
+      [],
+      'gemini',
+      DEFAULT_MASTER_PROMPT
     );
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
-        if (metadata?.isGrounded) {
-          controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Grounded in ${metadata.chunksUsed} curriculum nodes. Synthesis active via ${provider}...*\n\n`));
+        if (retrievedChunks.length > 0) {
+          // Fix: encoder.encode should be used instead of encoder.enqueue
+          controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Grounded in ${retrievedChunks.length} curriculum nodes for SLOs: ${extractedSLOs.join(', ') || 'Detected'}.*\n\n`));
         }
-        controller.enqueue(encoder.encode(text));
-        controller.enqueue(encoder.encode(`\n\n*Synthesis Node: ${provider}*`));
+        controller.enqueue(encoder.encode(result.text));
+        controller.enqueue(encoder.encode(`\n\n*Synthesis Node: ${result.provider}*`));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
     console.error("❌ Chat API Fatal Error:", error);
-    return new Response(`Synthesis error: The neural node returned an empty response. This usually occurs when the curriculum context is too large or triggers safety filters.`, { status: 200 });
+    return new Response(`Synthesis error: ${error.message || 'Grid connection lost'}.`, { status: 200 });
   }
 }

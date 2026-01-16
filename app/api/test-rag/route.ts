@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
@@ -38,7 +39,13 @@ export async function GET(req: NextRequest) {
       }, { status: 400 });
     }
 
-    const chunks = await retrieveRelevantChunks(query, docIds, supabase, 5);
+    // Fix: retrieveRelevantChunks expects a single object argument with specific keys.
+    const chunks = await retrieveRelevantChunks({
+      query,
+      documentId: docIds[0],
+      supabase,
+      matchCount: 5
+    });
 
     return NextResponse.json({
       success: true,

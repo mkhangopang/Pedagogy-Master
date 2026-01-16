@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { rateLimiter } from './rate-limiter';
 import { analyzeUserQuery } from './query-analyzer';
@@ -16,8 +17,8 @@ export function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v24.0)
- * Manages curriculum-aware routing and precision grounding.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v26.0 - HIGH PRECISION)
+ * Optimized for Exclusive Curriculum Grounding & Pedagogical Generation.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -31,57 +32,63 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Context Resolution
+  // 1. Context Selection (Strict Active Filter)
   const { data: selectedDocs } = await supabase
     .from('documents')
-    .select('id, name')
+    .select('id, name, rag_indexed')
     .eq('user_id', userId)
     .eq('is_selected', true)
-    .eq('rag_indexed', true);
+    .eq('rag_indexed', true); // Only trust indexed documents
   
   const documentIds = selectedDocs?.map(d => d.id) || [];
+  const activeDocName = selectedDocs?.[0]?.name || "Unselected Source";
   
-  if (selectedDocs && selectedDocs.length === 0) {
-    console.warn("⚠️ [Router] RAG Warning: 0 documents selected or indexed. AI is operating in ungrounded mode.");
-  }
-
-  // 2. High-Precision Retrieval
+  // 2. Neural Retrieval
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 5, priorityDocumentId);
+    // Priority: Respect user click/focus, otherwise use the selected set
+    const searchScope = priorityDocumentId ? [priorityDocumentId] : documentIds;
+    // Fix: retrieveRelevantChunks expects a single object argument with specific keys.
+    retrievedChunks = await retrieveRelevantChunks({
+      query: userPrompt,
+      documentId: searchScope[0],
+      supabase,
+      matchCount: 4
+    });
   }
   
-  // 3. Request Analysis
+  // 3. User Intent Extraction
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const extractedSLOs = extractSLOCodes(userPrompt);
   
-  // 4. Grounding Assembly
+  // 4. Grounding Assembly (Authoritative Vault)
   let vaultContent = "";
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
-      .map((chunk, i) => `[CURRICULUM_FRAGMENT_${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'NONE'}\nCONTENT: ${chunk.chunk_text}\n---`)
+      .map((chunk, i) => `[SLO_NODE_${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'General'}\nCONTENT: ${chunk.chunk_text}\n---`)
       .join('\n');
-  } else if (documentIds.length > 0) {
-    console.warn("⚠️ [Router] RAG Miss: Documents selected but 0 relevant chunks found. Check embeddings dimensions.");
   }
 
   const masterSystem = customSystem || DEFAULT_MASTER_PROMPT;
   const responseInstructions = formatResponseInstructions(queryAnalysis);
 
-  // 5. Instruction Synthesis
+  // 5. Instruction Synthesis (Strict Generation Lock)
   const fullPrompt = `
-${vaultContent ? `<AUTHORITATIVE_VAULT>\n${vaultContent}\n</AUTHORITATIVE_VAULT>\n\n${NUCLEAR_GROUNDING_DIRECTIVE}` : ''}
+${vaultContent ? `<AUTHORITATIVE_VAULT>\nSOURCE_ASSET: ${activeDocName}\n${vaultContent}\n</AUTHORITATIVE_VAULT>\n\n${NUCLEAR_GROUNDING_DIRECTIVE}` : ''}
 
 ## TEACHER COMMAND:
 "${userPrompt}"
 
-## EXECUTION CONTEXT:
-- TYPE: ${toolType || 'instructional_design'}
-- ADAPTIVE_LEARNING: ${adaptiveContext || 'standard'}
+## EXECUTION PARAMETERS:
+- TASK_TYPE: ${toolType || 'pedagogical_tool_generation'}
+- ADAPTIVE_LEARNING_SIGNAL: ${adaptiveContext || 'standard'}
 ${responseInstructions}
 
-## FINAL DIRECTIVE:
-Generate a pedagogical artifact strictly following the parameters above. If the vault contains specific curriculum standards for "${extractedSLOs.join(', ')}", implement them with 100% fidelity.
+## GENERATION DIRECTIVE (CRITICAL):
+1. IF <AUTHORITATIVE_VAULT> matches any of these SLOs [${extractedSLOs.join(', ')}], use the vault text as your LEARNING OBJECTIVE.
+2. DO NOT SUMMARIZE. Your goal is to CREATE NEW PEDAGOGICAL CONTENT (Lesson Plans, Questions, Rubrics).
+3. Apply world-class framework: ${toolType === 'lesson-plan' ? '5E Model (Engage, Explore, Explain, Elaborate, Evaluate)' : 'Bloom\'s Taxonomy'}.
+4. Target the appropriate grade level found in the vault metadata.
 
 RESPONSE:`;
 
@@ -102,7 +109,8 @@ RESPONSE:`;
     metadata: {
       chunksUsed: retrievedChunks.length,
       isGrounded: retrievedChunks.length > 0,
-      extractedSLOs: extractedSLOs
+      extractedSLOs: extractedSLOs,
+      sourceDocument: activeDocName
     }
   };
 }
