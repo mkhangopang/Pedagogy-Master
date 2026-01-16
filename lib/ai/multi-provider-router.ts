@@ -5,10 +5,9 @@ import { RESPONSE_LENGTH_GUIDELINES } from '../config/ai-personality';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core';
-import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
+import { retrieveRelevantChunks, RetrievedChunk, extractSLOCodes } from '../rag/retriever';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
-// Added getProviderStatus to expose neural grid health metrics
 export function getProviderStatus() {
   return PROVIDERS.map(p => ({
     name: p.name,
@@ -18,6 +17,11 @@ export function getProviderStatus() {
   }));
 }
 
+/**
+ * NEURAL SYNTHESIS ORCHESTRATOR (v19.0)
+ * Operates as a Pedagogical Tool Factory. 
+ * Uses RAG to find the SLO "seed" and the Neural Brain to generate tools.
+ */
 export async function generateAIResponse(
   userPrompt: string,
   history: any[],
@@ -29,18 +33,15 @@ export async function generateAIResponse(
   customSystem?: string,
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
-  // 1. Cache Check
-  const cached = responseCache.get(userPrompt, history);
-  if (cached) return { text: cached, provider: 'cache' };
-
-  console.log(`[RAG DEBUG] Initializing Synthesis for User: ${userId}`);
-  const queryAnalysis = analyzeUserQuery(userPrompt);
   
-  // 2. Resolve Grounding Assets
-  // FIX: Explicitly check for rag_indexed = true and correct status
+  // 1. Intelligent Intent Analysis
+  const queryAnalysis = analyzeUserQuery(userPrompt);
+  const extractedSLOs = extractSLOCodes(userPrompt);
+  
+  // 2. Resolve Active Curriculum Grid
   const { data: selectedDocs } = await supabase
     .from('documents')
-    .select('id, name, authority, document_summary, grade_level, subject')
+    .select('id, name, authority, grade_level, subject')
     .eq('user_id', userId)
     .eq('rag_indexed', true)
     .or(`is_selected.eq.true${priorityDocumentId ? `,id.eq.${priorityDocumentId}` : ''}`)
@@ -48,66 +49,69 @@ export async function generateAIResponse(
   
   const documentIds = selectedDocs?.map(d => d.id) || [];
   
-  // 3. RETRIEVAL (RAG Core)
+  // 3. RAG: Seed Extraction
+  // We reduce matchCount to 5 to ensure we only get the most relevant SLO definitions.
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 12, priorityDocumentId);
+    retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 5, priorityDocumentId);
   }
   
-  // 4. Build Authoritative Context (PROMPT CONSTRUCTION)
-  let contextVault = "";
+  // 4. MINIMAL CONTEXT INJECTION (The Seed)
+  let authoritativeVault = "";
   if (retrievedChunks.length > 0) {
-    retrievedChunks.forEach((chunk, i) => {
-      contextVault += `[CURRICULUM CHUNK ${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'None'}\nCONTENT: ${chunk.chunk_text}\n---\n`;
-    });
+    authoritativeVault = retrievedChunks
+      .map((chunk, i) => `[SLO_NODE ${i + 1}]\nCODES: ${chunk.slo_codes?.join(', ') || 'General'}\nDEFINITION: ${chunk.chunk_text}\n---`)
+      .join('\n');
   }
 
-  // 5. Orchestrate Model Selection
+  // 5. Grid Provider Routing
   const preferredProvider = (retrievedChunks.length > 0 || toolType) ? 'chatgpt' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   const responseInstructions = formatResponseInstructions(queryAnalysis);
   const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
 
-  // 6. Synthesis Prompt Injection (ABOVE User Query as requested)
+  // 6. Synthesis Prompt Orchestration (ABOVE query)
   const masterSystem = customSystem || DEFAULT_MASTER_PROMPT;
 
   const fullPrompt = `
-## RETRIEVED CURRICULUM CONTEXT:
-${contextVault || "NO MATCHING CURRICULUM NODES FOUND. USE GLOBAL PEDAGOGY STANDARDS."}
+## AUTHORITATIVE_VAULT (Curriculum Seeds):
+${authoritativeVault || "NO SPECIFIC SLO NODES DETECTED. SYNTHESIZING FROM PEDAGOGICAL DEFAULTS."}
 
 ## MASTER SYSTEM PROMPT:
 ${masterSystem}
 
-## USER QUERY:
-${userPrompt}
+## USER TOOL REQUEST:
+"${userPrompt}"
 
 ## INSTRUCTIONS:
-You MUST use the CURRICULUM CHUNKS provided ABOVE to answer. If the answer is in the chunks, cite the specific SLO codes verbatim. If context nodes are present, do not use external knowledge that contradicts them.
-
+1. Identify the targeted SLO from the <AUTHORITATIVE_VAULT>.
+2. Use that objective as the foundation for synthesis.
+3. Apply the 5E Instructional Model and Bloom's Taxonomy.
+4. DO NOT summarize the document; GENERATE a NEW, structured pedagogical tool.
 ${retrievedChunks.length > 0 ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
 ${adaptiveContext || ''}
 ${responseInstructions}
 ${lengthGuideline}
 
-## YOUR RESPONSE:`;
+## GENERATED TOOL:`;
 
-  const finalSystemInstruction = `You are a world-class pedagogy assistant. ALWAYS prioritize provided curriculum nodes.`;
+  // 7. Execute Synthesis via Multi-Provider Grid
+  const finalSystemInstruction = `You are a World-Class Pedagogical Architect. Use provided SLO definitions to construct high-impact tools.`;
   
   const result = await synthesize(
     fullPrompt, 
-    history.slice(-10), 
+    history.slice(-6), // Tighter history for tool focus
     retrievedChunks.length > 0, 
     [], 
     preferredProvider, 
     finalSystemInstruction
   );
   
-  responseCache.set(userPrompt, history, result.text, result.provider);
-  
   return {
     ...result,
     metadata: {
       chunksUsed: retrievedChunks.length,
       isGrounded: retrievedChunks.length > 0,
+      extractedSLOs: extractedSLOs,
       sources: retrievedChunks.map(c => ({
         similarity: c.combined_score,
         sloCodes: c.slo_codes

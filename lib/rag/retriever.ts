@@ -11,15 +11,28 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION SEMANTIC RETRIEVER (v18.5)
- * Optimized for curriculum standards with aggressive token boosting.
- * FIX: Strictly aligned with hybrid_search_chunks_v2 SQL signature.
+ * NEURAL SLO PARSER
+ * Extracts and normalizes curriculum codes (e.g., S8A5, S-08-A-05 -> S8A5) 
+ * to enable high-precision tag boosting in PostgreSQL.
+ */
+export function extractSLOCodes(query: string): string[] {
+  // Pattern: S8A5, S-08-A-05, S8a5, 8.1.2, G-IV-A-01, etc.
+  const sloRegex = /S-?\d{1,2}-?[A-Za-z]-?[\s.-]?\d{1,2}|(\d+\.\d+(?:\.\d+)?)|[A-Z]-[IVXLCDM]+-[A-Z]-\d{1,2}/gi;
+  const matches = query.match(sloRegex) || [];
+  
+  // Normalize to alphanumeric uppercase for cross-referencing the vector grid
+  return Array.from(new Set(matches.map(m => m.toUpperCase().replace(/[\s.-]/g, ''))));
+}
+
+/**
+ * HIGH-PRECISION TOOL-FACTORY RETRIEVER (v18.8)
+ * Optimized to find the specific SLO "seed" needed for pedagogical synthesis.
  */
 export async function retrieveRelevantChunks(
   query: string,
   documentIds: string[],
   supabase: SupabaseClient,
-  matchCount: number = 12,
+  matchCount: number = 8, // Focused retrieval for tool seeds
   priorityDocumentId?: string | null
 ): Promise<RetrievedChunk[]> {
   
@@ -28,70 +41,41 @@ export async function retrieveRelevantChunks(
     ? priorityDocumentId 
     : null;
 
+  // 1. EXTRACT BOOST TAGS (The most critical step for Tool Factory logic)
+  const extractedSLOs = extractSLOCodes(query);
+  
   console.log('📡 [RAG Retrieval Debug]:', {
     docCount: sanitizedDocIds.length,
     queryPreview: query.substring(0, 50),
-    matchCount: matchCount,
-    priorityId: sanitizedPriorityId
+    boostTags: extractedSLOs,
+    matchCount: matchCount
   });
 
   try {
-    // 1. ADVANCED SLO TOKEN EXTRACTION
-    const boostTags: string[] = [];
-    const sloRegex = /([A-Z])[\s.-]?(\d{1,2})[\s.-]?([A-Z])[\s.-]?(\d{1,2})|(\d+\.\d+(?:\.\d+)?)/gi;
-    const matches = Array.from(query.matchAll(sloRegex));
-    
-    matches.forEach(m => {
-      boostTags.push(m[0].toUpperCase().replace(/[\s.-]/g, '')); // Normalized (S8C3)
-      boostTags.push(m[0].toUpperCase()); // Verbatim (S8.C3)
-    });
-
-    const finalBoostTags = Array.from(new Set(boostTags.filter(t => t.length >= 2)));
-    if (finalBoostTags.length > 0) {
-      console.log(`🎯 [Retriever] Boosting SLO Tokens:`, finalBoostTags);
-    }
-
     // 2. HYBRID VECTOR SEARCH
-    // MODEL: text-embedding-004 (Confirmed 768 Dimensions)
     const queryEmbedding = await generateEmbedding(query);
 
     /**
-     * CRITICAL FIX: The RPC parameters must strictly match the database function signature.
-     * filter_document_ids MUST be an array of UUIDs (uuid[]).
-     * All 5 parameters are explicitly passed.
+     * NEURAL ENGINE CALL:
+     * boost_tags ensures chunks explicitly tagged with the user's SLO 
+     * (e.g. S8A5) rise to the top, regardless of semantic similarity.
      */
     const { data, error } = await supabase.rpc('hybrid_search_chunks_v2', {
       query_embedding: queryEmbedding,
       match_count: matchCount, 
-      filter_document_ids: sanitizedDocIds, // uuid[]
-      priority_document_id: sanitizedPriorityId, // uuid (optional)
-      boost_tags: finalBoostTags || [] // text[] (optional)
+      filter_document_ids: sanitizedDocIds,
+      priority_document_id: sanitizedPriorityId,
+      boost_tags: extractedSLOs 
     });
 
     if (error) {
-      console.error('❌ [Retriever RPC Fail]:', {
-        message: error.message,
-        hint: error.hint,
-        details: error.details,
-        params: {
-          filter_document_ids: sanitizedDocIds,
-          match_count: matchCount,
-          boost_tags: finalBoostTags
-        }
-      });
+      console.error('❌ [Retriever RPC Fail]:', error.message);
       return [];
     }
 
     const chunksFound = data?.length || 0;
-    console.log(`✅ [Retriever] Chunks retrieved: ${chunksFound}`);
+    console.log(`✅ [Retriever] Sync complete. ${chunksFound} nodes extracted.`);
     
-    if (chunksFound > 0) {
-      console.log(`📊 [Retriever] High-Relevance Match:`, {
-        slo: data[0].slo_codes,
-        score: data[0].combined_score
-      });
-    }
-
     return (data || []).map((d: any) => ({
       chunk_id: d.chunk_id,
       chunk_text: d.chunk_text,
