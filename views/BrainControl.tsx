@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
-  Database, ShieldCheck, Terminal, ShieldAlert, AlertTriangle, Activity, Server, Search
+  Database, ShieldCheck, Terminal, ShieldAlert, AlertTriangle, Activity, Server, Search, Code, AlertCircle
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
@@ -22,6 +22,38 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+
+  const diagnosticSql = `-- SUPABASE RAG DIAGNOSTIC SUITE
+-- Run these in your SQL Editor to find errors
+
+-- 1. Check if vector extension is active
+SELECT * FROM pg_extension WHERE extname = 'vector';
+
+-- 2. Check chunk dimensions (Must be 768)
+SELECT vector_dims(embedding), count(*) 
+FROM document_chunks 
+GROUP BY 1;
+
+-- 3. Find "Ghost Documents"
+SELECT id, name, rag_indexed 
+FROM documents 
+WHERE rag_indexed = true 
+AND id NOT IN (SELECT DISTINCT document_id FROM document_chunks);
+
+-- 4. Test Hybrid Search RPC manually
+SELECT * FROM hybrid_search_chunks_v2(
+  (SELECT embedding FROM document_chunks LIMIT 1),
+  5,
+  (SELECT ARRAY_AGG(id) FROM documents WHERE rag_indexed = true),
+  null,
+  ARRAY['S8A1']::text[]
+);`;
+
+  const copySql = () => {
+    navigator.clipboard.writeText(diagnosticSql);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2000);
+  };
 
   const checkHealth = async () => {
     setIsChecking(true);
@@ -192,12 +224,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
               </div>
             )}
 
-            <div className="bg-slate-50 dark:bg-black/20 rounded-3xl overflow-hidden border border-slate-100 dark:border-white/5">
+            <div className="bg-slate-50 dark:bg-black/20 rounded-3xl overflow-hidden border border-slate-100 dark:border-white/5 mb-8">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-100 dark:bg-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
                   <tr>
                     <th className="p-4">Document</th>
-                    <th className="p-4">Status</th>
+                    <th className="p-4">Selection</th>
                     <th className="p-4">Chunks</th>
                     <th className="p-4">Health Status</th>
                   </tr>
@@ -206,7 +238,11 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                   {ragHealth?.report.map((doc: any) => (
                     <tr key={doc.id} className="dark:text-slate-300">
                       <td className="p-4 font-bold">{doc.name}</td>
-                      <td className="p-4"><span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${doc.status === 'ready' ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>{doc.status}</span></td>
+                      <td className="p-4">
+                        <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${doc.is_selected ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+                          {doc.is_selected ? 'ACTIVE' : 'IDLE'}
+                        </span>
+                      </td>
                       <td className="p-4 font-mono">{doc.chunk_count}</td>
                       <td className={`p-4 font-bold text-xs ${doc.health_status === 'HEALTHY' ? 'text-emerald-500' : 'text-rose-500 animate-pulse'}`}>
                         {doc.health_status}
@@ -217,10 +253,49 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
               </table>
             </div>
 
-            <div className="mt-8 flex gap-4">
-               <button onClick={handleBulkIndex} disabled={isIndexing} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-3 shadow-xl">
-                 {isIndexing ? <RefreshCw className="animate-spin" size={18} /> : <Zap size={18} />} Re-Sync Neural Grid
-               </button>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+               <div className="p-8 bg-indigo-50 dark:bg-indigo-950/20 rounded-[2.5rem] border border-indigo-100 dark:border-indigo-900/30">
+                  <h3 className="font-bold flex items-center gap-2 text-indigo-700 dark:text-indigo-400 mb-4">
+                    <Code size={18} /> Neural Debugger (SQL)
+                  </h3>
+                  <p className="text-xs text-indigo-600 dark:text-indigo-300/60 mb-6 font-medium leading-relaxed">
+                    Copy these diagnostics to your Supabase SQL Editor to manually verify the neural grid infrastructure.
+                  </p>
+                  <div className="bg-slate-950 p-6 rounded-2xl relative group mb-6 overflow-hidden">
+                    <pre className="text-[10px] font-mono text-indigo-300 overflow-x-auto custom-scrollbar">
+                      {diagnosticSql}
+                    </pre>
+                    <button 
+                      onClick={copySql}
+                      className="absolute top-4 right-4 p-2 bg-indigo-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-xl"
+                    >
+                      {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+                    </button>
+                  </div>
+                  <button onClick={handleBulkIndex} disabled={isIndexing} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 shadow-xl">
+                    {isIndexing ? <RefreshCw className="animate-spin" size={18} /> : <Zap size={18} />} Re-Sync Entire Grid
+                  </button>
+               </div>
+
+               <div className="p-8 bg-amber-50 dark:bg-amber-950/20 rounded-[2.5rem] border border-amber-100 dark:border-amber-900/30">
+                  <h3 className="font-bold flex items-center gap-2 text-amber-700 dark:text-amber-400 mb-4">
+                    <AlertCircle size={18} /> RAG Troubleshooting
+                  </h3>
+                  <ul className="space-y-4">
+                    <li className="flex gap-3">
+                      <div className="w-5 h-5 bg-amber-200 dark:bg-amber-800 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-200 shrink-0 mt-0.5">1</div>
+                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium">Ensure at least one document is <b>Selected</b> in the Library. RAG ignores unselected files.</p>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-5 h-5 bg-amber-200 dark:bg-amber-800 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-200 shrink-0 mt-0.5">2</div>
+                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium">If <b>Chunks</b> is 0, click "Sync Neural Nodes" in the Library to re-process the asset.</p>
+                    </li>
+                    <li className="flex gap-3">
+                      <div className="w-5 h-5 bg-amber-200 dark:bg-amber-800 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-200 shrink-0 mt-0.5">3</div>
+                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium">Verify that your SQL Editor query (1) shows <b>pgvector</b> as 'active'.</p>
+                    </li>
+                  </ul>
+               </div>
             </div>
           </div>
         </div>

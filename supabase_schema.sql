@@ -1,4 +1,4 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v23.0
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v24.0
 -- TARGET: RAG Resilience & Diagnostic Monitoring
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
@@ -110,16 +110,18 @@ SELECT
     d.name,
     d.status,
     d.rag_indexed,
+    d.is_selected,
     count(dc.id) as chunk_count,
     CASE 
-        WHEN d.rag_indexed = true AND count(dc.id) = 0 THEN 'BROKEN: Marked indexed but no chunks'
-        WHEN d.rag_indexed = false AND count(dc.id) > 0 THEN 'WARNING: Chunks exist but not marked indexed'
+        WHEN d.rag_indexed = true AND count(dc.id) = 0 THEN 'BROKEN: Missing Chunks'
+        WHEN d.rag_indexed = false AND count(dc.id) > 0 THEN 'WARNING: Partial Sync'
+        WHEN d.is_selected = true AND d.rag_indexed = false THEN 'CRITICAL: Selected but Unindexed'
         WHEN count(dc.id) > 0 THEN 'HEALTHY'
         ELSE 'PENDING'
     END as health_status
 FROM documents d
 LEFT JOIN document_chunks dc ON d.id = dc.document_id
-GROUP BY d.id, d.name, d.status, d.rag_indexed;
+GROUP BY d.id, d.name, d.status, d.rag_indexed, d.is_selected;
 
 -- 7. DIAGNOSTIC RPC: EXTENSION CHECK
 CREATE OR REPLACE FUNCTION get_extension_status(ext TEXT)

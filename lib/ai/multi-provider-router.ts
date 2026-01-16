@@ -16,7 +16,7 @@ export function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v23.0)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v24.0)
  * Manages curriculum-aware routing and precision grounding.
  */
 export async function generateAIResponse(
@@ -41,6 +41,10 @@ export async function generateAIResponse(
   
   const documentIds = selectedDocs?.map(d => d.id) || [];
   
+  if (selectedDocs && selectedDocs.length === 0) {
+    console.warn("⚠️ [Router] RAG Warning: 0 documents selected or indexed. AI is operating in ungrounded mode.");
+  }
+
   // 2. High-Precision Retrieval
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
@@ -57,6 +61,8 @@ export async function generateAIResponse(
     vaultContent = retrievedChunks
       .map((chunk, i) => `[CURRICULUM_FRAGMENT_${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'NONE'}\nCONTENT: ${chunk.chunk_text}\n---`)
       .join('\n');
+  } else if (documentIds.length > 0) {
+    console.warn("⚠️ [Router] RAG Miss: Documents selected but 0 relevant chunks found. Check embeddings dimensions.");
   }
 
   const masterSystem = customSystem || DEFAULT_MASTER_PROMPT;
@@ -80,7 +86,6 @@ Generate a pedagogical artifact strictly following the parameters above. If the 
 RESPONSE:`;
 
   // 6. Synthesis Routing
-  // Prioritize Gemini for grounded tasks due to long-context handling
   const preferredProvider = (retrievedChunks.length > 0) ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   
   const result = await synthesize(
