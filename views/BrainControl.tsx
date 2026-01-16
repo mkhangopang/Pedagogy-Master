@@ -22,6 +22,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const diagnosticSql = `-- SUPABASE RAG DIAGNOSTIC SUITE
 -- Run these in your SQL Editor to find errors
@@ -70,15 +71,24 @@ SELECT * FROM hybrid_search_chunks_v2(
 
   const fetchRagHealth = async () => {
     setIsChecking(true);
+    setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch('/api/admin/rag-health', {
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
       });
+      
       const data = await res.json();
+      
+      if (!res.ok) {
+        setError(data.error || "Failed to fetch RAG health metrics.");
+        return;
+      }
+      
       setRagHealth(data);
     } catch (e) {
       console.error("RAG health fetch failed", e);
+      setError("Network error connecting to diagnostic node.");
     } finally {
       setIsChecking(false);
     }
@@ -203,7 +213,14 @@ SELECT * FROM hybrid_search_chunks_v2(
                </button>
             </div>
 
-            {ragHealth && (
+            {error && (
+              <div className="p-4 bg-rose-50 border border-rose-100 text-rose-700 rounded-2xl mb-8 flex items-center gap-3 font-medium text-sm">
+                <AlertCircle size={18} />
+                {error}
+              </div>
+            )}
+
+            {ragHealth && ragHealth.summary && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
                 <HealthCard 
                   label="Healthy Assets" 
@@ -235,7 +252,7 @@ SELECT * FROM hybrid_search_chunks_v2(
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {ragHealth?.report.map((doc: any) => (
+                  {ragHealth?.report?.map((doc: any) => (
                     <tr key={doc.id} className="dark:text-slate-300">
                       <td className="p-4 font-bold">{doc.name}</td>
                       <td className="p-4">
@@ -249,6 +266,13 @@ SELECT * FROM hybrid_search_chunks_v2(
                       </td>
                     </tr>
                   ))}
+                  {(!ragHealth?.report || ragHealth.report.length === 0) && !isChecking && (
+                    <tr>
+                      <td colSpan={4} className="p-10 text-center text-slate-400 font-medium italic">
+                        No curriculum assets detected in the neural grid.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -312,7 +336,7 @@ const HealthCard = ({ label, value, total, status }: any) => (
   }`}>
     <span className="text-[10px] font-black uppercase tracking-widest opacity-60">{label}</span>
     <div className="text-3xl font-black">
-      {value}{total ? <span className="text-sm opacity-40 ml-1">/ {total}</span> : ''}
+      {value || 0}{total ? <span className="text-sm opacity-40 ml-1">/ {total}</span> : ''}
     </div>
   </div>
 );

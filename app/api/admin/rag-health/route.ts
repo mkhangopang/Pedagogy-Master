@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Check Vector Extension - Fixed chaining logic for TS
+    // 1. Check Vector Extension
     let extensionActive = true;
     try {
       const { data } = await supabase.rpc('get_extension_status', { ext: 'vector' });
@@ -28,9 +28,12 @@ export async function GET(req: NextRequest) {
       console.warn("RPC get_extension_status failed, assuming active if chunks exist.");
     }
     
-    // 2. Check Chunk Statistics
+    // 2. Check Chunk Statistics via View
     const { data: healthReport, error: healthError } = await supabase.from('rag_health_report').select('*');
-    if (healthError) throw healthError;
+    if (healthError) {
+      console.error("Health report view failed:", healthError);
+      return NextResponse.json({ error: "Diagnostic view 'rag_health_report' not found in database. Please run the SQL migration." }, { status: 500 });
+    }
 
     // 3. Check for embedding dimension consistency
     let dimensions = 768;
@@ -38,34 +41,44 @@ export async function GET(req: NextRequest) {
       const { data } = await supabase.rpc('get_vector_dimensions');
       if (data) dimensions = Number(data);
     } catch (e) {
-      console.warn("RPC get_vector_dimensions failed, defaulting to 768.");
+      console.warn("RPC get_vector_dimensions failed.");
     }
 
     // 4. Ghost Chunks (Orphaned chunks with no valid document)
-    // We fetch document IDs first for the inclusion check
     const { data: allDocs } = await supabase.from('documents').select('id');
     const docIds = allDocs?.map(d => d.id) || [];
     
-    const { count: orphans } = await supabase
-      .from('document_chunks')
-      .select('*', { count: 'exact', head: true })
-      .not('document_id', 'in', `(${docIds.join(',')})`);
+    let orphans = 0;
+    if (docIds.length > 0) {
+      const { count } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true })
+        .not('document_id', 'in', `(${docIds.join(',')})`);
+      orphans = count || 0;
+    } else {
+      // If no documents exist, any existing chunks are technically orphans
+      const { count } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true });
+      orphans = count || 0;
+    }
 
     return NextResponse.json({
       timestamp: new Date().toISOString(),
       extensionActive,
       expectedDimensions: 768,
       actualDimensions: dimensions,
-      report: healthReport,
+      report: healthReport || [],
       summary: {
-        totalDocs: healthReport.length,
-        healthy: healthReport.filter((r: any) => r.health_status === 'HEALTHY').length,
-        broken: healthReport.filter((r: any) => r.health_status.startsWith('BROKEN')).length,
-        orphanedChunks: orphans || 0
+        totalDocs: (healthReport || []).length,
+        healthy: (healthReport || []).filter((r: any) => r.health_status === 'HEALTHY').length,
+        broken: (healthReport || []).filter((r: any) => r.health_status && r.health_status.startsWith('BROKEN')).length,
+        orphanedChunks: orphans
       }
     });
 
   } catch (error: any) {
+    console.error("RAG Health API Fatal:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
