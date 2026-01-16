@@ -16,42 +16,36 @@ export async function callGemini(
 
   try {
     const ai = new GoogleGenAI({ apiKey });
-    // Use gemini-3-flash-preview as the primary fast synthesis node
     const modelName = 'gemini-3-flash-preview';
 
+    // Build contents array for multi-turn
     const contents: any[] = [];
-    // Only take the last few messages to prevent token overflow
     const processedHistory = history.slice(-6);
-    let lastRole = '';
     
     processedHistory.forEach(h => {
-      const role = h.role === 'user' ? 'user' : 'model';
-      if (role !== lastRole) {
-        contents.push({
-          role,
-          parts: [{ text: h.content }]
-        });
-        lastRole = role;
-      }
+      contents.push({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: h.content }]
+      });
     });
 
-    // Handle payload construction
-    if (contents.length > 0 && contents[contents.length - 1].role === 'user') {
-      const lastUserParts = contents[contents.length - 1].parts;
-      lastUserParts.push({ text: "\n\n[CONTEXT_COMMAND]: " + fullPrompt });
-      if (docParts && docParts.length > 0) {
-        docParts.forEach(part => { if (part.inlineData) lastUserParts.unshift(part); });
-      }
+    // Final prompt parts
+    const currentParts: any[] = [];
+    if (docParts && docParts.length > 0) {
+      docParts.forEach(part => {
+        if (part.inlineData) currentParts.push(part);
+      });
+    }
+    currentParts.push({ text: fullPrompt });
+
+    // Ensure we follow user-model-user pattern
+    if (contents.length === 0 || contents[contents.length - 1].role === 'model') {
+      contents.push({ role: 'user', parts: currentParts });
     } else {
-      const parts: any[] = [];
-      if (docParts && docParts.length > 0) {
-        docParts.forEach(part => { if (part.inlineData) parts.push(part); });
-      }
-      parts.push({ text: fullPrompt });
-      contents.push({ role: 'user', parts });
+      contents[contents.length - 1].parts.push(...currentParts);
     }
 
-    console.log(`📡 [Gemini Node] Sending request to ${modelName}. History depth: ${contents.length}`);
+    console.log(`📡 [Gemini Node] Dispatching to ${modelName}.`);
 
     const result = await ai.models.generateContent({
       model: modelName, 
@@ -64,25 +58,17 @@ export async function callGemini(
       }
     });
 
-    // CRITICAL: Robust checking of the candidate response
     if (!result || !result.text) {
-      console.warn("⚠️ [Gemini Node] Received empty text. Checking safety ratings...");
-      
-      // Check if blocked by safety
       const candidate = (result as any).candidates?.[0];
       if (candidate?.finishReason === 'SAFETY') {
-        return "🛡️ AI Synthesis Blocked: The curriculum content triggered safety filters. Please try re-phrasing the request.";
+        return "🛡️ AI Synthesis Blocked: Content triggered safety filters.";
       }
-      
-      return "Synthesis error: Remote node returned empty response. (Logic Gap: Context may be empty or ill-formed).";
+      return "Synthesis error: Remote node returned empty response. Check curriculum tags.";
     }
 
     return result.text;
   } catch (error: any) {
     console.error("❌ [Gemini Node] Exception:", error.message);
-    if (error.message?.includes('429')) {
-      return "Neural Grid Saturated: Gemini rate limit exceeded. Retrying via secondary node...";
-    }
     throw error;
   }
 }

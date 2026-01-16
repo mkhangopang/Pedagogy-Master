@@ -2,84 +2,84 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v20.0)
+ * WORLD-CLASS NEURAL INDEXER (v22.0)
+ * Synchronizes curriculum content with the vector search grid.
  */
-export async function indexCurriculumMarkdown(
+export async function indexDocumentForRAG(
   documentId: string,
   content: string,
-  supabase: SupabaseClient,
-  metadata: any
+  filePath: string,
+  supabase: SupabaseClient
 ) {
   if (!content || content.length < 50) throw new Error("Content too sparse.");
 
   try {
+    // 1. Initial State Lock
+    await supabase.from('documents').update({ 
+      status: 'processing', 
+      rag_indexed: false 
+    }).eq('id', documentId);
+
     const rawChunks: { text: string; sloCodes: string[] }[] = [];
 
-    // 1. Structural Splitting
+    // 2. Structural Splitting Logic
     const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|SLO:))/gim);
+    
     blocks.forEach((block) => {
       const trimmed = block.trim();
       if (trimmed.length < 20) return;
 
       const sloRegex = /(?:Standard:|SLO)\s*[:\s]*([A-Z0-9\.-]{2,15})/gi;
-      const codes = Array.from(trimmed.matchAll(sloRegex))
-        .map(m => m[1].trim().toUpperCase())
-        .filter(c => c.length >= 2);
+      const codes: string[] = [];
+      let match;
+      while ((match = sloRegex.exec(trimmed)) !== null) {
+        codes.push(match[1].toUpperCase().replace(/-/g, ''));
+      }
       
-      rawChunks.push({
-        text: trimmed,
-        sloCodes: Array.from(new Set(codes))
-      });
+      rawChunks.push({ text: trimmed, sloCodes: Array.from(new Set(codes)) });
     });
 
-    // 2. Sliding Window for general context
-    const words = content.split(/\s+/);
-    const windowSize = 400;
-    const overlap = 150;
-    for (let i = 0; i < words.length; i += (windowSize - overlap)) {
-      const fragmentText = words.slice(i, i + windowSize).join(' ');
-      if (fragmentText.length < 250) continue;
-      rawChunks.push({ text: fragmentText, sloCodes: ['CONTEXT_NODE'] });
+    // 3. Contextual Sliding Window (Fallback Coverage)
+    if (rawChunks.length < 3) {
+       const words = content.split(/\s+/);
+       for (let i = 0; i < words.length; i += 300) {
+         const slice = words.slice(i, i + 400).join(' ');
+         if (slice.length > 100) rawChunks.push({ text: slice, sloCodes: [] });
+       }
     }
 
-    // 3. Batch Vector Synthesis
-    const embeddings = await generateEmbeddingsBatch(rawChunks.map(c => c.text));
+    // 4. Batch Embedding Synthesis
+    const texts = rawChunks.map(c => c.text);
+    const embeddings = await generateEmbeddingsBatch(texts);
 
-    const insertData = rawChunks.map((c, i) => ({
+    // 5. Vector Grid Synchronization
+    const chunkRecords = rawChunks.map((chunk, i) => ({
       document_id: documentId,
-      chunk_text: c.text,
+      chunk_text: chunk.text,
       embedding: embeddings[i],
-      slo_codes: c.sloCodes,
-      metadata: { board: metadata.board, subject: metadata.subject, processed_at: new Date().toISOString() },
+      slo_codes: chunk.sloCodes,
       chunk_index: i
     }));
 
-    // Reset and Sync
+    // Reset local grid for this asset
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
-    const { error: insertError } = await supabase.from('document_chunks').insert(insertData);
-    if (insertError) throw insertError;
+    
+    if (chunkRecords.length > 0) {
+      const { error: insertError } = await supabase.from('document_chunks').insert(chunkRecords);
+      if (insertError) throw insertError;
+    }
 
-    // 4. ✅ COMMIT SUCCESS STATUS
-    await supabase.from('documents').update({ rag_indexed: true, status: 'ready' }).eq('id', documentId);
+    // 6. Global Commit
+    await supabase.from('documents').update({ 
+      status: 'ready', 
+      rag_indexed: true 
+    }).eq('id', documentId);
 
-    return rawChunks.length;
-  } catch (err) {
-    console.error('❌ Indexer Fatal:', err);
-    await supabase.from('documents').update({ rag_indexed: false, status: 'failed' }).eq('id', documentId);
-    throw err;
+    console.log(`✅ [Indexer] Synchronized ${chunkRecords.length} nodes for document ${documentId}`);
+
+  } catch (error: any) {
+    console.error("❌ [Indexer] Fatal Error:", error);
+    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
+    throw error;
   }
-}
-
-export async function indexDocumentForRAG(
-  documentId: string,
-  content: string,
-  filePath: string | undefined,
-  supabase: SupabaseClient
-) {
-  const boardMatch = content.match(/Board:\s*([^\n\r]+)/i);
-  const subjectMatch = content.match(/Subject:\s*([^\n\r]+)/i);
-  return indexCurriculumMarkdown(documentId, content, supabase, { 
-    board: boardMatch?.[1]?.trim(),
-    subject: subjectMatch?.[1]?.trim()
-  });
 }

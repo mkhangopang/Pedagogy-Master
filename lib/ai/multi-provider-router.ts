@@ -1,7 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { rateLimiter } from './rate-limiter';
-import { responseCache } from './response-cache';
-import { RESPONSE_LENGTH_GUIDELINES } from '../config/ai-personality';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core';
@@ -18,9 +16,8 @@ export function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v19.0)
- * Operates as a Pedagogical Tool Factory. 
- * Uses RAG to find the SLO "seed" and the Neural Brain to generate tools.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v21.0)
+ * Optimized for high-precision grounding and multi-node resilience.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -34,76 +31,67 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Intelligent Intent Analysis
-  const queryAnalysis = analyzeUserQuery(userPrompt);
-  const extractedSLOs = extractSLOCodes(userPrompt);
-  
-  // 2. Resolve Active Curriculum Grid
+  // 1. Resolve Active Documents
   const { data: selectedDocs } = await supabase
     .from('documents')
-    .select('id, name, authority, grade_level, subject')
+    .select('id, name')
     .eq('user_id', userId)
-    .eq('rag_indexed', true)
-    .or(`is_selected.eq.true${priorityDocumentId ? `,id.eq.${priorityDocumentId}` : ''}`)
-    .in('status', ['ready', 'completed']);
+    .eq('is_selected', true)
+    .eq('rag_indexed', true);
   
   const documentIds = selectedDocs?.map(d => d.id) || [];
   
-  // 3. RAG: Seed Extraction
-  // We reduce matchCount to 5 to ensure we only get the most relevant SLO definitions.
+  // 2. High-Precision RAG Retrieval
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks(userPrompt, documentIds, supabase, 5, priorityDocumentId);
   }
   
-  // 4. MINIMAL CONTEXT INJECTION (The Seed)
-  let authoritativeVault = "";
+  // 3. Metadata Extraction
+  const queryAnalysis = analyzeUserQuery(userPrompt);
+  const extractedSLOs = extractSLOCodes(userPrompt);
+  
+  // 4. Clean Context Injection
+  let vaultContent = "";
   if (retrievedChunks.length > 0) {
-    authoritativeVault = retrievedChunks
-      .map((chunk, i) => `[SLO_NODE ${i + 1}]\nCODES: ${chunk.slo_codes?.join(', ') || 'General'}\nDEFINITION: ${chunk.chunk_text}\n---`)
+    vaultContent = retrievedChunks
+      .map((chunk, i) => `[SLO_NODE_${i + 1}]\nSLO_TAGS: ${chunk.slo_codes?.join(', ') || 'N/A'}\nTEXT: ${chunk.chunk_text}\n---`)
       .join('\n');
   }
 
-  // 5. Grid Provider Routing
-  const preferredProvider = (retrievedChunks.length > 0 || toolType) ? 'chatgpt' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
-  const responseInstructions = formatResponseInstructions(queryAnalysis);
-  const lengthGuideline = RESPONSE_LENGTH_GUIDELINES[queryAnalysis.expectedResponseLength].instruction;
-
-  // 6. Synthesis Prompt Orchestration (ABOVE query)
   const masterSystem = customSystem || DEFAULT_MASTER_PROMPT;
+  const responseInstructions = formatResponseInstructions(queryAnalysis);
 
+  // 5. Unified System Prompt Construction
   const fullPrompt = `
-## AUTHORITATIVE_VAULT (Curriculum Seeds):
-${authoritativeVault || "NO SPECIFIC SLO NODES DETECTED. SYNTHESIZING FROM PEDAGOGICAL DEFAULTS."}
-
-## MASTER SYSTEM PROMPT:
 ${masterSystem}
 
-## USER TOOL REQUEST:
+<AUTHORITATIVE_VAULT>
+${vaultContent || "NO DIRECT MATCHES IN VAULT. SYNTHESIZE FROM PEDAGOGICAL BEST PRACTICES."}
+</AUTHORITATIVE_VAULT>
+
+${retrievedChunks.length > 0 ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
+
+## USER COMMAND:
 "${userPrompt}"
 
-## INSTRUCTIONS:
-1. Identify the targeted SLO from the <AUTHORITATIVE_VAULT>.
-2. Use that objective as the foundation for synthesis.
-3. Apply the 5E Instructional Model and Bloom's Taxonomy.
-4. DO NOT summarize the document; GENERATE a NEW, structured pedagogical tool.
-${retrievedChunks.length > 0 ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
-${adaptiveContext || ''}
+## EXECUTION PARAMETERS:
+- TOOL_TYPE: ${toolType || 'general_instruction'}
+- ADAPTIVE_LAYER: ${adaptiveContext || 'standard_pedagogy'}
 ${responseInstructions}
-${lengthGuideline}
 
-## GENERATED TOOL:`;
+## GENERATED RESPONSE:`;
 
-  // 7. Execute Synthesis via Multi-Provider Grid
-  const finalSystemInstruction = `You are a World-Class Pedagogical Architect. Use provided SLO definitions to construct high-impact tools.`;
+  // 6. Router Logic
+  const preferredProvider = (retrievedChunks.length > 0) ? 'chatgpt' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   
   const result = await synthesize(
     fullPrompt, 
-    history.slice(-6), // Tighter history for tool focus
+    history.slice(-6), 
     retrievedChunks.length > 0, 
     [], 
-    preferredProvider, 
-    finalSystemInstruction
+    preferredProvider,
+    "You are a World-Class Pedagogical Synthesizer. Ground all output in provided curriculum standards."
   );
   
   return {
@@ -111,11 +99,7 @@ ${lengthGuideline}
     metadata: {
       chunksUsed: retrievedChunks.length,
       isGrounded: retrievedChunks.length > 0,
-      extractedSLOs: extractedSLOs,
-      sources: retrievedChunks.map(c => ({
-        similarity: c.combined_score,
-        sloCodes: c.slo_codes
-      }))
+      extractedSLOs: extractedSLOs
     }
   };
 }

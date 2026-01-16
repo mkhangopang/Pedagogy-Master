@@ -1,20 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { retrieveRelevantChunks } from '../../../lib/rag/retriever';
-import { extractSLOCodes } from '../../../lib/rag/slo-extractor';
-import { 
-  DEFAULT_MASTER_PROMPT, 
-  NUCLEAR_GROUNDING_DIRECTIVE 
-} from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * PEDAGOGY MASTER CHAT ENGINE (v20.0)
- * STRICT TOOL GENERATOR LOGIC
+ * PEDAGOGY MASTER CHAT ENGINE (v21.0)
+ * Thin orchestrator for the high-precision synthesis grid.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -26,89 +20,29 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const body = await req.json();
-    const { message, toolType, history = [] } = body;
+    const { message, toolType, history = [], priorityDocumentId } = body;
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Get the single selected & indexed document
-    const { data: selectedDoc } = await supabase
-      .from('documents')
-      .select('id, name')
-      .eq('user_id', user.id)
-      .eq('is_selected', true)
-      .eq('rag_indexed', true)
-      .single();
-
-    let finalPrompt: string;
-    let metadata: any = { isGrounded: false, chunksUsed: 0 };
-
-    if (selectedDoc) {
-      // 2. High-precision retrieval
-      const chunks = await retrieveRelevantChunks(
-        message,
-        [selectedDoc.id],
-        supabase,
-        5
-      );
-
-      if (chunks && chunks.length > 0) {
-        // Build the Authoritative Vault context
-        const sloContext = chunks.slice(0, 3).map((chunk, idx) => `
-[SLO NODE ${idx + 1}]
-SLO_CODES: ${chunk.slo_codes?.join(', ') || 'None'}
-OBJECTIVE: ${chunk.chunk_text.substring(0, 500)}...
----
-        `).join('\n');
-
-        metadata = {
-          isGrounded: true,
-          chunksUsed: chunks.length,
-          sources: chunks.map(c => ({ similarity: c.combined_score, sloCodes: c.slo_codes }))
-        };
-
-        finalPrompt = `
-${NUCLEAR_GROUNDING_DIRECTIVE}
-
-${DEFAULT_MASTER_PROMPT}
-
-<AUTHORITATIVE_VAULT>
-${sloContext}
-</AUTHORITATIVE_VAULT>
-
-TOOL REQUEST TYPE: ${toolType || 'general'}
-USER QUERY: ${message}
-
-GENERATION INSTRUCTIONS:
-- IDENTIFY the specific SLO from the vault above.
-- GENERATE a structured pedagogical tool (Lesson Plan/Quiz/Rubric).
-- APPLY the 5E Instructional Model.
-- DO NOT summarize the document. CREATE new instructional content.
-`;
-      } else {
-        finalPrompt = `${DEFAULT_MASTER_PROMPT}\n\n⚡ Neural Note: No matching curriculum nodes found in vault. Generating based on Global Pedagogical Standards.\n\nUSER QUERY: ${message}`;
-      }
-    } else {
-      finalPrompt = `${DEFAULT_MASTER_PROMPT}\n\n⚡ Neural Note: No curriculum vault selected. Generating based on Global Pedagogical Standards.\n\nUSER QUERY: ${message}`;
-    }
-
-    // 3. Execute Synthesis
-    const { text, provider } = await generateAIResponse(
-      finalPrompt,
+    // Delegate all retrieval and prompt construction to the Multi-Provider Router
+    // This prevents double-nested templates that trigger model refusal/safety blocks.
+    const { text, provider, metadata } = await generateAIResponse(
+      message,
       history,
       user.id,
       supabase,
-      "", 
+      "", // Adaptive context handled inside router if needed
       undefined,
       toolType,
-      undefined,
-      selectedDoc?.id
+      undefined, // Uses default Master Prompt from Brain
+      priorityDocumentId
     );
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
         if (metadata?.isGrounded) {
-          controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Found ${metadata.chunksUsed} curriculum nodes. Constructing aligned tool...*\n\n`));
+          controller.enqueue(encoder.encode(`> *🛡️ Neural Sync: Grounded in ${metadata.chunksUsed} curriculum nodes. Synthesis active via ${provider}...*\n\n`));
         }
         controller.enqueue(encoder.encode(text));
         controller.enqueue(encoder.encode(`\n\n*Synthesis Node: ${provider}*`));
@@ -117,7 +51,7 @@ GENERATION INSTRUCTIONS:
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error("❌ Chat API Error:", error);
-    return new Response(`AI Alert: Synthesis grid offline.`, { status: 200 });
+    console.error("❌ Chat API Fatal Error:", error);
+    return new Response(`Synthesis error: The neural node returned an empty response. This usually occurs when the curriculum context is too large or triggers safety filters.`, { status: 200 });
   }
 }

@@ -14,8 +14,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION TOOL-FACTORY RETRIEVER (v20.0)
- * Optimized to find the specific SLO "seed" needed for pedagogical synthesis.
+ * HIGH-PRECISION TOOL-FACTORY RETRIEVER (v21.0)
+ * Optimized for hybrid search with semantic SLO boosting.
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -25,28 +25,29 @@ export async function retrieveRelevantChunks(
   priorityDocumentId?: string
 ): Promise<RetrievedChunk[]> {
   try {
-    // 1. Extract SLO codes from user query for semantic boosting
+    if (!documentIds || documentIds.length === 0) return [];
+
+    // 1. Neural Analysis of Query
     const extractedSLOs = extractSLOCodes(query);
-    
-    // 2. Generate query embedding (768 dimensions)
     const queryEmbedding = await generateEmbedding(query);
     
     if (!queryEmbedding || queryEmbedding.length !== 768) {
-      console.error('❌ Invalid embedding dimensions');
+      console.error('❌ [Retriever] Invalid embedding generated.');
       return [];
     }
     
-    // 3. Call Supabase RPC with high-precision filtering
+    // 2. Execute Hybrid Search RPC
+    // Parameters must match supabase_schema.sql v21.0 exactly
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v2', {
       query_embedding: queryEmbedding,
       match_count: matchCount,
-      filter_document_ids: documentIds, // MUST be array
+      filter_document_ids: documentIds, 
       priority_document_id: priorityDocumentId || null,
       boost_tags: extractedSLOs.length > 0 ? extractedSLOs : []
     });
     
     if (error) {
-      console.error('❌ Supabase RPC Error:', error.message);
+      console.error('❌ [Retriever] Supabase RPC Failure:', error.message);
       return [];
     }
     
@@ -60,7 +61,7 @@ export async function retrieveRelevantChunks(
     }));
     
   } catch (err) {
-    console.error('❌ RAG Retrieval Node Failure:', err);
+    console.error('❌ [Retriever] Node Exception:', err);
     return [];
   }
 }
