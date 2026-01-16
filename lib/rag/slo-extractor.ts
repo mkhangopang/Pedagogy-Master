@@ -30,6 +30,5 @@ export function extractSLOCodes(query: string): string[] {
     }
   });
   
-  console.log('Extracted SLO codes from query:', matches);
   return matches;
 }

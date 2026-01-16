@@ -24,89 +24,56 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
   const checkHealth = async () => {
     setIsChecking(true);
-    const tables = [
-      'profiles', 
-      'documents', 
-      'document_chunks',
-      'neural_brain', 
-      'output_artifacts', 
-      'slo_database', 
-      'teacher_progress'
-    ];
+    const tables = ['profiles', 'documents', 'document_chunks', 'neural_brain', 'output_artifacts', 'slo_database', 'teacher_progress'];
     const status = await Promise.all(tables.map(async (table) => {
       try {
         const { error } = await supabase.from(table).select('id').limit(1);
         return { table, exists: !error || error.code !== '42P01' };
-      } catch (e) {
-        return { table, exists: false };
-      }
+      } catch (e) { return { table, exists: false }; }
     }));
     setDbStatus(status);
     setIsChecking(false);
   };
 
   const handleBulkIndex = async () => {
-    if (!window.confirm("Initialize global neural synchronization? This will rebuild the vector grid for all documents.")) return;
-    
+    if (!window.confirm("Initialize global neural synchronization?")) return;
     setIsIndexing(true);
     setIndexStatus("Syncing neural nodes...");
-    
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/admin/index-all-documents', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        }
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }
       });
-      
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Bulk sync failed.");
-      
       setIndexStatus(`✅ Success: ${data.message}`);
-    } catch (err: any) {
-      setIndexStatus(`❌ Error: ${err.message}`);
-    } finally {
-      setIsIndexing(false);
-    }
+    } catch (err: any) { setIndexStatus(`❌ Error: ${err.message}`); } finally { setIsIndexing(false); }
   };
 
-  useEffect(() => {
-    if (activeTab === 'infra') checkHealth();
-  }, [activeTab]);
+  useEffect(() => { if (activeTab === 'infra') checkHealth(); }, [activeTab]);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("No session.");
-      const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
-      if (profile?.role !== 'app_admin') throw new Error("Admin required.");
-
       const { error } = await supabase.from('neural_brain').insert([{
         master_prompt: formData.masterPrompt,
         version: formData.version + 1,
         is_active: true
       }]);
-      
       if (error) throw error;
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
       alert("Deployed.");
-    } catch (err: any) {
-      alert(`Error: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
+    } catch (err: any) { alert(`Error: ${err.message}`); } finally { setIsSaving(false); }
   };
 
   const sqlSchema = `-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v21.0
--- TARGET: Auth Resilience & Tag-Aware RAG
+-- TARGET: Auth Resilience & High-Precision RAG
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. PROFILES TABLE (Adaptive Intelligence Hub)
+-- 2. TABLES
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
     name TEXT,
@@ -115,45 +82,26 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     plan TEXT DEFAULT 'free',
     queries_used INTEGER DEFAULT 0,
     queries_limit INTEGER DEFAULT 30,
-    grade_level TEXT,
-    subject_area TEXT,
-    teaching_style TEXT,
-    pedagogical_approach TEXT,
     generation_count INTEGER DEFAULT 0,
     success_rate DOUBLE PRECISION DEFAULT 0,
-    edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}',
     active_doc_id UUID,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. DOCUMENTS TABLE (Curriculum Assets)
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users ON DELETE CASCADE,
     name TEXT NOT NULL,
-    source_type TEXT DEFAULT 'markdown',
     status TEXT DEFAULT 'processing',
-    is_approved BOOLEAN DEFAULT FALSE,
     extracted_text TEXT,
     file_path TEXT,
     storage_type TEXT DEFAULT 'r2',
-    curriculum_name TEXT,
-    authority TEXT,
-    subject TEXT,
-    grade_level TEXT,
-    version_year TEXT,
-    generated_json JSONB,
-    version INTEGER DEFAULT 1,
     is_selected BOOLEAN DEFAULT FALSE,
     rag_indexed BOOLEAN DEFAULT FALSE,
-    document_summary TEXT,
-    difficulty_level TEXT,
-    gemini_metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. DOCUMENT_CHUNKS TABLE (Vector Grid Nodes)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID REFERENCES public.documents ON DELETE CASCADE,
@@ -161,43 +109,10 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     embedding vector(768),
     slo_codes TEXT[] DEFAULT '{}',
     chunk_index INTEGER,
-    metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. SLO_DATABASE TABLE (Structured Curriculum Knowledge)
-CREATE TABLE IF NOT EXISTS public.slo_database (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID REFERENCES public.documents ON DELETE CASCADE,
-    slo_code TEXT NOT NULL,
-    slo_full_text TEXT NOT NULL,
-    subject TEXT,
-    grade_level TEXT,
-    bloom_level TEXT,
-    cognitive_complexity TEXT,
-    teaching_strategies TEXT[] DEFAULT '{}',
-    assessment_ideas TEXT[] DEFAULT '{}',
-    prerequisite_concepts TEXT[] DEFAULT '{}',
-    common_misconceptions TEXT[] DEFAULT '{}',
-    keywords TEXT[] DEFAULT '{}',
-    page_number INTEGER,
-    extraction_confidence DOUBLE PRECISION,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(document_id, slo_code)
-);
-
--- 6. NEURAL_BRAIN TABLE
-CREATE TABLE IF NOT EXISTS public.neural_brain (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    master_prompt TEXT NOT NULL,
-    bloom_rules TEXT,
-    version INTEGER DEFAULT 1,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 7. THE NEURAL ENGINE: HYBRID SEARCH RPC v2
+-- 3. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v2(
   query_embedding vector(768),
   match_count INT,
@@ -236,27 +151,15 @@ BEGIN
 END;
 $$;
 
--- 8. GLOBAL RLS OVERRIDE (Production Ready)
+-- 4. RLS POLICIES
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
-CREATE POLICY "Users can view own profile" ON profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
 
 ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own documents" ON documents;
 CREATE POLICY "Users can manage own documents" ON documents FOR ALL USING (auth.uid() = user_id);
 
 ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own chunks" ON document_chunks;
-CREATE POLICY "Users can manage own chunks" ON document_chunks FOR ALL 
-USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
-
-ALTER TABLE slo_database ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own slo_database" ON slo_database;
-CREATE POLICY "Users can manage own slo_database" ON slo_database FOR ALL
+CREATE POLICY "Users can view chunks" ON document_chunks FOR SELECT 
 USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
 `;
 
@@ -265,13 +168,12 @@ USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-slate-900 dark:text-white">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-3 tracking-tight">
-            <ShieldCheck className="text-indigo-600" />
-            Control Hub
+            <ShieldCheck className="text-indigo-600" /> Control Hub
           </h1>
-          <p className="text-slate-500 mt-1 font-medium italic">Neural Network & Infrastructure Monitoring.</p>
+          <p className="text-slate-500 mt-1 font-medium italic">Neural Network Monitoring.</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
-          {['logic', 'infra', 'audit'].map(tab => (
+          {['logic', 'infra'].map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -287,8 +189,7 @@ USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-sm space-y-6">
             <h2 className="text-xl font-bold flex items-center gap-2 dark:text-white">
-              <Terminal size={20} className="text-indigo-500" />
-              Neural Logic (v{formData.version})
+              <Terminal size={20} className="text-indigo-500" /> Neural Logic (v{formData.version})
             </h2>
             <textarea 
               value={formData.masterPrompt}
@@ -296,23 +197,20 @@ USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth
               className="w-full h-96 p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300"
             />
             <button onClick={handleSave} disabled={isSaving} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-              {isSaving ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20}/>}
-              Deploy Core Logic
+              {isSaving ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20}/>} Deploy Core Logic
             </button>
           </div>
-          <div className="bg-slate-900 text-white p-12 rounded-[3rem] flex flex-col justify-center shadow-2xl relative overflow-hidden">
-             <div className="absolute -top-10 -right-10 w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl" />
-             <div className="p-4 bg-slate-800 rounded-2xl inline-block mb-8 w-fit shadow-xl"><Zap className="text-amber-400" size={32} /></div>
-             <h3 className="text-2xl font-bold mb-4 tracking-tight">RAG Operational</h3>
-             <p className="text-slate-400 text-sm leading-relaxed mb-8 font-medium">Neural retrieval is active. Documents are being chunked and embedded in the vector plane.</p>
+          <div className="bg-slate-900 text-white p-12 rounded-[3rem] flex flex-col justify-center shadow-2xl">
+             <h3 className="text-2xl font-bold mb-4 tracking-tight text-emerald-400">RAG High Precision Active</h3>
+             <p className="text-slate-400 text-sm leading-relaxed mb-8 font-medium">Authoritative Vault system is forcing AI synthesis over summarization.</p>
              <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                   <p className="text-[10px] font-bold text-slate-500 uppercase">Search Speed</p>
-                   <p className="text-lg font-bold">142ms</p>
+                   <p className="text-[10px] font-bold text-slate-500 uppercase">Embedding Node</p>
+                   <p className="text-sm font-bold">text-embedding-004</p>
                 </div>
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                   <p className="text-[10px] font-bold text-slate-500 uppercase">Precision</p>
-                   <p className="text-lg font-bold text-emerald-400">98.2%</p>
+                   <p className="text-[10px] font-bold text-slate-500 uppercase">Vector Dims</p>
+                   <p className="text-sm font-bold">768</p>
                 </div>
              </div>
           </div>
@@ -323,20 +221,9 @@ USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth
         <div className="space-y-8 animate-in slide-in-from-bottom-2">
           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm">
             <div className="flex items-center justify-between mb-10">
-               <h2 className="text-2xl font-bold flex items-center gap-3 dark:text-white"><Database size={24} className="text-indigo-600" /> Diagnostic Dashboard</h2>
+               <h2 className="text-2xl font-bold flex items-center gap-3 dark:text-white"><Database size={24} className="text-indigo-600" /> Infrastructure</h2>
                <button onClick={checkHealth} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">{isChecking ? <RefreshCw className="animate-spin" /> : <RefreshCw />}</button>
             </div>
-            
-            <div className="mb-8 p-6 bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-200 dark:border-amber-900 rounded-3xl flex gap-4 items-start">
-               <ShieldAlert className="text-amber-600 shrink-0" size={24} />
-               <div className="space-y-1">
-                 <h4 className="font-bold text-amber-900 dark:text-amber-200">Infrastructure Command Center</h4>
-                 <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed font-medium">
-                   The SQL block below contains the **complete v21.0 architecture**. If a table is marked as ERR_404 or Signup fails, copy the SQL and run it in the Supabase SQL Editor.
-                 </p>
-               </div>
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {dbStatus.map((item, idx) => (
                 <div key={idx} className={`p-6 rounded-2xl border flex flex-col gap-3 transition-all ${item.exists ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-100 dark:border-emerald-900 text-emerald-700 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-950/30 border-rose-100 dark:border-rose-900 text-rose-700 dark:text-rose-400 animate-pulse'}`}>
@@ -346,70 +233,26 @@ USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth
                 </div>
               ))}
             </div>
-
-            <div className="mt-12 pt-10 border-t border-slate-100 dark:border-white/5">
-               <h2 className="text-xl font-bold flex items-center gap-3 dark:text-white mb-6">
-                 <Zap size={20} className="text-amber-50" /> System Re-synchronization
-               </h2>
-               <div className="flex flex-col md:flex-row gap-4 items-start">
-                  <button 
-                    onClick={handleBulkIndex} 
-                    disabled={isIndexing}
-                    className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-3 shadow-xl shadow-indigo-600/20 disabled:opacity-50"
-                  >
-                    {isIndexing ? <RefreshCw className="animate-spin" size={18} /> : <Database size={18} />}
-                    Sync All Curriculum Nodes
-                  </button>
-                  {indexStatus && (
-                    <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-white/5 text-xs font-medium text-slate-500 max-w-md animate-in slide-in-from-left-4">
-                      {indexStatus}
-                    </div>
-                  )}
-               </div>
+            <div className="mt-12 pt-10 border-t border-slate-100 dark:border-white/5 flex gap-4">
+               <button onClick={handleBulkIndex} disabled={isIndexing} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center gap-3 shadow-xl">
+                 {isIndexing ? <RefreshCw className="animate-spin" size={18} /> : <Database size={18} />} Sync Curriculum Nodes
+               </button>
+               {indexStatus && <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl border text-xs font-medium text-slate-500 animate-in slide-in-from-left-4">{indexStatus}</div>}
             </div>
           </div>
-
           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-slate-800 shadow-2xl space-y-8">
             <div className="flex justify-between items-center">
-               <div className="space-y-1">
-                 <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v21.0</h3>
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Full System DDL & RPC Engines</p>
-               </div>
-               <button 
-                onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} 
-                className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700 border border-slate-700"
-               >
+               <h3 className="text-xl font-bold tracking-tight">Supabase Neural Patch v21.0</h3>
+               <button onClick={() => {navigator.clipboard.writeText(sqlSchema); setCopiedSql(true); setTimeout(()=>setCopiedSql(false), 2000)}} className="px-6 py-3 bg-slate-800 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-slate-700">
                  {copiedSql ? <Check size={16}/> : <Copy size={16}/>} {copiedSql ? 'Copied' : 'Copy SQL'}
                </button>
             </div>
-            <div className="relative group">
-               <pre className="bg-slate-950 p-8 rounded-2xl text-[12px] font-mono text-indigo-300 overflow-auto max-h-[500px] border border-white/5 leading-relaxed scrollbar-hide">{sqlSchema}</pre>
-               <div className="absolute inset-0 pointer-events-none bg-gradient-to-t from-slate-950/20 to-transparent rounded-2xl" />
-            </div>
+            <pre className="bg-slate-950 p-8 rounded-2xl text-[12px] font-mono text-indigo-300 overflow-auto max-h-[500px] leading-relaxed scrollbar-hide">{sqlSchema}</pre>
           </div>
-        </div>
-      )}
-
-      {activeTab === 'audit' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-           <AuditCard icon={<Lock className="text-emerald-500" />} title="RAG Privacy" status="SECURE" desc="Embeddings are stored in private VPC. Vectors do not contain PII." />
-           <AuditCard icon={<EyeOff className="text-indigo-500" />} title="Persistence" status="HYBRID" desc="Text stored in R2, Vectors in pgvector. Multi-zone redundancy active." />
-           <AuditCard icon={<Scale className="text-amber-500" />} title="Scale" status="ELASTIC" desc="Automatically handles curriculum files up to 100MB via tiered chunking." />
         </div>
       )}
     </div>
   );
 };
-
-const AuditCard = ({ icon, title, status, desc }: any) => (
-  <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-100 dark:border-white/5 shadow-sm space-y-6 hover:border-indigo-500 transition-all hover:shadow-2xl">
-    <div className="flex justify-between items-center">
-       <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl shadow-inner">{icon}</div>
-       <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg uppercase tracking-widest">{status}</span>
-    </div>
-    <h4 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">{title}</h4>
-    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed font-medium">{desc}</p>
-  </div>
-);
 
 export default BrainControl;

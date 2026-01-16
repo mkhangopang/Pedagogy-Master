@@ -2,7 +2,6 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
-// Exporting to allow other modules to import it from this entry point
 export { extractSLOCodes };
 
 export interface RetrievedChunk {
@@ -15,9 +14,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION TOOL-FACTORY RETRIEVER (v19.0)
+ * HIGH-PRECISION TOOL-FACTORY RETRIEVER (v20.0)
  * Optimized to find the specific SLO "seed" needed for pedagogical synthesis.
- * FIX: Reverted to positional parameters to resolve signature mismatches in callers.
  */
 export async function retrieveRelevantChunks(
   query: string,
@@ -27,46 +25,29 @@ export async function retrieveRelevantChunks(
   priorityDocumentId?: string
 ): Promise<RetrievedChunk[]> {
   try {
-    // Step 1: Extract SLO codes from user query
+    // 1. Extract SLO codes from user query for semantic boosting
     const extractedSLOs = extractSLOCodes(query);
-    console.log('🎯 User query:', query);
-    console.log('📝 Extracted SLO codes:', extractedSLOs);
     
-    // Step 2: Generate query embedding (768 dimensions)
+    // 2. Generate query embedding (768 dimensions)
     const queryEmbedding = await generateEmbedding(query);
     
     if (!queryEmbedding || queryEmbedding.length !== 768) {
-      console.error('❌ Invalid embedding generated:', queryEmbedding?.length);
+      console.error('❌ Invalid embedding dimensions');
       return [];
     }
     
-    console.log('✅ Query embedding generated (768 dimensions)');
-    
-    // Step 3: Call Supabase RPC with CORRECT parameters
-    // filter_document_ids expects an array of UUIDs.
+    // 3. Call Supabase RPC with high-precision filtering
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v2', {
       query_embedding: queryEmbedding,
       match_count: matchCount,
-      filter_document_ids: documentIds,
+      filter_document_ids: documentIds, // MUST be array
       priority_document_id: priorityDocumentId || null,
       boost_tags: extractedSLOs.length > 0 ? extractedSLOs : []
     });
     
     if (error) {
-      console.error('❌ Supabase RPC error:', error);
+      console.error('❌ Supabase RPC Error:', error.message);
       return [];
-    }
-    
-    console.log('✅ Retrieved chunks:', chunks?.length || 0);
-    
-    if (chunks && chunks.length > 0) {
-      console.log('📚 Sample chunk SLOs:', chunks[0].slo_codes);
-      const matched = chunks.filter((c: any) => 
-        c.slo_codes?.some((code: string) => extractedSLOs.includes(code))
-      ).length;
-      console.log('🎯 Chunks matching query SLOs:', matched);
-    } else {
-      console.warn('⚠️ No chunks retrieved for query:', query);
     }
     
     return (chunks || []).map((d: any) => ({
@@ -79,7 +60,7 @@ export async function retrieveRelevantChunks(
     }));
     
   } catch (err) {
-    console.error('❌ Retrieval error:', err);
+    console.error('❌ RAG Retrieval Node Failure:', err);
     return [];
   }
 }

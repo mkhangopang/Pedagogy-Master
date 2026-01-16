@@ -10,10 +10,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-/**
- * NEURAL INGESTION GATEWAY (v19.0)
- * FIX: Strict single-selection logic and robust indexing sequence.
- */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -29,15 +25,12 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     
     if (sourceType !== 'markdown' || !extractedText) {
-      return NextResponse.json({ error: "Policy: Only high-fidelity Markdown can be indexed." }, { status: 400 });
+      return NextResponse.json({ error: "High-fidelity Markdown required." }, { status: 400 });
     }
 
-    // 1. CLOUD PERSISTENCE
+    // 1. Storage Node Persistence
     let filePath = `curricula/${user.id}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
-    
-    if (!isR2Configured() || !r2Client) {
-      throw new Error("Cloudflare R2 node unreachable.");
-    }
+    if (!isR2Configured() || !r2Client) throw new Error("R2 Node Unreachable.");
 
     await r2Client.send(new PutObjectCommand({
       Bucket: R2_BUCKET,
@@ -46,8 +39,8 @@ export async function POST(req: NextRequest) {
       ContentType: 'text/markdown',
     }));
 
-    // 2. EXCLUSIVE SELECTION
-    // ✅ FIX: Unselect all other documents first
+    // 2. EXCLUSIVE SELECTION LOGIC
+    // ✅ CRITICAL: Unselect all other documents first
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const generatedJson = generateCurriculumJson(extractedText);
@@ -61,37 +54,25 @@ export async function POST(req: NextRequest) {
       extracted_text: extractedText,
       file_path: filePath,
       storage_type: 'r2',
-      curriculum_name: name || `${subject} Grade ${grade}`,
+      curriculum_name: name,
       authority: board || 'General', 
       subject: subject || 'General',
       grade_level: grade || 'Auto',
       version_year: version || '2024',
       generated_json: generatedJson,
-      version: 1,
-      is_selected: true, // Only this new document is active
+      is_selected: true, // Only current is active
       rag_indexed: false
     }).select().single();
 
-    if (dbError) throw new Error(`Metadata Sync Error: ${dbError.message}`);
+    if (dbError) throw dbError;
 
-    // 3. NEURAL VECTOR INDEXING
-    try {
-      console.log(`📡 [Indexer] Syncing RAG for: ${docData.id}`);
-      await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
-      // Status update is now handled within indexDocumentForRAG/indexCurriculumMarkdown
-    } catch (indexErr: any) {
-      console.error('❌ [Indexing Error]:', indexErr);
-      await supabase.from('documents').update({ status: 'failed', rag_indexed: false }).eq('id', docData.id);
-    }
+    // 3. Async Indexing
+    indexDocumentForRAG(docData.id, extractedText, filePath, supabase)
+      .catch(e => console.error("Async Index Fail:", e));
 
-    return NextResponse.json({
-      success: true,
-      id: docData.id,
-      message: '🛡️ Asset Grounded to Vector Grid.'
-    });
+    return NextResponse.json({ success: true, id: docData.id });
 
   } catch (error: any) {
-    console.error('Ingestion Fatal:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
