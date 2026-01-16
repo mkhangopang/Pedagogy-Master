@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X, ShieldCheck, Database } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
@@ -63,7 +61,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
-    // EXCLUSIVE SELECTION MODE: Only one document allowed for RAG precision
+    // EXCLUSIVE SELECTION MODE: Only one document allowed for maximum RAG precision
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -71,12 +69,17 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     setLocalDocs(updated);
     
     const targetDoc = updated.find(d => d.id === docId);
-    setFocusedDocId(targetDoc?.isSelected ? docId : null);
+    const newFocusId = targetDoc?.isSelected ? docId : null;
+    setFocusedDocId(newFocusId);
 
-    // Sync state with cloud node
-    await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
-    if (targetDoc?.isSelected) {
-      await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+    // Atomic persistence update
+    try {
+      await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+      if (newFocusId) {
+        await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+      }
+    } catch (e) {
+      console.error("Context sync error:", e);
     }
   };
 
@@ -194,7 +197,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       }
       await adaptiveService.captureGeneration(user.id, 'chat', fullContent, { query: msgContent });
     } catch (err) {
-      setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: "Synthesis gate timed out." } : m));
+      setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: "Synthesis gate timed out. The neural grid is currently under high load." } : m));
     } finally {
       setIsLoading(false);
     }
@@ -229,7 +232,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
           
           <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
             <p className="text-[10px] text-indigo-400 font-bold leading-relaxed">
-              <b>PRO TIP:</b> Grounding is locked to one document for maximum SLO precision.
+              <b>PRO TIP:</b> Grounding is locked to one document for maximum SLO precision. Switch assets to change context.
             </p>
           </div>
         </div>

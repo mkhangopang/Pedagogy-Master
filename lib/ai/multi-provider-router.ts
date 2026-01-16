@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { rateLimiter } from './rate-limiter';
 import { analyzeUserQuery } from './query-analyzer';
@@ -17,8 +16,8 @@ export function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v26.0 - HIGH PRECISION)
- * Optimized for Exclusive Curriculum Grounding & Pedagogical Generation.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v27.0 - ULTIMATE PRECISION)
+ * Optimized for Authoritative Exclusive Curriculum Grounding.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -32,67 +31,66 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Context Selection (Strict Active Filter)
+  // 1. Resolved Context Selection
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, rag_indexed')
     .eq('user_id', userId)
     .eq('is_selected', true)
-    .eq('rag_indexed', true); // Only trust indexed documents
+    .eq('rag_indexed', true); 
   
   const documentIds = selectedDocs?.map(d => d.id) || [];
   const activeDocName = selectedDocs?.[0]?.name || "Unselected Source";
   
-  // 2. Neural Retrieval
+  // 2. Neural Retrieval (Exclusive Scoping)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    // Priority: Respect user click/focus, otherwise use the selected set
-    const searchScope = priorityDocumentId ? [priorityDocumentId] : documentIds;
-    // Fix: retrieveRelevantChunks expects a single object argument with specific keys.
+    const docIdToSearch = priorityDocumentId || documentIds[0];
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
-      documentId: searchScope[0],
+      documentId: docIdToSearch,
       supabase,
-      matchCount: 4
+      matchCount: 5 // Balanced for deep context
     });
   }
   
-  // 3. User Intent Extraction
+  // 3. Metadata & Intent Synthesis
   const queryAnalysis = analyzeUserQuery(userPrompt);
-  const extractedSLOs = extractSLOCodes(userPrompt);
+  const extractedSLOsFromQuery = extractSLOCodes(userPrompt);
   
-  // 4. Grounding Assembly (Authoritative Vault)
+  // 4. Grounding Assembly (Authoritative Vault Wrapper)
   let vaultContent = "";
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
-      .map((chunk, i) => `[SLO_NODE_${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'General'}\nCONTENT: ${chunk.chunk_text}\n---`)
+      .map((chunk, i) => `[VAULT_NODE_${i + 1}]\nSLO_CODES: ${chunk.slo_codes?.join(', ') || 'N/A'}\nCONTENT: ${chunk.chunk_text}\n---`)
       .join('\n');
   }
 
   const masterSystem = customSystem || DEFAULT_MASTER_PROMPT;
   const responseInstructions = formatResponseInstructions(queryAnalysis);
 
-  // 5. Instruction Synthesis (Strict Generation Lock)
+  // 5. Instruction Synthesis (Context Lock Active)
   const fullPrompt = `
-${vaultContent ? `<AUTHORITATIVE_VAULT>\nSOURCE_ASSET: ${activeDocName}\n${vaultContent}\n</AUTHORITATIVE_VAULT>\n\n${NUCLEAR_GROUNDING_DIRECTIVE}` : ''}
+${vaultContent ? `<AUTHORITATIVE_VAULT>\nSOURCE_DOCUMENT: ${activeDocName}\n${vaultContent}\n</AUTHORITATIVE_VAULT>\n\n${NUCLEAR_GROUNDING_DIRECTIVE}` : ''}
 
 ## TEACHER COMMAND:
 "${userPrompt}"
 
 ## EXECUTION PARAMETERS:
-- TASK_TYPE: ${toolType || 'pedagogical_tool_generation'}
-- ADAPTIVE_LEARNING_SIGNAL: ${adaptiveContext || 'standard'}
+- TASK_IDENTIFIER: ${toolType || 'chat_support'}
+- ADAPTIVE_LEARNING_SIGNAL: ${adaptiveContext || 'standard_teacher_profile'}
 ${responseInstructions}
 
-## GENERATION DIRECTIVE (CRITICAL):
-1. IF <AUTHORITATIVE_VAULT> matches any of these SLOs [${extractedSLOs.join(', ')}], use the vault text as your LEARNING OBJECTIVE.
-2. DO NOT SUMMARIZE. Your goal is to CREATE NEW PEDAGOGICAL CONTENT (Lesson Plans, Questions, Rubrics).
-3. Apply world-class framework: ${toolType === 'lesson-plan' ? '5E Model (Engage, Explore, Explain, Elaborate, Evaluate)' : 'Bloom\'s Taxonomy'}.
-4. Target the appropriate grade level found in the vault metadata.
+## STRICT GENERATION DIRECTIVE:
+1. IF <AUTHORITATIVE_VAULT> is present, YOU ARE ANCHORED. Use it as your only source for curriculum facts.
+2. IF the user asks for a specific SLO (e.g. ${extractedSLOsFromQuery.join(', ') || 'an objective'}) and it's NOT in the vault, explicitly state: "Objective not found in the currently selected curriculum asset."
+3. DO NOT SUMMARIZE. CREATE high-impact pedagogical tools: ${toolType === 'lesson-plan' ? 'Apply 5E phases' : 'Apply Bloom\'s cognitive levels'}.
+4. Align all activities to the GRADE LEVEL and SUBJECT found in the vault.
 
 RESPONSE:`;
 
-  // 6. Synthesis Routing
+  // 6. Routing Decision Logic
+  // Default to Gemini for grounded curriculum tasks due to high reasoning depth
   const preferredProvider = (retrievedChunks.length > 0) ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   
   const result = await synthesize(
@@ -109,7 +107,7 @@ RESPONSE:`;
     metadata: {
       chunksUsed: retrievedChunks.length,
       isGrounded: retrievedChunks.length > 0,
-      extractedSLOs: extractedSLOs,
+      extractedSLOs: extractedSLOsFromQuery,
       sourceDocument: activeDocName
     }
   };

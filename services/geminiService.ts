@@ -54,10 +54,10 @@ export const geminiService = {
       return;
     }
 
+    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
     const token = await this.getAuthToken();
 
     try {
-      // FIX: Ensure history and priorityDocumentId are passed to the backend
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 
@@ -67,7 +67,8 @@ export const geminiService = {
         body: JSON.stringify({
           message,
           history,
-          priorityDocumentId
+          priorityDocumentId,
+          adaptiveContext // Pass context for personalized chat
         })
       });
 
