@@ -19,31 +19,48 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
 
-    // 1. Check Vector Extension
-    const { data: extensionCheck } = await supabase.rpc('get_extension_status', { ext: 'vector' }).catch(() => ({ data: true })); // Fallback if RPC doesn't exist
+    // 1. Check Vector Extension - Fixed chaining logic for TS
+    let extensionActive = true;
+    try {
+      const { data } = await supabase.rpc('get_extension_status', { ext: 'vector' });
+      extensionActive = !!data;
+    } catch (e) {
+      console.warn("RPC get_extension_status failed, assuming active if chunks exist.");
+    }
     
     // 2. Check Chunk Statistics
     const { data: healthReport, error: healthError } = await supabase.from('rag_health_report').select('*');
     if (healthError) throw healthError;
 
     // 3. Check for embedding dimension consistency
-    const { data: dimCheck } = await supabase.rpc('get_vector_dimensions').catch(() => ({ data: 768 }));
+    let dimensions = 768;
+    try {
+      const { data } = await supabase.rpc('get_vector_dimensions');
+      if (data) dimensions = Number(data);
+    } catch (e) {
+      console.warn("RPC get_vector_dimensions failed, defaulting to 768.");
+    }
 
     // 4. Ghost Chunks (Orphaned chunks with no valid document)
+    // We fetch document IDs first for the inclusion check
+    const { data: allDocs } = await supabase.from('documents').select('id');
+    const docIds = allDocs?.map(d => d.id) || [];
+    
     const { count: orphans } = await supabase
       .from('document_chunks')
       .select('*', { count: 'exact', head: true })
-      .not('document_id', 'in', (await supabase.from('documents').select('id')).data?.map(d => d.id) || []);
+      .not('document_id', 'in', `(${docIds.join(',')})`);
 
     return NextResponse.json({
       timestamp: new Date().toISOString(),
-      extensionActive: true, // Assuming true if queries run
+      extensionActive,
       expectedDimensions: 768,
+      actualDimensions: dimensions,
       report: healthReport,
       summary: {
         totalDocs: healthReport.length,
-        healthy: healthReport.filter(r => r.health_status === 'HEALTHY').length,
-        broken: healthReport.filter(r => r.health_status.startsWith('BROKEN')).length,
+        healthy: healthReport.filter((r: any) => r.health_status === 'HEALTHY').length,
+        broken: healthReport.filter((r: any) => r.health_status.startsWith('BROKEN')).length,
         orphanedChunks: orphans || 0
       }
     });

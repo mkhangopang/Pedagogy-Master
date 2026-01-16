@@ -1,4 +1,4 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v22.0
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v23.0
 -- TARGET: RAG Resilience & Diagnostic Monitoring
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
@@ -121,7 +121,28 @@ FROM documents d
 LEFT JOIN document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.status, d.rag_indexed;
 
--- 7. RLS POLICIES
+-- 7. DIAGNOSTIC RPC: EXTENSION CHECK
+CREATE OR REPLACE FUNCTION get_extension_status(ext TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 8. DIAGNOSTIC RPC: DIMENSION CHECK
+CREATE OR REPLACE FUNCTION get_vector_dimensions()
+RETURNS INTEGER AS $$
+BEGIN
+    RETURN (
+        SELECT atttypmod - 4
+        FROM pg_attribute
+        WHERE attrelid = 'public.document_chunks'::regclass
+        AND attname = 'embedding'
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 9. RLS POLICIES
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
 
