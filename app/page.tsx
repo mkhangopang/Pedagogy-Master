@@ -76,21 +76,18 @@ export default function App() {
 
     try {
       console.log('📡 [Sync] Handshaking profile for:', userId);
-      
-      // Admin check happens immediately to ensure UI features are enabled
       const isSystemAdmin = isAppAdmin(email);
       
-      // Fetch profile with a 5 second timeout to prevent hangs
-      const profilePromise = getOrCreateProfile(userId, email);
+      // Strict 3s timeout for profile fetch to prevent loading hangs
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Handshake timeout')), 5000)
+        setTimeout(() => reject(new Error('Handshake timeout')), 3000)
       );
 
       let profile: any;
       try {
-        profile = await Promise.race([profilePromise, timeoutPromise]);
+        profile = await Promise.race([getOrCreateProfile(userId, email), timeoutPromise]);
       } catch (err) {
-        console.warn('⚠️ [Sync] Handshake slow, using adaptive fallback.');
+        console.warn('⚠️ [Sync] Handshake delayed, using local identity.');
         profile = {
           id: userId,
           email: email || '',
@@ -100,21 +97,21 @@ export default function App() {
       }
       
       const activeProfile: UserProfile = {
-        id: profile.id,
-        name: profile.name || email?.split('@')[0] || 'Educator',
-        email: profile.email || email || '',
-        role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole || UserRole.TEACHER),
-        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan || SubscriptionPlan.FREE),
-        queriesUsed: profile.queries_used || 0,
-        queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
-        generationCount: profile.generation_count || 0,
-        successRate: profile.success_rate || 0,
-        editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        id: profile?.id || userId,
+        name: profile?.name || email?.split('@')[0] || 'Educator',
+        email: profile?.email || email || '',
+        role: isSystemAdmin ? UserRole.APP_ADMIN : (profile?.role as UserRole || UserRole.TEACHER),
+        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile?.plan as SubscriptionPlan || SubscriptionPlan.FREE),
+        queriesUsed: profile?.queries_used || 0,
+        queriesLimit: isSystemAdmin ? 999999 : (profile?.queries_limit || 30),
+        generationCount: profile?.generation_count || 0,
+        successRate: profile?.success_rate || 0,
+        editPatterns: profile?.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
       };
       
       setUserProfile(activeProfile);
 
-      // Background fetch docs, don't wait for them to finish loading the main app
+      // Background fetch docs, don't await to avoid UI blocking
       supabase
         .from('documents')
         .select('*')
@@ -155,23 +152,6 @@ export default function App() {
     }
   }, []);
 
-  const fetchBrain = useCallback(async () => {
-    if (!supabase) return;
-    try {
-      const { data } = await supabase.from('neural_brain').select('*').eq('is_active', true).order('version', { ascending: false }).limit(1).maybeSingle();
-      if (data) {
-        setBrain({
-          id: data.id,
-          masterPrompt: data.master_prompt || DEFAULT_MASTER_PROMPT,
-          bloomRules: data.bloom_rules || DEFAULT_BLOOM_RULES, 
-          version: data.version || 1,
-          isActive: data.is_active ?? true,
-          updatedAt: data.updated_at || new Date().toISOString()
-        });
-      }
-    } catch (e) {}
-  }, []);
-
   useEffect(() => {
     if (authInitialized.current) return;
     authInitialized.current = true;
@@ -179,34 +159,36 @@ export default function App() {
     paymentService.init();
     checkDb();
 
-    // Setup listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         setSession(currentSession);
         
         if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
-          await Promise.all([
-            fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
-            fetchBrain()
-          ]);
-          setLoading(false);
+          try {
+            await Promise.all([
+              fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
+              // We can fetch brain later, don't block
+            ]);
+          } finally {
+            setLoading(false);
+          }
         } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           setDocuments([]);
-          setCurrentView('dashboard');
           setLoading(false);
         }
       }
     );
 
-    // Immediate check
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+    // Initial session check
+    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
       if (initialSession) {
         setSession(initialSession);
-        Promise.all([
-          fetchProfileAndDocs(initialSession.user.id, initialSession.user.email),
-          fetchBrain()
-        ]).finally(() => setLoading(false));
+        try {
+          await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+        } finally {
+          setLoading(false);
+        }
       } else {
         setLoading(false);
       }
@@ -215,7 +197,7 @@ export default function App() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [checkDb, fetchBrain, fetchProfileAndDocs]);
+  }, [checkDb, fetchProfileAndDocs]);
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
@@ -226,8 +208,6 @@ export default function App() {
       if (updates.geminiProcessed !== undefined) dbUpdates.rag_indexed = updates.geminiProcessed;
       if (updates.isSelected !== undefined) dbUpdates.is_selected = updates.isSelected;
       if (updates.isApproved !== undefined) dbUpdates.is_approved = updates.isApproved;
-      if (updates.documentSummary !== undefined) dbUpdates.document_summary = updates.documentSummary;
-      if (updates.difficultyLevel !== undefined) dbUpdates.difficulty_level = updates.difficultyLevel;
       
       const { error } = await supabase.from('documents').update(dbUpdates).eq('id', id);
       if (error) console.error("Persistence failed:", error.message);
