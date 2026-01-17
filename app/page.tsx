@@ -77,6 +77,7 @@ export default function App() {
     if (!supabase) return;
 
     try {
+      console.log('📡 [Sync] Fetching profile for:', userId);
       const profile = await getOrCreateProfile(userId, email);
       
       if (!profile) {
@@ -165,22 +166,29 @@ export default function App() {
     paymentService.init();
     checkDb();
 
+    // Safety timeout: If auth takes longer than 8s, force loading false
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 8000);
+
     // Setup listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         setSession(currentSession);
         
-        if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
           await Promise.all([
             fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
             fetchBrain()
           ]);
           setLoading(false);
+          clearTimeout(safetyTimer);
         } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           setDocuments([]);
           setCurrentView('dashboard');
           setLoading(false);
+          clearTimeout(safetyTimer);
         }
       }
     );
@@ -192,16 +200,22 @@ export default function App() {
         Promise.all([
           fetchProfileAndDocs(initialSession.user.id, initialSession.user.email),
           fetchBrain()
-        ]).finally(() => setLoading(false));
+        ]).finally(() => {
+          setLoading(false);
+          clearTimeout(safetyTimer);
+        });
       } else {
         setLoading(false);
+        clearTimeout(safetyTimer);
       }
     }).catch(err => {
       setLoading(false);
+      clearTimeout(safetyTimer);
     });
 
     return () => {
       subscription.unsubscribe();
+      clearTimeout(safetyTimer);
     };
   }, [checkDb, fetchBrain, fetchProfileAndDocs]);
 
