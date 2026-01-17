@@ -1,5 +1,8 @@
+
+'use client';
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X, ShieldCheck, Database } from 'lucide-react';
+import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X, ShieldCheck, Database, Eraser, Trash2 } from 'lucide-react';
 import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -41,6 +44,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedDocsCount = localDocs.filter(d => d.isSelected).length;
+  const activeDoc = localDocs.find(d => d.isSelected);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.innerWidth >= 768) {
@@ -61,7 +65,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
-    // EXCLUSIVE SELECTION MODE: Only one document allowed for maximum RAG precision
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -72,7 +75,6 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
     const newFocusId = targetDoc?.isSelected ? docId : null;
     setFocusedDocId(newFocusId);
 
-    // Atomic persistence update
     try {
       await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
       if (newFocusId) {
@@ -95,6 +97,16 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       if (lastAiMsg?.content) {
         setCurrentValidation(validateLessonStructure(lastAiMsg.content));
       }
+    }
+  };
+
+  const clearChat = () => {
+    if (window.confirm('Erase current synthesis history?')) {
+      setMessages([]);
+      setActiveTool(null);
+      setCurrentValidation(null);
+      setDiffResults({ below: null, at: null, above: null });
+      setAssessmentResult(null);
     }
   };
 
@@ -218,7 +230,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         bg-white dark:bg-[#0d0d0d] md:bg-white/40 md:dark:bg-white/5 md:backdrop-blur-md
         ${showSidebar ? 'w-72 md:w-64 translate-x-0 opacity-100' : '-translate-x-full md:translate-x-0 md:w-0 md:opacity-0 overflow-hidden'}
       `}>
-        <div className="p-4 space-y-6">
+        <div className="p-4 space-y-6 flex flex-col h-full">
           <div className="flex items-center justify-between">
              <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Curriculum Assets</h3>
              <div className="flex items-center gap-2">
@@ -228,9 +240,11 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                </button>
              </div>
           </div>
-          <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />
+          <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />
+          </div>
           
-          <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
+          <div className="mt-auto p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
             <p className="text-[10px] text-indigo-400 font-bold leading-relaxed">
               <b>PRO TIP:</b> Grounding is locked to one document for maximum SLO precision. Switch assets to change context.
             </p>
@@ -260,11 +274,23 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
             {selectedDocsCount > 0 && (
               <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                 <ShieldCheck size={12} className="text-emerald-500" />
-                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600">Strict Grounding Active</span>
+                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 truncate max-w-[120px]">
+                  {activeDoc?.name}
+                </span>
               </div>
             )}
           </div>
-          <PedagogyToolbar onToolSelect={handleToolSelect} activeTool={activeTool} />
+          <div className="flex items-center gap-2">
+            <PedagogyToolbar onToolSelect={handleToolSelect} activeTool={activeTool} />
+            <div className="w-px h-6 bg-slate-200 dark:bg-white/10 mx-2" />
+            <button 
+              onClick={clearChat}
+              className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+              title="Clear Synthesis History"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar px-4 pt-10 pb-4">
@@ -281,7 +307,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight text-center">Pedagogy Master Neural</h2>
                   <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
                     {focusedDocId 
-                      ? `Neural sync active for your curriculum. Ask for a lesson plan or quiz on a specific SLO.`
+                      ? `Neural sync active for your curriculum: "${activeDoc?.name}". Ask for a lesson plan or quiz on a specific SLO.`
                       : 'Select a curriculum asset from the sidebar to enable precision standards-aligned synthesis.'}
                   </p>
                 </div>

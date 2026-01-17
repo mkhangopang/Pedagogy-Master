@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EduNexus AI</title>
+    <title>EduNexus AI | Neural Pedagogical Intelligence</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 10v6M2 10l10-5 10 5-10 5z'/><path d='M6 12v5c3 3 9 3 12 0v-5'/></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/app/globals.css">
     <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
@@ -13,12 +14,16 @@
       window.process.env = window.process.env || {};
     </script>
     <style>
-      body { margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; }
+      body { margin: 0; padding: 0; font-family: 'Plus Jakarta Sans', sans-serif; overflow-x: hidden; }
       #root { min-height: 100vh; }
       .custom-scrollbar::-webkit-scrollbar { width: 6px; }
       .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
       .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; }
+      
+      /* Smooth transitions for view switching */
+      .view-enter { opacity: 0; transform: translateY(10px); }
+      .view-enter-active { opacity: 1; transform: translateY(0); transition: all 400ms ease-out; }
     </style>
 </head>
 <body>

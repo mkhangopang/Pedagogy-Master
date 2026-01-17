@@ -1,21 +1,22 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface LoginProps {
   onSession: (user: any) => void;
+  onBack?: () => void;
 }
 
 type AuthView = 'login' | 'signup' | 'forgot-password' | 'signup-success' | 'reset-sent';
 
-const Login: React.FC<LoginProps> = ({ onSession }) => {
+const Login: React.FC<LoginProps> = ({ onSession, onBack }) => {
   const [view, setView] = useState<AuthView>('login');
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   
-  // Security Honeypot
   const [honeypot, setHoneypot] = useState('');
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -23,7 +24,7 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
     if (honeypot) return;
 
     if (!isSupabaseConfigured()) {
-      setError("Infrastructure node not yet initialized. Please check your environment variables (NEXT_PUBLIC_SUPABASE_URL and KEY) and redeploy.");
+      setError("Infrastructure node not yet initialized. Please check your environment variables.");
       return;
     }
 
@@ -81,6 +82,12 @@ const Login: React.FC<LoginProps> = ({ onSession }) => {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-md">
         <div className="text-center mb-10">
+          <button 
+            onClick={onBack}
+            className="mb-8 inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-indigo-600 transition-colors"
+          >
+            <ArrowLeft size={14} /> Back to Hub
+          </button>
           <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-200 mb-4">
             <GraduationCap className="w-10 h-10 text-white" />
           </div>

@@ -6,11 +6,12 @@ import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile }
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
+import Landing from '../views/Landing';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, AlertCircle, RefreshCw, X } from 'lucide-react';
+import { Loader2, Menu } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
@@ -23,6 +24,7 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
+  const [showLogin, setShowLogin] = useState(false);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -159,10 +161,6 @@ export default function App() {
     } catch (e) {}
   }, []);
 
-  /**
-   * UNIFIED AUTH BOOTLOADER
-   * Harmonizes getSession and onAuthStateChange to handle slow browser storage in Incognito.
-   */
   useEffect(() => {
     if (authInitialized.current) return;
     authInitialized.current = true;
@@ -170,15 +168,11 @@ export default function App() {
     paymentService.init();
     checkDb();
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
-        console.log(`📡 [Auth Sync] Event: ${event}`);
-        
         setSession(currentSession);
         
         if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
-          console.log('✅ [Auth Sync] User active:', currentSession.user.email);
           await Promise.all([
             fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
             fetchBrain()
@@ -186,7 +180,6 @@ export default function App() {
         }
         
         if (event === 'SIGNED_OUT') {
-          console.log('👋 [Auth Sync] Clearing neural context');
           setUserProfile(null);
           setDocuments([]);
           setCurrentView('dashboard');
@@ -196,21 +189,17 @@ export default function App() {
       }
     );
 
-    // Immediate session check for fast hydration
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (initialSession) {
-        console.log('📡 [Auth Init] Immediate session found.');
         setSession(initialSession);
         Promise.all([
           fetchProfileAndDocs(initialSession.user.id, initialSession.user.email),
           fetchBrain()
         ]).finally(() => setLoading(false));
       } else {
-        // Give listener a moment to resolve before showing login
         setTimeout(() => setLoading(false), 800);
       }
     }).catch(err => {
-      console.warn('📡 [Auth Init] Session hydration error:', err);
       setLoading(false);
     });
 
@@ -239,37 +228,42 @@ export default function App() {
   const renderView = () => {
     if (!userProfile) return null;
     return (
-      <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
-        {(() => {
-          switch (currentView) {
-            case 'dashboard':
-              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-            case 'documents':
-              return <DocumentsView documents={documents} userProfile={userProfile} onAddDocument={async (d) => { await fetchProfileAndDocs(userProfile.id, userProfile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
-            case 'chat':
-              return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
-            case 'tools':
-              return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
-            case 'tracker':
-              return <TrackerView user={userProfile} documents={documents} />;
-            case 'brain':
-              return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-            case 'pricing':
-              return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
-            default:
-              return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-          }
-        })()}
-      </Suspense>
+      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
+          {(() => {
+            switch (currentView) {
+              case 'dashboard':
+                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+              case 'documents':
+                return <DocumentsView documents={documents} userProfile={userProfile} onAddDocument={async (d) => { await fetchProfileAndDocs(userProfile.id, userProfile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
+              case 'chat':
+                return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
+              case 'tools':
+                return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
+              case 'tracker':
+                return <TrackerView user={userProfile} documents={documents} />;
+              case 'brain':
+                return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+              case 'pricing':
+                return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
+              default:
+                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+            }
+          })()}
+        </Suspense>
+      </div>
     );
   };
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" /></div>;
-  if (!session || !userProfile) return <Login onSession={setSession} />;
+  
+  if (!session || !userProfile) {
+    if (showLogin) return <Login onSession={setSession} onBack={() => setShowLogin(false)} />;
+    return <Landing onStart={() => setShowLogin(true)} />;
+  }
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
-      {/* Desktop Sidebar */}
       <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
         <Sidebar 
           currentView={currentView} 
@@ -282,20 +276,13 @@ export default function App() {
         />
       </div>
 
-      {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div className="fixed inset-0 z-[100] lg:hidden">
-          <div 
-            className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm animate-in fade-in duration-300" 
-            onClick={() => setIsSidebarOpen(false)} 
-          />
+          <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-sm animate-in fade-in duration-300" onClick={() => setIsSidebarOpen(false)} />
           <div className="fixed inset-y-0 left-0 w-72 bg-indigo-950 shadow-2xl animate-in slide-in-from-left duration-300 border-r border-indigo-800/20">
             <Sidebar 
               currentView={currentView} 
-              onViewChange={(view) => {
-                setCurrentView(view);
-                setIsSidebarOpen(false);
-              }} 
+              onViewChange={(view) => { setCurrentView(view); setIsSidebarOpen(false); }} 
               userProfile={userProfile} 
               isCollapsed={false} 
               setIsCollapsed={() => {}} 
@@ -310,12 +297,7 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {userProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800">
-          <button 
-            onClick={() => setIsSidebarOpen(true)} 
-            className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
-          >
-            <Menu size={24} />
-          </button>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"><Menu size={24} /></button>
           <span className="font-bold text-indigo-950 dark:text-white tracking-tight">{APP_NAME}</span>
           <div className="w-10" />
         </header>
