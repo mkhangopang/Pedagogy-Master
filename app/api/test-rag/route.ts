@@ -38,10 +38,10 @@ export async function GET(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Fix: retrieveRelevantChunks expects a single object argument with specific keys.
+    // Fixed: Changed documentId to documentIds to match retrieveRelevantChunks signature
     const chunks = await retrieveRelevantChunks({
       query,
-      documentId: docIds[0],
+      documentIds: docIds,
       supabase,
       matchCount: 5
     });

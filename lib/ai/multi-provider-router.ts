@@ -16,7 +16,7 @@ export function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v27.0 - ULTIMATE PRECISION)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v28.0 - FULL VAULT ACCESS)
  * Optimized for Authoritative Exclusive Curriculum Grounding.
  */
 export async function generateAIResponse(
@@ -31,7 +31,7 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Resolved Context Selection
+  // 1. Resolved Context Selection (Fetch all indexed & selected documents)
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, rag_indexed')
@@ -42,15 +42,19 @@ export async function generateAIResponse(
   const documentIds = selectedDocs?.map(d => d.id) || [];
   const activeDocName = selectedDocs?.[0]?.name || "Unselected Source";
   
-  // 2. Neural Retrieval (Exclusive Scoping)
+  // 2. Neural Retrieval (Aggregated Scoping across all selected assets)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    const docIdToSearch = priorityDocumentId || documentIds[0];
+    // If a specific document is prioritized (e.g. from Tool View dropdown), put it first
+    const searchDocs = priorityDocumentId 
+      ? [priorityDocumentId, ...documentIds.filter(id => id !== priorityDocumentId)]
+      : documentIds;
+
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
-      documentId: docIdToSearch,
+      documentIds: searchDocs,
       supabase,
-      matchCount: 5 // Balanced for deep context
+      matchCount: 25 // Maximum context depth for broad SLO visibility
     });
   }
   
@@ -71,7 +75,7 @@ export async function generateAIResponse(
 
   // 5. Instruction Synthesis (Context Lock Active)
   const fullPrompt = `
-${vaultContent ? `<AUTHORITATIVE_VAULT>\nSOURCE_DOCUMENT: ${activeDocName}\n${vaultContent}\n</AUTHORITATIVE_VAULT>\n\n${NUCLEAR_GROUNDING_DIRECTIVE}` : ''}
+${vaultContent ? `<AUTHORITATIVE_VAULT>\nSOURCE_ASSETS: ${selectedDocs?.map(d => d.name).join(', ')}\n${vaultContent}\n</AUTHORITATIVE_VAULT>\n\n${NUCLEAR_GROUNDING_DIRECTIVE}` : ''}
 
 ## TEACHER COMMAND:
 "${userPrompt}"
@@ -82,15 +86,15 @@ ${vaultContent ? `<AUTHORITATIVE_VAULT>\nSOURCE_DOCUMENT: ${activeDocName}\n${va
 ${responseInstructions}
 
 ## STRICT GENERATION DIRECTIVE:
-1. IF <AUTHORITATIVE_VAULT> is present, YOU ARE ANCHORED. Use it as your only source for curriculum facts.
-2. IF the user asks for a specific SLO (e.g. ${extractedSLOsFromQuery.join(', ') || 'an objective'}) and it's NOT in the vault, explicitly state: "Objective not found in the currently selected curriculum asset."
-3. DO NOT SUMMARIZE. CREATE high-impact pedagogical tools: ${toolType === 'lesson-plan' ? 'Apply 5E phases' : 'Apply Bloom\'s cognitive levels'}.
-4. Align all activities to the GRADE LEVEL and SUBJECT found in the vault.
+1. YOU ARE CURRENTLY ANCHORED to the <AUTHORITATIVE_VAULT>. It is your primary source of truth.
+2. IF the user asks for a specific SLO (e.g. ${extractedSLOsFromQuery.join(', ') || 'an objective'}) search carefully through all VAULT_NODES.
+3. IF IT IS MISSING, inform the user you can only see specific standards and list 5 prominent SLOs you found in the nodes instead.
+4. DO NOT SUMMARIZE. Synthesize specialized tools (5E Lessons, Bloom-aligned Assessments).
 
 RESPONSE:`;
 
   // 6. Routing Decision Logic
-  // Default to Gemini for grounded curriculum tasks due to high reasoning depth
+  // Default to Gemini for grounded curriculum tasks due to high reasoning depth and large context handle
   const preferredProvider = (retrievedChunks.length > 0) ? 'gemini' : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   
   const result = await synthesize(
@@ -108,7 +112,8 @@ RESPONSE:`;
       chunksUsed: retrievedChunks.length,
       isGrounded: retrievedChunks.length > 0,
       extractedSLOs: extractedSLOsFromQuery,
-      sourceDocument: activeDocName
+      sourceDocument: activeDocName,
+      totalAssets: documentIds.length
     }
   };
 }

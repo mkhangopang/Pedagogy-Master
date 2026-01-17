@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { retrieveRelevantChunks, RetrievedChunk } from './retriever';
 import { scrapeSindhCurriculum, ScrapedContent } from '../curriculum/web-scraper';
@@ -41,10 +40,10 @@ export async function retrieveHybridContext(
   // 2. Local Document Augmentation
   let localChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
-    // Fix: retrieveRelevantChunks expects a single object argument with specific keys.
+    // Fixed: Changed documentId to documentIds to match retrieveRelevantChunks signature
     localChunks = await retrieveRelevantChunks({
       query: message,
-      documentId: documentIds[0],
+      documentIds: documentIds,
       supabase,
       matchCount: 10
     });

@@ -14,67 +14,51 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v26.0)
- * Optimized for SLO extraction and explicit boosting.
+ * HIGH-PRECISION RAG RETRIEVER (v28.0)
+ * Optimized for SLO extraction and deep context windowing.
  */
 export async function retrieveRelevantChunks({
   query,
-  documentId,
+  documentIds, // Changed from single documentId to array
   supabase,
-  matchCount = 5
+  matchCount = 25 // Increased default depth for broader curriculum visibility
 }: {
   query: string;
-  documentId: string;
+  documentIds: string[];
   supabase: SupabaseClient;
   matchCount?: number;
 }): Promise<RetrievedChunk[]> {
   try {
-    // Step 1: Extract Unique SLO Codes from User Query
+    if (!documentIds || documentIds.length === 0) return [];
+
+    // Step 1: Extract Unique SLO Codes from User Query for boosted matching
     const extractedSLOs = extractSLOCodes(query);
-    console.log('🎯 User query:', query);
-    console.log('📝 Extracted SLO codes:', extractedSLOs);
+    console.log(`🎯 [Retriever] Query: "${query}" | SLOs Detected:`, extractedSLOs);
     
     // Step 2: Generate Vector Embedding (text-embedding-004)
     const queryEmbedding = await generateEmbedding(query);
     
     if (!queryEmbedding || queryEmbedding.length !== 768) {
-      console.error('❌ [Retriever] Vector synthesis failed or dimension mismatch (768 req).');
+      console.error('❌ [Retriever] Vector synthesis failed.');
       return [];
     }
-    
-    console.log('✅ Query embedding generated (768 dimensions)');
 
-    // Step 3: Call Supabase RPC with CORRECT parameters (Fix 2)
-    // hybrid_search_chunks_v2(query_embedding, match_count, filter_document_ids, priority_document_id, boost_tags)
+    // Step 3: Call Supabase RPC with broadened scope
+    // The RPC handles document filtering and SLO code boosting
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v2', {
       query_embedding: queryEmbedding,
       match_count: matchCount,
-      filter_document_ids: [documentId],      // ✅ MUST be array
-      priority_document_id: documentId,        // ✅ Boost this document
-      boost_tags: extractedSLOs.length > 0 ? extractedSLOs : []  // ✅ Boost matching SLO codes
+      filter_document_ids: documentIds,
+      priority_document_id: documentIds[0], 
+      boost_tags: extractedSLOs.length > 0 ? extractedSLOs : []
     });
     
     if (error) {
-      console.error('❌ Supabase RPC error:', error.message);
-      console.error('Parameters used:', {
-        match_count: matchCount,
-        filter_document_ids: [documentId],
-        boost_tags: extractedSLOs
-      });
+      console.error('❌ [Retriever] Supabase RPC error:', error.message);
       return [];
     }
     
-    console.log('✅ Retrieved chunks:', chunks?.length || 0);
-    
-    if (chunks && chunks.length > 0) {
-      console.log('📚 Sample chunk SLOs:', chunks[0].slo_codes);
-      const matchedSLOs = chunks.filter((c: any) => 
-        c.slo_codes?.some((code: string) => extractedSLOs.includes(code))
-      ).length;
-      console.log('🎯 Chunks matching query SLOs:', matchedSLOs);
-    } else {
-      console.warn('⚠️ No chunks retrieved for query:', query);
-    }
+    console.log(`✅ [Retriever] Fetched ${chunks?.length || 0} chunks from ${documentIds.length} assets.`);
     
     return (chunks || []).map((d: any) => ({
       chunk_id: d.chunk_id,
@@ -86,7 +70,7 @@ export async function retrieveRelevantChunks({
     }));
     
   } catch (err) {
-    console.error('❌ Retrieval error:', err);
+    console.error('❌ [Retriever] Fatal error:', err);
     return [];
   }
 }

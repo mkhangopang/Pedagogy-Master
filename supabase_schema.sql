@@ -1,4 +1,4 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v27.0
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v28.0
 -- TARGET: RAG Resilience, Auth Stability & Diagnostic Monitoring
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
@@ -63,29 +63,8 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. AUTOMATED PROFILE SYNTHESIS (Fix 401s on new accounts)
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS trigger AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, queries_used, queries_limit, plan)
-  VALUES (
-    new.id,
-    new.email,
-    0,
-    30,
-    'free'
-  );
-  RETURN new;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Cleanup & Deploy Trigger
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- 6. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
+-- 5. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
+-- Improved for exact code boosting and higher match counts
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v2(
   query_embedding vector(768),
   match_count INT,
@@ -111,10 +90,12 @@ BEGIN
     dc.chunk_text,
     dc.slo_codes,
     COALESCE((dc.metadata->>'page_number')::INT, 0) AS page_number,
-    COALESCE(dc.metadata->>'section_title', 'General') AS section_title,
+    COALESCE(dc.metadata->>'section_title', 'General Context') AS section_title,
     (
       (1 - (dc.embedding <=> query_embedding)) +
-      CASE WHEN dc.slo_codes && boost_tags THEN 5.0 ELSE 0 END +
+      -- Massive boost for exact SLO matches (10x weight)
+      CASE WHEN dc.slo_codes && boost_tags THEN 10.0 ELSE 0 END +
+      -- Moderate boost for priority document
       CASE WHEN dc.document_id = priority_document_id THEN 0.5 ELSE 0 END
     ) AS combined_score
   FROM document_chunks dc
@@ -125,7 +106,7 @@ BEGIN
 END;
 $$;
 
--- 7. RLS SECURITY POLICY GRID (STRICT)
+-- 6. RLS SECURITY POLICY GRID
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can manage own profile" ON profiles;
 CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
@@ -138,39 +119,3 @@ ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can manage own chunks" ON document_chunks;
 CREATE POLICY "Users can manage own chunks" ON document_chunks FOR ALL 
 USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
-
--- 8. DIAGNOSTIC VIEW: RAG HEALTH
-CREATE OR REPLACE VIEW rag_health_report AS
-WITH flattened_slos AS (
-    SELECT 
-        document_id, 
-        unnest(slo_codes) as slo
-    FROM document_chunks
-),
-slo_stats AS (
-    SELECT 
-        document_id, 
-        count(DISTINCT slo) as distinct_slos
-    FROM flattened_slos
-    GROUP BY document_id
-)
-SELECT 
-    d.id,
-    d.name,
-    d.status,
-    d.rag_indexed,
-    d.is_selected,
-    count(dc.id) as chunk_count,
-    COALESCE(ss.distinct_slos, 0) as distinct_slo_count,
-    CASE 
-        WHEN d.rag_indexed = true AND count(dc.id) = 0 THEN 'BROKEN: Missing Chunks'
-        WHEN d.rag_indexed = true AND COALESCE(ss.distinct_slos, 0) = 0 THEN 'WARNING: No SLOs Tagged'
-        WHEN d.rag_indexed = false AND count(dc.id) > 0 THEN 'WARNING: Partial Sync'
-        WHEN d.is_selected = true AND d.rag_indexed = false THEN 'CRITICAL: Selected but Unindexed'
-        WHEN count(dc.id) > 0 THEN 'HEALTHY'
-        ELSE 'PENDING'
-    END as health_status
-FROM documents d
-LEFT JOIN document_chunks dc ON d.id = dc.document_id
-LEFT JOIN slo_stats ss ON d.id = ss.document_id
-GROUP BY d.id, d.name, d.status, d.rag_indexed, d.is_selected, ss.distinct_slos;
