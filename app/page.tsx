@@ -184,15 +184,29 @@ export default function App() {
     paymentService.init();
     checkDb();
 
-    // Set initial session
-    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
-      setSession(currentSession);
-      if (currentSession) {
-        fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-        fetchBrain();
+    // Initial session retrieval with emergency timeout
+    const initializeSession = async () => {
+      try {
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Handshake timeout')), 8000));
+        
+        const { data: { session: currentSession } } = await (Promise.race([sessionPromise, timeoutPromise]) as any);
+        
+        setSession(currentSession);
+        if (currentSession) {
+          await Promise.all([
+            fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
+            fetchBrain()
+          ]);
+        }
+      } catch (err) {
+        console.warn('📡 [Auth Init] Session retrieval delayed or blocked (Incognito?). Proceeding to Login view.', err);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    };
+
+    initializeSession();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(

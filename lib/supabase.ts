@@ -5,9 +5,16 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
  * Prioritizes static access for Next.js build-time replacement.
  */
 const getEnv = (key: string): string => {
+  const sanitize = (v: any) => {
+    if (!v) return '';
+    const s = String(v).trim();
+    if (s === 'undefined' || s === 'null' || s === '[object Object]') return '';
+    return s;
+  };
+
   // FAST PATH: Static access for browser bundles
-  if (key === 'NEXT_PUBLIC_SUPABASE_URL' && process.env.NEXT_PUBLIC_SUPABASE_URL) return process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY' && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (key === 'NEXT_PUBLIC_SUPABASE_URL' && process.env.NEXT_PUBLIC_SUPABASE_URL) return sanitize(process.env.NEXT_PUBLIC_SUPABASE_URL);
+  if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY' && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return sanitize(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   if (typeof window !== 'undefined') {
     const win = window as any;
@@ -20,12 +27,12 @@ const getEnv = (key: string): string => {
       (typeof process !== 'undefined' ? (process.env as any)[key] : '') ||
       '';
     
-    if (val && val !== 'undefined' && val !== 'null' && String(val).trim() !== '') return String(val).trim();
+    return sanitize(val);
   }
   
   // Server-side / Build-time check
   try {
-    return typeof process !== 'undefined' ? (process.env as any)[key] || '' : '';
+    return typeof process !== 'undefined' ? sanitize((process.env as any)[key]) : '';
   } catch {
     return '';
   }

@@ -1,6 +1,6 @@
 
 /**
- * PLATFORM SYNC (v2.1)
+ * PLATFORM SYNC (v2.2)
  * Synchronizes public environment keys into the application scope.
  * Enhanced for high-availability across Vercel, Next.js, and local environments.
  */
@@ -35,7 +35,7 @@ const performSystemHandshake = () => {
   Object.entries(keyMap).forEach(([standardKey, variants]) => {
     let foundValue = staticEnv[standardKey] || '';
 
-    if (!foundValue || foundValue === 'undefined') {
+    if (!foundValue || foundValue === 'undefined' || foundValue === 'null') {
       for (const variant of variants) {
         const val = 
           win.process.env[variant] || 
@@ -51,7 +51,7 @@ const performSystemHandshake = () => {
       }
     }
     
-    if (foundValue && foundValue !== 'undefined') {
+    if (foundValue && foundValue !== 'undefined' && foundValue !== 'null') {
       win.process.env[standardKey] = foundValue;
       win.process.env[standardKey.replace('NEXT_PUBLIC_', '')] = foundValue;
       win[standardKey] = foundValue;
@@ -70,7 +70,7 @@ const performSystemHandshake = () => {
     }
   });
 
-  console.log('--- EduNexus AI: Neural Handshake v2.1 ---');
+  console.log('--- EduNexus AI: Neural Handshake v2.2 ---');
   console.table(statusReport);
 };
 
@@ -90,7 +90,7 @@ const renderErrorUI = (error: any) => {
           </div>
           <h1 style="font-size: 1.8rem; font-weight: 800; margin-bottom: 12px; letter-spacing: -0.025em;">Startup Interrupted</h1>
           <p style="color: #64748b; margin-bottom: 32px; line-height: 1.6; font-weight: 500;">
-            The neural grid could not initialize. This usually means Supabase credentials or the API Key are missing from your environment variables.
+            The neural grid could not initialize. In Incognito, ensure you haven't blocked all cookies/storage. Technical details below.
           </p>
           
           <div style="background: #f1f5f9; padding: 16px; border-radius: 12px; text-align: left; margin-bottom: 32px; border: 1px solid #e2e8f0;">
@@ -118,8 +118,8 @@ const renderErrorUI = (error: any) => {
 
 const startApp = async () => {
   try {
-    // Dynamically load application core
-    const { default: App } = await import('./app/page');
+    // CRITICAL FIX: Use explicit .tsx extension for dynamic ESM import in browser
+    const { default: App } = await import('./app/page.tsx');
     const container = document.getElementById('root');
     
     if (container) {
