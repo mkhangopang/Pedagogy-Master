@@ -46,12 +46,13 @@ export async function analyzeDocumentWithAI(
 
     const ai = new GoogleGenAI({ apiKey });
 
+    // Increased window to 100k for better summary of large curriculum files
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `You are a curriculum document intelligence system. Analyze this curriculum document and extract ALL structured information.
       
       DOCUMENT TEXT:
-      ${content.substring(0, 30000)}`,
+      ${content.substring(0, 100000)}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
