@@ -1,7 +1,8 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured, getSupabaseHealth } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -76,56 +77,39 @@ export default function App() {
     if (!supabase) return;
 
     try {
-      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+      console.log('📡 [Sync] Fetching profile for:', userId);
+      const profile = await getOrCreateProfile(userId, email);
       
-      let activeProfile: UserProfile;
-      const defaultRole = isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER;
-      const defaultPlan = isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE;
-      const defaultLimit = isSystemAdmin ? 999999 : 30;
-
       if (!profile) {
-        activeProfile = {
-          id: userId,
-          name: email?.split('@')[0] || 'Educator',
-          email: email || '',
-          role: defaultRole,
-          plan: defaultPlan,
-          queriesUsed: 0,
-          queriesLimit: defaultLimit,
-          generationCount: 0,
-          successRate: 0,
-          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-        };
-        
-        await supabase.from('profiles').upsert([{
-          id: userId,
-          name: activeProfile.name,
-          email: activeProfile.email,
-          role: activeProfile.role,
-          plan: activeProfile.plan,
-          queries_used: 0,
-          queries_limit: activeProfile.queriesLimit
-        }]);
-      } else {
-        activeProfile = {
-          id: profile.id,
-          name: profile.name || 'Educator',
-          email: profile.email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : profile.role as UserRole,
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : profile.plan as SubscriptionPlan,
-          queriesUsed: profile.queries_used || 0,
-          queriesLimit: isSystemAdmin ? 999999 : profile.queries_limit || 30,
-          gradeLevel: profile.grade_level,
-          subjectArea: profile.subject_area,
-          generationCount: profile.generation_count || 0,
-          successRate: profile.success_rate || 0
-        };
+        console.error('❌ [Sync] Could not resolve user profile');
+        return;
       }
+
+      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+      
+      const activeProfile: UserProfile = {
+        id: profile.id,
+        name: profile.name || 'Educator',
+        email: profile.email || '',
+        role: isSystemAdmin ? UserRole.APP_ADMIN : profile.role as UserRole,
+        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : profile.plan as SubscriptionPlan,
+        queriesUsed: profile.queries_used || 0,
+        queriesLimit: isSystemAdmin ? 999999 : profile.queries_limit || 30,
+        gradeLevel: profile.grade_level,
+        subjectArea: profile.subject_area,
+        generationCount: profile.generation_count || 0,
+        successRate: profile.success_rate || 0,
+        editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+      };
       
       setUserProfile(activeProfile);
 
-      const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      const { data: docs } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
       if (docs) {
         setDocuments(docs.map(d => ({
           id: d.id,
@@ -154,7 +138,7 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.error("Profile Fetch Error:", e);
+      console.error("❌ [Sync] Data plane error:", e);
     }
   }, []);
 
@@ -186,17 +170,15 @@ export default function App() {
     paymentService.init();
     checkDb();
 
-    let hasInitiallyHandshaked = false;
-
-    // 1. Setup change listener (This is our primary source of truth)
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         console.log(`📡 [Auth Sync] Event: ${event}`);
-        hasInitiallyHandshaked = true;
         
         setSession(currentSession);
         
         if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
+          console.log('✅ [Auth Sync] User active:', currentSession.user.email);
           await Promise.all([
             fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
             fetchBrain()
@@ -204,6 +186,7 @@ export default function App() {
         }
         
         if (event === 'SIGNED_OUT') {
+          console.log('👋 [Auth Sync] Clearing neural context');
           setUserProfile(null);
           setDocuments([]);
           setCurrentView('dashboard');
@@ -213,20 +196,18 @@ export default function App() {
       }
     );
 
-    // 2. Immediate session check for fast hydration
+    // Immediate session check for fast hydration
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      if (initialSession && !hasInitiallyHandshaked) {
+      if (initialSession) {
         console.log('📡 [Auth Init] Immediate session found.');
         setSession(initialSession);
         Promise.all([
           fetchProfileAndDocs(initialSession.user.id, initialSession.user.email),
           fetchBrain()
         ]).finally(() => setLoading(false));
-      } else if (!initialSession) {
-        // If no immediate session, wait briefly for listener before showing login
-        setTimeout(() => {
-          if (loading) setLoading(false);
-        }, 1500);
+      } else {
+        // Give listener a moment to resolve before showing login
+        setTimeout(() => setLoading(false), 800);
       }
     }).catch(err => {
       console.warn('📡 [Auth Init] Session hydration error:', err);
@@ -236,7 +217,7 @@ export default function App() {
     return () => {
       subscription.unsubscribe();
     };
-  }, [checkDb, fetchBrain, fetchProfileAndDocs, loading]);
+  }, [checkDb, fetchBrain, fetchProfileAndDocs]);
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));

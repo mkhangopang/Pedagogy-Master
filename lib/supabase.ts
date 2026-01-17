@@ -1,4 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 
 /**
  * Robust environment variable retrieval.
@@ -69,6 +70,11 @@ const getClient = (): SupabaseClient => {
       // Explicitly handle storage for incognito/restricted environments
       storageKey: 'edunexus-auth-token',
       storage: typeof window !== 'undefined' ? window.localStorage : undefined
+    },
+    global: {
+      headers: {
+        'x-client-info': 'edunexus-ai/2.3'
+      }
     }
   });
 
@@ -93,6 +99,60 @@ export const supabase = new Proxy({} as SupabaseClient, {
 });
 
 /**
+ * Helper to get authenticated user safely.
+ */
+export async function getAuthenticatedUser(): Promise<User | null> {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error) {
+    console.error('📡 [Auth] User retrieval error:', error.message);
+    return null;
+  }
+  return user;
+}
+
+/**
+ * Helper to get or create a profile for a user.
+ */
+export async function getOrCreateProfile(userId: string, email?: string) {
+  // Query ONLY this user's profile to satisfy RLS
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    // Profile missing (PGRST116 is Single result error / not found)
+    if (error.code === 'PGRST116') {
+      console.log('📝 [Profile] Creating missing node for:', userId);
+      const { data: newProfile, error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          email: email || '',
+          name: email?.split('@')[0] || 'Educator',
+          role: 'teacher',
+          plan: 'free',
+          queries_used: 0,
+          queries_limit: 30
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('❌ [Profile] Creation failed:', insertError.message);
+        return null;
+      }
+      return newProfile;
+    }
+    console.error('❌ [Profile] Retrieval failed:', error.message);
+    return null;
+  }
+
+  return profile;
+}
+
+/**
  * Diagnoses Supabase connectivity status.
  */
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
@@ -100,23 +160,18 @@ export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disc
     return { status: 'disconnected', message: 'Credentials missing in environment.' };
   }
   try {
-    const { error } = await supabase.from('profiles').select('id').limit(1);
+    // We check the auth session instead of a protected table to avoid 401 noise in console
+    const { data: { session }, error: authError } = await supabase.auth.getSession();
     
-    if (error) {
-      if (error.code === '42P01') {
-        return { status: 'disconnected', message: 'Table "profiles" missing.' };
-      }
-      if (error.code === 'PGRST301' || (error as any).status === 401) {
-        return { status: 'connected', message: 'Cloud Node Online (Auth Required)' };
-      }
-      return { status: 'disconnected', message: `Supabase node error: ${error.message}` };
+    if (authError) {
+      return { status: 'disconnected', message: `Auth node unreachable: ${authError.message}` };
     }
     
-    return { status: 'connected', message: 'Cloud Node Online' };
+    return { 
+      status: 'connected', 
+      message: session ? 'Cloud Node Online (Authenticated)' : 'Cloud Node Online (Guest)' 
+    };
   } catch (err: any) {
-    if (err?.status === 401 || err?.message?.includes('401')) {
-      return { status: 'connected', message: 'Cloud Node Online (Auth Locked)' };
-    }
     return { status: 'disconnected', message: err.message || 'Fatal connection failure' };
   }
 };
