@@ -6,7 +6,6 @@ import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile }
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
-import Landing from '../views/Landing';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
@@ -24,7 +23,6 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState('dashboard');
-  const [showLogin, setShowLogin] = useState(false);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -233,7 +231,7 @@ export default function App() {
           {(() => {
             switch (currentView) {
               case 'dashboard':
-                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} onViewChange={setCurrentView} />;
+                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
               case 'documents':
                 return <DocumentsView documents={documents} userProfile={userProfile} onAddDocument={async (d) => { await fetchProfileAndDocs(userProfile.id, userProfile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
               case 'chat':
@@ -243,11 +241,11 @@ export default function App() {
               case 'tracker':
                 return <TrackerView user={userProfile} documents={documents} />;
               case 'brain':
-                return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} onViewChange={setCurrentView} />;
+                return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
               case 'pricing':
                 return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
               default:
-                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} onViewChange={setCurrentView} />;
+                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
             }
           })()}
         </Suspense>
@@ -258,8 +256,7 @@ export default function App() {
   if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" /></div>;
   
   if (!session || !userProfile) {
-    if (showLogin) return <Login onSession={setSession} onBack={() => setShowLogin(false)} />;
-    return <Landing onStart={() => setShowLogin(true)} />;
+    return <Login onSession={setSession} />;
   }
 
   return (
