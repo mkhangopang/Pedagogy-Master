@@ -85,7 +85,6 @@ export default function App() {
       const defaultLimit = isSystemAdmin ? 999999 : 30;
 
       if (!profile) {
-        // Fallback for edge cases where trigger hasn't fired yet
         activeProfile = {
           id: userId,
           name: email?.split('@')[0] || 'Educator',
@@ -176,7 +175,10 @@ export default function App() {
     } catch (e) {}
   }, []);
 
-  // MASTER AUTH LISTENER (Fix 401 and refresh state)
+  /**
+   * UNIFIED AUTH BOOTLOADER
+   * Harmonizes getSession and onAuthStateChange to handle slow browser storage in Incognito.
+   */
   useEffect(() => {
     if (authInitialized.current) return;
     authInitialized.current = true;
@@ -184,42 +186,21 @@ export default function App() {
     paymentService.init();
     checkDb();
 
-    // Initial session retrieval with emergency timeout
-    const initializeSession = async () => {
-      try {
-        const sessionPromise = supabase.auth.getSession();
-        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Handshake timeout')), 8000));
-        
-        const { data: { session: currentSession } } = await (Promise.race([sessionPromise, timeoutPromise]) as any);
+    let hasInitiallyHandshaked = false;
+
+    // 1. Setup change listener (This is our primary source of truth)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        console.log(`📡 [Auth Sync] Event: ${event}`);
+        hasInitiallyHandshaked = true;
         
         setSession(currentSession);
-        if (currentSession) {
+        
+        if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
           await Promise.all([
             fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
             fetchBrain()
           ]);
-        }
-      } catch (err) {
-        console.warn('📡 [Auth Init] Session retrieval delayed or blocked (Incognito?). Proceeding to Login view.', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initializeSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
-        console.log(`📡 [Auth Sync] Event: ${event}`);
-        
-        setSession(currentSession);
-        
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          if (currentSession) {
-            await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-            await fetchBrain();
-          }
         }
         
         if (event === 'SIGNED_OUT') {
@@ -232,10 +213,30 @@ export default function App() {
       }
     );
 
+    // 2. Immediate session check for fast hydration
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      if (initialSession && !hasInitiallyHandshaked) {
+        console.log('📡 [Auth Init] Immediate session found.');
+        setSession(initialSession);
+        Promise.all([
+          fetchProfileAndDocs(initialSession.user.id, initialSession.user.email),
+          fetchBrain()
+        ]).finally(() => setLoading(false));
+      } else if (!initialSession) {
+        // If no immediate session, wait briefly for listener before showing login
+        setTimeout(() => {
+          if (loading) setLoading(false);
+        }, 1500);
+      }
+    }).catch(err => {
+      console.warn('📡 [Auth Init] Session hydration error:', err);
+      setLoading(false);
+    });
+
     return () => {
       subscription.unsubscribe();
     };
-  }, [checkDb, fetchBrain, fetchProfileAndDocs]);
+  }, [checkDb, fetchBrain, fetchProfileAndDocs, loading]);
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
