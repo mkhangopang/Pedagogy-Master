@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v26.0
--- TARGET: RAG Resilience & Diagnostic Monitoring
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v27.0
+-- TARGET: RAG Resilience, Auth Stability & Diagnostic Monitoring
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -63,7 +63,29 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
+-- 5. AUTOMATED PROFILE SYNTHESIS (Fix 401s on new accounts)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, queries_used, queries_limit, plan)
+  VALUES (
+    new.id,
+    new.email,
+    0,
+    30,
+    'free'
+  );
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Cleanup & Deploy Trigger
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 6. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v2(
   query_embedding vector(768),
   match_count INT,
@@ -103,8 +125,21 @@ BEGIN
 END;
 $$;
 
--- 6. DIAGNOSTIC VIEW: RAG HEALTH
--- v26 Fix: Refactored SLO stats to use LATERAL unnest to prevent aggregate error 0A000
+-- 7. RLS SECURITY POLICY GRID (STRICT)
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own profile" ON profiles;
+CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
+
+ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own documents" ON documents;
+CREATE POLICY "Users can manage own documents" ON documents FOR ALL USING (auth.uid() = user_id);
+
+ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can manage own chunks" ON document_chunks;
+CREATE POLICY "Users can manage own chunks" ON document_chunks FOR ALL 
+USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
+
+-- 8. DIAGNOSTIC VIEW: RAG HEALTH
 CREATE OR REPLACE VIEW rag_health_report AS
 WITH flattened_slos AS (
     SELECT 
@@ -139,35 +174,3 @@ FROM documents d
 LEFT JOIN document_chunks dc ON d.id = dc.document_id
 LEFT JOIN slo_stats ss ON d.id = ss.document_id
 GROUP BY d.id, d.name, d.status, d.rag_indexed, d.is_selected, ss.distinct_slos;
-
--- 7. DIAGNOSTIC RPC: EXTENSION CHECK
-CREATE OR REPLACE FUNCTION get_extension_status(ext TEXT)
-RETURNS BOOLEAN AS $$
-BEGIN
-    RETURN EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 8. DIAGNOSTIC RPC: DIMENSION CHECK
-CREATE OR REPLACE FUNCTION get_vector_dimensions()
-RETURNS INTEGER AS $$
-BEGIN
-    RETURN (
-        SELECT atttypmod - 4
-        FROM pg_attribute
-        WHERE attrelid = 'public.document_chunks'::regclass
-        AND attname = 'embedding'
-    );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 9. RLS POLICIES
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
-
-ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own documents" ON documents FOR ALL USING (auth.uid() = user_id);
-
-ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own chunks" ON document_chunks FOR ALL 
-USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -59,7 +58,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   }
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+      // The onAuthStateChange listener in app/page.tsx will handle view reset
+    } catch (e) {
+      console.error("Sign out failed:", e);
+      window.location.reload();
+    }
   };
 
   const getRoleDisplay = () => {
@@ -117,7 +122,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 if (onClose) onClose();
               }}
               className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                isActive ? 'bg-indigo-600 dark:bg-indigo-500 shadow-lg text-white font-bold' : 'text-indigo-200 dark:text-slate-400 hover:bg-indigo-900/50 dark:hover:bg-slate-900/50 hover:text-white'
+                isActive ? 'bg-indigo-600 dark:bg-indigo-50 shadow-lg text-white font-bold' : 'text-indigo-200 dark:text-slate-400 hover:bg-indigo-900/50 dark:hover:bg-slate-900/50 hover:text-white'
               } ${isCollapsed ? 'justify-center' : ''}`}
               title={isCollapsed ? item.label : ''}
             >

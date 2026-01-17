@@ -1,7 +1,6 @@
-
 'use client';
 
-import React, { useState, useEffect, Suspense, lazy, useCallback } from 'react';
+import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
 import { supabase, isSupabaseConfigured, getSupabaseHealth } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
@@ -32,6 +31,8 @@ export default function App() {
     status: 'checking', 
     message: 'Verifying systems...' 
   });
+  
+  const authInitialized = useRef(false);
 
   const isActuallyConnected = healthStatus.status === 'connected';
 
@@ -84,6 +85,7 @@ export default function App() {
       const defaultLimit = isSystemAdmin ? 999999 : 30;
 
       if (!profile) {
+        // Fallback for edge cases where trigger hasn't fired yet
         activeProfile = {
           id: userId,
           name: email?.split('@')[0] || 'Educator',
@@ -97,7 +99,7 @@ export default function App() {
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         };
         
-        await supabase.from('profiles').insert([{
+        await supabase.from('profiles').upsert([{
           id: userId,
           name: activeProfile.name,
           email: activeProfile.email,
@@ -152,7 +154,9 @@ export default function App() {
           isSelected: d.is_selected ?? false
         })));
       }
-    } catch (e: any) {}
+    } catch (e: any) {
+      console.error("Profile Fetch Error:", e);
+    }
   }, []);
 
   const fetchBrain = useCallback(async () => {
@@ -172,31 +176,51 @@ export default function App() {
     } catch (e) {}
   }, []);
 
+  // MASTER AUTH LISTENER (Fix 401 and refresh state)
   useEffect(() => {
+    if (authInitialized.current) return;
+    authInitialized.current = true;
+    
     paymentService.init();
-    const initSession = async () => {
-      if (!isSupabaseConfigured() || !supabase) {
-        setLoading(false);
-        return;
+    checkDb();
+
+    // Set initial session
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      if (currentSession) {
+        fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
+        fetchBrain();
       }
-      try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        if (currentSession) {
-          setSession(currentSession);
-          checkDb();
-          await Promise.allSettled([
-            fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
-            fetchBrain()
-          ]);
-        } else {
-          checkDb();
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        console.log(`📡 [Auth Sync] Event: ${event}`);
+        
+        setSession(currentSession);
+        
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (currentSession) {
+            await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
+            await fetchBrain();
+          }
         }
-      } catch (err) {
-      } finally {
+        
+        if (event === 'SIGNED_OUT') {
+          setUserProfile(null);
+          setDocuments([]);
+          setCurrentView('dashboard');
+        }
+        
         setLoading(false);
       }
+    );
+
+    return () => {
+      subscription.unsubscribe();
     };
-    initSession();
   }, [checkDb, fetchBrain, fetchProfileAndDocs]);
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
