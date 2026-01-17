@@ -98,12 +98,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                 {documents.slice(0, 3).map(doc => (
                   <div key={doc.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
                     <div className="flex items-center gap-4">
-                       <div className={`p-2 rounded-xl ${doc.rag_indexed ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
-                         {doc.rag_indexed ? <CheckCircle size={16} /> : <Clock size={16} />}
+                       <div className={`p-2 rounded-xl ${doc.geminiProcessed ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
+                         {doc.geminiProcessed ? <CheckCircle size={16} /> : <Clock size={16} />}
                        </div>
                        <div>
                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[200px]">{doc.name}</p>
-                         <p className="text-[10px] text-slate-400 font-bold uppercase">{doc.rag_indexed ? 'Neural Indexed' : 'Processing...'}</p>
+                         <p className="text-[10px] text-slate-400 font-bold uppercase">{doc.geminiProcessed ? 'Neural Indexed' : 'Processing...'}</p>
                        </div>
                     </div>
                     <div className="text-right">
