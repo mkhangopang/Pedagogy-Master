@@ -1,14 +1,13 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile, isAppAdmin } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
-import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
+import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
 import { paymentService } from '../services/paymentService';
 import { Loader2, Menu, Cpu } from 'lucide-react';
 
@@ -34,7 +33,6 @@ export default function App() {
   });
   
   const authInitialized = useRef(false);
-
   const isActuallyConnected = healthStatus.status === 'connected';
 
   useEffect(() => {
@@ -77,26 +75,38 @@ export default function App() {
     if (!supabase) return;
 
     try {
-      console.log('📡 [Sync] Fetching profile for:', userId);
-      const profile = await getOrCreateProfile(userId, email);
+      console.log('📡 [Sync] Handshaking profile for:', userId);
       
-      if (!profile) {
-        console.error('❌ [Sync] Could not resolve user profile');
-        return;
-      }
+      // Admin check happens immediately to ensure UI features are enabled
+      const isSystemAdmin = isAppAdmin(email);
+      
+      // Fetch profile with a 5 second timeout to prevent hangs
+      const profilePromise = getOrCreateProfile(userId, email);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Handshake timeout')), 5000)
+      );
 
-      const isSystemAdmin = email && ADMIN_EMAILS.some(e => e.toLowerCase() === email.toLowerCase());
+      let profile: any;
+      try {
+        profile = await Promise.race([profilePromise, timeoutPromise]);
+      } catch (err) {
+        console.warn('⚠️ [Sync] Handshake slow, using adaptive fallback.');
+        profile = {
+          id: userId,
+          email: email || '',
+          role: isSystemAdmin ? UserRole.APP_ADMIN : 'teacher',
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : 'free'
+        };
+      }
       
       const activeProfile: UserProfile = {
         id: profile.id,
-        name: profile.name || 'Educator',
-        email: profile.email || '',
-        role: isSystemAdmin ? UserRole.APP_ADMIN : profile.role as UserRole,
-        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : profile.plan as SubscriptionPlan,
+        name: profile.name || email?.split('@')[0] || 'Educator',
+        email: profile.email || email || '',
+        role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole || UserRole.TEACHER),
+        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan || SubscriptionPlan.FREE),
         queriesUsed: profile.queries_used || 0,
-        queriesLimit: isSystemAdmin ? 999999 : profile.queries_limit || 30,
-        gradeLevel: profile.grade_level,
-        subjectArea: profile.subject_area,
+        queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
         generationCount: profile.generation_count || 0,
         successRate: profile.success_rate || 0,
         editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
@@ -104,39 +114,42 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
-      const { data: docs } = await supabase
+      // Background fetch docs, don't wait for them to finish loading the main app
+      supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .then(({ data: docs }) => {
+          if (docs) {
+            setDocuments(docs.map(d => ({
+              id: d.id,
+              userId: d.user_id,
+              name: d.name,
+              filePath: d.file_path,
+              mimeType: d.mime_type,
+              status: d.status as any,
+              storageType: d.storage_type,
+              isPublic: d.is_public,
+              subject: d.subject || 'General',
+              gradeLevel: d.grade_level || 'Auto',
+              sloTags: d.slo_tags || [],
+              createdAt: d.created_at,
+              sourceType: d.source_type || 'markdown',
+              isApproved: d.is_approved ?? false,
+              curriculumName: d.curriculum_name || d.name,
+              authority: d.authority || 'General',
+              versionYear: d.version_year || '2024',
+              version: d.version || 1,
+              generatedJson: d.generated_json,
+              documentSummary: d.document_summary,
+              difficultyLevel: d.difficulty_level,
+              geminiProcessed: d.rag_indexed ?? false,
+              isSelected: d.is_selected ?? false
+            })));
+          }
+        });
 
-      if (docs) {
-        setDocuments(docs.map(d => ({
-          id: d.id,
-          userId: d.user_id,
-          name: d.name,
-          filePath: d.file_path,
-          mimeType: d.mime_type,
-          status: d.status as any,
-          storageType: d.storage_type,
-          isPublic: d.is_public,
-          subject: d.subject || 'General',
-          gradeLevel: d.grade_level || 'Auto',
-          sloTags: d.slo_tags || [],
-          createdAt: d.created_at,
-          sourceType: d.source_type || 'markdown',
-          isApproved: d.is_approved ?? false,
-          curriculumName: d.curriculum_name || d.name,
-          authority: d.authority || 'General',
-          versionYear: d.version_year || '2024',
-          version: d.version || 1,
-          generatedJson: d.generated_json,
-          documentSummary: d.document_summary,
-          difficultyLevel: d.difficulty_level,
-          geminiProcessed: d.rag_indexed ?? false,
-          isSelected: d.is_selected ?? false
-        })));
-      }
     } catch (e: any) {
       console.error("❌ [Sync] Data plane error:", e);
     }
@@ -166,11 +179,6 @@ export default function App() {
     paymentService.init();
     checkDb();
 
-    // Safety timeout: If auth takes longer than 8s, force loading false
-    const safetyTimer = setTimeout(() => {
-      setLoading(false);
-    }, 8000);
-
     // Setup listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
@@ -182,40 +190,30 @@ export default function App() {
             fetchBrain()
           ]);
           setLoading(false);
-          clearTimeout(safetyTimer);
         } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           setDocuments([]);
           setCurrentView('dashboard');
           setLoading(false);
-          clearTimeout(safetyTimer);
         }
       }
     );
 
-    // Immediate session check for hard refresh
+    // Immediate check
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (initialSession) {
         setSession(initialSession);
         Promise.all([
           fetchProfileAndDocs(initialSession.user.id, initialSession.user.email),
           fetchBrain()
-        ]).finally(() => {
-          setLoading(false);
-          clearTimeout(safetyTimer);
-        });
+        ]).finally(() => setLoading(false));
       } else {
         setLoading(false);
-        clearTimeout(safetyTimer);
       }
-    }).catch(err => {
-      setLoading(false);
-      clearTimeout(safetyTimer);
-    });
+    }).catch(() => setLoading(false));
 
     return () => {
       subscription.unsubscribe();
-      clearTimeout(safetyTimer);
     };
   }, [checkDb, fetchBrain, fetchProfileAndDocs]);
 
