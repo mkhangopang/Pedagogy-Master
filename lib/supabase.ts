@@ -88,33 +88,40 @@ export function isAppAdmin(email: string | undefined): boolean {
 }
 
 export async function getOrCreateProfile(userId: string, email?: string) {
+  // Use maybeSingle to avoid throwing errors when profile doesn't exist yet
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', userId)
-    .single();
+    .maybeSingle();
 
   if (error) {
-    if (error.code === 'PGRST116') {
-      const isAdminUser = isAppAdmin(email);
-      const { data: newProfile, error: insertError } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          email: email || '',
-          name: email?.split('@')[0] || 'Educator',
-          role: isAdminUser ? UserRole.APP_ADMIN : 'teacher',
-          plan: isAdminUser ? 'enterprise' : 'free',
-          queries_used: 0,
-          queries_limit: isAdminUser ? 999999 : 30
-        })
-        .select()
-        .single();
-
-      if (insertError) return null;
-      return newProfile;
-    }
+    console.error('📡 [Supabase] Profile lookup failed:', error.message);
     return null;
+  }
+
+  if (!profile) {
+    console.log('📡 [Supabase] Profile missing, synthesizing new educator record...');
+    const isAdminUser = isAppAdmin(email);
+    const { data: newProfile, error: insertError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        email: email || '',
+        name: email?.split('@')[0] || 'Educator',
+        role: isAdminUser ? UserRole.APP_ADMIN : 'teacher',
+        plan: isAdminUser ? 'enterprise' : 'free',
+        queries_used: 0,
+        queries_limit: isAdminUser ? 999999 : 30
+      })
+      .select()
+      .maybeSingle();
+
+    if (insertError) {
+      console.error('📡 [Supabase] Profile creation failed:', insertError.message);
+      return null;
+    }
+    return newProfile;
   }
 
   return profile;

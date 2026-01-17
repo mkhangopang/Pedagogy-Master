@@ -10,7 +10,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME, ADMIN_EMAILS } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu } from 'lucide-react';
+import { Loader2, Menu, Cpu } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
@@ -77,7 +77,6 @@ export default function App() {
     if (!supabase) return;
 
     try {
-      console.log('📡 [Sync] Fetching profile for:', userId);
       const profile = await getOrCreateProfile(userId, email);
       
       if (!profile) {
@@ -166,27 +165,27 @@ export default function App() {
     paymentService.init();
     checkDb();
 
+    // Setup listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         setSession(currentSession);
         
-        if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
+        if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
           await Promise.all([
             fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
             fetchBrain()
           ]);
-        }
-        
-        if (event === 'SIGNED_OUT') {
+          setLoading(false);
+        } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           setDocuments([]);
           setCurrentView('dashboard');
+          setLoading(false);
         }
-        
-        setLoading(false);
       }
     );
 
+    // Immediate session check for hard refresh
     supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (initialSession) {
         setSession(initialSession);
@@ -195,7 +194,7 @@ export default function App() {
           fetchBrain()
         ]).finally(() => setLoading(false));
       } else {
-        setTimeout(() => setLoading(false), 800);
+        setLoading(false);
       }
     }).catch(err => {
       setLoading(false);
@@ -227,7 +226,10 @@ export default function App() {
     if (!userProfile) return null;
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-        <Suspense fallback={<div className="flex items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
+        <Suspense fallback={<div className="flex flex-col items-center justify-center p-20 space-y-4 text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+          <Loader2 className="animate-spin text-indigo-600" size={32} />
+          <span>Synthesis Node Initializing...</span>
+        </div>}>
           {(() => {
             switch (currentView) {
               case 'dashboard':
@@ -253,7 +255,20 @@ export default function App() {
     );
   };
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" /></div>;
+  if (loading) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
+      <div className="relative">
+        <div className="absolute inset-0 bg-indigo-500 rounded-full blur-2xl opacity-20 animate-pulse" />
+        <div className="relative bg-white dark:bg-slate-900 p-6 rounded-[2rem] shadow-2xl border border-slate-100 dark:border-white/5">
+          <Cpu className="text-indigo-600 w-12 h-12 animate-spin-slow" />
+        </div>
+      </div>
+      <div className="text-center space-y-2">
+        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Neural Handshake</p>
+        <p className="text-slate-400 font-medium text-xs">Authenticating workspace nodes...</p>
+      </div>
+    </div>
+  );
   
   if (!session || !userProfile) {
     return <Login onSession={setSession} />;
