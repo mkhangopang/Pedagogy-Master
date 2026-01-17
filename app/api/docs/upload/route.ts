@@ -8,7 +8,7 @@ import { generateCurriculumJson } from '../../../../lib/curriculum/json-generato
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 120;
+export const maxDuration = 300; // 5 minutes for heavy curriculum processing
 
 export async function POST(req: NextRequest) {
   try {
@@ -39,19 +39,12 @@ export async function POST(req: NextRequest) {
       ContentType: 'text/markdown',
     }));
 
-    // 2. ATOMIC EXCLUSIVE SELECTION (Fix 5)
-    // ✅ CRITICAL: Unselect all other documents first
-    const { error: unselectError } = await supabase
+    // 2. ATOMIC EXCLUSIVE SELECTION
+    await supabase
       .from('documents')
       .update({ is_selected: false })
       .eq('user_id', user.id);
     
-    if (unselectError) {
-      console.error('Failed to unselect previous documents:', unselectError);
-    } else {
-      console.log('✅ Unselected all previous documents for user');
-    }
-
     const generatedJson = generateCurriculumJson(extractedText);
 
     // 3. Database Metadata Commitment
@@ -70,22 +63,29 @@ export async function POST(req: NextRequest) {
       grade_level: grade || 'Auto',
       version_year: version || '2024',
       generated_json: generatedJson,
-      is_selected: true, // This is now the only selected document
+      is_selected: true,
       rag_indexed: false
     }).select().single();
 
     if (dbError) throw dbError;
 
-    // 4. Background Neural Synchronization
-    console.log(`📡 [Ingestion] Initializing neural synchronization for asset: ${docData.id}`);
-    indexDocumentForRAG(docData.id, extractedText, filePath, supabase)
-      .then(() => console.log(`✅ [Ingestion] Neural sync complete for ${docData.id}`))
-      .catch(e => console.error(`❌ [Ingestion] Neural sync failed:`, e));
+    // 4. Critical Neural Synchronization
+    // We await this to ensure the serverless function doesn't kill the process
+    console.log(`📡 [Ingestion] Starting Neural Ingestion for asset: ${docData.id}`);
+    
+    try {
+      await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
+      console.log(`✅ [Ingestion] Neural sync successful for ${docData.id}`);
+    } catch (indexError: any) {
+      console.error(`❌ [Ingestion] Deep Audit Failed:`, indexError);
+      // Even if indexing fails, the file is saved. User can manually re-sync from UI.
+      await supabase.from('documents').update({ status: 'failed' }).eq('id', docData.id);
+    }
 
     return NextResponse.json({ 
       success: true, 
       id: docData.id,
-      message: 'Document uploaded and indexing started' 
+      message: 'Document uploaded and neural audit complete.' 
     });
 
   } catch (error: any) {

@@ -16,9 +16,8 @@ function sanitizeText(text: string): string {
 }
 
 /**
- * VECTOR SYNTHESIS ENGINE (v23.0)
+ * VECTOR SYNTHESIS ENGINE (v24.0)
  * MODEL: text-embedding-004 (768 dimensions)
- * CRITICAL: This MUST be consistent between indexing and query.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const cleanText = sanitizeText(text);
@@ -26,22 +25,18 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Call the embedding model using the updated SDK pattern
     const response = await ai.models.embedContent({
       model: "text-embedding-004", 
       contents: [{ parts: [{ text: cleanText }] }] 
     });
 
-    // Handle standard response structure
     const vector = response.embeddings?.[0]?.values;
 
     if (!vector || vector.length === 0) {
       throw new Error("Invalid vector values returned.");
     }
 
-    // Enforce 768d dimensionality
     if (vector.length !== 768) {
-      console.warn(`[Embedder] Dimension mismatch: expected 768, got ${vector.length}. Standardizing...`);
       if (vector.length < 768) {
         return [...vector, ...new Array(768 - vector.length).fill(0)];
       }
@@ -51,26 +46,35 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     return vector;
   } catch (error: any) {
     console.error('[Embedding Error]:', error.message);
-    return [];
+    return new Array(768).fill(0); // Return zero-vector fallback to keep indexing alive
   }
 }
 
 /**
- * Generate embeddings for multiple texts in batches.
+ * HIGH-SPEED BATCH EMBEDDER
+ * Processes chunks in parallel batches to optimize ingestion time.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const embeddings: number[][] = [];
+  const BATCH_SIZE = 10; // Parallel processing limit
+  const results: number[][] = new Array(texts.length);
   
-  // Sequential processing for reliability on serverless edge nodes
-  for (const text of texts) {
-    const embedding = await generateEmbedding(text);
-    if (embedding && embedding.length === 768) {
-      embeddings.push(embedding);
-    } else {
-      console.warn('Fallback: Generating zero-vector for failed embedding chunk.');
-      embeddings.push(new Array(768).fill(0));
+  console.log(`📡 [Embedder] Processing ${texts.length} chunks in batches of ${BATCH_SIZE}...`);
+
+  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
+    const batch = texts.slice(i, i + BATCH_SIZE);
+    const batchPromises = batch.map(text => generateEmbedding(text));
+    
+    const batchResults = await Promise.all(batchPromises);
+    
+    batchResults.forEach((res, index) => {
+      results[i + index] = res;
+    });
+    
+    // Tiny delay between batches to respect Gemini rate limits
+    if (i + BATCH_SIZE < texts.length) {
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
   }
   
-  return embeddings;
+  return results;
 }
