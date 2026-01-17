@@ -84,19 +84,39 @@ export const supabase = new Proxy({} as SupabaseClient, {
 
 /**
  * Diagnoses Supabase connectivity status.
+ * REFINED (v2.0): Handles 401 Unauthorized as a "connected" state for health checks
+ * because the profiles table is protected by RLS and requires a login.
  */
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) {
     return { status: 'disconnected', message: 'Credentials missing in environment.' };
   }
   try {
+    // We attempt a lightweight select.
     const { error } = await supabase.from('profiles').select('id').limit(1);
+    
     if (error) {
-      if (error.code === '42P01') return { status: 'disconnected', message: 'Table "profiles" does not exist. Run SQL in Hub.' };
-      return { status: 'disconnected', message: `Supabase error: ${error.message}` };
+      // 42P01 means the table doesn't exist at all (Infrastructure not initialized)
+      if (error.code === '42P01') {
+        return { status: 'disconnected', message: 'Table "profiles" missing. Deploy schema in Hub.' };
+      }
+      
+      // PGRST301 or HTTP 401 means "JWT not found" or "Unauthorized".
+      // In a health check context, this is POSITIVE: it means the table EXISTS 
+      // and the API is correctly blocking unauthenticated access.
+      if (error.code === 'PGRST301' || (error as any).status === 401) {
+        return { status: 'connected', message: 'Cloud Node Online (Auth Required)' };
+      }
+
+      return { status: 'disconnected', message: `Supabase node error: ${error.message}` };
     }
+    
     return { status: 'connected', message: 'Cloud Node Online' };
   } catch (err: any) {
+    // Check for standard HTTP 401 in the error object if caught
+    if (err?.status === 401 || err?.message?.includes('401')) {
+      return { status: 'connected', message: 'Cloud Node Online (Auth Locked)' };
+    }
     return { status: 'disconnected', message: err.message || 'Fatal connection failure' };
   }
 };
