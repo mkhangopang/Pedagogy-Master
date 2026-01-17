@@ -9,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu } from 'lucide-react';
+import { Loader2, Menu, Cpu, ShieldAlert } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
@@ -78,7 +78,7 @@ export default function App() {
       console.log('📡 [Sync] Handshaking profile for:', userId);
       const isSystemAdmin = isAppAdmin(email);
       
-      // Strict 3s timeout for profile fetch to prevent loading hangs
+      // Strict 3s timeout for database profile fetch
       const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Handshake timeout')), 3000)
       );
@@ -87,7 +87,7 @@ export default function App() {
       try {
         profile = await Promise.race([getOrCreateProfile(userId, email), timeoutPromise]);
       } catch (err) {
-        console.warn('⚠️ [Sync] Handshake delayed, using local identity.');
+        console.warn('⚠️ [Sync] Handshake slow, using adaptive fallback.');
         profile = {
           id: userId,
           email: email || '',
@@ -111,7 +111,7 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
-      // Background fetch docs, don't await to avoid UI blocking
+      // Background sync: Don't let slow document loading block the dashboard
       supabase
         .from('documents')
         .select('*')
@@ -159,28 +159,35 @@ export default function App() {
     paymentService.init();
     checkDb();
 
+    // GLOBAL SAFETY TIMEOUT: Kill loading screen after 5s no matter what
+    const safetyTimer = setTimeout(() => {
+      if (loading) {
+        console.warn("🛡️ [App] Safety timeout triggered. Terminating handshake wait.");
+        setLoading(false);
+      }
+    }, 5000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         setSession(currentSession);
         
         if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
           try {
-            await Promise.all([
-              fetchProfileAndDocs(currentSession.user.id, currentSession.user.email),
-              // We can fetch brain later, don't block
-            ]);
+            await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
           } finally {
             setLoading(false);
+            clearTimeout(safetyTimer);
           }
         } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           setDocuments([]);
           setLoading(false);
+          clearTimeout(safetyTimer);
         }
       }
     );
 
-    // Initial session check
+    // Immediate check for existing session
     supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
       if (initialSession) {
         setSession(initialSession);
@@ -188,16 +195,22 @@ export default function App() {
           await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
         } finally {
           setLoading(false);
+          clearTimeout(safetyTimer);
         }
       } else {
         setLoading(false);
+        clearTimeout(safetyTimer);
       }
-    }).catch(() => setLoading(false));
+    }).catch(() => {
+      setLoading(false);
+      clearTimeout(safetyTimer);
+    });
 
     return () => {
       subscription.unsubscribe();
+      clearTimeout(safetyTimer);
     };
-  }, [checkDb, fetchProfileAndDocs]);
+  }, [checkDb, fetchProfileAndDocs, loading]);
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
