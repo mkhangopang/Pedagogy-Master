@@ -118,8 +118,8 @@ const renderErrorUI = (error: any) => {
 
 const startApp = async () => {
   try {
-    // CRITICAL FIX: Use explicit .tsx extension for dynamic ESM import in browser
-    const { default: App } = await import('./app/page.tsx');
+    // FIXED: Removed .tsx extension to satisfy TypeScript compiler and standard resolution rules
+    const { default: App } = await import('./app/page');
     const container = document.getElementById('root');
     
     if (container) {
