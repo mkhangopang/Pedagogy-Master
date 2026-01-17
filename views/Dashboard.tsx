@@ -17,9 +17,10 @@ interface DashboardProps {
   onProfileUpdate: (profile: UserProfile) => void;
   health: { status: string, message: string };
   onCheckHealth: () => Promise<boolean>;
+  onViewChange?: (view: string) => void; // Added for navigation
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth, onViewChange }) => {
   const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
   const [coverage, setCoverage] = useState({ total: 0, completed: 0, percentage: 0 });
   const [recentArtifacts, setRecentArtifacts] = useState<any[]>([]);
@@ -83,7 +84,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                 Your workspace is synchronized with your curriculum library. Use the <span className="underline font-bold">AI Chat</span> to generate lesson plans grounded in your specific SLOs.
               </p>
               <div className="pt-2 flex items-center gap-4">
-                 <div className="px-6 py-3 bg-white text-indigo-950 rounded-2xl font-black text-sm shadow-xl hover:scale-105 transition-all cursor-pointer">Start New Draft</div>
+                 <button 
+                  onClick={() => onViewChange?.('chat')}
+                  className="px-6 py-3 bg-white text-indigo-950 rounded-2xl font-black text-sm shadow-xl hover:scale-105 transition-all cursor-pointer"
+                 >
+                   Start New Draft
+                 </button>
               </div>
             </div>
           </section>
@@ -146,7 +152,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                 </div>
               )}
             </div>
-            <button className="mt-8 w-full py-4 bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-2xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-slate-500 transition-all">
+            <button 
+              onClick={() => onViewChange?.('tracker')}
+              className="mt-8 w-full py-4 bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-2xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-slate-500 transition-all"
+            >
               View All History <ArrowRight size={14} />
             </button>
           </section>

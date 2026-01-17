@@ -233,7 +233,7 @@ export default function App() {
           {(() => {
             switch (currentView) {
               case 'dashboard':
-                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} onViewChange={setCurrentView} />;
               case 'documents':
                 return <DocumentsView documents={documents} userProfile={userProfile} onAddDocument={async (d) => { await fetchProfileAndDocs(userProfile.id, userProfile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
               case 'chat':
@@ -243,11 +243,11 @@ export default function App() {
               case 'tracker':
                 return <TrackerView user={userProfile} documents={documents} />;
               case 'brain':
-                return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+                return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} onViewChange={setCurrentView} />;
               case 'pricing':
                 return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
               default:
-                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} onViewChange={setCurrentView} />;
             }
           })()}
         </Suspense>
