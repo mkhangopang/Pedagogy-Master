@@ -21,37 +21,19 @@ function sanitizeText(text: string): string {
  * CRITICAL: This MUST be consistent between indexing and query.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.error("❌ [Embedding Node] API_KEY missing.");
-    return [];
-  }
-
   const cleanText = sanitizeText(text);
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Call the embedding model
+    // Call the embedding model using the updated SDK pattern
     const response = await ai.models.embedContent({
       model: "text-embedding-004", 
-      contents: { parts: [{ text: cleanText }] } 
+      contents: [{ parts: [{ text: cleanText }] }] 
     });
 
-    // Handle different possible response structures defensively to bypass TS build errors
-    let vector: number[] = [];
-    const responseAny = response as any;
-
-    if (responseAny.embedding?.values) {
-      // Standard response structure
-      vector = responseAny.embedding.values;
-    } else if (responseAny.embeddings?.[0]?.values) {
-      // Alternative/Batch response structure
-      vector = responseAny.embeddings[0].values;
-    } else {
-      console.error('❌ Unexpected embedding response structure:', Object.keys(response));
-      throw new Error('Invalid embedding response format');
-    }
+    // Handle standard response structure
+    const vector = response.embeddings?.[0]?.values;
 
     if (!vector || vector.length === 0) {
       throw new Error("Invalid vector values returned.");

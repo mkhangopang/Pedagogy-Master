@@ -1,8 +1,7 @@
 import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { resolveApiKey } from "../../env-server";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v28.0)
+ * HIGH-FIDELITY GEMINI ADAPTER (v29.0)
  * Implements intelligent task-based model scaling and strict safety protocols.
  */
 export async function callGemini(
@@ -12,18 +11,11 @@ export async function callGemini(
   hasDocuments: boolean = false,
   docParts: any[] = []
 ): Promise<string> {
-  const apiKey = resolveApiKey();
-  if (!apiKey) {
-    console.error("❌ [Gemini Node] Missing API Key");
-    throw new Error('Neural Node Error: Gemini API key is missing.');
-  }
-
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     // TASK-BASED MODEL SCALING
-    // We use gemini-3-pro-preview for complex instructional design to ensure maximum pedagogical depth.
-    // We use gemini-3-flash-preview for quick lookups and standard chat to optimize for latency.
+    // Use gemini-3-pro-preview for complex design; flash for lookups
     const isComplexTask = fullPrompt.includes('LESSON PLAN') || 
                          fullPrompt.includes('ASSESSMENT') || 
                          fullPrompt.length > 5000;
@@ -41,7 +33,7 @@ export async function callGemini(
       });
     });
 
-    // 2. Prepare the current user turn
+    // 2. Prepare current user turn parts
     const currentParts: any[] = [];
     
     // Add multimodal parts if provided
@@ -51,19 +43,15 @@ export async function callGemini(
       });
     }
     
-    // Add the textual command
+    // Add textual command
     currentParts.push({ text: fullPrompt });
 
-    // 3. Append to contents following turn sequence rules
-    if (contents.length === 0 || contents[contents.length - 1].role === 'model') {
-      contents.push({ role: 'user', parts: currentParts });
-    } else {
-      contents[contents.length - 1].parts.push(...currentParts);
-    }
+    // 3. Append user turn according to turn-based requirements
+    contents.push({ role: 'user', parts: currentParts });
 
     console.log(`📡 [Gemini Node] Dispatching to ${modelName}. Mode: ${hasDocuments ? 'Grounded' : 'Standard'}`);
 
-    // 4. Call SDK with explicit safety settings
+    // 4. Call SDK with direct method pattern
     const result = await ai.models.generateContent({
       model: modelName, 
       contents,
@@ -73,51 +61,28 @@ export async function callGemini(
         topK: 40,
         topP: 0.95,
         safetySettings: [
-          { 
-            category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, 
-            threshold: HarmBlockThreshold.BLOCK_NONE 
-          },
-          { 
-            category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, 
-            threshold: HarmBlockThreshold.BLOCK_NONE 
-          },
-          { 
-            category: HarmCategory.HARM_CATEGORY_HARASSMENT, 
-            threshold: HarmBlockThreshold.BLOCK_NONE 
-          },
-          { 
-            category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, 
-            threshold: HarmBlockThreshold.BLOCK_NONE 
-          }
+          { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+          { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
         ]
       }
     });
 
-    // 5. Safe text extraction
+    // 5. Safe text extraction using the property (not method)
     const generatedText = result.text;
 
     if (!generatedText) {
-      const candidate = (result as any).candidates?.[0];
-      const reason = candidate?.finishReason;
-      
-      if (reason === 'SAFETY') {
-        return "🛡️ AI Synthesis Interrupted: The pedagogical content triggered an internal safety filter. Rephrase the request using more neutral educational terminology.";
-      }
-      
-      if (reason === 'RECITATION') {
-        return "⚠️ AI Citation Alert: The synthesis node detected it was reciting curriculum text verbatim. Try asking for a specialized lesson plan or activity instead of a copy.";
-      }
-
-      console.warn(`⚠️ [Gemini Node] Empty response. Finish Reason: ${reason}`);
-      return "Synthesis error: The neural node returned an empty response. Ensure your curriculum asset isn't exceeding the context window.";
+      const reason = (result as any).candidates?.[0]?.finishReason;
+      if (reason === 'SAFETY') return "🛡️ AI Synthesis Interrupted: Safety filters triggered. Please use pedagogical terminology.";
+      if (reason === 'RECITATION') return "⚠️ AI Citation Alert: Verbatim curriculum detected. Please request a unique synthesis.";
+      return "Synthesis error: Empty response from neural node.";
     }
 
     return generatedText;
   } catch (error: any) {
     console.error("❌ [Gemini Node] Fatal Exception:", error.message);
-    if (error.message?.includes('429')) {
-      throw new Error("Neural Grid Saturated: API quota exceeded. Please wait 15 seconds for the next available slot.");
-    }
+    if (error.message?.includes('429')) throw new Error("Neural Grid Saturated. Please wait 15s.");
     throw error;
   }
 }

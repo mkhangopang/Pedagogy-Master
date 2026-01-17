@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v28.0
--- TARGET: RAG Resilience, Auth Stability & Diagnostic Monitoring
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v30.0
+-- TARGET: RAG Precision, Metadata Grid & Advanced Pedagogical Search
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -51,31 +51,49 @@ CREATE TABLE IF NOT EXISTS public.documents (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. DOCUMENT_CHUNKS TABLE (Vector Grid Nodes)
+-- 4. DOCUMENT_CHUNKS TABLE (Enhanced Neural Grid)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID REFERENCES public.documents ON DELETE CASCADE,
     chunk_text TEXT NOT NULL,
     embedding vector(768),
     slo_codes TEXT[] DEFAULT '{}',
+    -- New Metadata Grid Columns
+    grade_levels TEXT[] DEFAULT '{}',
+    topics TEXT[] DEFAULT '{}',
+    unit_name TEXT,
+    difficulty TEXT,
+    bloom_levels TEXT[] DEFAULT '{}',
     chunk_index INTEGER,
     metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. THE NEURAL ENGINE: HYBRID SEARCH RPC v2 (ULTIMATE)
--- Improved for exact code boosting and higher match counts
-CREATE OR REPLACE FUNCTION hybrid_search_chunks_v2(
+-- 5. HIGH-SPEED METADATA INDEXES
+CREATE INDEX IF NOT EXISTS idx_chunks_slo_codes ON document_chunks USING GIN (slo_codes);
+CREATE INDEX IF NOT EXISTS idx_chunks_grade_levels ON document_chunks USING GIN (grade_levels);
+CREATE INDEX IF NOT EXISTS idx_chunks_topics ON document_chunks USING GIN (topics);
+CREATE INDEX IF NOT EXISTS idx_chunks_bloom_levels ON document_chunks USING GIN (bloom_levels);
+
+-- 6. THE NEURAL ENGINE: HYBRID SEARCH RPC v3 (METADATA-AWARE)
+-- Implements exact SLO boosting and hard-filtering for grade/topic/bloom alignment
+CREATE OR REPLACE FUNCTION hybrid_search_chunks_v3(
   query_embedding vector(768),
   match_count INT,
   filter_document_ids UUID[],
   priority_document_id UUID DEFAULT NULL,
-  boost_tags TEXT[] DEFAULT '{}'
+  boost_slo_codes TEXT[] DEFAULT '{}',
+  filter_grades TEXT[] DEFAULT NULL,
+  filter_topics TEXT[] DEFAULT NULL,
+  filter_bloom TEXT[] DEFAULT NULL
 )
 RETURNS TABLE (
   chunk_id UUID,
   chunk_text TEXT,
   slo_codes TEXT[],
+  grade_levels TEXT[],
+  topics TEXT[],
+  bloom_levels TEXT[],
   page_number INT,
   section_title TEXT,
   combined_score FLOAT
@@ -89,24 +107,32 @@ BEGIN
     dc.id AS chunk_id,
     dc.chunk_text,
     dc.slo_codes,
+    dc.grade_levels,
+    dc.topics,
+    dc.bloom_levels,
     COALESCE((dc.metadata->>'page_number')::INT, 0) AS page_number,
     COALESCE(dc.metadata->>'section_title', 'General Context') AS section_title,
     (
+      -- Vector Similarity (Cosine Distance to Similarity)
       (1 - (dc.embedding <=> query_embedding)) +
-      -- Massive boost for exact SLO matches (10x weight)
-      CASE WHEN dc.slo_codes && boost_tags THEN 10.0 ELSE 0 END +
-      -- Moderate boost for priority document
+      -- Massive boost for exact SLO matches (10.0 weight)
+      CASE WHEN dc.slo_codes && boost_slo_codes THEN 10.0 ELSE 0 END +
+      -- Moderate boost for priority document (0.5 weight)
       CASE WHEN dc.document_id = priority_document_id THEN 0.5 ELSE 0 END
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
+    -- Metadata Hard Filters (if provided)
+    AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
+    AND (filter_topics IS NULL OR dc.topics && filter_topics)
+    AND (filter_bloom IS NULL OR dc.bloom_levels && filter_bloom)
     AND dc.embedding IS NOT NULL
   ORDER BY combined_score DESC
   LIMIT match_count;
 END;
 $$;
 
--- 6. RLS SECURITY POLICY GRID
+-- 7. RLS SECURITY POLICY GRID
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can manage own profile" ON profiles;
 CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);

@@ -3,7 +3,9 @@ import { rateLimiter } from './rate-limiter';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core';
-import { retrieveRelevantChunks, RetrievedChunk, extractSLOCodes } from '../rag/retriever';
+// FIXED: Moved extractSLOCodes to its correct origin file lib/rag/slo-extractor.ts
+import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
+import { extractSLOCodes } from '../rag/slo-extractor';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 export function getProviderStatus() {
