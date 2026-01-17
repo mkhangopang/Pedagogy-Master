@@ -8,12 +8,16 @@ import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 import { GoogleGenAI } from '@google/genai';
 
+// Use dynamic imports or direct script access for heavy client-side libraries
+// Mammoth and PDF.js can be tricky in Next.js environments
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
+// Configure PDF.js Worker correctly for v4+
+// Using unpkg as a reliable CDN source for the worker script
 if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   const version = '4.4.168';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`;
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
 }
 
 interface DocumentUploaderProps {
@@ -33,7 +37,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
 
   useEffect(() => {
     if (draftMarkdown) {
-      setPreviewHtml(marked.parse(draftMarkdown) as string);
+      try {
+        setPreviewHtml(marked.parse(draftMarkdown) as string);
+      } catch (e) {
+        console.error("Markdown preview error:", e);
+      }
     }
   }, [draftMarkdown]);
 
@@ -46,70 +54,110 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
     setProcStage('');
   };
 
+  /**
+   * NEURAL TEXT EXTRACTION (Local Node)
+   * Extracts raw characters from binary assets without server round-trips.
+   */
   const extractRawText = async (file: File, type: 'pdf' | 'docx'): Promise<string> => {
     try {
       const arrayBuffer = await file.arrayBuffer();
+      
       if (type === 'pdf') {
-        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+        const loadingTask = pdfjsLib.getDocument({ 
+          data: new Uint8Array(arrayBuffer),
+          useSystemFonts: true,
+          isEvalSupported: false 
+        });
+        
         const pdf = await loadingTask.promise;
         let fullText = '';
+        
         for (let i = 1; i <= pdf.numPages; i++) {
+          setProcStage(`Extracting Page ${i} of ${pdf.numPages}...`);
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          const pageText = textContent.items.map((item: any) => item.str).join(' ');
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(' ');
           fullText += `[Page ${i}]\n${pageText}\n\n`;
         }
+        
+        if (!fullText.trim()) throw new Error("PDF appears to be image-based or contains no selectable text.");
         return fullText;
       } else {
-        const options = { arrayBuffer: arrayBuffer };
-        const result = await mammoth.extractRawText(options);
-        return result.value || "";
+        // Word Doc Extraction using Mammoth (Client-side)
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        if (!result.value.trim()) throw new Error("Word document contains no extractable text.");
+        return result.value;
       }
     } catch (e: any) {
-      console.error(`Extraction failure:`, e);
-      throw new Error(`Cloud Node Error: ${e.message || 'Format incompatible.'}`);
+      console.error(`[Extraction Fault]:`, e);
+      throw new Error(`Extraction failed: ${e.message || 'Format incompatible.'}`);
     }
   };
 
+  /**
+   * AI-POWERED MARKDOWN SYNTHESIS
+   * Uses Gemini to turn messy extracted text into high-precision Master Markdown.
+   */
   const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
-    const apiKey = process.env.API_KEY || (window as any).API_KEY;
-    if (!apiKey) throw new Error("Neural Node Offline: API_KEY missing.");
-    const ai = new GoogleGenAI({ apiKey });
+    // Correctly resolve API Key from environment or handshake
+    const apiKey = (window as any).process?.env?.API_KEY || (window as any).API_KEY || process.env.API_KEY;
     
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: [{ role: 'user', parts: [{ text: `You are the World-Class Ingestion Engineer for EduNexus AI. Synthesize a structured 'Master Markdown' file for the following raw curriculum data.
-      
-RULES:
-1. Use '#' for Units.
-2. Use '## Learning Outcomes'.
-3. Use '### Standard: [ID]' for RAG indexing.
-4. Extract all Student Learning Objectives (SLOs) exactly as written.
-5. Create a Curriculum Metadata header at the top.
+    if (!apiKey) {
+      throw new Error("Neural synthesis node offline: API key missing in environment.");
+    }
 
-INPUT FILENAME: ${fileName}
-RAW DATA:
-${rawText.substring(0, 35000)}` }] }],
-      config: {
-        temperature: 0.1,
-        systemInstruction: "You are an institutional data architect. Structure curriculum using standard Markdown headers (# for Unit, ### for Standard)."
-      }
-    });
-    return response.text || "";
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const prompt = `You are the World-Class Ingestion Engineer for EduNexus AI. 
+      Your task is to synthesize a structured 'Master Markdown' curriculum file from the provided raw text.
+      
+      STRICT RULES:
+      1. Use '# Curriculum Metadata' as the first header.
+      2. Metadata must include: 'Board:', 'Subject:', 'Grade:', 'Version:'.
+      3. Use '#' for Units/Chapters.
+      4. Use '### Standard: [ID]' for RAG-indexable blocks.
+      5. Extract all Student Learning Objectives (SLOs) verbatim.
+      6. Format SLOs as: '- SLO: [CODE]: [Description]'.
+      7. Remove noise like page numbers, footers, or redundant headers.
+
+      FILENAME: ${fileName}
+      RAW TEXT DATA:
+      ${rawText.substring(0, 45000)}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: {
+          temperature: 0.1,
+          systemInstruction: "You are an institutional data architect. Your goal is structural precision and verbatim extraction of learning standards."
+        }
+      });
+
+      const text = response.text;
+      if (!text) throw new Error("Synthesis node returned an empty response.");
+      return text;
+    } catch (e: any) {
+      console.error("[AI Synthesis Error]:", e);
+      throw new Error(`AI Synthesis failed: ${e.message}`);
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'md' | 'pdf' | 'docx') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsProcessing(true);
     setError(null);
+    setIsProcessing(true);
     setProcStage(`Mounting ${file.name}...`);
 
     try {
       if (type === 'md') {
         const text = await file.text();
         const validation = validateCurriculumMarkdown(text);
+        
         if (!validation.isValid) {
           setDraftMarkdown(text);
           setMode('transition');
@@ -117,24 +165,41 @@ ${rawText.substring(0, 35000)}` }] }],
           setIsProcessing(false);
           return;
         }
+
         const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error("Auth session expired. Please sign in again.");
+
         const response = await fetch('/api/docs/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ name: file.name, sourceType: 'markdown', extractedText: text, ...validation.metadata })
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Authorization': `Bearer ${session.access_token}` 
+          },
+          body: JSON.stringify({ 
+            name: file.name, 
+            sourceType: 'markdown', 
+            extractedText: text, 
+            ...validation.metadata 
+          })
         });
+
         const result = await response.json();
-        if (!response.ok) throw new Error(result.error);
+        if (!response.ok) throw new Error(result.error || "Upload rejected by cloud node.");
+        
         onComplete({ id: result.id, name: file.name, status: 'ready' });
       } else {
+        // Binary flow: PDF/Word
         setMode('transition');
         const rawText = await extractRawText(file, type);
-        setProcStage('Synthesizing adaptive standards grid...');
+        
+        setProcStage('Synthesizing adaptive standards grid (Neural AI)...');
         const masterMd = await synthesizeMasterMarkdown(rawText, file.name);
+        
         setDraftMarkdown(masterMd);
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "An unexpected error occurred during ingestion.");
+      console.error("Ingestion crash:", err);
     } finally {
       setIsProcessing(false);
       setProcStage('');
@@ -150,11 +215,17 @@ ${rawText.substring(0, 35000)}` }] }],
 
     setIsProcessing(true);
     setProcStage('Committing adaptive assets to cloud...');
+    
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Auth required to finalize ingestion.");
+
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${session.access_token}` 
+        },
         body: JSON.stringify({
           name: "Curriculum_Standard_" + Date.now() + ".md",
           sourceType: 'markdown',
@@ -164,7 +235,8 @@ ${rawText.substring(0, 35000)}` }] }],
       });
 
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
+      if (!response.ok) throw new Error(result.error || "Persistence failure.");
+      
       onComplete({ id: result.id, name: `Curriculum Asset (Verified)`, status: 'ready' });
     } catch (err: any) {
       setError(`Persistence Failure: ${err.message}`);
@@ -175,7 +247,7 @@ ${rawText.substring(0, 35000)}` }] }],
 
   if (mode === 'transition') {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl lg:rounded-[3rem] p-1 w-full max-w-6xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[90vh] lg:h-[85vh] overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl lg:rounded-[3rem] p-1 w-full max-w-6xl shadow-2xl border border-slate-100 dark:border-white/5 animate-in zoom-in-95 duration-500 flex flex-col h-[90vh] lg:h-[85vh] overflow-hidden">
         <div className="flex items-center justify-between p-4 lg:p-8 border-b dark:border-white/5">
           <div className="flex items-center gap-4">
             <button 
@@ -204,8 +276,9 @@ ${rawText.substring(0, 35000)}` }] }],
             <textarea 
               value={draftMarkdown} 
               onChange={(e) => {setDraftMarkdown(e.target.value); setError(null);}} 
-              className="flex-1 p-4 lg:p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl font-mono text-[11px] lg:text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none text-slate-900 dark:text-slate-100" 
+              className="flex-1 p-4 lg:p-6 bg-white dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl lg:rounded-3xl font-mono text-[11px] lg:text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner resize-none text-slate-900 dark:text-slate-100 custom-scrollbar" 
               readOnly={isProcessing} 
+              placeholder="Waiting for neural synthesis..."
             />
           </div>
           <div className="flex flex-col p-4 lg:p-8 bg-white dark:bg-slate-900 overflow-y-auto custom-scrollbar h-1/2 lg:h-full">
@@ -218,8 +291,17 @@ ${rawText.substring(0, 35000)}` }] }],
 
         <div className="p-4 lg:p-8 border-t dark:border-white/5 bg-slate-50 dark:bg-slate-900/50 flex flex-col lg:flex-row items-center justify-between gap-4">
           <div className="w-full lg:max-w-md">
-            {error && <p className="text-xs text-rose-600 font-bold flex items-center gap-2"><AlertCircle size={14}/> {error}</p>}
-            {!error && <p className="text-[10px] lg:text-xs text-emerald-600 font-bold flex items-center gap-2"><CheckCircle2 size={14}/> {draftMarkdown ? 'Adaptive Structure Synthesized.' : 'Synthesis Pending.'}</p>}
+            {error && (
+              <div className="flex items-start gap-2 text-rose-600 font-bold bg-rose-50 dark:bg-rose-950/20 p-3 rounded-xl border border-rose-100 dark:border-rose-900/30">
+                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                <span className="text-xs">{error}</span>
+              </div>
+            )}
+            {!error && draftMarkdown && (
+              <p className="text-[10px] lg:text-xs text-emerald-600 font-bold flex items-center gap-2">
+                <CheckCircle2 size={14}/> Adaptive Structure Synthesized. Ready for cloud indexing.
+              </p>
+            )}
           </div>
           <div className="flex w-full lg:w-auto gap-3">
             <button 
@@ -254,7 +336,10 @@ ${rawText.substring(0, 35000)}` }] }],
         >
           <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" />
         </button>
-        <div className="w-10" />
+        <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-950/30 rounded-full border border-indigo-100 dark:border-indigo-900/20">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Secure Node</span>
+        </div>
       </div>
 
       <div className="text-center mb-8 lg:mb-12">
@@ -269,7 +354,9 @@ ${rawText.substring(0, 35000)}` }] }],
         {/* Combined Validated Markdown & Word (Master MD flow) */}
         <label className="relative group cursor-pointer">
           <input type="file" className="hidden" accept=".md,.docx" onChange={(e) => {
-            const fileName = e.target.files?.[0]?.name.toLowerCase() || "";
+            const file = e.target.files?.[0];
+            if (!file) return;
+            const fileName = file.name.toLowerCase();
             const isDocx = fileName.endsWith('.docx');
             handleFileUpload(e, isDocx ? 'docx' : 'md');
           }} />
@@ -277,7 +364,7 @@ ${rawText.substring(0, 35000)}` }] }],
             <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl group-hover:scale-110 transition-transform"><FileCode size={20} className="lg:w-6 lg:h-6" /></div>
             <div className="text-left flex-1">
               <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">Validated Markdown / Word</h4>
-              <p className="text-[10px] text-slate-400">Master MD synthesis for .md and .docx assets.</p>
+              <p className="text-[10px] text-slate-400">Direct structural synthesis for .md and .docx.</p>
             </div>
             <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>
@@ -289,7 +376,7 @@ ${rawText.substring(0, 35000)}` }] }],
             <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 rounded-xl group-hover:scale-110 transition-transform"><FileText size={20} className="lg:w-6 lg:h-6" /></div>
             <div className="text-left flex-1">
               <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">High-Density PDF → Neural</h4>
-              <p className="text-[10px] text-slate-400">Institutional extraction of complex standards.</p>
+              <p className="text-[10px] text-slate-400">Institutional extraction of complex curriculum standards.</p>
             </div>
             <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>
@@ -301,7 +388,7 @@ ${rawText.substring(0, 35000)}` }] }],
             <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl group-hover:scale-110 transition-transform"><FileType size={20} className="lg:w-6 lg:h-6" /></div>
             <div className="text-left flex-1">
               <h4 className="font-bold text-xs lg:text-sm text-slate-800 dark:text-slate-200">Legacy Word (.doc) → Neural</h4>
-              <p className="text-[10px] text-slate-400">Adaptive conversion for raw legacy documents.</p>
+              <p className="text-[10px] text-slate-400">Adaptive conversion for raw unformatted documents.</p>
             </div>
             <ArrowRight size={16} className="text-slate-300 group-hover:translate-x-1 transition-all" />
           </div>
@@ -317,10 +404,11 @@ ${rawText.substring(0, 35000)}` }] }],
       </button>
       
       {isProcessing && (
-        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-3xl lg:rounded-[3rem] z-50 backdrop-blur-md animate-in fade-in">
+        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center rounded-3xl lg:rounded-[3rem] z-50 backdrop-blur-md animate-in fade-in duration-300">
           <Loader2 className="animate-spin text-indigo-600 mb-4 w-10 h-10 lg:w-14 lg:h-14" />
           <p className="text-base lg:text-lg font-black tracking-tight text-indigo-600">Neural Sync Active...</p>
           <p className="text-[10px] lg:text-xs font-bold text-slate-400 mt-2">{procStage}</p>
+          <p className="mt-8 px-8 text-center text-[10px] text-slate-400 max-w-sm">Please keep this window open while our AI synthesizes your curriculum standards.</p>
         </div>
       )}
     </div>
