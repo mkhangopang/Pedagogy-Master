@@ -2,15 +2,30 @@
 import { QueryAnalysis } from './query-analyzer';
 
 /**
- * Format AI response instructions based on query analysis
+ * STRATEGIC RESPONSE FORMATTER (v32.0)
+ * Optimized for Tool-based Pedagogical Synthesis.
  */
-export function formatResponseInstructions(analysis: QueryAnalysis): string {
+export function formatResponseInstructions(analysis: QueryAnalysis, toolType?: string, docMetadata?: any): string {
+  const metadataBlock = docMetadata ? `
+## INSTITUTIONAL CONTEXT:
+- BOARD/AUTHORITY: ${docMetadata.authority}
+- SUBJECT: ${docMetadata.subject}
+- GRADE LEVEL: ${docMetadata.grade_level}
+- VERSION: ${docMetadata.version_year}
+` : '';
+
+  // If a specific tool is active, use the Tool Synthesis Engine
+  if (toolType) {
+    return metadataBlock + getToolSpecificInstructions(toolType, analysis.extractedSLO);
+  }
+
+  // Fallback to general query analysis
   const baseInstruction = `
+${metadataBlock}
 🎯 USER QUERY ANALYSIS:
 - Type: ${analysis.queryType.toUpperCase()}
 - Intent: ${analysis.userIntent}
-- Expected Length: ${analysis.expectedResponseLength.toUpperCase()} (${getWordCount(analysis.expectedResponseLength)} words)
-${analysis.extractedSLO ? `- SLO Code: ${analysis.extractedSLO}` : ''}
+- Expected Length: ${analysis.expectedResponseLength.toUpperCase()}
 `;
 
   switch (analysis.queryType) {
@@ -23,6 +38,51 @@ ${analysis.extractedSLO ? `- SLO Code: ${analysis.extractedSLO}` : ''}
   }
 }
 
+function getToolSpecificInstructions(tool: string, slo?: string): string {
+  switch (tool) {
+    case 'lesson-plan':
+      return `
+### 🛠️ TOOL: ADVANCED LESSON SYNTHESIZER
+1. **ANCHOR**: Locate the specific SLO in the <AUTHORITATIVE_VAULT> matching "${slo || 'the requested topic'}".
+2. **OBJECTIVE**: Start with "Target SLO: [CODE] - [VERBATIM DESCRIPTION FROM VAULT]".
+3. **STRUCTURE**: Use the 5E Instructional Model exclusively.
+4. **ALIGNMENT**: Every activity MUST cite which part of the standard it addresses.
+5. **UDL**: Include specific scaffolds for the difficulty level found in metadata.
+`;
+    case 'assessment':
+      return `
+### 🛠️ TOOL: NEURAL ASSESSMENT GENERATOR
+1. **SOURCE**: Use ONLY content and vocabulary found in the <AUTHORITATIVE_VAULT>.
+2. **DISTRACTORS**: For MCQs, ensure distractors are based on common misconceptions for this specific subject.
+3. **MAPPING**: For every question, include a line: "[Aligned to: SLO Code | Bloom's Level]".
+4. **KEY**: Provide a high-fidelity answer key with pedagogical explanations.
+`;
+    case 'rubric':
+      return `
+### 🛠️ TOOL: CRITERIA & RUBRIC BUILDER
+1. **VERBS**: Identify the cognitive verbs in the vault's SLOs (e.g., "Analyze", "Calculate").
+2. **SCALING**: Create a 4-level rubric (Exceptional, Proficient, Developing, Beginning).
+3. **PRECISION**: Use observable behaviors in the descriptors.
+4. **REFERENCE**: Explicitly link the 'Proficient' column to the verbatim curriculum standard.
+`;
+    case 'learning-path':
+      return `
+### 🛠️ TOOL: SEQUENTIAL LEARNING PATHWAY
+1. **PREREQUISITES**: Identify earlier units/SLOs in the vault that must be taught first.
+2. **FLOW**: Create a 3-step sequence: [Foundation] -> [Active Lesson] -> [Extension].
+3. **GAPS**: If the vault is missing a prerequisite, explicitly state "External Knowledge Required: [Concept]".
+`;
+    case 'slo-tagger':
+      return `
+### 🛠️ TOOL: METADATA EXTRACTION & TAGGING
+1. **AUDIT**: Scan the user input and find matches in the <AUTHORITATIVE_VAULT>.
+2. **OUTPUT**: Return a JSON-style list of [Matched SLO Code] | [Confidence Score] | [Topic Alignment].
+`;
+    default:
+      return "\nProceed with pedagogical synthesis anchored to the provided curriculum assets.";
+  }
+}
+
 function getWordCount(length: 'short' | 'medium' | 'long'): string {
   return { short: '50-150', medium: '200-500', long: '800-1500' }[length];
 }
@@ -30,80 +90,30 @@ function getWordCount(length: 'short' | 'medium' | 'long'): string {
 function getLookupInstructions(slo?: string): string {
   return `
 📋 RESPONSE INSTRUCTIONS FOR SLO LOOKUP:
-FORMAT (Keep it SHORT - 50-150 words max):
-**SLO ${slo || '[code]'}:**
-"[Exact quote from curriculum document]"
-**What this means for teaching:**
-[One sentence explaining the learning outcome in simple terms]
-**Key concepts:**
-- [Concept 1]
-- [Concept 2]
-- [Concept 3]
-CRITICAL RULES:
-❌ DO NOT provide full lesson plan.
-❌ DO NOT include teaching activities.
-❌ DO NOT include assessment strategies.
-✅ ONLY provide: definition + brief explanation + key concepts.
+FORMAT: Definition + Brief Pedagogical Application.
+CRITICAL: Use verbatim quote from vault.
 `;
 }
 
 function getTeachingInstructions(slo?: string): string {
   return `
 🎓 RESPONSE INSTRUCTIONS FOR TEACHING STRATEGIES:
-FORMAT (Keep focused - 200-400 words):
-**Teaching Strategies for ${slo || 'this SLO'}:**
-1. **[Strategy Name]** ([Time])
-   - [Brief description of activity]
-2. **[Strategy Name]** ([Time])
-   - [Brief description]
-3. **Quick Assessment:**
-   - [1-2 formative assessment ideas]
-CRITICAL RULES:
-✅ Provide 3-5 specific, actionable teaching strategies.
-✅ Focus on student engagement.
-❌ DO NOT create full lesson plan structure.
+FORMAT: 3-5 specific, actionable teaching strategies with time allocations.
 `;
 }
 
 function getLessonPlanInstructions(slo?: string): string {
-  return `
-📚 RESPONSE INSTRUCTIONS FOR COMPLETE LESSON PLAN:
-FORMAT (Comprehensive - 800-1500 words):
-# LESSON PLAN: ${slo || '[SLO Code]'}
-## 1. LESSON OVERVIEW
-## 2. LEARNING OBJECTIVES
-## 3. MATERIALS & RESOURCES
-## 4. ANTICIPATORY SET (Hook)
-## 5. DIRECT INSTRUCTION
-## 6. GUIDED PRACTICE
-## 7. INDEPENDENT PRACTICE
-## 8. ASSESSMENT
-## 9. DIFFERENTIATION
-## 10. CLOSURE
-`;
+  return getToolSpecificInstructions('lesson-plan', slo);
 }
 
 function getAssessmentInstructions(slo?: string): string {
-  return `
-✅ RESPONSE INSTRUCTIONS FOR ASSESSMENT CREATION:
-FORMAT (Focused - 300-500 words):
-# ASSESSMENT: ${slo || '[SLO Code]'}
-**Questions:**
-1. [Question text] (X points)
-   A) [Option] ...
-**ANSWER KEY:**
-1. Correct answer: [X]
-`;
+  return getToolSpecificInstructions('assessment', slo);
 }
 
 function getDifferentiationInstructions(slo?: string): string {
   return `
 🎭 RESPONSE INSTRUCTIONS FOR DIFFERENTIATION STRATEGIES:
-FORMAT (Practical - 200-400 words):
-**Differentiation for ${slo || 'this SLO'}:**
-### 🔵 Below Grade Level
-### 🟢 At Grade Level
-### 🟡 Above Grade Level
+Provide Support (Tier 1), At-Level (Tier 2), and Extension (Tier 3) strategies specifically for the selected curriculum asset.
 `;
 }
 
