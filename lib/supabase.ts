@@ -88,20 +88,30 @@ export function isAppAdmin(email: string | undefined): boolean {
 }
 
 export async function getOrCreateProfile(userId: string, email?: string) {
-  try {
-    // Use maybeSingle to avoid throwing errors when profile doesn't exist yet
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+  const maxRetries = 2;
+  let attempt = 0;
 
-    if (error) {
-      console.error('📡 [Supabase] Profile lookup failed:', error.message);
-      return null;
-    }
+  while (attempt <= maxRetries) {
+    try {
+      // 1. Primary Lookup
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (!profile) {
+      if (error) {
+        console.warn(`📡 [Supabase] Handshake Attempt ${attempt + 1} Failed:`, error.message);
+        if (attempt === maxRetries) return null;
+        attempt++;
+        await new Promise(r => setTimeout(r, 1000 * attempt));
+        continue;
+      }
+
+      // 2. Profile Found
+      if (profile) return profile;
+
+      // 3. Synthesis Mode: Profile Missing
       console.log('📡 [Supabase] Profile missing, synthesizing new educator record...');
       const isAdminUser = isAppAdmin(email);
       const { data: newProfile, error: insertError } = await supabase
@@ -123,13 +133,14 @@ export async function getOrCreateProfile(userId: string, email?: string) {
         return null;
       }
       return newProfile;
+    } catch (fatal) {
+      console.error('📡 [Supabase] Fatal Handshake Attempt:', attempt, fatal);
+      if (attempt === maxRetries) return null;
+      attempt++;
+      await new Promise(r => setTimeout(r, 1000 * attempt));
     }
-
-    return profile;
-  } catch (fatal) {
-    console.error('📡 [Supabase] Fatal Handshake Failure:', fatal);
-    return null;
   }
+  return null;
 }
 
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {

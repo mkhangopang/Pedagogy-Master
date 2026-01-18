@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -34,6 +35,7 @@ export default function App() {
 
   const isActuallyConnected = healthStatus.status === 'connected';
   const initializationRef = useRef(false);
+  const profileFetchIdRef = useRef<string | null>(null);
   
   const [brain, setBrain] = useState<NeuralBrain>({
     id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
@@ -58,21 +60,28 @@ export default function App() {
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     if (!supabase) return;
+    
+    // Prevent overlapping fetch cycles
+    const currentFetchId = userId + Date.now();
+    profileFetchIdRef.current = currentFetchId;
 
     try {
       console.log('📡 [Sync] Handshaking profile for:', userId);
       const isSystemAdmin = isAppAdmin(email);
       
-      // Attempt profile fetch with 5s timeout
+      // Attempt profile fetch with 15s timeout to support cold starts
       const profilePromise = getOrCreateProfile(userId, email);
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Handshake timeout")), 5000)
+        setTimeout(() => reject(new Error("Handshake timeout")), 15000)
       );
 
       const profile: any = await Promise.race([profilePromise, timeoutPromise]).catch(err => {
         console.warn("⚠️ [Sync] Profile fetch timed out or failed, using guest mode fallback.");
         return null;
       });
+
+      // Verify this is still the active fetch cycle
+      if (profileFetchIdRef.current !== currentFetchId) return;
       
       const activeProfile: UserProfile = {
         id: profile?.id || userId,
@@ -89,14 +98,18 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
-      // Background fetch documents
-      const { data: docs } = await supabase
+      // Background fetch documents with safety
+      const { data: docs, error: docError } = await supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (docs) {
+      if (docError) {
+        console.error("❌ [Sync] Document fetch error:", docError.message);
+      }
+
+      if (docs && profileFetchIdRef.current === currentFetchId) {
         setDocuments(docs.map(d => ({
           id: d.id,
           userId: d.user_id,
@@ -145,7 +158,6 @@ export default function App() {
         await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
       }
       
-      // Safety release for loader
       setLoading(false);
     };
 
@@ -158,8 +170,10 @@ export default function App() {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any) {
           if (currentSession) {
             setSession(currentSession);
-            // Only show loader if we don't have a profile yet to prevent flicker for active sessions
-            if (!userProfile) setLoading(true);
+            // Optimization: If profile already exists for this ID, don't block
+            const profileAlreadyLoaded = userProfile?.id === currentSession.user.id;
+            if (!profileAlreadyLoaded) setLoading(true);
+            
             await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
             setLoading(false);
           }
@@ -179,16 +193,16 @@ export default function App() {
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
 
-    // CRITICAL: Global Safety Timeout (10s)
+    // CRITICAL: Global Safety Timeout (20s)
     const safetyTimer = setTimeout(() => {
       setLoading(false);
-    }, 10000);
+    }, 20000);
 
     return () => {
       subscription.unsubscribe();
       clearTimeout(safetyTimer);
     };
-  }, [checkDb, fetchProfileAndDocs, userProfile]);
+  }, [checkDb, fetchProfileAndDocs, userProfile?.id]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -223,6 +237,7 @@ export default function App() {
       <div className="text-center space-y-2">
         <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Neural Handshake</p>
         <p className="text-slate-400 font-medium text-xs">Synchronizing environment nodes...</p>
+        {loading && <p className="text-slate-300 text-[10px] animate-pulse">Establishing Cloud Data Plane...</p>}
       </div>
     </div>
   );
