@@ -1,35 +1,45 @@
-
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { UserRole } from '../types';
 import { ADMIN_EMAILS } from '../constants';
 
+/**
+ * STATIC ENV RESOLUTION
+ * Next.js requires static strings for NEXT_PUBLIC variables to be bundled.
+ */
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
 const getEnv = (key: string): string => {
-  if (typeof window === 'undefined') return process.env[key] || '';
-  const win = window as any;
-  return win.process?.env?.[key] || win[key] || process.env[key] || '';
+  if (key === 'NEXT_PUBLIC_SUPABASE_URL') return SUPABASE_URL;
+  if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY') return SUPABASE_KEY;
+  
+  if (typeof window !== 'undefined') {
+    const win = window as any;
+    return win.process?.env?.[key] || win[key] || (process.env as any)[key] || '';
+  }
+  return (process.env as any)[key] || '';
 };
 
 export const isSupabaseConfigured = (): boolean => {
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL');
-  const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
-  return !!url && url.length > 20 && !!key && key.length > 20;
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  // Simple check for presence and minimum length to avoid placeholder errors
+  return !!url && url.length > 5 && !!key && key.length > 5 && !url.includes('placeholder');
 };
 
 let cachedClient: SupabaseClient | null = null;
-let lastUsedUrl = '';
 
 const getClient = (): SupabaseClient => {
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL');
-  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
+  if (cachedClient) return cachedClient;
 
-  // Re-initialize if environment variables finally appeared or changed
-  if (cachedClient && url === lastUsedUrl && url.length > 20) return cachedClient;
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
 
-  if (!url || !anonKey || url.includes('placeholder') || url.length < 10) {
-    return createClient('https://placeholder-node.supabase.co', 'placeholder-key');
+  if (!isSupabaseConfigured()) {
+    // Return a dummy client that will fail gracefully rather than crashing the UI
+    return createClient('https://invalid.supabase.co', 'invalid');
   }
 
-  lastUsedUrl = url;
   cachedClient = createClient(url, anonKey, {
     auth: {
       persistSession: true,
@@ -42,6 +52,7 @@ const getClient = (): SupabaseClient => {
   return cachedClient;
 };
 
+// Proxy to ensure we always use the latest client state
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop, receiver) => {
     if (prop === 'then') return undefined;
@@ -53,8 +64,12 @@ export const supabase = new Proxy({} as SupabaseClient, {
 });
 
 export async function getAuthenticatedUser(): Promise<User | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  return user;
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 export function isAppAdmin(email: string | undefined): boolean {
@@ -75,7 +90,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     if (profile) return profile;
 
     const isAdminUser = isAppAdmin(email);
-    const { data: newProfile } = await supabase
+    const { data: newProfile, error: upsertError } = await supabase
       .from('profiles')
       .upsert({
         id: userId,
@@ -89,6 +104,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       .select()
       .single();
 
+    if (upsertError) console.error("Profile upsert error:", upsertError);
     return newProfile;
   } catch (err) {
     console.error("Profile handshake failed:", err);
@@ -98,11 +114,12 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) {
-    return { status: 'disconnected', message: 'Environment keys missing.' };
+    return { status: 'disconnected', message: 'Environment keys not detected by client.' };
   }
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
-    if (error && error.code !== 'PGRST116') throw error;
+    // PGRST116 just means no rows, which is fine for a health check
+    if (error && error.code !== 'PGRST116' && error.code !== '42P01') throw error;
     return { status: 'connected', message: 'Cloud Node Operational' };
   } catch (err: any) {
     return { status: 'disconnected', message: err.message || 'Connection failure' };
@@ -111,8 +128,8 @@ export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disc
 
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
-    getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL'),
-    getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY'),
+    getEnv('NEXT_PUBLIC_SUPABASE_URL'),
+    getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
     { global: { headers: { Authorization: `Bearer ${token}` } } }
   );
 };

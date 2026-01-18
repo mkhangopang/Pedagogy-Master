@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -53,12 +52,12 @@ export default function App() {
   }, []);
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
-    if (!supabase) return;
+    if (!supabase || !isSupabaseConfigured()) return;
     
     setIsBackgroundSyncing(true);
     const isSystemAdmin = isAppAdmin(email);
     
-    // Safety Optimistic Profile
+    // Safety Optimistic Profile to release UI early
     const optimistic: UserProfile = {
       id: userId,
       name: email?.split('@')[0] || 'Educator',
@@ -87,7 +86,6 @@ export default function App() {
           queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
           generationCount: profile.generation_count || 0,
           successRate: profile.success_rate || 0,
-          // Fixed edit_patterns to editPatterns to match UserProfile type definition
           editPatterns: profile.edit_patterns || optimistic.editPatterns
         });
       }
@@ -133,17 +131,29 @@ export default function App() {
       paymentService.init();
       await checkDb();
       
-      const { data: { session: initialSession } } = await supabase.auth.getSession();
-      if (initialSession) {
-        setSession(initialSession);
-        await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+      // Safety timeout: if checking takes too long, release to login screen
+      const timer = setTimeout(() => {
+        if (loading) setLoading(false);
+      }, 4000);
+
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        if (initialSession) {
+          setSession(initialSession);
+          await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+        }
+      } catch (e) {
+        console.error("Auth init failure:", e);
+      } finally {
+        clearTimeout(timer);
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      console.log(`🔐 [Auth] ${event}`);
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
           setSession(currentSession);
@@ -171,6 +181,7 @@ export default function App() {
     }
   };
 
+  // If loading and no session is verified, show handshake
   if (loading && !session) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
       <div className="relative">
