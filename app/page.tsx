@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -10,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu, ShieldAlert } from 'lucide-react';
+import { Loader2, Menu, Cpu } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
@@ -35,21 +34,6 @@ export default function App() {
   
   const authInitialized = useRef(false);
   const isActuallyConnected = healthStatus.status === 'connected';
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('pm-theme') as 'light' | 'dark' | null;
-    if (savedTheme) {
-      setTheme(savedTheme);
-      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'light' ? 'dark' : 'light';
-    setTheme(newTheme);
-    localStorage.setItem('pm-theme', newTheme);
-    document.documentElement.classList.toggle('dark', newTheme === 'dark');
-  };
 
   const [brain, setBrain] = useState<NeuralBrain>({
     id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
@@ -79,9 +63,8 @@ export default function App() {
       console.log('📡 [Sync] Handshaking profile for:', userId);
       const isSystemAdmin = isAppAdmin(email);
       
-      // Strict 3s timeout for database profile fetch
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Handshake timeout')), 3000)
+        setTimeout(() => reject(new Error('Handshake timeout')), 5000)
       );
 
       let profile: any;
@@ -112,7 +95,6 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
-      // Background sync: Don't let slow document loading block the dashboard
       const { data: docs } = await supabase
         .from('documents')
         .select('*')
@@ -146,73 +128,61 @@ export default function App() {
           isSelected: d.is_selected ?? false
         })));
       }
-
     } catch (e: any) {
       console.error("❌ [Sync] Data plane error:", e);
     }
   }, []);
 
   useEffect(() => {
-    if (authInitialized.current) return;
-    authInitialized.current = true;
+    const savedTheme = localStorage.getItem('pm-theme') as 'light' | 'dark' | null;
+    if (savedTheme) {
+      setTheme(savedTheme);
+      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+    }
     
     paymentService.init();
     checkDb();
-
-    // GLOBAL SAFETY TIMEOUT: Kill loading screen after 5s no matter what
-    const safetyTimer = setTimeout(() => {
-      if (loading) {
-        console.warn("🛡️ [App] Safety timeout triggered. Terminating handshake wait.");
-        setLoading(false);
-      }
-    }, 5000);
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         setSession(currentSession);
         
         if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
-          setLoading(true); // Re-trigger loading while we fetch profile
-          try {
-            await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-          } finally {
-            setLoading(false);
-            clearTimeout(safetyTimer);
-          }
+          setLoading(true);
+          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
+          setLoading(false);
         } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           setDocuments([]);
-          setCurrentView('dashboard'); // Reset view for next user
           setLoading(false);
-          clearTimeout(safetyTimer);
+          setCurrentView('dashboard');
         }
       }
     );
 
-    // Immediate check for existing session
-    supabase.auth.getSession().then(async ({ data: { session: initialSession } }) => {
+    // Initial check
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
       if (initialSession) {
         setSession(initialSession);
-        try {
-          await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
-        } finally {
+        fetchProfileAndDocs(initialSession.user.id, initialSession.user.email).then(() => {
           setLoading(false);
-          clearTimeout(safetyTimer);
-        }
+        });
       } else {
         setLoading(false);
-        clearTimeout(safetyTimer);
       }
-    }).catch(() => {
-      setLoading(false);
-      clearTimeout(safetyTimer);
     });
 
     return () => {
       subscription.unsubscribe();
-      clearTimeout(safetyTimer);
     };
   }, [checkDb, fetchProfileAndDocs]);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('pm-theme', newTheme);
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
+  };
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
@@ -229,40 +199,28 @@ export default function App() {
     }
   };
 
-  const renderView = () => {
-    if (!userProfile) return null;
-    return (
-      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-        <Suspense fallback={<div className="flex flex-col items-center justify-center p-20 space-y-4 text-slate-400 font-bold uppercase tracking-widest text-[10px]">
-          <Loader2 className="animate-spin text-indigo-600" size={32} />
-          <span>Synthesis Node Initializing...</span>
-        </div>}>
-          {(() => {
-            switch (currentView) {
-              case 'dashboard':
-                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-              case 'documents':
-                return <DocumentsView documents={documents} userProfile={userProfile} onAddDocument={async (d) => { await fetchProfileAndDocs(userProfile.id, userProfile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
-              case 'chat':
-                return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
-              case 'tools':
-                return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
-              case 'tracker':
-                return <TrackerView user={userProfile} documents={documents} />;
-              case 'brain':
-                return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-              case 'pricing':
-                return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
-              default:
-                return <Dashboard user={userProfile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-            }
-          })()}
-        </Suspense>
-      </div>
-    );
+  const renderViewContent = (profile: UserProfile) => {
+    switch (currentView) {
+      case 'dashboard':
+        return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+      case 'documents':
+        return <DocumentsView documents={documents} userProfile={profile} onAddDocument={async (d) => { await fetchProfileAndDocs(profile.id, profile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
+      case 'chat':
+        return <ChatView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
+      case 'tools':
+        return <ToolsView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
+      case 'tracker':
+        return <TrackerView user={profile} documents={documents} />;
+      case 'brain':
+        return profile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+      case 'pricing':
+        return <PricingView currentPlan={profile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
+      default:
+        return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+    }
   };
 
-  // Show global loader if we are in the middle of a transition or handshake
+  // 1. Initial configuration check or total loading
   if (loading || (session && !userProfile)) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
       <div className="relative">
@@ -273,14 +231,18 @@ export default function App() {
       </div>
       <div className="text-center space-y-2">
         <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Neural Handshake</p>
-        <p className="text-slate-400 font-medium text-xs">Authenticating workspace nodes...</p>
+        <p className="text-slate-400 font-medium text-xs">Synchronizing environment nodes...</p>
       </div>
     </div>
   );
   
+  // 2. Unauthenticated state
   if (!session) {
     return <Login onSession={setSession} />;
   }
+
+  // 3. Fully authenticated state (userProfile is guaranteed at this point)
+  const profile = userProfile!;
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
@@ -288,7 +250,7 @@ export default function App() {
         <Sidebar 
           currentView={currentView} 
           onViewChange={setCurrentView} 
-          userProfile={userProfile} 
+          userProfile={profile} 
           isCollapsed={isCollapsed} 
           setIsCollapsed={setIsCollapsed} 
           theme={theme} 
@@ -303,7 +265,7 @@ export default function App() {
             <Sidebar 
               currentView={currentView} 
               onViewChange={(view) => { setCurrentView(view); setIsSidebarOpen(false); }} 
-              userProfile={userProfile} 
+              userProfile={profile} 
               isCollapsed={false} 
               setIsCollapsed={() => {}} 
               onClose={() => setIsSidebarOpen(false)}
@@ -315,14 +277,23 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {userProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
+        {profile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"><Menu size={24} /></button>
           <span className="font-bold text-indigo-950 dark:text-white tracking-tight">{APP_NAME}</span>
           <div className="w-10" />
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-          <div className="max-w-6xl mx-auto">{renderView()}</div>
+          <div className="max-w-6xl mx-auto">
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+              <Suspense fallback={<div className="flex flex-col items-center justify-center p-20 space-y-4 text-slate-400 font-bold uppercase tracking-widest text-[10px]">
+                <Loader2 className="animate-spin text-indigo-600" size={32} />
+                <span>Synthesis Node Initializing...</span>
+              </div>}>
+                {renderViewContent(profile)}
+              </Suspense>
+            </div>
+          </div>
         </main>
       </div>
     </div>
