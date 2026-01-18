@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -33,8 +32,8 @@ export default function App() {
     message: 'Verifying systems...' 
   });
 
-  // FIXED: Define isActuallyConnected derived state to resolve 'Cannot find name' errors on lines 180 and 263.
   const isActuallyConnected = healthStatus.status === 'connected';
+  const initializationRef = useRef(false);
   
   const [brain, setBrain] = useState<NeuralBrain>({
     id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
@@ -64,8 +63,16 @@ export default function App() {
       console.log('📡 [Sync] Handshaking profile for:', userId);
       const isSystemAdmin = isAppAdmin(email);
       
-      // Fast-track profile lookup with fallback
-      const profile = await getOrCreateProfile(userId, email);
+      // Attempt profile fetch with 5s timeout
+      const profilePromise = getOrCreateProfile(userId, email);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Handshake timeout")), 5000)
+      );
+
+      const profile: any = await Promise.race([profilePromise, timeoutPromise]).catch(err => {
+        console.warn("⚠️ [Sync] Profile fetch timed out or failed, using guest mode fallback.");
+        return null;
+      });
       
       const activeProfile: UserProfile = {
         id: profile?.id || userId,
@@ -82,7 +89,7 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
-      // Parallelize document fetching
+      // Background fetch documents
       const { data: docs } = await supabase
         .from('documents')
         .select('*')
@@ -117,35 +124,42 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.error("❌ [Sync] Profile fetch error:", e);
+      console.error("❌ [Sync] Data plane error:", e);
     }
   }, []);
 
   useEffect(() => {
-    // 1. Initial State Check
+    if (initializationRef.current) return;
+    initializationRef.current = true;
+
     const initialize = async () => {
+      setLoading(true);
       paymentService.init();
       await checkDb();
       
+      // Get initial session
       const { data: { session: initialSession } } = await supabase.auth.getSession();
+      
       if (initialSession) {
         setSession(initialSession);
         await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
       }
+      
+      // Safety release for loader
       setLoading(false);
     };
 
     initialize();
 
-    // 2. Continuous Auth Listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         console.log(`🔐 [Auth] Event: ${event}`);
         
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any) {
           if (currentSession) {
             setSession(currentSession);
-            setLoading(true);
+            // Only show loader if we don't have a profile yet to prevent flicker for active sessions
+            if (!userProfile) setLoading(true);
             await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
             setLoading(false);
           }
@@ -159,17 +173,22 @@ export default function App() {
       }
     );
 
-    // 3. Theme Recovery
     const savedTheme = localStorage.getItem('pm-theme') as 'light' | 'dark' | null;
     if (savedTheme) {
       setTheme(savedTheme);
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
 
+    // CRITICAL: Global Safety Timeout (10s)
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 10000);
+
     return () => {
       subscription.unsubscribe();
+      clearTimeout(safetyTimer);
     };
-  }, [checkDb, fetchProfileAndDocs]);
+  }, [checkDb, fetchProfileAndDocs, userProfile]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -181,7 +200,6 @@ export default function App() {
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
     
-    // FIXED: Correctly use the derived isActuallyConnected state to check connectivity.
     if (isActuallyConnected && isSupabaseConfigured() && supabase) {
       const dbUpdates: any = {};
       if (updates.status) dbUpdates.status = updates.status;
@@ -194,7 +212,6 @@ export default function App() {
     }
   };
 
-  // Rendering Gate: Show neural handshake during any data-sync operation
   if (loading || (session && !userProfile)) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
       <div className="relative">
@@ -211,7 +228,7 @@ export default function App() {
   );
   
   if (!session) {
-    return <Login onSession={() => {}} />; // Session handled by global listener
+    return <Login onSession={() => {}} />;
   }
 
   const profile = userProfile!;
@@ -265,7 +282,6 @@ export default function App() {
                 {(() => {
                   switch (currentView) {
                     case 'dashboard': return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-                    // FIXED: Properly pass the isActuallyConnected derived state to DocumentsView to fix line 263.
                     case 'documents': return <DocumentsView documents={documents} userProfile={profile} onAddDocument={async () => { await fetchProfileAndDocs(profile.id, profile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
                     case 'chat': return <ChatView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
                     case 'tools': return <ToolsView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
