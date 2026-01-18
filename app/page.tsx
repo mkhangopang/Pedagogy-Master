@@ -54,6 +54,7 @@ export default function App() {
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     if (!isSupabaseConfigured()) {
       setIsBackgroundSyncing(false);
+      setLoading(false);
       return;
     }
     
@@ -92,11 +93,15 @@ export default function App() {
         });
       }
 
-      const { data: docs } = await supabase
+      const { data: docs, error: docError } = await supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
+
+      if (docError) {
+        console.warn("Documents load failure:", docError.message);
+      }
 
       if (docs) {
         setDocuments(docs.map(d => ({
@@ -130,42 +135,47 @@ export default function App() {
     initializationRef.current = true;
 
     const initialize = async () => {
-      paymentService.init();
-      const connected = await checkDb();
-      
-      const bootTimeout = setTimeout(() => {
-        if (loading) setLoading(false);
-      }, 4500);
-
       try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        paymentService.init();
+        const connected = await checkDb();
+        
+        // Safety timeout for the loader
+        const bootTimeout = setTimeout(() => {
+          setLoading(false);
+        }, 5000);
+
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) throw sessionError;
+
         if (initialSession) {
           setSession(initialSession);
           if (connected) {
             await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
           }
         }
+        
+        clearTimeout(bootTimeout);
       } catch (e) {
         console.error("Auth boot sequence interrupted:", e);
       } finally {
-        clearTimeout(bootTimeout);
         setLoading(false);
       }
     };
 
     initialize();
 
+    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
           setSession(currentSession);
-          const isConfigured = isSupabaseConfigured();
-          if (isConfigured) {
+          if (isSupabaseConfigured()) {
              await checkDb();
              await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
           }
-          setLoading(false);
         }
+        setLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
         setUserProfile(null);
@@ -174,7 +184,9 @@ export default function App() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      if (subscription) subscription.unsubscribe();
+    };
   }, [checkDb, fetchProfileAndDocs]);
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
@@ -184,7 +196,11 @@ export default function App() {
       if (updates.status) dbUpdates.status = updates.status;
       if (updates.geminiProcessed !== undefined) dbUpdates.rag_indexed = updates.geminiProcessed;
       if (updates.isSelected !== undefined) dbUpdates.is_selected = updates.isSelected;
-      await supabase.from('documents').update(dbUpdates).eq('id', id);
+      try {
+        await supabase.from('documents').update(dbUpdates).eq('id', id);
+      } catch (e) {
+        console.error("Document update sync failed:", e);
+      }
     }
   };
 

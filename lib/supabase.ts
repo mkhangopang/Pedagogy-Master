@@ -3,63 +3,36 @@ import { UserRole } from '../types';
 import { ADMIN_EMAILS } from '../constants';
 
 /**
- * STATIC ENV RESOLUTION
- * Next.js requires static strings (e.g. process.env.NEXT_PUBLIC_...) to be 
- * explicitly written for the compiler to bundle them into the browser.
+ * NEXT.JS STATIC ENVIRONMENT RESOLUTION
+ * Next.js requires these to be accessed statically (literal string) 
+ * so the compiler can inline the values into the client-side bundle.
  */
-const STATIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const STATIC_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const NEXT_PUBLIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const NEXT_PUBLIC_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-const getEnv = (key: string): string => {
-  const sanitize = (val: any) => (val && val !== 'undefined' && val !== 'null') ? String(val).trim() : '';
-  
-  // 1. Check static Next.js bundled variables first (Most reliable in Production)
-  if (key === 'SUPABASE_URL' && STATIC_URL) return STATIC_URL;
-  if (key === 'SUPABASE_ANON_KEY' && STATIC_KEY) return STATIC_KEY;
-  if (key === 'NEXT_PUBLIC_SUPABASE_URL' && STATIC_URL) return STATIC_URL;
-  if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY' && STATIC_KEY) return STATIC_KEY;
-
-  // 2. Fallback to Window object (Injected by index.tsx handshake)
-  if (typeof window !== 'undefined') {
-    const win = window as any;
-    const found = sanitize(win.process?.env?.[key]) || 
-                  sanitize(win.process?.env?.[`NEXT_PUBLIC_${key}`]) ||
-                  sanitize(win[key]) ||
-                  sanitize(win[`NEXT_PUBLIC_${key}`]);
-    if (found) return found;
-  }
-  
-  // 3. Last resort dynamic process.env (Usually server-side only)
-  return sanitize((process.env as any)[key]) || sanitize((process.env as any)[`NEXT_PUBLIC_${key}`]) || '';
-};
+/**
+ * Single-instance Supabase client.
+ * Using a Proxy can cause issues with internal "this" bindings and React 19's 
+ * stricter hydration/serialization checks.
+ */
+let supabaseInstance: SupabaseClient | null = null;
 
 export const isSupabaseConfigured = (): boolean => {
-  const url = getEnv('SUPABASE_URL');
-  const key = getEnv('SUPABASE_ANON_KEY');
-  
-  // We check for minimal length and "placeholder" strings.
-  // In Next.js client, if the user didn't use NEXT_PUBLIC prefix in Vercel, this will be empty.
-  return url.length > 5 && key.length > 5 && !url.includes('placeholder') && !url.includes('invalid');
+  return (
+    NEXT_PUBLIC_URL.length > 10 && 
+    NEXT_PUBLIC_KEY.length > 10 && 
+    !NEXT_PUBLIC_URL.includes('placeholder')
+  );
 };
 
-let cachedClient: SupabaseClient | null = null;
-let lastResolvedUrl = '';
+export const getSupabaseClient = (): SupabaseClient => {
+  if (supabaseInstance) return supabaseInstance;
 
-const getClient = (): SupabaseClient => {
-  const url = getEnv('SUPABASE_URL');
-  const anonKey = getEnv('SUPABASE_ANON_KEY');
+  // Fallback for development/unconfigured states to prevent crashes
+  const url = isSupabaseConfigured() ? NEXT_PUBLIC_URL : 'https://waiting-for-deployment.supabase.co';
+  const key = isSupabaseConfigured() ? NEXT_PUBLIC_KEY : 'invalid-key';
 
-  // Reuse client if config hasn't changed
-  if (cachedClient && url === lastResolvedUrl && url !== '') return cachedClient;
-
-  if (!url || !anonKey || url.includes('placeholder') || url === '') {
-    // Return a dummy client that doesn't crash but will fail network requests
-    // This allows the UI to render while the handshake finishes
-    return createClient('https://waiting-for-handshake.supabase.co', 'waiting');
-  }
-
-  lastResolvedUrl = url;
-  cachedClient = createClient(url, anonKey, {
+  supabaseInstance = createClient(url, key, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -68,24 +41,11 @@ const getClient = (): SupabaseClient => {
     }
   });
 
-  return cachedClient;
+  return supabaseInstance;
 };
 
-/**
- * SUPABASE PROXY
- * This ensures that if the environment variables are set LATE (e.g. via 
- * the async handshake in index.tsx), the client will automatically
- * re-initialize with the correct keys on the next property access.
- */
-export const supabase = new Proxy({} as SupabaseClient, {
-  get: (target, prop, receiver) => {
-    if (prop === 'then') return undefined;
-    const client = getClient();
-    const value = Reflect.get(client, prop, client);
-    if (typeof value === 'function') return value.bind(client);
-    return value;
-  }
-});
+// Export the singleton instance
+export const supabase = getSupabaseClient();
 
 export async function getAuthenticatedUser(): Promise<User | null> {
   try {
@@ -105,16 +65,20 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
   
   try {
-    const { data: profile } = await supabase
+    const { data: profile, error: fetchError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .maybeSingle();
 
+    if (fetchError) {
+      console.warn("Profile fetch warning:", fetchError.message);
+    }
+
     if (profile) return profile;
 
     const isAdminUser = isAppAdmin(email);
-    const { data: newProfile } = await supabase
+    const { data: newProfile, error: upsertError } = await supabase
       .from('profiles')
       .upsert({
         id: userId,
@@ -128,24 +92,22 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       .select()
       .single();
 
+    if (upsertError) {
+      console.error("Profile synchronization failure:", upsertError);
+    }
     return newProfile;
   } catch (err) {
-    console.error("Profile synchronization failure:", err);
+    console.error("Fatal error during profile creation:", err);
     return null;
   }
 }
 
-/**
- * SUPABASE HEALTH MONITOR
- * Uses an Auth session check instead of a table query to avoid RLS blockages 
- * during the initial boot sequence.
- */
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) {
     return { status: 'disconnected', message: 'Credentials missing in browser scope.' };
   }
   try {
-    // getSession is local-first and reliable for a ping
+    // getSession is local-first and reliable for a ping without hitting RLS
     const { error } = await supabase.auth.getSession();
     if (error) throw error;
     return { status: 'connected', message: 'Cloud Node Operational' };
@@ -156,8 +118,8 @@ export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disc
 
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
-    getEnv('SUPABASE_URL'),
-    getEnv('SUPABASE_ANON_KEY'),
+    NEXT_PUBLIC_URL,
+    NEXT_PUBLIC_KEY,
     { global: { headers: { Authorization: `Bearer ${token}` } } }
   );
 }
