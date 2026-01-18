@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -10,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu } from 'lucide-react';
+import { Loader2, Menu, Cpu, RefreshCw } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
@@ -22,6 +21,7 @@ const TrackerView = lazy(() => import('../views/Tracker'));
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isBackgroundSyncing, setIsBackgroundSyncing] = useState(false);
   const [currentView, setCurrentView] = useState('dashboard');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -61,53 +61,61 @@ export default function App() {
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     if (!supabase) return;
     
-    // Prevent overlapping fetch cycles
     const currentFetchId = userId + Date.now();
     profileFetchIdRef.current = currentFetchId;
 
+    // 1. OPTIMISTIC PROFILE (Instant release from loading screen)
+    const isSystemAdmin = isAppAdmin(email);
+    const optimisticProfile: UserProfile = {
+      id: userId,
+      name: email?.split('@')[0] || 'Educator',
+      email: email || '',
+      role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
+      plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
+      queriesUsed: 0,
+      queriesLimit: isSystemAdmin ? 999999 : 30,
+      generationCount: 0,
+      successRate: 0,
+      editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+    };
+
+    // If we don't have a profile yet, or the ID changed, set the optimistic one to release the UI
+    if (!userProfile || userProfile.id !== userId) {
+      setUserProfile(optimisticProfile);
+    }
+
+    setIsBackgroundSyncing(true);
+
     try {
       console.log('📡 [Sync] Handshaking profile for:', userId);
-      const isSystemAdmin = isAppAdmin(email);
       
-      // Attempt profile fetch with 15s timeout to support cold starts
-      const profilePromise = getOrCreateProfile(userId, email);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Handshake timeout")), 15000)
-      );
+      // Attempt profile fetch - No aggressive Promise.race, rely on inner retry logic
+      const profile: any = await getOrCreateProfile(userId, email);
 
-      const profile: any = await Promise.race([profilePromise, timeoutPromise]).catch(err => {
-        console.warn("⚠️ [Sync] Profile fetch timed out or failed, using guest mode fallback.");
-        return null;
-      });
-
-      // Verify this is still the active fetch cycle
       if (profileFetchIdRef.current !== currentFetchId) return;
       
-      const activeProfile: UserProfile = {
-        id: profile?.id || userId,
-        name: profile?.name || email?.split('@')[0] || 'Educator',
-        email: profile?.email || email || '',
-        role: isSystemAdmin ? UserRole.APP_ADMIN : (profile?.role as UserRole || UserRole.TEACHER),
-        plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile?.plan as SubscriptionPlan || SubscriptionPlan.FREE),
-        queriesUsed: profile?.queries_used || 0,
-        queriesLimit: isSystemAdmin ? 999999 : (profile?.queries_limit || 30),
-        generationCount: profile?.generation_count || 0,
-        successRate: profile?.success_rate || 0,
-        editPatterns: profile?.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-      };
-      
-      setUserProfile(activeProfile);
+      if (profile) {
+        const activeProfile: UserProfile = {
+          id: profile.id,
+          name: profile.name || email?.split('@')[0] || 'Educator',
+          email: profile.email || email || '',
+          role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole || UserRole.TEACHER),
+          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan || SubscriptionPlan.FREE),
+          queriesUsed: profile.queries_used || 0,
+          queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
+          generationCount: profile.generation_count || 0,
+          successRate: profile.success_rate || 0,
+          editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        };
+        setUserProfile(activeProfile);
+      }
 
-      // Background fetch documents with safety
+      // Background fetch documents
       const { data: docs, error: docError } = await supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
-
-      if (docError) {
-        console.error("❌ [Sync] Document fetch error:", docError.message);
-      }
 
       if (docs && profileFetchIdRef.current === currentFetchId) {
         setDocuments(docs.map(d => ({
@@ -138,27 +146,30 @@ export default function App() {
       }
     } catch (e: any) {
       console.error("❌ [Sync] Data plane error:", e);
+    } finally {
+      if (profileFetchIdRef.current === currentFetchId) {
+        setIsBackgroundSyncing(false);
+      }
     }
-  }, []);
+  }, [userProfile]);
 
   useEffect(() => {
     if (initializationRef.current) return;
     initializationRef.current = true;
 
     const initialize = async () => {
-      setLoading(true);
       paymentService.init();
       await checkDb();
       
-      // Get initial session
       const { data: { session: initialSession } } = await supabase.auth.getSession();
-      
       if (initialSession) {
         setSession(initialSession);
+        // Release loader gate early if session exists
+        setLoading(false); 
         await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+      } else {
+        setLoading(false);
       }
-      
-      setLoading(false);
     };
 
     initialize();
@@ -167,15 +178,11 @@ export default function App() {
       async (event, currentSession) => {
         console.log(`🔐 [Auth] Event: ${event}`);
         
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any) {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           if (currentSession) {
             setSession(currentSession);
-            // Optimization: If profile already exists for this ID, don't block
-            const profileAlreadyLoaded = userProfile?.id === currentSession.user.id;
-            if (!profileAlreadyLoaded) setLoading(true);
-            
+            setLoading(false); // Immediate gate release
             await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-            setLoading(false);
           }
         } else if (event === 'SIGNED_OUT') {
           setSession(null);
@@ -193,16 +200,10 @@ export default function App() {
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
 
-    // CRITICAL: Global Safety Timeout (20s)
-    const safetyTimer = setTimeout(() => {
-      setLoading(false);
-    }, 20000);
-
     return () => {
       subscription.unsubscribe();
-      clearTimeout(safetyTimer);
     };
-  }, [checkDb, fetchProfileAndDocs, userProfile?.id]);
+  }, [checkDb, fetchProfileAndDocs]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -226,7 +227,8 @@ export default function App() {
     }
   };
 
-  if (loading || (session && !userProfile)) return (
+  // Only show handshake if NO session is detected yet
+  if (loading && !session) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
       <div className="relative">
         <div className="absolute inset-0 bg-indigo-500 rounded-full blur-2xl opacity-20 animate-pulse" />
@@ -237,7 +239,6 @@ export default function App() {
       <div className="text-center space-y-2">
         <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Neural Handshake</p>
         <p className="text-slate-400 font-medium text-xs">Synchronizing environment nodes...</p>
-        {loading && <p className="text-slate-300 text-[10px] animate-pulse">Establishing Cloud Data Plane...</p>}
       </div>
     </div>
   );
@@ -281,7 +282,16 @@ export default function App() {
       )}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {profile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
+        {profile?.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
+        
+        {/* Background Sync Indicator */}
+        {isBackgroundSyncing && (
+          <div className="bg-indigo-600 text-white px-4 py-1 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest animate-in slide-in-from-top duration-300">
+            <RefreshCw size={10} className="animate-spin" />
+            <span>Neural Syncing Assets...</span>
+          </div>
+        )}
+
         <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"><Menu size={24} /></button>
           <span className="font-bold text-indigo-950 dark:text-white tracking-tight">{APP_NAME}</span>
@@ -295,6 +305,7 @@ export default function App() {
                 <span>Synthesis Node Initializing...</span>
               </div>}>
                 {(() => {
+                  if (!userProfile) return null;
                   switch (currentView) {
                     case 'dashboard': return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
                     case 'documents': return <DocumentsView documents={documents} userProfile={profile} onAddDocument={async () => { await fetchProfileAndDocs(profile.id, profile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;

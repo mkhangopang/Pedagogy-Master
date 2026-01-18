@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { UserRole } from '../types';
 import { ADMIN_EMAILS } from '../constants';
@@ -88,31 +87,31 @@ export function isAppAdmin(email: string | undefined): boolean {
 }
 
 export async function getOrCreateProfile(userId: string, email?: string) {
-  const maxRetries = 2;
+  const maxRetries = 3;
   let attempt = 0;
 
-  while (attempt <= maxRetries) {
+  // 1. Initial Wake-up Ping (Lightweight)
+  try {
+    await supabase.from('profiles').select('id').limit(1).maybeSingle();
+  } catch (e) {
+    console.warn("📡 [Supabase] Node waking up...");
+  }
+
+  while (attempt < maxRetries) {
     try {
-      // 1. Primary Lookup
+      // 2. Atomic Fetch/Create via RPC or Single query
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .maybeSingle();
 
-      if (error) {
-        console.warn(`📡 [Supabase] Handshake Attempt ${attempt + 1} Failed:`, error.message);
-        if (attempt === maxRetries) return null;
-        attempt++;
-        await new Promise(r => setTimeout(r, 1000 * attempt));
-        continue;
-      }
+      if (error) throw error;
 
-      // 2. Profile Found
       if (profile) return profile;
 
-      // 3. Synthesis Mode: Profile Missing
-      console.log('📡 [Supabase] Profile missing, synthesizing new educator record...');
+      // 3. Synthesis: Missing Profile
+      console.log(`📡 [Supabase] Synthesizing new record (Attempt ${attempt + 1})...`);
       const isAdminUser = isAppAdmin(email);
       const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
@@ -126,18 +125,17 @@ export async function getOrCreateProfile(userId: string, email?: string) {
           queries_limit: isAdminUser ? 999999 : 30
         })
         .select()
-        .maybeSingle();
+        .single();
 
-      if (insertError) {
-        console.error('📡 [Supabase] Profile creation failed:', insertError.message);
-        return null;
-      }
+      if (insertError) throw insertError;
       return newProfile;
-    } catch (fatal) {
-      console.error('📡 [Supabase] Fatal Handshake Attempt:', attempt, fatal);
-      if (attempt === maxRetries) return null;
+
+    } catch (err: any) {
       attempt++;
-      await new Promise(r => setTimeout(r, 1000 * attempt));
+      console.warn(`⚠️ [Supabase] Handshake Attempt ${attempt} failed: ${err.message}`);
+      if (attempt === maxRetries) return null;
+      // Exponential backoff
+      await new Promise(r => setTimeout(r, 800 * attempt));
     }
   }
   return null;
