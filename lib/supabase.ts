@@ -3,50 +3,62 @@ import { UserRole } from '../types';
 import { ADMIN_EMAILS } from '../constants';
 
 /**
- * DYNAMIC ENV RESOLUTION
- * Resolves keys from all possible scopes (Next.js, Vercel, Window Handshake).
- * This ensures that variables set in Vercel UI are detected even if the static 
- * Next.js bundling step was bypassed or had naming mismatches.
+ * STATIC ENV RESOLUTION
+ * Next.js requires static strings (e.g. process.env.NEXT_PUBLIC_...) to be 
+ * explicitly written for the compiler to bundle them into the browser.
  */
+const STATIC_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const STATIC_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
 const getEnv = (key: string): string => {
   const sanitize = (val: any) => (val && val !== 'undefined' && val !== 'null') ? String(val).trim() : '';
   
+  // 1. Check static Next.js bundled variables first (Most reliable in Production)
+  if (key === 'SUPABASE_URL' && STATIC_URL) return STATIC_URL;
+  if (key === 'SUPABASE_ANON_KEY' && STATIC_KEY) return STATIC_KEY;
+  if (key === 'NEXT_PUBLIC_SUPABASE_URL' && STATIC_URL) return STATIC_URL;
+  if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY' && STATIC_KEY) return STATIC_KEY;
+
+  // 2. Fallback to Window object (Injected by index.tsx handshake)
   if (typeof window !== 'undefined') {
     const win = window as any;
-    // Prioritize namespaced keys from the index.tsx handshake
-    const found = sanitize(process.env[key]) || 
-                  sanitize(process.env[`NEXT_PUBLIC_${key}`]) ||
-                  sanitize(win.process?.env?.[key]) ||
+    const found = sanitize(win.process?.env?.[key]) || 
                   sanitize(win.process?.env?.[`NEXT_PUBLIC_${key}`]) ||
                   sanitize(win[key]) ||
                   sanitize(win[`NEXT_PUBLIC_${key}`]);
     if (found) return found;
   }
   
-  return sanitize(process.env[key]) || sanitize(process.env[`NEXT_PUBLIC_${key}`]) || '';
+  // 3. Last resort dynamic process.env (Usually server-side only)
+  return sanitize((process.env as any)[key]) || sanitize((process.env as any)[`NEXT_PUBLIC_${key}`]) || '';
 };
 
 export const isSupabaseConfigured = (): boolean => {
   const url = getEnv('SUPABASE_URL');
   const key = getEnv('SUPABASE_ANON_KEY');
-  return url.length > 10 && key.length > 10 && !url.includes('placeholder');
+  
+  // We check for minimal length and "placeholder" strings.
+  // In Next.js client, if the user didn't use NEXT_PUBLIC prefix in Vercel, this will be empty.
+  return url.length > 5 && key.length > 5 && !url.includes('placeholder') && !url.includes('invalid');
 };
 
 let cachedClient: SupabaseClient | null = null;
-let cachedUrl = '';
+let lastResolvedUrl = '';
 
 const getClient = (): SupabaseClient => {
   const url = getEnv('SUPABASE_URL');
   const anonKey = getEnv('SUPABASE_ANON_KEY');
 
-  // Return existing client if config hasn't changed
-  if (cachedClient && url === cachedUrl && url !== '') return cachedClient;
+  // Reuse client if config hasn't changed
+  if (cachedClient && url === lastResolvedUrl && url !== '') return cachedClient;
 
-  if (!url || !anonKey || url.includes('placeholder')) {
-    return createClient('https://invalid-node-fallback.supabase.co', 'invalid-key');
+  if (!url || !anonKey || url.includes('placeholder') || url === '') {
+    // Return a dummy client that doesn't crash but will fail network requests
+    // This allows the UI to render while the handshake finishes
+    return createClient('https://waiting-for-handshake.supabase.co', 'waiting');
   }
 
-  cachedUrl = url;
+  lastResolvedUrl = url;
   cachedClient = createClient(url, anonKey, {
     auth: {
       persistSession: true,
@@ -59,8 +71,12 @@ const getClient = (): SupabaseClient => {
   return cachedClient;
 };
 
-// Proxy allows the app to import 'supabase' once, but dynamically swap the 
-// underlying client if environment variables arrive late (e.g., via Handshake).
+/**
+ * SUPABASE PROXY
+ * This ensures that if the environment variables are set LATE (e.g. via 
+ * the async handshake in index.tsx), the client will automatically
+ * re-initialize with the correct keys on the next property access.
+ */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop, receiver) => {
     if (prop === 'then') return undefined;
@@ -126,10 +142,10 @@ export async function getOrCreateProfile(userId: string, email?: string) {
  */
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) {
-    return { status: 'disconnected', message: 'Environment keys not detected.' };
+    return { status: 'disconnected', message: 'Credentials missing in browser scope.' };
   }
   try {
-    // getSession is local-first and doesn't require table permissions
+    // getSession is local-first and reliable for a ping
     const { error } = await supabase.auth.getSession();
     if (error) throw error;
     return { status: 'connected', message: 'Cloud Node Operational' };

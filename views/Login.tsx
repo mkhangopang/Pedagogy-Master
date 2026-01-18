@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
@@ -23,11 +22,9 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
     e.preventDefault();
     if (honeypot) return;
 
-    if (!isSupabaseConfigured()) {
-      setError("Infrastructure node not yet initialized. Please check your environment variables.");
-      return;
-    }
-
+    // Check configuration but allow attempt even if it's flickering
+    const configOk = isSupabaseConfigured();
+    
     setLoading(true);
     setError(null);
 
@@ -38,9 +35,12 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
            if (authError.message.includes('Email not confirmed')) {
              throw new Error("Confirmation Pending: Please check your inbox or disable 'Confirm Email' in Supabase Auth settings.");
            }
+           // If request failed because of keys, provide a helpful message
+           if (authError.message.includes('apiKey') || authError.message.includes('fetch')) {
+             throw new Error("Infrastructure node not yet fully initialized. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set in Vercel with NEXT_PUBLIC_ prefix.");
+           }
            throw authError;
         }
-        // No manual onSession call - onAuthStateChange in App.tsx handles this reactively
       } else if (view === 'signup') {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
         const { data, error: authError } = await supabase.auth.signUp({ 
@@ -57,10 +57,9 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
       }
     } catch (err: any) {
       setError(err.message);
+      setLoading(false);
     } finally {
-      // Don't set loading false on successful login to prevent view flicker
-      // before App.tsx switches the root component
-      if (view !== 'login') setLoading(false);
+      // Success will cause App.tsx to unmount this component
     }
   };
 
@@ -152,6 +151,16 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
             </div>
           )}
         </div>
+
+        {/* Neural Infrastructure Status (Internal Diagnostic) */}
+        {!isSupabaseConfigured() && !loading && (
+          <div className="mt-8 p-4 bg-slate-900/5 dark:bg-white/5 rounded-2xl border border-dashed border-slate-200 dark:border-white/10 flex items-center gap-3">
+             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-tight">
+               Infrastructure Handshake Pending... Ensure NEXT_PUBLIC_SUPABASE_URL is set in Vercel.
+             </p>
+          </div>
+        )}
       </div>
     </div>
   );
