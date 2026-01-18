@@ -21,8 +21,8 @@ export function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v32.0)
- * Optimized for Gemini 3 with Metadata-Driven Tool Synthesis.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v33.0)
+ * Specialized for Multi-Modal Canvas Workspaces and Complex Pedagogical Tasks.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -55,13 +55,13 @@ export async function generateAIResponse(
     };
   }
 
-  // 3. RAG Retrieval
+  // 3. RAG Retrieval (Metadata-Aware)
   let retrievedChunks: RetrievedChunk[] = [];
   retrievedChunks = await retrieveRelevantChunks({
     query: userPrompt,
     documentIds: priorityDocumentId ? [priorityDocumentId, ...documentIds] : documentIds,
     supabase,
-    matchCount: 15
+    matchCount: 20 // Increased for better tool synthesis
   });
   
   // 4. Metadata Extraction
@@ -94,12 +94,15 @@ ${NUCLEAR_GROUNDING_DIRECTIVE}
 ## EXECUTION PARAMETERS:
 - TASK_ENGINE: ${toolType || 'chat'}
 - GROUNDING_LEVEL: AUTHORITATIVE
+- OUTPUT_FORMAT: HIGH_FIDELITY_MARKDOWN
 ${responseInstructions}
 
 RESPONSE:`;
 
-  // 6. Intelligent Routing
-  const preferredProvider = (queryAnalysis.queryType === 'lesson_plan' || toolType === 'lesson-plan' || userPrompt.includes('research')) 
+  // 6. Strategic Routing (Gemini 3 Pro for all Tools)
+  // Tool synthesis requires high reasoning; standard chat can use Flash/Cerebras.
+  const isComplexTool = toolType && ['lesson-plan', 'assessment', 'rubric'].includes(toolType);
+  const preferredProvider = (isComplexTool || queryAnalysis.queryType === 'lesson_plan' || userPrompt.includes('research')) 
     ? 'gemini' 
     : (MODEL_SPECIALIZATION[queryAnalysis.queryType] || 'gemini');
   
