@@ -1,4 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v30.0
+
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v31.0
 -- TARGET: RAG Precision, Metadata Grid & Advanced Pedagogical Search
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
@@ -58,7 +59,6 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     chunk_text TEXT NOT NULL,
     embedding vector(768),
     slo_codes TEXT[] DEFAULT '{}',
-    -- New Metadata Grid Columns
     grade_levels TEXT[] DEFAULT '{}',
     topics TEXT[] DEFAULT '{}',
     unit_name TEXT,
@@ -69,14 +69,36 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. HIGH-SPEED METADATA INDEXES
-CREATE INDEX IF NOT EXISTS idx_chunks_slo_codes ON document_chunks USING GIN (slo_codes);
-CREATE INDEX IF NOT EXISTS idx_chunks_grade_levels ON document_chunks USING GIN (grade_levels);
-CREATE INDEX IF NOT EXISTS idx_chunks_topics ON document_chunks USING GIN (topics);
-CREATE INDEX IF NOT EXISTS idx_chunks_bloom_levels ON document_chunks USING GIN (bloom_levels);
+-- 5. DIAGNOSTIC VIEWS
+CREATE OR REPLACE VIEW public.rag_health_report AS
+SELECT 
+    d.id,
+    d.name,
+    d.is_selected,
+    d.rag_indexed,
+    COUNT(dc.id) as chunk_count,
+    CASE 
+        WHEN d.rag_indexed = true AND COUNT(dc.id) = 0 THEN 'BROKEN (NO CHUNKS)'
+        WHEN d.rag_indexed = false AND COUNT(dc.id) > 0 THEN 'BROKEN (STALE INDEX)'
+        WHEN COUNT(dc.id) > 0 THEN 'HEALTHY'
+        ELSE 'PENDING'
+    END as health_status
+FROM documents d
+LEFT JOIN document_chunks dc ON d.id = dc.document_id
+GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
 
--- 6. THE NEURAL ENGINE: HYBRID SEARCH RPC v3 (METADATA-AWARE)
--- Implements exact SLO boosting and hard-filtering for grade/topic/bloom alignment
+-- 6. DIAGNOSTIC RPCS
+CREATE OR REPLACE FUNCTION get_extension_status(ext text)
+RETURNS boolean AS $$
+  SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
+$$ LANGUAGE sql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION get_vector_dimensions()
+RETURNS integer AS $$
+  SELECT vector_dims(embedding) FROM document_chunks LIMIT 1;
+$$ LANGUAGE sql SECURITY DEFINER;
+
+-- 7. THE NEURAL ENGINE: HYBRID SEARCH RPC v3
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v3(
   query_embedding vector(768),
   match_count INT,
@@ -113,16 +135,12 @@ BEGIN
     COALESCE((dc.metadata->>'page_number')::INT, 0) AS page_number,
     COALESCE(dc.metadata->>'section_title', 'General Context') AS section_title,
     (
-      -- Vector Similarity (Cosine Distance to Similarity)
       (1 - (dc.embedding <=> query_embedding)) +
-      -- Massive boost for exact SLO matches (10.0 weight)
       CASE WHEN dc.slo_codes && boost_slo_codes THEN 10.0 ELSE 0 END +
-      -- Moderate boost for priority document (0.5 weight)
       CASE WHEN dc.document_id = priority_document_id THEN 0.5 ELSE 0 END
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
-    -- Metadata Hard Filters (if provided)
     AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
     AND (filter_topics IS NULL OR dc.topics && filter_topics)
     AND (filter_bloom IS NULL OR dc.bloom_levels && filter_bloom)
@@ -131,17 +149,3 @@ BEGIN
   LIMIT match_count;
 END;
 $$;
-
--- 7. RLS SECURITY POLICY GRID
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own profile" ON profiles;
-CREATE POLICY "Users can manage own profile" ON profiles FOR ALL USING (auth.uid() = id);
-
-ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own documents" ON documents;
-CREATE POLICY "Users can manage own documents" ON documents FOR ALL USING (auth.uid() = user_id);
-
-ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can manage own chunks" ON document_chunks;
-CREATE POLICY "Users can manage own chunks" ON document_chunks FOR ALL 
-USING (EXISTS (SELECT 1 FROM documents WHERE id = document_id AND user_id = auth.uid()));
