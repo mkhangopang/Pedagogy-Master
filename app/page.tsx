@@ -52,12 +52,14 @@ export default function App() {
   }, []);
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
-    if (!supabase || !isSupabaseConfigured()) return;
+    if (!isSupabaseConfigured()) {
+      setIsBackgroundSyncing(false);
+      return;
+    }
     
     setIsBackgroundSyncing(true);
     const isSystemAdmin = isAppAdmin(email);
     
-    // Safety Optimistic Profile to release UI early
     const optimistic: UserProfile = {
       id: userId,
       name: email?.split('@')[0] || 'Educator',
@@ -116,7 +118,7 @@ export default function App() {
         })));
       }
     } catch (e) {
-      console.warn("Background sync degraded:", e);
+      console.warn("Background data sync degraded:", e);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -129,23 +131,24 @@ export default function App() {
 
     const initialize = async () => {
       paymentService.init();
-      await checkDb();
+      const connected = await checkDb();
       
-      // Safety timeout: if checking takes too long, release to login screen
-      const timer = setTimeout(() => {
+      const bootTimeout = setTimeout(() => {
         if (loading) setLoading(false);
-      }, 4000);
+      }, 4500);
 
       try {
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         if (initialSession) {
           setSession(initialSession);
-          await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+          if (connected) {
+            await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+          }
         }
       } catch (e) {
-        console.error("Auth init failure:", e);
+        console.error("Auth boot sequence interrupted:", e);
       } finally {
-        clearTimeout(timer);
+        clearTimeout(bootTimeout);
         setLoading(false);
       }
     };
@@ -153,11 +156,15 @@ export default function App() {
     initialize();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      console.log(`🔐 [Auth] ${event}`);
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
           setSession(currentSession);
-          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
+          const isConfigured = isSupabaseConfigured();
+          if (isConfigured) {
+             await checkDb();
+             await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
+          }
+          setLoading(false);
         }
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
@@ -181,7 +188,6 @@ export default function App() {
     }
   };
 
-  // If loading and no session is verified, show handshake
   if (loading && !session) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
       <div className="relative">
@@ -208,7 +214,7 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {userProfile?.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         {isBackgroundSyncing && (
-          <div className="bg-indigo-600 text-white px-4 py-1 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest">
+          <div className="bg-indigo-600 text-white px-4 py-1 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest animate-in slide-in-from-top duration-300">
             <RefreshCw size={10} className="animate-spin" />
             <span>Neural Sync Active...</span>
           </div>
