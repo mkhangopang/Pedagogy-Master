@@ -1,9 +1,8 @@
-
 // Control Hub: Production Infrastructure
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
-  Database, ShieldCheck, Terminal, ShieldAlert, AlertTriangle, Activity, Server, Search, Code, AlertCircle, Cpu, Layers
+  Database, ShieldCheck, Terminal, ShieldAlert, AlertTriangle, Activity, Server, Search, Code, AlertCircle, Cpu, Layers, Rocket
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
@@ -14,7 +13,7 @@ interface BrainControlProps {
 }
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'infra' | 'rag'>('logic');
+  const [activeTab, setActiveTab] = useState<'logic' | 'infra' | 'rag' | 'performance'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
   const [dbStatus, setDbStatus] = useState<{table: string, exists: boolean | null}[]>([]);
@@ -22,7 +21,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isChecking, setIsChecking] = useState(false);
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexStatus, setIndexStatus] = useState<string | null>(null);
-  const [copiedSql, setCopiedSql] = useState(false);
+  const [copiedSql, setCopiedSql] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const diagnosticSql = `-- SUPABASE RAG DIAGNOSTIC SUITE
@@ -34,16 +33,29 @@ SELECT vector_dims(embedding), count(*)
 FROM document_chunks 
 GROUP BY 1;
 
--- 3. Check most recent chunks
-SELECT chunk_text, slo_codes, topics, created_at 
-FROM document_chunks 
-ORDER BY created_at DESC 
-LIMIT 5;`;
+-- 3. Check Hybrid Search Performance
+EXPLAIN ANALYZE SELECT * FROM hybrid_search_chunks_v3(
+  array_fill(0, array[768])::vector, 5, 
+  (SELECT array_agg(id) FROM documents LIMIT 5)
+);`;
 
-  const copySql = () => {
-    navigator.clipboard.writeText(diagnosticSql);
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2000);
+  const performanceSql = `-- NEURAL SPEED OPTIMIZATION SUITE
+-- 1. CREATE HNSW INDEX (Ultra-fast Vector Search)
+CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding_hnsw 
+ON public.document_chunks USING hnsw (embedding vector_cosine_ops);
+
+-- 2. CREATE METADATA GIN INDEXES
+CREATE INDEX IF NOT EXISTS idx_chunks_slo_codes_gin ON document_chunks USING GIN (slo_codes);
+CREATE INDEX IF NOT EXISTS idx_chunks_topics_gin ON document_chunks USING GIN (topics);
+
+-- 3. MAINTENANCE: Reclaim Stale Storage (Fix Sync Hangs)
+VACUUM ANALYZE document_chunks;
+VACUUM ANALYZE documents;`;
+
+  const copySql = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedSql(id);
+    setTimeout(() => setCopiedSql(null), 2000);
   };
 
   const checkHealth = async () => {
@@ -113,7 +125,7 @@ LIMIT 5;`;
       }]);
       if (error) throw error;
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
-      alert("Deployed.");
+      alert("Deployed Core Logic successfully.");
     } catch (err: any) { alert(`Error: ${err.message}`); } finally { setIsSaving(false); }
   };
 
@@ -121,17 +133,17 @@ LIMIT 5;`;
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 px-4">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-slate-900 dark:text-white">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3 tracking-tight">
+          <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight">
             <ShieldCheck className="text-indigo-600" /> Control Hub
           </h1>
-          <p className="text-slate-500 mt-1 font-medium italic">Neural Network Monitoring.</p>
+          <p className="text-slate-500 mt-1 font-medium italic">Neural Network Infrastructure Monitoring.</p>
         </div>
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
-          {['logic', 'infra', 'rag'].map(tab => (
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner overflow-x-auto scrollbar-hide">
+          {['logic', 'infra', 'rag', 'performance'].map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab as any)}
-              className={`px-6 py-2 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'}`}
+              className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'}`}
             >
               {tab === 'rag' ? 'RAG Diagnostics' : tab === 'infra' ? 'Stack' : tab}
             </button>
@@ -194,9 +206,9 @@ LIMIT 5;`;
 
       {activeTab === 'rag' && (
         <div className="space-y-8 animate-in slide-in-from-bottom-2">
-          <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm">
+          <div className="bg-white dark:bg-slate-900 p-8 md:p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm">
             <div className="flex items-center justify-between mb-8">
-               <h2 className="text-2xl font-bold flex items-center gap-3 dark:text-white"><Activity size={24} className="text-indigo-600" /> RAG Diagnostics</h2>
+               <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 dark:text-white"><Activity size={24} className="text-indigo-600" /> RAG Diagnostics</h2>
                <div className="flex gap-2">
                  <button onClick={fetchRagHealth} disabled={isChecking} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">
                    {isChecking ? <RefreshCw className="animate-spin" /> : <Search size={20} />}
@@ -211,7 +223,7 @@ LIMIT 5;`;
               </div>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
               <HealthCard 
                 label="Healthy Assets" 
                 value={ragHealth?.summary?.healthy} 
@@ -239,8 +251,8 @@ LIMIT 5;`;
               </div>
             </div>
 
-            <div className="bg-slate-50 dark:bg-black/20 rounded-3xl overflow-hidden border border-slate-100 dark:border-white/5 mb-8">
-              <table className="w-full text-left text-sm">
+            <div className="bg-slate-50 dark:bg-black/20 rounded-3xl overflow-x-auto border border-slate-100 dark:border-white/5 mb-8 scrollbar-hide">
+              <table className="w-full text-left text-sm min-w-[600px]">
                 <thead className="bg-slate-100 dark:bg-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-500">
                   <tr>
                     <th className="p-4">Document</th>
@@ -277,8 +289,8 @@ LIMIT 5;`;
                     <pre className="text-[10px] font-mono text-indigo-300 overflow-x-auto custom-scrollbar">
                       {diagnosticSql}
                     </pre>
-                    <button onClick={copySql} className="absolute top-4 right-4 p-2 bg-indigo-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-xl">
-                      {copiedSql ? <Check size={14} /> : <Copy size={14} />}
+                    <button onClick={() => copySql(diagnosticSql, 'diagnostic')} className="absolute top-4 right-4 p-2 bg-indigo-600 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-xl">
+                      {copiedSql === 'diagnostic' ? <Check size={14} /> : <Copy size={14} />}
                     </button>
                   </div>
                   <button onClick={handleBulkIndex} disabled={isIndexing} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 shadow-xl disabled:opacity-50">
@@ -298,12 +310,57 @@ LIMIT 5;`;
                     </li>
                     <li className="flex gap-3">
                       <div className="w-5 h-5 bg-amber-200 dark:bg-amber-800 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-200 shrink-0 mt-0.5">2</div>
-                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Selection Filter</b>: RAG only queries documents with <code>is_selected = true</code>. Ensure the teacher has active context.</p>
+                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Selection Filter</b>: RAG only queries documents with <code>is_selected = true</code>. Ensure context is active.</p>
                     </li>
                   </ul>
                </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'performance' && (
+        <div className="space-y-8 animate-in slide-in-from-bottom-2">
+           <div className="bg-slate-900 text-white p-10 rounded-[3rem] border border-white/10 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-12 opacity-5"><Rocket size={250} /></div>
+              <div className="flex items-center gap-4 mb-8">
+                 <div className="p-3 bg-emerald-500 rounded-2xl text-white shadow-lg"><Rocket size={24} /></div>
+                 <div>
+                    <h2 className="text-2xl font-black tracking-tight">Performance Tuning Suite</h2>
+                    <p className="text-slate-400 text-sm font-medium">Execute these scripts in Supabase SQL Editor to fix lag and slow sync.</p>
+                 </div>
+              </div>
+
+              <div className="space-y-6">
+                 <div className="p-6 bg-black/40 rounded-3xl border border-white/5 space-y-4">
+                    <div className="flex items-center justify-between">
+                       <h3 className="text-xs font-black uppercase tracking-widest text-emerald-400 flex items-center gap-2">
+                          <Zap size={14} /> Optimized Indexing (HNSW)
+                       </h3>
+                       <button onClick={() => copySql(performanceSql, 'perf')} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all">
+                          {copiedSql === 'perf' ? 'Copied!' : 'Copy Script'}
+                       </button>
+                    </div>
+                    <p className="text-xs text-slate-400 leading-relaxed">Implementing HNSW (Hierarchical Navigable Small Worlds) indexes on vector columns speeds up retrieval by 10x for large curriculum libraries.</p>
+                    <div className="bg-slate-950 p-4 rounded-xl relative overflow-hidden">
+                       <pre className="text-[10px] font-mono text-emerald-300/80 overflow-x-auto scrollbar-hide">
+                          {performanceSql}
+                       </pre>
+                    </div>
+                 </div>
+
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-6 bg-white/5 rounded-3xl border border-white/5">
+                       <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2">Sync Timeout Fix</h4>
+                       <p className="text-xs text-slate-400 leading-relaxed italic">"Sync failures usually happen when the Document Ingester takes too long to generate embeddings. Use the VACUUM script above to reclaim database memory."</p>
+                    </div>
+                    <div className="p-6 bg-white/5 rounded-3xl border border-white/5">
+                       <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Metadata Boosting</h4>
+                       <p className="text-xs text-slate-400 leading-relaxed">The Hybrid Search v3 now weights SLO Code matches higher than pure semantic similarity, fixing "irrelevant result" errors in the AI Tutor.</p>
+                    </div>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
     </div>

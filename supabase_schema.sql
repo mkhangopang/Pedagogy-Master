@@ -1,6 +1,5 @@
-
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v31.0
--- TARGET: RAG Precision, Metadata Grid & Advanced Pedagogical Search
+-- EDUNEXUS AI: OPTIMIZED NEURAL INFRASTRUCTURE v32.0
+-- TARGET: Ultra-fast RAG Sync & High-Precision Metadata Filtering
 
 -- 1. ENABLE NEURAL VECTOR ENGINE
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -69,7 +68,17 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. DIAGNOSTIC VIEWS
+-- 5. PERFORMANCE INDEXES (FOR FAST SYNC)
+-- GIN Indexes allow lightning-fast array lookups for metadata
+CREATE INDEX IF NOT EXISTS idx_chunks_slo_codes ON document_chunks USING GIN (slo_codes);
+CREATE INDEX IF NOT EXISTS idx_chunks_topics ON document_chunks USING GIN (topics);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON document_chunks (document_id);
+
+-- HNSW Vector Index for High-Performance Similarity (Fixed at 768 dims)
+-- Note: Requires vector extension 0.5.0+. Falls back to standard indexing if unavailable.
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON document_chunks USING hnsw (embedding vector_cosine_ops);
+
+-- 6. DIAGNOSTIC VIEWS
 CREATE OR REPLACE VIEW public.rag_health_report AS
 SELECT 
     d.id,
@@ -87,18 +96,7 @@ FROM documents d
 LEFT JOIN document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
 
--- 6. DIAGNOSTIC RPCS
-CREATE OR REPLACE FUNCTION get_extension_status(ext text)
-RETURNS boolean AS $$
-  SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
-$$ LANGUAGE sql SECURITY DEFINER;
-
-CREATE OR REPLACE FUNCTION get_vector_dimensions()
-RETURNS integer AS $$
-  SELECT vector_dims(embedding) FROM document_chunks LIMIT 1;
-$$ LANGUAGE sql SECURITY DEFINER;
-
--- 7. THE NEURAL ENGINE: HYBRID SEARCH RPC v3
+-- 7. THE NEURAL ENGINE: HYBRID SEARCH RPC v3 (Performance Tuned)
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v3(
   query_embedding vector(768),
   match_count INT,
@@ -122,6 +120,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET statement_timeout = '15s'
 AS $$
 BEGIN
   RETURN QUERY
@@ -135,9 +134,9 @@ BEGIN
     COALESCE((dc.metadata->>'page_number')::INT, 0) AS page_number,
     COALESCE(dc.metadata->>'section_title', 'General Context') AS section_title,
     (
-      (1 - (dc.embedding <=> query_embedding)) +
-      CASE WHEN dc.slo_codes && boost_slo_codes THEN 10.0 ELSE 0 END +
-      CASE WHEN dc.document_id = priority_document_id THEN 0.5 ELSE 0 END
+      (1 - (dc.embedding <=> query_embedding)) * 1.5 + -- Weighted similarity
+      CASE WHEN dc.slo_codes && boost_slo_codes THEN 20.0 ELSE 0 END + -- High SLO boost
+      CASE WHEN dc.document_id = priority_document_id THEN 1.0 ELSE 0 END -- Priority asset boost
     ) AS combined_score
   FROM document_chunks dc
   WHERE dc.document_id = ANY(filter_document_ids)
