@@ -1,0 +1,85 @@
+{
+  "executive_summary": {
+    "status": "Production Ready (with minor optimizations required)",
+    "overall_score": 88,
+    "critical_findings": "Hardcoded admin emails in constants.ts pose a security risk; several deprecated files exist in the lib directory; server-side rate limiting relies on in-memory maps which won't persist across serverless restarts.",
+    "top_recommendations": [
+      "Move ADMIN_EMAILS to environment variables or a Supabase 'admins' table.",
+      "Implement Redis-based rate limiting for server-side API routes.",
+      "Prune deprecated files: lib/document-processor.ts and lib/gemini-file.ts.",
+      "Add semantic re-ranking (FlashRank) to the RAG pipeline to improve retrieval precision."
+    ]
+  },
+  "file_system_architecture": {
+    "structure_analysis": {
+      "rating": "Good",
+      "concerns": [
+        "Separation of concerns is mostly clear, but 'lib' is becoming cluttered with both client and server logic.",
+        "Redundant files detected: lib/document-processor.ts and lib/gemini-file.ts."
+      ],
+      "access_patterns": "Client-side file reading for preview is efficient; server-side extraction uses pdf-parse which is resource-intensive for serverless."
+    },
+    "recommendations": [
+      "Sub-divide 'lib' into 'lib/client', 'lib/server', and 'lib/shared'.",
+      "Delete deprecated nodes identified in current audit."
+    ]
+  },
+  "ai_models_audit": {
+    "model_selection": {
+      "primary": "Gemini 3 Pro (for complex synthesis)",
+      "secondary": "Gemini 3 Flash (for speed/chat)",
+      "latency_optimization": "Excellent use of Groq/Cerebras as fallbacks/specialized nodes."
+    },
+    "prompt_engineering": "High-fidelity. Adaptive context injection in adaptiveService.ts is a top-tier implementation of personalized AI.",
+    "risks": [
+      "Reliance on many third-party providers (Groq, Cerebras, etc.) increases orchestration complexity and potential failure points."
+    ]
+  },
+  "rag_optimization": {
+    "vector_performance": {
+      "embedding_model": "text-embedding-004 (768 dims) - Industry standard.",
+      "indexing": "HNSW index implementation in SQL migration is excellent for scalability."
+    },
+    "retrieval_quality": {
+      "strengths": "Hybrid search v3 with metadata boosting (SLO codes) is highly effective for education.",
+      "weaknesses": "Current chunking is semi-random (sliding window). Could benefit from semantic chunking based on header hierarchies."
+    },
+    "recommendations": [
+      "Implement a re-ranking step after vector retrieval to filter top 5 most relevant nodes.",
+      "Improve chunking logic to strictly respect Markdown header sections."
+    ]
+  },
+  "application_efficiency": {
+    "metrics": "Next.js 15 Route Handlers are used correctly. Max duration of 120-300s on ingestion routes accounts for large PDFs.",
+    "caching": "response-cache.ts implements in-memory TTL caching (10 mins). Good for immediate repeat queries, but not shared across user sessions or server instances."
+  },
+  "security_audit": {
+    "authentication": "Supabase Auth (PKCE) is implemented correctly.",
+    "authorization": "RBAC in documents/delete/route.ts is good. Prevents unauthorized deletions.",
+    "infrastructure": "Environment variables correctly prefixed with NEXT_PUBLIC_ for client-side usage where necessary.",
+    "vulnerabilities": "Hardcoded admin list in code is the primary security flaw."
+  },
+  "privacy_compliance": {
+    "data_minimization": "System only extracts relevant pedagogical text; raw files stored in R2 with UUID paths.",
+    "ai_privacy": "User data is not explicitly flagged for model training; however, standard provider terms apply."
+  },
+  "commercial_use_readiness": {
+    "monetization": "Lemon Squeezy integration is present. Safepay PK documentation is ready.",
+    "legal": "License compliance for marked, mammoth, and pdf-parse is standard MIT/Apache.",
+    "business_continuity": "Multiple AI providers ensure that even if one goes down, the pedagogical engine stays online."
+  },
+  "roadmap": {
+    "phase_1_immediate": [
+      "Security hardening: Move admins to DB.",
+      "Code cleanup: Delete lib/document-processor.ts."
+    ],
+    "phase_2_short_term": [
+      "RAG Upgrade: Implement semantic re-ranking.",
+      "Monitoring: Integrate Sentry for error tracking in AI routes."
+    ],
+    "phase_3_long_term": [
+      "Commercial expansion: Complete Safepay PK integration for local payments.",
+      "Platform scaling: Migrate in-memory cache to Redis/Upstash."
+    ]
+  }
+}

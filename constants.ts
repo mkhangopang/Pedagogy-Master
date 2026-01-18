@@ -1,9 +1,14 @@
-
 import { UserRole, SubscriptionPlan } from './types';
 
 export const APP_NAME = "EduNexus AI";
 
-export const ADMIN_EMAILS = [
+/**
+ * SECURITY OPTIMIZATION: 
+ * Hardcoded admins should be migrated to NEXT_PUBLIC_ADMIN_EMAILS in .env for production.
+ */
+const ENV_ADMINS = typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '').split(',').filter(Boolean) : [];
+
+export const ADMIN_EMAILS = ENV_ADMINS.length > 0 ? ENV_ADMINS : [
   'mkgopang@gmail.com',
   'admin@edunexus.ai',
   'fasi.2001@live.com'
