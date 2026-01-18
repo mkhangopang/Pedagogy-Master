@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -112,40 +113,39 @@ export default function App() {
       setUserProfile(activeProfile);
 
       // Background sync: Don't let slow document loading block the dashboard
-      supabase
+      const { data: docs } = await supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .then(({ data: docs }) => {
-          if (docs) {
-            setDocuments(docs.map(d => ({
-              id: d.id,
-              userId: d.user_id,
-              name: d.name,
-              filePath: d.file_path,
-              mimeType: d.mime_type,
-              status: d.status as any,
-              storageType: d.storage_type,
-              isPublic: d.is_public,
-              subject: d.subject || 'General',
-              gradeLevel: d.grade_level || 'Auto',
-              sloTags: d.slo_tags || [],
-              createdAt: d.created_at,
-              sourceType: d.source_type || 'markdown',
-              isApproved: d.is_approved ?? false,
-              curriculumName: d.curriculum_name || d.name,
-              authority: d.authority || 'General',
-              versionYear: d.version_year || '2024',
-              version: d.version || 1,
-              generatedJson: d.generated_json,
-              documentSummary: d.document_summary,
-              difficultyLevel: d.difficulty_level,
-              geminiProcessed: d.rag_indexed ?? false,
-              isSelected: d.is_selected ?? false
-            })));
-          }
-        });
+        .order('created_at', { ascending: false });
+
+      if (docs) {
+        setDocuments(docs.map(d => ({
+          id: d.id,
+          userId: d.user_id,
+          name: d.name,
+          filePath: d.file_path,
+          mimeType: d.mime_type,
+          status: d.status as any,
+          storageType: d.storage_type,
+          isPublic: d.is_public,
+          subject: d.subject || 'General',
+          gradeLevel: d.grade_level || 'Auto',
+          sloTags: d.slo_tags || [],
+          createdAt: d.created_at,
+          sourceType: d.source_type || 'markdown',
+          isApproved: d.is_approved ?? false,
+          curriculumName: d.curriculum_name || d.name,
+          authority: d.authority || 'General',
+          versionYear: d.version_year || '2024',
+          version: d.version || 1,
+          generatedJson: d.generated_json,
+          documentSummary: d.document_summary,
+          difficultyLevel: d.difficulty_level,
+          geminiProcessed: d.rag_indexed ?? false,
+          isSelected: d.is_selected ?? false
+        })));
+      }
 
     } catch (e: any) {
       console.error("❌ [Sync] Data plane error:", e);
@@ -172,6 +172,7 @@ export default function App() {
         setSession(currentSession);
         
         if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
+          setLoading(true); // Re-trigger loading while we fetch profile
           try {
             await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
           } finally {
@@ -181,6 +182,7 @@ export default function App() {
         } else if (event === 'SIGNED_OUT') {
           setUserProfile(null);
           setDocuments([]);
+          setCurrentView('dashboard'); // Reset view for next user
           setLoading(false);
           clearTimeout(safetyTimer);
         }
@@ -210,7 +212,7 @@ export default function App() {
       subscription.unsubscribe();
       clearTimeout(safetyTimer);
     };
-  }, [checkDb, fetchProfileAndDocs, loading]);
+  }, [checkDb, fetchProfileAndDocs]);
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
@@ -260,7 +262,8 @@ export default function App() {
     );
   };
 
-  if (loading) return (
+  // Show global loader if we are in the middle of a transition or handshake
+  if (loading || (session && !userProfile)) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
       <div className="relative">
         <div className="absolute inset-0 bg-indigo-500 rounded-full blur-2xl opacity-20 animate-pulse" />
@@ -275,7 +278,7 @@ export default function App() {
     </div>
   );
   
-  if (!session || !userProfile) {
+  if (!session) {
     return <Login onSession={setSession} />;
   }
 
