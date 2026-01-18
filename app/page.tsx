@@ -9,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu, RefreshCw } from 'lucide-react';
+import { Loader2, Menu, Cpu, RefreshCw, X } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
@@ -25,9 +25,12 @@ export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  // Responsive States
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile Drawer
+  const [isCollapsed, setIsCollapsed] = useState(false);     // Desktop Mini-mode
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  
   const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ 
     status: 'checking', 
     message: 'Verifying systems...' 
@@ -50,6 +53,26 @@ export default function App() {
     setHealthStatus(health);
     return health.status === 'connected';
   }, []);
+
+  // Handle Desktop Sidebar Persistence & Window Resizing
+  useEffect(() => {
+    const savedCollapse = localStorage.getItem('sidebar_collapsed');
+    if (savedCollapse === 'true') setIsCollapsed(true);
+
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsSidebarOpen(false); // Hide mobile drawer on desktop
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const handleToggleCollapse = (collapsed: boolean) => {
+    setIsCollapsed(collapsed);
+    localStorage.setItem('sidebar_collapsed', String(collapsed));
+  };
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     if (!isSupabaseConfigured()) {
@@ -139,7 +162,6 @@ export default function App() {
         paymentService.init();
         const connected = await checkDb();
         
-        // Safety timeout for the loader
         const bootTimeout = setTimeout(() => {
           setLoading(false);
         }, 5000);
@@ -165,7 +187,6 @@ export default function App() {
 
     initialize();
 
-    // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
@@ -222,26 +243,73 @@ export default function App() {
   if (!session) return <Login onSession={() => {}} />;
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100">
-      <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={setCurrentView} userProfile={userProfile!} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />
+    <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100 ${theme === 'dark' ? 'dark' : ''}`}>
+      
+      {/* MOBILE SIDEBAR OVERLAY */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[90] lg:hidden transition-opacity duration-300"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
+      {/* SIDEBAR CONTAINER */}
+      <div className={`
+        fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out
+        ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'}
+        ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}
+      `}>
+        <Sidebar 
+          currentView={currentView} 
+          onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 
+          userProfile={userProfile!} 
+          isCollapsed={isCollapsed} 
+          setIsCollapsed={handleToggleCollapse} 
+          onClose={() => setIsSidebarOpen(false)}
+          theme={theme} 
+          toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
+        />
       </div>
 
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {userProfile?.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
+        
         {isBackgroundSyncing && (
-          <div className="bg-indigo-600 text-white px-4 py-1 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest animate-in slide-in-from-top duration-300">
+          <div className="bg-indigo-600 text-white px-4 py-1 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest animate-in slide-in-from-top duration-300 z-50">
             <RefreshCw size={10} className="animate-spin" />
             <span>Neural Sync Active...</span>
           </div>
         )}
-        <header className="lg:hidden flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800">
-          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"><Menu size={24} /></button>
-          <span className="font-bold text-indigo-950 dark:text-white tracking-tight">{APP_NAME}</span>
-          <div className="w-10" />
+
+        {/* TOP NAVBAR (MOBILE & DESKTOP HEADER) */}
+        <header className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm z-40">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setIsSidebarOpen(true)} 
+              className="lg:hidden p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-all"
+              aria-label="Open Menu"
+            >
+              <Menu size={24} />
+            </button>
+            <span className="font-bold text-indigo-950 dark:text-white tracking-tight flex items-center gap-2">
+              <span className="lg:hidden">{APP_NAME}</span>
+              <span className="hidden lg:inline text-xs font-black uppercase tracking-widest text-slate-400">{currentView.replace('-', ' ')}</span>
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-3">
+             {/* User Quick Switch / Status or Desktop Tools could go here */}
+             <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
+                <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Node: {isActuallyConnected ? 'Stable' : 'Offline'}</span>
+             </div>
+          </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-          <div className="max-w-6xl mx-auto">
+
+        {/* VIEW RENDERER */}
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-slate-50 dark:bg-slate-950">
+          <div className="max-w-6xl mx-auto w-full">
             <Suspense fallback={<div className="flex flex-col items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
               {(() => {
                 if (!userProfile) return null;
