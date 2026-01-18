@@ -1,64 +1,41 @@
+
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { UserRole } from '../types';
 import { ADMIN_EMAILS } from '../constants';
 
 const getEnv = (key: string): string => {
-  const sanitize = (v: any) => {
-    if (!v) return '';
-    const s = String(v).trim();
-    if (s === 'undefined' || s === 'null' || s === '[object Object]') return '';
-    return s;
-  };
-
-  if (key === 'NEXT_PUBLIC_SUPABASE_URL' && process.env.NEXT_PUBLIC_SUPABASE_URL) return sanitize(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  if (key === 'NEXT_PUBLIC_SUPABASE_ANON_KEY' && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) return sanitize(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-
-  if (typeof window !== 'undefined') {
-    const win = window as any;
-    const val = 
-      win.process?.env?.[key] || 
-      win[key] || 
-      win.env?.[key] || 
-      (import.meta as any).env?.[key] || 
-      (typeof process !== 'undefined' ? (process.env as any)[key] : '') ||
-      '';
-    
-    return sanitize(val);
-  }
-  
-  try {
-    return typeof process !== 'undefined' ? sanitize((process.env as any)[key]) : '';
-  } catch {
-    return '';
-  }
+  if (typeof window === 'undefined') return process.env[key] || '';
+  const win = window as any;
+  return win.process?.env?.[key] || win[key] || process.env[key] || '';
 };
 
 export const isSupabaseConfigured = (): boolean => {
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
-  return !!url && url.length > 10 && !!key && key.length > 10;
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL');
+  const key = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
+  return !!url && url.length > 20 && !!key && key.length > 20;
 };
 
 let cachedClient: SupabaseClient | null = null;
+let lastUsedUrl = '';
 
 const getClient = (): SupabaseClient => {
-  if (cachedClient) return cachedClient;
+  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL');
+  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY');
 
-  const url = getEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const anonKey = getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  // Re-initialize if environment variables finally appeared or changed
+  if (cachedClient && url === lastUsedUrl && url.length > 20) return cachedClient;
 
-  if (!url || !anonKey || url.includes('placeholder')) {
-    return createClient('https://placeholder-url.supabase.co', 'placeholder-key');
+  if (!url || !anonKey || url.includes('placeholder') || url.length < 10) {
+    return createClient('https://placeholder-node.supabase.co', 'placeholder-key');
   }
 
+  lastUsedUrl = url;
   cachedClient = createClient(url, anonKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce',
-      storageKey: 'edunexus-auth-token',
-      storage: typeof window !== 'undefined' ? window.localStorage : undefined
+      flowType: 'pkce'
     }
   });
 
@@ -76,8 +53,7 @@ export const supabase = new Proxy({} as SupabaseClient, {
 });
 
 export async function getAuthenticatedUser(): Promise<User | null> {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error) return null;
+  const { data: { user } } = await supabase.auth.getUser();
   return user;
 }
 
@@ -87,84 +63,56 @@ export function isAppAdmin(email: string | undefined): boolean {
 }
 
 export async function getOrCreateProfile(userId: string, email?: string) {
-  const maxRetries = 3;
-  let attempt = 0;
-
-  // 1. Initial Wake-up Ping (Lightweight)
+  if (!isSupabaseConfigured()) return null;
+  
   try {
-    await supabase.from('profiles').select('id').limit(1).maybeSingle();
-  } catch (e) {
-    console.warn("📡 [Supabase] Node waking up...");
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile) return profile;
+
+    const isAdminUser = isAppAdmin(email);
+    const { data: newProfile } = await supabase
+      .from('profiles')
+      .upsert({
+        id: userId,
+        email: email || '',
+        name: email?.split('@')[0] || 'Educator',
+        role: isAdminUser ? UserRole.APP_ADMIN : 'teacher',
+        plan: isAdminUser ? 'enterprise' : 'free',
+        queries_used: 0,
+        queries_limit: isAdminUser ? 999999 : 30
+      })
+      .select()
+      .single();
+
+    return newProfile;
+  } catch (err) {
+    console.error("Profile handshake failed:", err);
+    return null;
   }
-
-  while (attempt < maxRetries) {
-    try {
-      // 2. Atomic Fetch/Create via RPC or Single query
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (profile) return profile;
-
-      // 3. Synthesis: Missing Profile
-      console.log(`📡 [Supabase] Synthesizing new record (Attempt ${attempt + 1})...`);
-      const isAdminUser = isAppAdmin(email);
-      const { data: newProfile, error: insertError } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          email: email || '',
-          name: email?.split('@')[0] || 'Educator',
-          role: isAdminUser ? UserRole.APP_ADMIN : 'teacher',
-          plan: isAdminUser ? 'enterprise' : 'free',
-          queries_used: 0,
-          queries_limit: isAdminUser ? 999999 : 30
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-      return newProfile;
-
-    } catch (err: any) {
-      attempt++;
-      console.warn(`⚠️ [Supabase] Handshake Attempt ${attempt} failed: ${err.message}`);
-      if (attempt === maxRetries) return null;
-      // Exponential backoff
-      await new Promise(r => setTimeout(r, 800 * attempt));
-    }
-  }
-  return null;
 }
 
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) {
-    return { status: 'disconnected', message: 'Credentials missing in environment.' };
+    return { status: 'disconnected', message: 'Environment keys missing.' };
   }
   try {
-    const { data: { session }, error: authError } = await supabase.auth.getSession();
-    if (authError) return { status: 'disconnected', message: `Auth node unreachable.` };
-    return { 
-      status: 'connected', 
-      message: session ? 'Cloud Node Online (Authenticated)' : 'Cloud Node Online (Guest)' 
-    };
+    const { error } = await supabase.from('profiles').select('id').limit(1);
+    if (error && error.code !== 'PGRST116') throw error;
+    return { status: 'connected', message: 'Cloud Node Operational' };
   } catch (err: any) {
-    return { status: 'disconnected', message: 'Fatal connection failure' };
+    return { status: 'disconnected', message: err.message || 'Connection failure' };
   }
 };
 
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
   return createClient(
-    getEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
-    {
-      global: {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    }
+    getEnv('NEXT_PUBLIC_SUPABASE_URL') || getEnv('SUPABASE_URL'),
+    getEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY') || getEnv('SUPABASE_ANON_KEY'),
+    { global: { headers: { Authorization: `Bearer ${token}` } } }
   );
 };
