@@ -1,7 +1,8 @@
+
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { User, Bot, Copy, Check, Share2, ThumbsUp, ThumbsDown, Sparkles, Globe } from 'lucide-react';
+import { User, Bot, Copy, Check, Share2, ThumbsUp, ThumbsDown, Sparkles, Globe, ExternalLink } from 'lucide-react';
 import { marked } from 'marked';
 import { APP_NAME } from '../../constants';
 
@@ -11,9 +12,10 @@ interface MessageItemProps {
   timestamp: string;
   id: string;
   isLatest?: boolean;
+  metadata?: any;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timestamp, id }) => {
+export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timestamp, id, metadata }) => {
   const isAi = role === 'assistant';
   const [copied, setCopied] = useState(false);
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
@@ -25,47 +27,21 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleShare = async () => {
-    const cleanText = content.split('--- Synthesis by Node:')[0].trim();
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${APP_NAME} Synthesis`,
-          text: cleanText,
-          url: window.location.href
-        });
-      } catch (err) {
-        console.log('Share failed', err);
-        handleCopy();
-      }
-    } else {
-      handleCopy();
-    }
-  };
-
   const renderedHtml = useMemo(() => {
     if (!content) return '';
     try {
-      marked.setOptions({
-        gfm: true,
-        breaks: true,
-      });
-
+      marked.setOptions({ gfm: true, breaks: true });
       const html = marked.parse(content) as string;
       return html
         .replace(/<table>/g, '<div class="table-container"><table>')
-        .replace(/<\/table>/g, '</table></div>')
-        .replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" class="text-indigo-600 hover:underline flex items-center gap-1 inline-flex" ');
+        .replace(/<\/table>/g, '</table></div>');
     } catch (e) {
-      console.error("Markdown parse error:", e);
       return content;
     }
   }, [content]);
 
-  const isWebSearch = content.includes('Neural Web Search Active');
-
   return (
-    <div className={`flex w-full group animate-chat-turn ${isAi ? 'justify-start' : 'justify-end'} mb-12`}>
+    <div className={`flex w-full group animate-chat-turn ${isAi ? 'justify-start' : 'justify-end'} mb-12 px-4`}>
       <div className={`flex gap-4 max-w-[95%] md:max-w-[85%] ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-1 shadow-md border ${
           isAi ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-200 text-slate-600'
@@ -81,59 +57,45 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
           }`}>
             <div 
               className="prose dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: renderedHtml || (isAi ? '<div class="flex gap-1.5 py-2"><div class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></div><div class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.1s]"></div><div class="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:0.2s]"></div></div>' : '') }}
+              dangerouslySetInnerHTML={{ __html: renderedHtml }}
             />
+
+            {isAi && metadata?.sources?.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-slate-100 dark:border-white/5 space-y-3">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                  <Globe size={12} className="text-indigo-500" /> Research Grounding
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {metadata.sources.map((source: any, i: number) => (
+                    <a 
+                      key={i} 
+                      href={source.uri} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 rounded-xl text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white transition-all shadow-sm"
+                    >
+                      {source.title.substring(0, 30)}...
+                      <ExternalLink size={10} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
           
           {isAi && content && (
-            <div className="flex flex-wrap items-center gap-4 px-2 w-full">
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={handleCopy}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 transition-all shadow-sm active:scale-95"
-                >
-                  {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-                
-                <button 
-                  onClick={handleShare}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:border-indigo-200 transition-all shadow-sm active:scale-95"
-                >
-                  <Share2 size={12} />
-                  Share
-                </button>
+            <div className="flex flex-wrap items-center gap-3 px-2 w-full">
+              <button onClick={handleCopy} className="p-2 text-slate-400 hover:text-indigo-600 transition-all">
+                {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+              </button>
+              <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 dark:bg-white/5 px-2.5 py-1 rounded-lg">
+                <Sparkles size={10} className="text-indigo-500" />
+                {metadata?.chunksUsed > 0 ? 'Curriculum Grounded' : 'Neural Synthesis'}
               </div>
-
-              <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10">
-                {isWebSearch ? <Globe size={10} className="text-indigo-500" /> : <Sparkles size={10} className="text-indigo-500" />}
-                {isWebSearch ? 'Web Scraped' : 'Neural Grounded'}
-              </div>
-
-              <div className="flex items-center gap-1 ml-auto">
-                <button 
-                  onClick={() => setFeedback(feedback === 'up' ? null : 'up')} 
-                  className={`p-2 rounded-lg transition-colors ${feedback === 'up' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'text-slate-400 hover:text-emerald-500'}`}
-                >
-                  <ThumbsUp size={14} />
-                </button>
-                <button 
-                  onClick={() => setFeedback(feedback === 'down' ? null : 'down')} 
-                  className={`p-2 rounded-lg transition-colors ${feedback === 'down' ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-500' : 'text-slate-400 hover:text-rose-500'}`}
-                >
-                  <ThumbsDown size={14} />
-                </button>
-                <span className="text-[10px] text-slate-400 font-bold ml-2 opacity-60">
-                  {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
+              <span className="text-[10px] text-slate-400 font-bold ml-auto opacity-60">
+                {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
             </div>
-          )}
-
-          {!isAi && (
-            <span className="text-[10px] text-slate-400 font-bold px-2">
-              {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </span>
           )}
         </div>
       </div>
