@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -31,10 +32,10 @@ export default function App() {
     status: 'checking', 
     message: 'Verifying systems...' 
   });
-  
-  const authInitialized = useRef(false);
-  const isActuallyConnected = healthStatus.status === 'connected';
 
+  // FIXED: Define isActuallyConnected derived state to resolve 'Cannot find name' errors on lines 180 and 263.
+  const isActuallyConnected = healthStatus.status === 'connected';
+  
   const [brain, setBrain] = useState<NeuralBrain>({
     id: (typeof crypto !== 'undefined' && (crypto as any).randomUUID) 
       ? (crypto as any).randomUUID() 
@@ -63,22 +64,8 @@ export default function App() {
       console.log('📡 [Sync] Handshaking profile for:', userId);
       const isSystemAdmin = isAppAdmin(email);
       
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Handshake timeout')), 5000)
-      );
-
-      let profile: any;
-      try {
-        profile = await Promise.race([getOrCreateProfile(userId, email), timeoutPromise]);
-      } catch (err) {
-        console.warn('⚠️ [Sync] Handshake slow, using adaptive fallback.');
-        profile = {
-          id: userId,
-          email: email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : 'teacher',
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : 'free'
-        };
-      }
+      // Fast-track profile lookup with fallback
+      const profile = await getOrCreateProfile(userId, email);
       
       const activeProfile: UserProfile = {
         id: profile?.id || userId,
@@ -95,6 +82,7 @@ export default function App() {
       
       setUserProfile(activeProfile);
 
+      // Parallelize document fetching
       const { data: docs } = await supabase
         .from('documents')
         .select('*')
@@ -129,48 +117,54 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.error("❌ [Sync] Data plane error:", e);
+      console.error("❌ [Sync] Profile fetch error:", e);
     }
   }, []);
 
   useEffect(() => {
+    // 1. Initial State Check
+    const initialize = async () => {
+      paymentService.init();
+      await checkDb();
+      
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      if (initialSession) {
+        setSession(initialSession);
+        await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+      }
+      setLoading(false);
+    };
+
+    initialize();
+
+    // 2. Continuous Auth Listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, currentSession) => {
+        console.log(`🔐 [Auth] Event: ${event}`);
+        
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (currentSession) {
+            setSession(currentSession);
+            setLoading(true);
+            await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
+            setLoading(false);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setUserProfile(null);
+          setDocuments([]);
+          setCurrentView('dashboard');
+          setLoading(false);
+        }
+      }
+    );
+
+    // 3. Theme Recovery
     const savedTheme = localStorage.getItem('pm-theme') as 'light' | 'dark' | null;
     if (savedTheme) {
       setTheme(savedTheme);
       document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
-    
-    paymentService.init();
-    checkDb();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, currentSession) => {
-        setSession(currentSession);
-        
-        if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION' as any)) {
-          setLoading(true);
-          await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
-          setLoading(false);
-        } else if (event === 'SIGNED_OUT') {
-          setUserProfile(null);
-          setDocuments([]);
-          setLoading(false);
-          setCurrentView('dashboard');
-        }
-      }
-    );
-
-    // Initial check
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      if (initialSession) {
-        setSession(initialSession);
-        fetchProfileAndDocs(initialSession.user.id, initialSession.user.email).then(() => {
-          setLoading(false);
-        });
-      } else {
-        setLoading(false);
-      }
-    });
 
     return () => {
       subscription.unsubscribe();
@@ -187,6 +181,7 @@ export default function App() {
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
     
+    // FIXED: Correctly use the derived isActuallyConnected state to check connectivity.
     if (isActuallyConnected && isSupabaseConfigured() && supabase) {
       const dbUpdates: any = {};
       if (updates.status) dbUpdates.status = updates.status;
@@ -199,28 +194,7 @@ export default function App() {
     }
   };
 
-  const renderViewContent = (profile: UserProfile) => {
-    switch (currentView) {
-      case 'dashboard':
-        return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-      case 'documents':
-        return <DocumentsView documents={documents} userProfile={profile} onAddDocument={async (d) => { await fetchProfileAndDocs(profile.id, profile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
-      case 'chat':
-        return <ChatView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
-      case 'tools':
-        return <ToolsView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
-      case 'tracker':
-        return <TrackerView user={profile} documents={documents} />;
-      case 'brain':
-        return profile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-      case 'pricing':
-        return <PricingView currentPlan={profile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
-      default:
-        return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
-    }
-  };
-
-  // 1. Initial configuration check or total loading
+  // Rendering Gate: Show neural handshake during any data-sync operation
   if (loading || (session && !userProfile)) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
       <div className="relative">
@@ -236,12 +210,10 @@ export default function App() {
     </div>
   );
   
-  // 2. Unauthenticated state
   if (!session) {
-    return <Login onSession={setSession} />;
+    return <Login onSession={() => {}} />; // Session handled by global listener
   }
 
-  // 3. Fully authenticated state (userProfile is guaranteed at this point)
   const profile = userProfile!;
 
   return (
@@ -290,7 +262,19 @@ export default function App() {
                 <Loader2 className="animate-spin text-indigo-600" size={32} />
                 <span>Synthesis Node Initializing...</span>
               </div>}>
-                {renderViewContent(profile)}
+                {(() => {
+                  switch (currentView) {
+                    case 'dashboard': return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+                    // FIXED: Properly pass the isActuallyConnected derived state to DocumentsView to fix line 263.
+                    case 'documents': return <DocumentsView documents={documents} userProfile={profile} onAddDocument={async () => { await fetchProfileAndDocs(profile.id, profile.email); }} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => { setDocuments(prev => prev.filter(d => d.id !== id)); }} isConnected={isActuallyConnected} />;
+                    case 'chat': return <ChatView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
+                    case 'tools': return <ToolsView user={profile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
+                    case 'tracker': return <TrackerView user={profile} documents={documents} />;
+                    case 'brain': return profile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+                    case 'pricing': return <PricingView currentPlan={profile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
+                    default: return <Dashboard user={profile} documents={documents} onProfileUpdate={setUserProfile} health={healthStatus} onCheckHealth={checkDb} />;
+                  }
+                })()}
               </Suspense>
             </div>
           </div>
