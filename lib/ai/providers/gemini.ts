@@ -1,22 +1,39 @@
-
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v30.0)
- * Optimized for Gemini 3 with Thinking Config and Google Search Grounding.
+ * HIGH-FIDELITY GEMINI ADAPTER (v31.0)
+ * Updated to support gemini-2.5-flash-image for visual aid generation.
  */
 export async function callGemini(
   fullPrompt: string, 
   history: any[], 
   systemInstruction: string, 
   hasDocuments: boolean = false,
-  docParts: any[] = []
-): Promise<{ text: string; groundingMetadata?: any }> {
+  docParts: any[] = [],
+  forceImageModel: boolean = false
+): Promise<{ text?: string; imageUrl?: string; groundingMetadata?: any }> {
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // TASK-BASED MODEL SCALING
-    // Use Gemini 3 Pro for complex design tasks; Flash for quick lookups.
+    // IMAGE MODEL SELECTION
+    if (forceImageModel) {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
+        config: {
+          imageConfig: { aspectRatio: "16:9" }
+        }
+      });
+
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          return { imageUrl: `data:image/png;base64,${part.inlineData.data}` };
+        }
+      }
+      throw new Error("Neural vision node failed to synthesize image bytes.");
+    }
+
+    // STANDARD TEXT/REASONING MODEL
     const isComplexTask = fullPrompt.includes('LESSON PLAN') || 
                          fullPrompt.includes('ASSESSMENT') || 
                          fullPrompt.includes('RUBRIC') ||
@@ -24,10 +41,7 @@ export async function callGemini(
     
     const modelName = isComplexTask ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
 
-    // Prepare Turn-based contents
     const contents: any[] = [];
-    
-    // Add history
     history.slice(-6).forEach(h => {
       contents.push({
         role: h.role === 'user' ? 'user' : 'model',
@@ -35,12 +49,9 @@ export async function callGemini(
       });
     });
 
-    // Current turn parts
     const currentParts: any[] = [];
     if (docParts && docParts.length > 0) {
-      docParts.forEach(part => {
-        if (part.inlineData) currentParts.push(part);
-      });
+      docParts.forEach(part => { if (part.inlineData) currentParts.push(part); });
     }
     currentParts.push({ text: fullPrompt });
     contents.push({ role: 'user', parts: currentParts });
@@ -48,13 +59,9 @@ export async function callGemini(
     const config: any = {
       systemInstruction: systemInstruction || "You are a world-class pedagogical assistant.",
       temperature: hasDocuments ? 0.1 : 0.7,
-      topK: 40,
-      topP: 0.95,
-      // Enable Thinking for complex reasoning
       thinkingConfig: isComplexTask ? { thinkingBudget: 16000 } : { thinkingBudget: 0 }
     };
 
-    // Add Google Search grounding for research-heavy queries if using Pro model
     if (modelName === 'gemini-3-pro-preview' && (fullPrompt.includes('research') || fullPrompt.includes('latest'))) {
       config.tools = [{ googleSearch: {} }];
     }
@@ -65,18 +72,12 @@ export async function callGemini(
       config
     });
 
-    const generatedText = response.text;
-
-    if (!generatedText) {
-      return { text: "Synthesis interrupted. Please refine your pedagogical parameters." };
-    }
-
     return { 
-      text: generatedText,
+      text: response.text || "Synthesis interrupted.",
       groundingMetadata: response.candidates?.[0]?.groundingMetadata 
     };
   } catch (error: any) {
-    console.error("❌ [Gemini 3 Node] Error:", error.message);
+    console.error("❌ [Gemini Node] Error:", error.message);
     throw error;
   }
 }
