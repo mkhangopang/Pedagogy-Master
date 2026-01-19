@@ -5,21 +5,45 @@ import { ADMIN_EMAILS } from '../constants';
 // Internal state for lazy singleton
 let supabaseInstance: SupabaseClient | null = null;
 
+const getEnvVar = (key: string): string => {
+  if (typeof window !== 'undefined') {
+    const win = window as any;
+    // Aggressive priority resolution for preview environments
+    return (
+      win.process?.env?.[key] || 
+      win.process?.env?.[`NEXT_PUBLIC_${key}`] || 
+      process.env[key] || 
+      process.env[`NEXT_PUBLIC_${key}`] || 
+      win[key] || 
+      win[`NEXT_PUBLIC_${key}`] || 
+      win.aistudio?.[key] || // Check AI Studio specifics if applicable
+      ''
+    );
+  }
+  return process.env[key] || process.env[`NEXT_PUBLIC_${key}`] || '';
+};
+
 export const isSupabaseConfigured = (): boolean => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  return url.length > 10 && key.length > 10 && !url.includes('placeholder');
+  const url = getEnvVar('SUPABASE_URL');
+  const key = getEnvVar('SUPABASE_ANON_KEY');
+  const isValid = url.length > 10 && key.length > 10 && !url.includes('placeholder');
+  
+  if (!isValid && typeof window !== 'undefined') {
+    console.warn(`📡 [System] Handshake stalled: Missing ${url.length <= 10 ? 'URL' : ''} ${key.length <= 10 ? 'Key' : ''}`);
+  }
+  
+  return isValid;
 };
 
 /**
  * Lazy singleton getter for Supabase client.
- * This prevents module-level crashes if keys aren't ready at import time.
+ * Prevents module-level crashes during build-time SSR if keys aren't ready.
  */
 export const getSupabaseClient = (): SupabaseClient => {
   if (supabaseInstance) return supabaseInstance;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+  const url = getEnvVar('SUPABASE_URL') || 'https://placeholder.supabase.co';
+  const key = getEnvVar('SUPABASE_ANON_KEY') || 'placeholder-key';
 
   supabaseInstance = createClient(url, key, {
     auth: {
@@ -38,7 +62,8 @@ export const supabase = getSupabaseClient();
 
 export async function getAuthenticatedUser(): Promise<User | null> {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
+    const client = getSupabaseClient();
+    const { data: { user } } = await client.auth.getUser();
     return user;
   } catch {
     return null;
@@ -54,9 +79,10 @@ export function isAppAdmin(email: string | undefined): boolean {
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
   const isAdminUser = isAppAdmin(email);
+  const client = getSupabaseClient();
 
   try {
-    const { data: profile } = await supabase
+    const { data: profile } = await client
       .from('profiles')
       .select('*')
       .eq('id', userId)
@@ -64,7 +90,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 
     if (profile) {
       if (isAdminUser && profile.role !== UserRole.APP_ADMIN) {
-         await supabase.from('profiles').update({ 
+         await client.from('profiles').update({ 
            role: UserRole.APP_ADMIN, 
            plan: SubscriptionPlan.ENTERPRISE 
          }).eq('id', userId);
@@ -74,7 +100,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       return profile;
     }
 
-    const { data: newProfile } = await supabase
+    const { data: newProfile } = await client
       .from('profiles')
       .upsert({
         id: userId,
@@ -96,9 +122,10 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 }
 
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
-  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Credentials missing.' };
+  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Infrastructure node missing config.' };
   try {
-    const { error } = await supabase.from('profiles').select('id').limit(1);
+    const client = getSupabaseClient();
+    const { error } = await client.from('profiles').select('id').limit(1);
     if (error && error.code !== 'PGRST116') throw error;
     return { status: 'connected', message: 'PostgreSQL Data Plane Active' };
   } catch (err: any) {
@@ -107,9 +134,7 @@ export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disc
 };
 
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${token}` } } }
-  );
+  const url = getEnvVar('SUPABASE_URL');
+  const key = getEnvVar('SUPABASE_ANON_KEY');
+  return createClient(url, key, { global: { headers: { Authorization: `Bearer ${token}` } } });
 }
