@@ -14,17 +14,17 @@ const getEnvVar = (key: string): string => {
   // 1. Literal compile-time check (Essential for Next.js Client Bundling)
   if (key === 'SUPABASE_URL') {
     const val = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
-    if (val && val.length > 10) return val;
+    if (val && val.length > 10 && !val.includes('placeholder')) return val;
   }
   if (key === 'SUPABASE_ANON_KEY') {
     const val = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-    if (val && val.length > 10) return val;
+    if (val && val.length > 10 && !val.includes('placeholder')) return val;
   }
 
-  // 2. Runtime Window check (Fallback for injected variables)
+  // 2. Runtime Window check (Fallback for injected variables in AI Studio/restricted previews)
   if (typeof window !== 'undefined') {
     const win = window as any;
-    return (
+    const resolved = (
       win.process?.env?.[key] || 
       win.process?.env?.[`NEXT_PUBLIC_${key}`] || 
       win[key] || 
@@ -32,6 +32,7 @@ const getEnvVar = (key: string): string => {
       win.aistudio?.[key] || 
       ''
     );
+    if (resolved && resolved.length > 10 && !resolved.includes('placeholder')) return resolved;
   }
   
   return '';
@@ -46,22 +47,26 @@ export const isSupabaseConfigured = (): boolean => {
 /**
  * GET SUPABASE CLIENT
  * Lazy singleton with dynamic configuration re-validation.
+ * Prevents "Cold Start" errors where placeholders are cached forever.
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const url = getEnvVar('SUPABASE_URL');
   const key = getEnvVar('SUPABASE_ANON_KEY');
   const currentConfigId = `${url}-${key}`;
 
-  // If configuration changed (e.g. injected post-hydration), reset instance
-  if (supabaseInstance && activeConfigId !== currentConfigId && isSupabaseConfigured()) {
-    console.log('🔄 [System] Supabase configuration updated. Re-initializing gateway.');
+  // RECOVERY LOGIC: If we were using a placeholder and real keys are now available, reset.
+  const wasPlaceholder = activeConfigId?.includes('placeholder') || !activeConfigId;
+  const isNowReal = url.includes('supabase.co');
+
+  if (supabaseInstance && wasPlaceholder && isNowReal) {
+    console.log('📡 [Infrastructure] Handshake synchronized. Switching to production data plane.');
     supabaseInstance = null;
   }
 
   if (supabaseInstance) return supabaseInstance;
 
-  const finalUrl = isSupabaseConfigured() ? url : 'https://placeholder.supabase.co';
-  const finalKey = isSupabaseConfigured() ? key : 'placeholder-key';
+  const finalUrl = url || 'https://placeholder.supabase.co';
+  const finalKey = key || 'placeholder-key';
   
   activeConfigId = currentConfigId;
 
@@ -110,6 +115,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   const isAdminUser = isAppAdmin(email);
 
   try {
+    // 1. Authoritative check
     const { data: profile } = await supabase
       .from('profiles')
       .select('*')
@@ -117,6 +123,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       .maybeSingle();
 
     if (profile) {
+      // Auto-upgrade role if email is in ADMIN_EMAILS
       if (isAdminUser && profile.role !== UserRole.APP_ADMIN) {
          await supabase.from('profiles').update({ 
            role: UserRole.APP_ADMIN, 
@@ -127,8 +134,8 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       return profile;
     }
 
-    // Fallback: If trigger failed, create profile manually
-    const { data: newProfile } = await supabase
+    // 2. Fallback creation (Trigger usually handles this, but we're being bulletproof)
+    const { data: newProfile, error: upsertError } = await supabase
       .from('profiles')
       .upsert({
         id: userId,
@@ -142,6 +149,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       .select()
       .single();
 
+    if (upsertError) throw upsertError;
     return newProfile;
   } catch (err) {
     console.error("❌ [Profile Sync] Failure:", err);
@@ -152,7 +160,6 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Credentials missing in environment.' };
   try {
-    // Attempt simple query to verify data plane
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error && error.code !== 'PGRST116') throw error;
     return { status: 'connected', message: 'PostgreSQL Data Plane Operational' };
