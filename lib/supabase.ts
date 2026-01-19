@@ -4,6 +4,7 @@ import { ADMIN_EMAILS } from '../constants';
 
 // Internal state for lazy singleton
 let supabaseInstance: SupabaseClient | null = null;
+let isUsingPlaceholder = true;
 
 const getEnvVar = (key: string): string => {
   if (typeof window !== 'undefined') {
@@ -37,15 +38,27 @@ export const isSupabaseConfigured = (): boolean => {
 
 /**
  * Lazy singleton getter for Supabase client.
- * Prevents module-level crashes during build-time SSR if keys aren't ready.
+ * CRITICAL FIX: If we are using a placeholder client and real keys become available, 
+ * we must invalidate the cache and create a real client.
  */
 export const getSupabaseClient = (): SupabaseClient => {
+  const url = getEnvVar('SUPABASE_URL');
+  const key = getEnvVar('SUPABASE_ANON_KEY');
+  const currentlyConfigured = url.length > 10 && key.length > 10 && !url.includes('placeholder');
+
+  // If we have an instance but it was a placeholder and now we have real keys, reset it
+  if (supabaseInstance && isUsingPlaceholder && currentlyConfigured) {
+    supabaseInstance = null;
+  }
+
   if (supabaseInstance) return supabaseInstance;
 
-  const url = getEnvVar('SUPABASE_URL') || 'https://placeholder.supabase.co';
-  const key = getEnvVar('SUPABASE_ANON_KEY') || 'placeholder-key';
+  const finalUrl = currentlyConfigured ? url : 'https://placeholder.supabase.co';
+  const finalKey = currentlyConfigured ? key : 'placeholder-key';
+  
+  isUsingPlaceholder = !currentlyConfigured;
 
-  supabaseInstance = createClient(url, key, {
+  supabaseInstance = createClient(finalUrl, finalKey, {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
@@ -57,8 +70,20 @@ export const getSupabaseClient = (): SupabaseClient => {
   return supabaseInstance;
 };
 
-// Export singleton proxy
-export const supabase = getSupabaseClient();
+/**
+ * PROXY EXPORT:
+ * Instead of a fixed constant, we export a proxy that calls the getter.
+ * This ensures that even if a file imports 'supabase' at the top level,
+ * it always gets the most up-to-date client initialization.
+ */
+export const supabase = new Proxy({} as SupabaseClient, {
+  get: (target, prop) => {
+    const client = getSupabaseClient() as any;
+    const val = client[prop];
+    if (typeof val === 'function') return val.bind(client);
+    return val;
+  }
+});
 
 export async function getAuthenticatedUser(): Promise<User | null> {
   try {
