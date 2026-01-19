@@ -22,7 +22,12 @@ export const getR2Client = (): S3Client | null => {
   return r2Instance;
 };
 
-// Use the getter for internal calls
+/**
+ * Singleton instance of the R2 client for direct use in server-side routes.
+ * Initialized at module load time if environment variables are present.
+ */
+export const r2Client = getR2Client();
+
 export const R2_BUCKET = process.env.R2_BUCKET_NAME || 'documents';
 export const R2_PUBLIC_BASE_URL = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
 
