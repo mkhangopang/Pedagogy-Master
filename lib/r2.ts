@@ -1,38 +1,40 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 
-const accountId = process.env.R2_ACCOUNT_ID;
-const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-const bucketName = process.env.R2_BUCKET_NAME || 'documents';
-const publicUrl = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+let r2Instance: S3Client | null = null;
 
 export const isR2Configured = () => {
-  return !!(accountId && accessKeyId && secretAccessKey);
+  return !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY);
 };
 
-export const r2Client = isR2Configured() 
-  ? new S3Client({
-      region: 'auto',
-      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
-      credentials: {
-        accessKeyId: accessKeyId!,
-        secretAccessKey: secretAccessKey!,
-      },
-    })
-  : null;
+export const getR2Client = (): S3Client | null => {
+  if (r2Instance) return r2Instance;
+  if (!isR2Configured()) return null;
 
-export const R2_BUCKET = bucketName;
-export const R2_PUBLIC_BASE_URL = publicUrl;
+  r2Instance = new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+    },
+  });
+  return r2Instance;
+};
+
+// Use the getter for internal calls
+export const R2_BUCKET = process.env.R2_BUCKET_NAME || 'documents';
+export const R2_PUBLIC_BASE_URL = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
 
 export async function getObjectText(key: string): Promise<string> {
-  if (!r2Client) throw new Error("Cloud infrastructure not linked.");
+  const client = getR2Client();
+  if (!client) throw new Error("Cloud infrastructure not linked.");
   try {
     const command = new GetObjectCommand({
       Bucket: R2_BUCKET,
       Key: key,
     });
-    const response = await r2Client.send(command);
+    const response = await client.send(command);
     if (!response.Body) return "";
     return await response.Body.transformToString() || "";
   } catch (e) {
@@ -41,17 +43,15 @@ export async function getObjectText(key: string): Promise<string> {
   }
 }
 
-/**
- * Fetches raw binary data from R2 as a Buffer for multimodal synthesis.
- */
 export async function getObjectBuffer(key: string): Promise<Buffer | null> {
-  if (!r2Client) throw new Error("Cloud infrastructure node unreachable.");
+  const client = getR2Client();
+  if (!client) throw new Error("Cloud infrastructure node unreachable.");
   try {
     const command = new GetObjectCommand({
       Bucket: R2_BUCKET,
       Key: key,
     });
-    const response = await r2Client.send(command);
+    const response = await client.send(command);
     if (!response.Body) return null;
     const bytes = await response.Body.transformToByteArray();
     return Buffer.from(bytes);
