@@ -6,7 +6,7 @@ import {
   Bot, Target, FileText, Check, Copy, Download, Share2, GitMerge,
   Maximize2, LayoutPanelLeft, Edit3, Save, FileJson, Globe, ArrowRight,
   MessageSquare, FileEdit, ChevronLeft, Search, Zap, X, ChevronRight,
-  Info, ShieldCheck, Library, Circle, CheckCircle
+  Info, ShieldCheck, Library, Circle, CheckCircle, Layout
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -63,15 +63,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     setLocalDocs(updated);
 
     try {
-      // Clear selections first (Context Lock logic)
       await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
-      
       const target = updated.find(d => d.id === docId);
       if (target?.isSelected) {
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
-      
-      // Briefly show neural handshake
       onQuery(); 
     } catch (e) {
       console.error("Context Switch Fail:", e);
@@ -139,7 +135,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               <Zap size={32} />
             </div>
             <div>
-              <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter">Synthesis Hub</h1>
+              <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
               <p className="text-slate-500 font-medium text-sm md:text-lg mt-1 italic flex items-center gap-2">
                 {activeDoc ? (
                   <><ShieldCheck size={18} className="text-emerald-500" /> Anchored to: {activeDoc.name}</>
@@ -155,11 +151,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
             className="flex items-center gap-3 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-xs font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:shadow-xl transition-all active:scale-95"
           >
             <Library size={18} />
-            Switch Context
+            Context
           </button>
         </div>
 
-        {/* ASSET SELECTOR DRAWER */}
         {isSliderOpen && (
           <div className="fixed inset-0 z-[200] flex justify-end">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsSliderOpen(false)} />
@@ -171,14 +166,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 </div>
                 <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors"><X size={20}/></button>
               </div>
-
               <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                    <Zap size={14} className="text-indigo-400" /> Curriculum Context
-                  </div>
-                </div>
-
                 <div className="space-y-3">
                   {localDocs.map(doc => (
                     <button
@@ -201,22 +189,14 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                         <p className={`text-sm font-bold truncate ${doc.isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`}>{doc.name}</p>
                         <p className="text-[10px] opacity-60 font-medium mt-0.5">{doc.subject} • {doc.gradeLevel}</p>
                       </div>
-                      <FileText size={18} className={`opacity-20 group-hover:opacity-100 transition-opacity ${doc.isSelected ? 'text-indigo-500 opacity-100' : ''}`} />
                     </button>
                   ))}
-                  {localDocs.length === 0 && (
-                    <div className="text-center py-20 opacity-40">
-                       <Search size={40} className="mx-auto mb-4" />
-                       <p className="text-sm font-bold">Library is Empty</p>
-                    </div>
-                  )}
                 </div>
               </div>
-
               <div className="p-6 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
                 <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
                   <p className="text-[10px] text-indigo-400 font-bold leading-relaxed">
-                    <span className="font-black text-indigo-600">PRO TIP:</span> Grounding is locked to one document for maximum SLO precision. Switch assets to change context.
+                    <span className="font-black text-indigo-600 uppercase">Pro Tip:</span> Grounding is locked to one document for maximum SLO precision. Switch assets to change context.
                   </p>
                 </div>
               </div>
@@ -235,7 +215,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <tool.icon size={28} />
               </div>
               <div>
-                <h3 className="font-bold text-xl text-slate-900 dark:text-white">{tool.name}</h3>
+                <h3 className="font-bold text-xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>
                 <p className="text-slate-500 dark:text-slate-400 text-sm mt-1 font-medium leading-relaxed">{tool.desc}</p>
               </div>
               <div className="mt-auto flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all">
@@ -251,7 +231,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <MessageSquare size={28} />
               </div>
               <div>
-                <h3 className="font-bold text-xl text-white">General Chat</h3>
+                <h3 className="font-bold text-xl text-white uppercase tracking-tight">General Chat</h3>
                 <p className="text-slate-400 text-sm mt-1 font-medium leading-relaxed">Free-form Pedagogical Assistant</p>
               </div>
               <div className="mt-auto flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all">
@@ -274,42 +254,55 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     );
   }
 
+  const currentTool = toolDefinitions.find(t => t.id === activeTool);
+
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden">
       
-      {/* TOOLBAR HEADER */}
-      <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md z-30">
-        <div className="flex items-center gap-3 md:gap-6">
-          <button onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent('');}} className="p-2 md:p-2.5 bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-xl transition-all">
+      {/* HEADER: Matches Screenshot Design */}
+      <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0a0a] z-30">
+        <div className="flex items-center gap-3 md:gap-5">
+          <button onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent('');}} className="p-2.5 bg-slate-50 dark:bg-white/5 text-slate-500 hover:text-slate-900 dark:hover:text-white rounded-2xl transition-all">
             <ArrowLeft size={20} />
           </button>
           <div className="flex items-center gap-3">
-            <div className={`p-2 ${toolDefinitions.find(t => t.id === activeTool)?.color || 'bg-indigo-600'} text-white rounded-xl shadow-lg shadow-indigo-600/20`}><Sparkles size={16} /></div>
-            <div>
-              <span className="font-black text-xs md:text-sm text-slate-900 dark:text-white tracking-tight uppercase">{activeTool.replace('-', ' ')}</span>
-              <p className="text-[8px] md:text-[9px] font-bold text-emerald-500 uppercase tracking-widest">Neural Mode: Gemini 3 Thinking</p>
+            <div className={`p-2.5 ${currentTool?.color || 'bg-indigo-600'} text-white rounded-xl shadow-lg shadow-indigo-600/20`}><Sparkles size={16} /></div>
+            <div className="hidden sm:block">
+              <span className="font-black text-xs md:text-sm text-slate-900 dark:text-white tracking-tight uppercase leading-none">{activeTool?.replace('-', ' ')}</span>
+              <p className="text-[8px] md:text-[9px] font-bold text-emerald-500 uppercase tracking-widest mt-0.5">Neural Mode: Gemini 3 Thinking</p>
+            </div>
+            {/* Mobile Tool Name Display */}
+            <div className="sm:hidden">
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Synthesis</p>
+              <p className="text-xs font-black text-slate-900 dark:text-white uppercase truncate max-w-[100px]">{activeTool?.replace('-', ' ')}</p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-           <button 
+        <div className="flex items-center gap-2 md:gap-3">
+          <button 
             onClick={() => setIsSliderOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400"
+            className="flex items-center gap-2 px-4 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 transition-all hover:bg-slate-100"
           >
-            <Library size={14} /> Context
+            <Library size={14} /> <span className="hidden xs:inline">Context</span>
           </button>
 
+          {/* Desktop View Switcher */}
           <div className="hidden md:flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border dark:border-white/5">
             <button onClick={() => setViewMode('chat')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'chat' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Logs</button>
             <button onClick={() => setViewMode('split')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'split' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Workspace</button>
             <button onClick={() => setViewMode('canvas')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'canvas' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Artifact</button>
           </div>
 
-          <div className="flex md:hidden items-center gap-2 bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
-            <button onClick={() => setMobileActiveTab('logs')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${mobileActiveTab === 'logs' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Logs</button>
-            <button onClick={() => setMobileActiveTab('artifact')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${mobileActiveTab === 'artifact' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Canvas</button>
-          </div>
+          {/* SINGLE TOGGLE BUTTON FOR MOBILE: Matches Screenshot "LOGS" Button */}
+          <button 
+            onClick={() => setMobileActiveTab(mobileActiveTab === 'logs' ? 'artifact' : 'logs')}
+            className={`md:hidden flex items-center gap-2 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg active:scale-95 ${
+              mobileActiveTab === 'artifact' ? 'bg-indigo-600 text-white shadow-indigo-600/30' : 'bg-slate-900 text-white'
+            }`}
+          >
+            {mobileActiveTab === 'artifact' ? <><MessageSquare size={14}/> Logs</> : <><FileText size={14}/> Canvas</>}
+          </button>
         </div>
       </div>
 
@@ -345,29 +338,26 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   </button>
                 ))}
               </div>
-              <div className="p-6 bg-slate-50 dark:bg-black/20 text-[10px] font-bold text-slate-400 leading-relaxed italic">
-                * Switching context will apply new grounding standards to your next synthesis request.
-              </div>
             </div>
           </div>
         )}
 
-        {/* SIDEBAR: Strategy Logs */}
+        {/* SIDEBAR: Strategy Logs (Strategy View) */}
         <div className={`
           flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-500
           ${viewMode === 'chat' ? 'w-full' : 'w-full md:w-[380px] lg:w-[450px] shrink-0'}
           ${viewMode === 'canvas' ? 'hidden' : 'flex'}
           ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'}
         `}>
-          <div className="px-6 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between">
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white/50 dark:bg-[#0d0d0d]">
             <div className="flex items-center gap-2">
                <MessageSquare size={14} className="text-slate-400" />
                <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Strategy Logs</span>
             </div>
             {activeDoc && (
-               <div className="px-2 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-md flex items-center gap-1.5">
+               <div className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center gap-2">
                   <Globe size={10} className="text-indigo-400" />
-                  <span className="text-[9px] font-bold text-indigo-500 truncate max-w-[80px]">{activeDoc.name}</span>
+                  <span className="text-[9px] font-bold text-indigo-500 truncate max-w-[100px]">{activeDoc.name}</span>
                </div>
             )}
           </div>
@@ -383,38 +373,38 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               ))
             )}
           </div>
-          <div className="p-4 border-t dark:border-white/5">
+          <div className="p-4 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d]">
             <ChatInput 
               onSend={handleGenerate} 
               isLoading={isGenerating} 
-              placeholder={activeTool === 'general-chat' ? "Ask anything..." : `Enhance the ${activeTool.replace('-', ' ')}...`} 
+              placeholder={activeTool === 'general-chat' ? "Ask anything..." : `Enhance the ${activeTool?.replace('-', ' ')}...`} 
             />
           </div>
         </div>
 
-        {/* MAIN: High-Fidelity Canvas */}
+        {/* MAIN: High-Fidelity Canvas (Artifact View) */}
         <div className={`
           flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-500
           ${viewMode === 'chat' ? 'hidden' : 'flex'}
           ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'}
         `}>
-           <div className="px-6 md:px-8 py-4 border-b border-slate-200 dark:border-white/5 flex items-center justify-between bg-slate-50/50 dark:bg-[#0d0d0d] shrink-0">
+           <div className="px-6 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50/50 dark:bg-[#0d0d0d] shrink-0">
               <div className="flex items-center gap-2 md:gap-3">
                 <FileEdit size={18} className="text-indigo-600" />
                 <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Artifact</span>
               </div>
               <div className="flex items-center gap-2 md:gap-3">
-                 <button className="flex items-center gap-2 px-3 md:px-4 py-1.5 md:py-2 bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 transition-all">
+                 <button className="flex items-center gap-2 px-3 md:px-4 py-2 bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 transition-all">
                     <Download size={12} /> PDF
                  </button>
-                 <button className="flex items-center gap-2 px-4 md:px-6 py-1.5 md:py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
+                 <button className="flex items-center gap-2 px-4 md:px-6 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-600/20 active:scale-95">
                     <Save size={12} /> Finalize
                  </button>
               </div>
            </div>
 
            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-8 md:p-12 lg:p-16 rounded-[2rem] shadow-sm border border-slate-100 dark:border-white/5 min-h-full relative">
+              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-8 md:p-12 lg:p-16 rounded-[2rem] shadow-sm border border-slate-100 dark:border-white/5 min-h-full relative animate-in fade-in duration-700">
                 <div className="prose dark:prose-invert max-w-none text-sm md:text-base leading-loose">
                   {canvasContent ? (
                     <div dangerouslySetInnerHTML={{ __html: marked.parse(canvasContent.split('--- Synthesis by Node:')[0]) }} />
