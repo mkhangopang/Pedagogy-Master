@@ -5,7 +5,8 @@ import {
   Sparkles, ClipboardCheck, BookOpen, Layers, ArrowLeft, Loader2, 
   Bot, Target, FileText, Check, Copy, Download, Share2, GitMerge,
   Maximize2, LayoutPanelLeft, Edit3, Save, FileJson, Globe, ArrowRight,
-  MessageSquare, FileEdit, ChevronLeft, Search, Zap
+  MessageSquare, FileEdit, ChevronLeft, Search, Zap, X, ChevronRight,
+  Info, ShieldCheck, Library, Circle, CheckCircle
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -14,6 +15,7 @@ import { ChatInput } from '../components/chat/ChatInput';
 import { MessageItem } from '../components/chat/MessageItem';
 import { SuggestedPrompts } from '../components/chat/SuggestedPrompts';
 import { marked } from 'marked';
+import { supabase } from '../lib/supabase';
 
 interface ToolsProps {
   brain: NeuralBrain;
@@ -30,10 +32,18 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [canvasContent, setCanvasContent] = useState<string>('');
   const [viewMode, setViewMode] = useState<'split' | 'chat' | 'canvas'>('split');
   const [mobileActiveTab, setMobileActiveTab] = useState<'logs' | 'artifact'>('logs');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Inner Document Selector
+  
+  // Slider / Context State
+  const [isSliderOpen, setIsSliderOpen] = useState(false);
+  const [localDocs, setLocalDocs] = useState<Document[]>(documents);
+  const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
-  const activeDoc = documents.find(d => d.isSelected);
+  const activeDoc = localDocs.find(d => d.isSelected);
+
+  useEffect(() => {
+    setLocalDocs(documents);
+  }, [documents]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -41,10 +51,38 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     }
   }, [messages, isGenerating]);
 
+  const toggleDocContext = async (docId: string) => {
+    if (isSwitchingContext) return;
+    setIsSwitchingContext(true);
+    
+    // Optimistic Update
+    const updated = localDocs.map(d => ({ 
+      ...d, 
+      isSelected: d.id === docId ? !d.isSelected : false 
+    }));
+    setLocalDocs(updated);
+
+    try {
+      // Clear selections first (Context Lock logic)
+      await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+      
+      const target = updated.find(d => d.id === docId);
+      if (target?.isSelected) {
+        await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+      }
+      
+      // Briefly show neural handshake
+      onQuery(); 
+    } catch (e) {
+      console.error("Context Switch Fail:", e);
+    } finally {
+      setIsSwitchingContext(false);
+    }
+  };
+
   const handleGenerate = async (userInput: string) => {
     if (!userInput.trim() || isGenerating || !canQuery) return;
     
-    // Default to "general-chat" if no specific tool is active
     const effectiveTool = activeTool || 'general-chat';
     if (!activeTool) setActiveTool('general-chat');
 
@@ -58,7 +96,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     try {
       onQuery();
       let fullContent = '';
-      
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
       const stream = geminiService.generatePedagogicalToolStream(
@@ -90,25 +127,102 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Standards-aligned MCQ/CRQ', color: 'bg-emerald-600' },
     { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Bloom-scaled Criteria', color: 'bg-amber-600' },
     { id: 'learning-path', name: 'Pathways', icon: GitMerge, desc: 'Prerequisite Sequencing', color: 'bg-purple-600' },
-    { id: 'slo-tagger', name: 'Syllabus Audit', icon: Target, desc: 'Standards Mapping', color: 'bg-rose-600' },
-    { id: 'general-chat', name: 'Free Chat', icon: MessageSquare, desc: 'General Pedagogical AI', color: 'bg-slate-700' },
+    { id: 'slo-tagger', name: 'Audit', icon: Target, desc: 'Standards Mapping', color: 'bg-rose-600' },
   ];
 
-  // Tool Entry Grid (The "Synthesis Hub")
   if (!activeTool) {
     return (
-      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4">
-        <div className="flex items-center gap-6 mb-12">
-          <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shadow-indigo-600/20">
-            <Zap size={32} />
+      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 animate-in fade-in duration-500">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+          <div className="flex items-center gap-6">
+            <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shadow-indigo-600/20">
+              <Zap size={32} />
+            </div>
+            <div>
+              <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter">Synthesis Hub</h1>
+              <p className="text-slate-500 font-medium text-sm md:text-lg mt-1 italic flex items-center gap-2">
+                {activeDoc ? (
+                  <><ShieldCheck size={18} className="text-emerald-500" /> Anchored to: {activeDoc.name}</>
+                ) : (
+                  <><Info size={18} /> Ready for general pedagogical assistance.</>
+                )}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter">Synthesis Hub</h1>
-            <p className="text-slate-500 font-medium text-sm md:text-lg mt-1 italic">
-              {activeDoc ? `Anchored to: ${activeDoc.name}` : 'Ready for general pedagogical assistance.'}
-            </p>
-          </div>
+          
+          <button 
+            onClick={() => setIsSliderOpen(true)}
+            className="flex items-center gap-3 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-xs font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:shadow-xl transition-all active:scale-95"
+          >
+            <Library size={18} />
+            Switch Context
+          </button>
         </div>
+
+        {/* ASSET SELECTOR DRAWER */}
+        {isSliderOpen && (
+          <div className="fixed inset-0 z-[200] flex justify-end">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsSliderOpen(false)} />
+            <div className="relative w-full max-w-sm bg-white dark:bg-[#0d0d0d] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
+              <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 rounded-lg"><Library size={20} /></div>
+                  <h3 className="font-black text-xs uppercase tracking-[0.2em] text-slate-500">Curriculum Assets</h3>
+                </div>
+                <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors"><X size={20}/></button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <Zap size={14} className="text-indigo-400" /> Curriculum Context
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {localDocs.map(doc => (
+                    <button
+                      key={doc.id}
+                      onClick={() => toggleDocContext(doc.id)}
+                      className={`w-full flex items-center gap-4 p-5 rounded-[1.5rem] transition-all border text-left group ${
+                        doc.isSelected 
+                          ? 'bg-indigo-600/10 border-indigo-500 shadow-xl shadow-indigo-500/10 ring-1 ring-indigo-500' 
+                          : 'bg-white dark:bg-white/5 border-slate-200 dark:border-white/5 text-slate-400 hover:border-indigo-400'
+                      }`}
+                    >
+                      <div className="shrink-0 relative">
+                        {doc.isSelected ? (
+                          <div className="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center text-white shadow-lg"><Check size={14} strokeWidth={4} /></div>
+                        ) : (
+                          <div className="w-6 h-6 border-2 border-slate-200 dark:border-white/10 rounded-full" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-bold truncate ${doc.isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`}>{doc.name}</p>
+                        <p className="text-[10px] opacity-60 font-medium mt-0.5">{doc.subject} • {doc.gradeLevel}</p>
+                      </div>
+                      <FileText size={18} className={`opacity-20 group-hover:opacity-100 transition-opacity ${doc.isSelected ? 'text-indigo-500 opacity-100' : ''}`} />
+                    </button>
+                  ))}
+                  {localDocs.length === 0 && (
+                    <div className="text-center py-20 opacity-40">
+                       <Search size={40} className="mx-auto mb-4" />
+                       <p className="text-sm font-bold">Library is Empty</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-slate-100 dark:border-white/5 bg-slate-50/50 dark:bg-black/20">
+                <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
+                  <p className="text-[10px] text-indigo-400 font-bold leading-relaxed">
+                    <span className="font-black text-indigo-600">PRO TIP:</span> Grounding is locked to one document for maximum SLO precision. Switch assets to change context.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
           {toolDefinitions.map((tool) => (
@@ -129,6 +243,21 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
             </button>
           ))}
+          <button
+              onClick={() => setActiveTool('general-chat')}
+              className="p-8 bg-slate-900 border border-white/10 rounded-[3rem] hover:border-indigo-500 transition-all text-left flex flex-col gap-6 group shadow-sm hover:shadow-2xl hover:-translate-y-1"
+            >
+              <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-600/10">
+                <MessageSquare size={28} />
+              </div>
+              <div>
+                <h3 className="font-bold text-xl text-white">General Chat</h3>
+                <p className="text-slate-400 text-sm mt-1 font-medium leading-relaxed">Free-form Pedagogical Assistant</p>
+              </div>
+              <div className="mt-auto flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-all">
+                Launch assistant <ArrowRight size={12} />
+              </div>
+            </button>
         </div>
 
         <div className="space-y-6">
@@ -163,21 +292,66 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
         </div>
 
-        {/* Desktop View Switcher */}
-        <div className="hidden md:flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border dark:border-white/5">
-          <button onClick={() => setViewMode('chat')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'chat' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Logs</button>
-          <button onClick={() => setViewMode('split')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'split' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Workspace</button>
-          <button onClick={() => setViewMode('canvas')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'canvas' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Artifact</button>
-        </div>
+        <div className="flex items-center gap-3">
+           <button 
+            onClick={() => setIsSliderOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/5 rounded-xl text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400"
+          >
+            <Library size={14} /> Context
+          </button>
 
-        {/* Mobile View Switcher */}
-        <div className="flex md:hidden items-center gap-2 bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
-           <button onClick={() => setMobileActiveTab('logs')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${mobileActiveTab === 'logs' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Logs</button>
-           <button onClick={() => setMobileActiveTab('artifact')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${mobileActiveTab === 'artifact' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Canvas</button>
+          <div className="hidden md:flex items-center gap-2 bg-slate-100 dark:bg-white/5 p-1 rounded-xl border dark:border-white/5">
+            <button onClick={() => setViewMode('chat')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'chat' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Logs</button>
+            <button onClick={() => setViewMode('split')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'split' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Workspace</button>
+            <button onClick={() => setViewMode('canvas')} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${viewMode === 'canvas' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}>Artifact</button>
+          </div>
+
+          <div className="flex md:hidden items-center gap-2 bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
+            <button onClick={() => setMobileActiveTab('logs')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${mobileActiveTab === 'logs' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Logs</button>
+            <button onClick={() => setMobileActiveTab('artifact')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${mobileActiveTab === 'artifact' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Canvas</button>
+          </div>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
+        {/* CONTEXT SELECTOR DRAWER (INTERNAL) */}
+        {isSliderOpen && (
+          <div className="fixed inset-0 z-[200] flex justify-end">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsSliderOpen(false)} />
+            <div className="relative w-full max-w-sm bg-white dark:bg-[#0d0d0d] h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-500">
+              <div className="p-6 border-b dark:border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Library size={18} className="text-indigo-500" />
+                  <span className="font-black text-xs uppercase tracking-widest text-slate-500">Active Library</span>
+                </div>
+                <button onClick={() => setIsSliderOpen(false)} className="p-2"><X size={20}/></button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-3">
+                {localDocs.map(doc => (
+                  <button
+                    key={doc.id}
+                    onClick={() => toggleDocContext(doc.id)}
+                    className={`w-full flex items-center gap-4 p-5 rounded-2xl border transition-all text-left ${
+                      doc.isSelected ? 'bg-indigo-600/10 border-indigo-500 shadow-lg' : 'border-slate-100 dark:border-white/5'
+                    }`}
+                  >
+                    <div className="shrink-0">
+                      {doc.isSelected ? <CheckCircle size={20} className="text-indigo-600" /> : <Circle size={20} className="text-slate-300" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold truncate dark:text-white">{doc.name}</p>
+                      <p className="text-[10px] opacity-60 font-medium">{doc.subject}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+              <div className="p-6 bg-slate-50 dark:bg-black/20 text-[10px] font-bold text-slate-400 leading-relaxed italic">
+                * Switching context will apply new grounding standards to your next synthesis request.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* SIDEBAR: Strategy Logs */}
         <div className={`
           flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-500
