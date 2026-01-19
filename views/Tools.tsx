@@ -58,7 +58,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     if (isSwitchingContext) return;
     setIsSwitchingContext(true);
     
-    // Optimistic UI
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -66,14 +65,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     setLocalDocs(updated);
 
     try {
-      // Clear selections first in DB
       await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
-      
       const target = updated.find(d => d.id === docId);
       if (target?.isSelected) {
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
-      onQuery(); // Trigger parent refresh if needed
+      onQuery(); 
     } catch (e) {
       console.error("Context Switch Fail:", e);
     } finally {
@@ -165,7 +162,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 animate-in fade-in duration-500">
-        {/* SLIDER PANEL */}
         {isSliderOpen && (
           <>
             <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] animate-in fade-in duration-300" onClick={() => setIsSliderOpen(false)} />
@@ -259,7 +255,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden">
-      {/* TOOL TOP BAR */}
       <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0a0a] z-30">
         <div className="flex items-center gap-3 md:gap-5">
           <button 
@@ -295,7 +290,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* LOGS PANEL */}
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-500 ${viewMode === 'chat' ? 'w-full' : 'w-full md:w-[380px] lg:w-[450px] shrink-0'} ${viewMode === 'canvas' ? 'hidden' : 'flex'} ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'}`}>
           <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white/50 dark:bg-[#0d0d0d]">
             <div className="flex items-center gap-2">
@@ -334,7 +328,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
         </div>
 
-        {/* ARTIFACT CANVAS */}
         <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-500 ${viewMode === 'chat' ? 'hidden' : 'flex'} ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'}`}>
            <div className="px-6 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50/50 dark:bg-[#0d0d0d] shrink-0">
               <div className="flex items-center gap-2 md:gap-3">
@@ -371,7 +364,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         </div>
       </div>
 
-      {/* SLIDER PANEL (DUPLICATED FOR TOOL VIEW) */}
       {isSliderOpen && (
         <>
           <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] animate-in fade-in duration-300" onClick={() => setIsSliderOpen(false)} />

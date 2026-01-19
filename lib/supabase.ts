@@ -6,47 +6,62 @@ import { ADMIN_EMAILS } from '../constants';
 let supabaseInstance: SupabaseClient | null = null;
 let isUsingPlaceholder = true;
 
+/**
+ * RESOLVE SYSTEM KEYS
+ * Next.js requires explicit literal access (e.g. process.env.NEXT_PUBLIC_KEY) 
+ * for variables to be bundled into the client-side code. Dynamic property access
+ * like process.env[key] will fail on the client.
+ */
 const getEnvVar = (key: string): string => {
+  // 1. Explicit Literal Check (Priority 1 - Bundled Constants)
+  if (key === 'SUPABASE_URL') {
+    const val = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+    if (val) return val;
+  }
+  if (key === 'SUPABASE_ANON_KEY') {
+    const val = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    if (val) return val;
+  }
+
+  // 2. Runtime Window Check (Priority 2 - Preview/Injected environments)
   if (typeof window !== 'undefined') {
     const win = window as any;
-    // Aggressive priority resolution for preview environments
     return (
       win.process?.env?.[key] || 
       win.process?.env?.[`NEXT_PUBLIC_${key}`] || 
-      process.env[key] || 
-      process.env[`NEXT_PUBLIC_${key}`] || 
       win[key] || 
       win[`NEXT_PUBLIC_${key}`] || 
-      win.aistudio?.[key] || // Check AI Studio specifics if applicable
+      win.aistudio?.[key] || 
       ''
     );
   }
-  return process.env[key] || process.env[`NEXT_PUBLIC_${key}`] || '';
+  
+  return '';
 };
 
 export const isSupabaseConfigured = (): boolean => {
   const url = getEnvVar('SUPABASE_URL');
   const key = getEnvVar('SUPABASE_ANON_KEY');
-  const isValid = url.length > 10 && key.length > 10 && !url.includes('placeholder');
+  
+  const isValid = (url && url.length > 10 && !url.includes('placeholder')) && 
+                  (key && key.length > 10 && !key.includes('placeholder'));
   
   if (!isValid && typeof window !== 'undefined') {
-    console.warn(`📡 [System] Handshake stalled: Missing ${url.length <= 10 ? 'URL' : ''} ${key.length <= 10 ? 'Key' : ''}`);
+    console.warn(`📡 [System] Handshake stalled: Missing credentials in environment.`);
   }
   
-  return isValid;
+  return !!isValid;
 };
 
 /**
  * Lazy singleton getter for Supabase client.
- * CRITICAL FIX: If we are using a placeholder client and real keys become available, 
- * we must invalidate the cache and create a real client.
+ * Invalidate cache if real keys become available after a placeholder was already created.
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const url = getEnvVar('SUPABASE_URL');
   const key = getEnvVar('SUPABASE_ANON_KEY');
   const currentlyConfigured = url.length > 10 && key.length > 10 && !url.includes('placeholder');
 
-  // If we have an instance but it was a placeholder and now we have real keys, reset it
   if (supabaseInstance && isUsingPlaceholder && currentlyConfigured) {
     supabaseInstance = null;
   }
@@ -71,10 +86,8 @@ export const getSupabaseClient = (): SupabaseClient => {
 };
 
 /**
- * PROXY EXPORT:
- * Instead of a fixed constant, we export a proxy that calls the getter.
- * This ensures that even if a file imports 'supabase' at the top level,
- * it always gets the most up-to-date client initialization.
+ * PROXY EXPORT
+ * Ensures top-level imports always access the most current client state.
  */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
@@ -87,8 +100,7 @@ export const supabase = new Proxy({} as SupabaseClient, {
 
 export async function getAuthenticatedUser(): Promise<User | null> {
   try {
-    const client = getSupabaseClient();
-    const { data: { user } } = await client.auth.getUser();
+    const { data: { user } } = await supabase.auth.getUser();
     return user;
   } catch {
     return null;
@@ -104,10 +116,9 @@ export function isAppAdmin(email: string | undefined): boolean {
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
   const isAdminUser = isAppAdmin(email);
-  const client = getSupabaseClient();
 
   try {
-    const { data: profile } = await client
+    const { data: profile } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
@@ -115,7 +126,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 
     if (profile) {
       if (isAdminUser && profile.role !== UserRole.APP_ADMIN) {
-         await client.from('profiles').update({ 
+         await supabase.from('profiles').update({ 
            role: UserRole.APP_ADMIN, 
            plan: SubscriptionPlan.ENTERPRISE 
          }).eq('id', userId);
@@ -125,7 +136,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       return profile;
     }
 
-    const { data: newProfile } = await client
+    const { data: newProfile } = await supabase
       .from('profiles')
       .upsert({
         id: userId,
@@ -149,8 +160,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
   if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Infrastructure node missing config.' };
   try {
-    const client = getSupabaseClient();
-    const { error } = await client.from('profiles').select('id').limit(1);
+    const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error && error.code !== 'PGRST116') throw error;
     return { status: 'connected', message: 'PostgreSQL Data Plane Active' };
   } catch (err: any) {
