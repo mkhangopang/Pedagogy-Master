@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 import { parseUserQuery } from './query-parser';
+import { performanceMonitor } from '../monitoring/performance';
 
 export interface RetrievedChunk {
   chunk_id: string;
@@ -15,8 +16,7 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v30.0 - METADATA AWARE)
- * Uses parsed metadata to filter and boost relevant curriculum context.
+ * HIGH-PRECISION RAG RETRIEVER (v31.0 - PERFORMANCE TRACKED)
  */
 export async function retrieveRelevantChunks({
   query,
@@ -29,27 +29,15 @@ export async function retrieveRelevantChunks({
   supabase: SupabaseClient;
   matchCount?: number;
 }): Promise<RetrievedChunk[]> {
+  const start = performance.now();
   try {
     if (!documentIds || documentIds.length === 0) return [];
 
-    // Step 1: Intelligent Query Parsing
     const parsed = parseUserQuery(query);
-    console.log(`🎯 [Retriever] Metadata Signals Identified:`, {
-      sloCodes: parsed.sloCodes,
-      grades: parsed.grades,
-      topics: parsed.topics,
-      bloom: parsed.bloomLevel
-    });
-    
-    // Step 2: Vector Synthesis
     const queryEmbedding = await generateEmbedding(query);
     
-    if (!queryEmbedding || queryEmbedding.length !== 768) {
-      console.error('❌ [Retriever] Vector synthesis failed.');
-      return [];
-    }
+    if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // Step 3: Hybrid Search v3 (Metadata Augmented)
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_embedding: queryEmbedding,
       match_count: matchCount,
@@ -62,8 +50,7 @@ export async function retrieveRelevantChunks({
     });
     
     if (error) {
-      console.error('❌ [Retriever] RPC v3 Search Failure:', error.message);
-      // Failsafe to v2 search if v3 is missing or fails
+      console.error('❌ [Retriever] RPC v3 Failure:', error.message);
       const { data: v2Chunks } = await supabase.rpc('hybrid_search_chunks_v2', {
         query_embedding: queryEmbedding,
         match_count: matchCount,
@@ -74,7 +61,7 @@ export async function retrieveRelevantChunks({
       return (v2Chunks || []).map(processResult);
     }
     
-    console.log(`✅ [Retriever] Synced ${chunks?.length || 0} precision nodes across ${documentIds.length} assets.`);
+    performanceMonitor.track('rag_retrieval_total', performance.now() - start, { chunkCount: chunks?.length });
     return (chunks || []).map(processResult);
     
     function processResult(d: any): RetrievedChunk {
