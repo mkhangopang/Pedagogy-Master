@@ -2,7 +2,6 @@ import React from 'react';
 import { 
   LayoutDashboard, 
   FileText, 
-  MessageSquare, 
   Wrench, 
   BrainCircuit, 
   LogOut,
@@ -48,8 +47,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Curriculum Docs', icon: FileText },
     { id: 'tracker', label: 'Progress Tracker', icon: ClipboardCheck },
-    { id: 'chat', label: 'AI Tutor Chat', icon: MessageSquare },
-    { id: 'tools', label: 'Tools', icon: Wrench },
+    { id: 'tools', label: 'Neural Tools', icon: Wrench },
     { id: 'pricing', label: 'Pricing Tiers', icon: CreditCard },
   ];
 

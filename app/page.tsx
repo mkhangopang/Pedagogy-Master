@@ -12,7 +12,6 @@ import { paymentService } from '../services/paymentService';
 import { Loader2, Menu, Cpu, RefreshCw, X } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
-const ChatView = lazy(() => import('../views/Chat'));
 const ToolsView = lazy(() => import('../views/Tools'));
 const BrainControlView = lazy(() => import('../views/BrainControl'));
 const PricingView = lazy(() => import('../views/Pricing'));
@@ -299,7 +298,6 @@ export default function App() {
           </div>
           
           <div className="flex items-center gap-3">
-             {/* User Quick Switch / Status or Desktop Tools could go here */}
              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
                 <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">Node: {isActuallyConnected ? 'Stable' : 'Offline'}</span>
@@ -317,7 +315,6 @@ export default function App() {
                 switch (currentView) {
                   case 'dashboard': return <Dashboard {...props} />;
                   case 'documents': return <DocumentsView documents={documents} userProfile={userProfile} onAddDocument={async () => fetchProfileAndDocs(userProfile.id, userProfile.email)} onUpdateDocument={handleUpdateDocument} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={isActuallyConnected} />;
-                  case 'chat': return <ChatView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
                   case 'tools': return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
                   case 'tracker': return <TrackerView user={userProfile} documents={documents} />;
                   case 'brain': return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
