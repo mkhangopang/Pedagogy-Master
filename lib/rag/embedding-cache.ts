@@ -1,51 +1,40 @@
+import { kv } from '../kv';
+// Add missing Buffer import for Base64 encoding
+import { Buffer } from 'buffer';
+
 /**
- * NEURAL EMBEDDING CACHE (v1.0)
- * Reduces redundant API calls to Google embedding nodes.
- * Structure ready for Redis/Upstash migration.
+ * NEURAL EMBEDDING CACHE (v2.0 - PERSISTENT)
+ * Leverages KV utility for cross-session vector persistence.
  */
 class EmbeddingCache {
-  private cache = new Map<string, { vector: number[]; timestamp: number }>();
-  private readonly TTL = 24 * 60 * 60 * 1000; // 24 Hour TTL
-  private readonly MAX_ENTRIES = 1000;
+  private readonly TTL_SECONDS = 86400; // 24 Hours
 
   private normalizeKey(text: string): string {
-    return text.toLowerCase().trim().replace(/\s+/g, ' ');
+    // Generate a simple hash-like key to prevent overly long Redis keys
+    const clean = text.toLowerCase().trim().replace(/\s+/g, ' ');
+    return `v_cache:${Buffer.from(clean).toString('base64').substring(0, 100)}`;
   }
 
   async get(text: string): Promise<number[] | null> {
     const key = this.normalizeKey(text);
-    const entry = this.cache.get(key);
-
-    if (!entry) return null;
-
-    // Check TTL
-    if (Date.now() - entry.timestamp > this.TTL) {
-      this.cache.delete(key);
-      return null;
+    const vector = await kv.get<number[]>(key);
+    if (vector) {
+      console.log('⚡ [Vector Cache] Persistent Hit.');
     }
-
-    console.log('⚡ [Vector Cache] Hit for query embedding.');
-    return entry.vector;
+    return vector;
   }
 
   async set(text: string, vector: number[]): Promise<void> {
     const key = this.normalizeKey(text);
-    
-    // Eviction policy: LRU-lite
-    if (this.cache.size >= this.MAX_ENTRIES) {
-      const oldestKey = Array.from(this.cache.entries())
-        .sort((a, b) => a[1].timestamp - b[1].timestamp)[0][0];
-      this.cache.delete(oldestKey);
-    }
-
-    this.cache.set(key, { vector, timestamp: Date.now() });
+    await kv.set(key, vector, this.TTL_SECONDS);
   }
 
+  // Add getStats method for the metrics reporting dashboard
   getStats() {
     return {
-      size: this.cache.size,
-      maxSize: this.MAX_ENTRIES,
-      utilization: ((this.cache.size / this.MAX_ENTRIES) * 100).toFixed(1) + '%'
+      status: 'active',
+      ttl: this.TTL_SECONDS,
+      provider: 'persistent_kv'
     };
   }
 }

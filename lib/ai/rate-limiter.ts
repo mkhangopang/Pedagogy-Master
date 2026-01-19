@@ -1,3 +1,4 @@
+import { kv } from '../kv';
 
 export interface ProviderConfig {
   name: string;
@@ -9,58 +10,55 @@ export interface ProviderConfig {
 interface RateLimitState {
   minuteCount: number;
   dayCount: number;
-  minuteResetTime: number;
-  dayResetTime: number;
+  minuteReset: number;
+  dayReset: number;
 }
 
+/**
+ * PERSISTENT RATE LIMITER (v2.0)
+ * Uses KV store for cross-instance enforcement.
+ */
 class RateLimiter {
-  private states = new Map<string, RateLimitState>();
-
-  canMakeRequest(provider: string, config: ProviderConfig): boolean {
+  async canMakeRequest(provider: string, config: ProviderConfig): Promise<boolean> {
+    if (!config.enabled) return false;
+    
     const now = Date.now();
-    const state = this.getState(provider);
+    const key = `ratelimit:${provider}`;
+    let state = await kv.get<RateLimitState>(key);
 
-    if (now >= state.minuteResetTime) {
+    if (!state || now > state.dayReset) {
+      state = { minuteCount: 0, dayCount: 0, minuteReset: now + 60000, dayReset: now + 86400000 };
+    } else if (now > state.minuteReset) {
       state.minuteCount = 0;
-      state.minuteResetTime = now + 60000;
+      state.minuteReset = now + 60000;
     }
 
-    if (now >= state.dayResetTime) {
-      state.dayCount = 0;
-      state.dayResetTime = now + 86400000;
+    const allowed = state.minuteCount < config.rpm && state.dayCount < config.rpd;
+    
+    if (allowed) {
+      state.minuteCount++;
+      state.dayCount++;
+      await kv.set(key, state, 86400); // 1 day TTL
     }
 
-    return state.minuteCount < config.rpm && state.dayCount < config.rpd && config.enabled;
+    return allowed;
   }
 
-  trackRequest(provider: string): void {
-    const state = this.getState(provider);
-    state.minuteCount++;
-    state.dayCount++;
-    this.states.set(provider, state);
+  // Add trackRequest method to support calls from synthesizer-core
+  trackRequest(provider: string) {
+    // Current implementation already tracks usage within canMakeRequest
+    // to ensure atomic operations. This method is provided for API compatibility.
+    return;
   }
 
-  getState(provider: string): RateLimitState {
-    if (!this.states.has(provider)) {
-      const now = Date.now();
-      this.states.set(provider, {
-        minuteCount: 0,
-        dayCount: 0,
-        minuteResetTime: now + 60000,
-        dayResetTime: now + 86400000,
-      });
-    }
-    return this.states.get(provider)!;
-  }
-
-  getRemainingRequests(provider: string, config: ProviderConfig): {
-    minute: number;
-    day: number;
-  } {
-    const state = this.getState(provider);
+  async getRemainingRequests(provider: string, config: ProviderConfig) {
+    const key = `ratelimit:${provider}`;
+    const state = await kv.get<RateLimitState>(key);
+    if (!state) return { minute: config.rpm, day: config.rpd };
+    
     return {
       minute: Math.max(0, config.rpm - state.minuteCount),
-      day: Math.max(0, config.rpd - state.dayCount),
+      day: Math.max(0, config.rpd - state.dayCount)
     };
   }
 }

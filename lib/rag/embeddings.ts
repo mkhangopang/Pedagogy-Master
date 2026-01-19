@@ -4,29 +4,26 @@ import { performanceMonitor } from "../monitoring/performance";
 
 /**
  * NEURAL TEXT SANITIZER
- * Ensures input strings don't crash the embedding node.
+ * Ensures input strings are optimized for vectorization.
  */
 function sanitizeText(text: string): string {
   if (!text) return " ";
   return text
     .replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ') 
-    .replace(/\\u[0-9a-fA-F]{4}/g, '') 
-    .normalize('NFKD')
-    .replace(/[^\x20-\x7E\s]/g, '') 
     .replace(/\s+/g, ' ')
     .trim() || " ";
 }
 
 /**
- * VECTOR SYNTHESIS ENGINE (v25.0)
+ * VECTOR SYNTHESIS ENGINE (v26.0)
  * MODEL: text-embedding-004 (768 dimensions)
- * Now with high-speed caching and performance tracking.
+ * Implements persistent caching and performance metrics.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const start = performance.now();
   const cleanText = sanitizeText(text);
 
-  // 1. Check Cache
+  // 1. Persistent Cache Check
   const cached = await embeddingCache.get(cleanText);
   if (cached) {
     performanceMonitor.track('embedding_cache_hit', performance.now() - start);
@@ -47,34 +44,25 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       throw new Error("Invalid vector values returned.");
     }
 
+    // Force 768 dimensions for PostgreSQL HNSW compatibility
     const finalVector = vector.length === 768 ? vector : 
       (vector.length < 768 ? [...vector, ...new Array(768 - vector.length).fill(0)] : vector.slice(0, 768));
     
-    // 2. Set Cache
+    // 2. Commit to Persistent Cache
     await embeddingCache.set(cleanText, finalVector);
     
     performanceMonitor.track('embedding_api_call', performance.now() - start);
     return finalVector;
   } catch (error: any) {
-    console.error('[Embedding Error]:', error.message);
+    console.error('❌ [Embedding Node] Fatal:', error.message);
     return new Array(768).fill(0);
   }
 }
 
 /**
- * HIGH-SPEED BATCH EMBEDDER
+ * BATCH VECTOR SYNTHESIS
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const BATCH_SIZE = 10;
-  const results: number[][] = new Array(texts.length);
-  
-  for (let i = 0; i < texts.length; i += BATCH_SIZE) {
-    const batch = texts.slice(i, i + BATCH_SIZE);
-    const batchPromises = batch.map(text => generateEmbedding(text));
-    const batchResults = await Promise.all(batchPromises);
-    batchResults.forEach((res, index) => { results[i + index] = res; });
-    if (i + BATCH_SIZE < texts.length) await new Promise(resolve => setTimeout(resolve, 200));
-  }
-  
+  const results = await Promise.all(texts.map(t => generateEmbedding(t)));
   return results;
 }
