@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v31.0)
- * Updated to support gemini-2.5-flash-image for visual aid generation.
+ * HIGH-FIDELITY GEMINI ADAPTER (v31.1)
+ * Updated to support gemini-2.5-flash-image and resolve TypeScript null-safety issues.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -25,9 +25,12 @@ export async function callGemini(
         }
       });
 
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          return { imageUrl: `data:image/png;base64,${part.inlineData.data}` };
+      const candidates = response.candidates;
+      if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
+        for (const part of candidates[0].content.parts) {
+          if (part.inlineData) {
+            return { imageUrl: `data:image/png;base64,${part.inlineData.data}` };
+          }
         }
       }
       throw new Error("Neural vision node failed to synthesize image bytes.");
