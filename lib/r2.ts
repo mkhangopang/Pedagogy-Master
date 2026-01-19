@@ -11,15 +11,20 @@ export const getR2Client = (): S3Client | null => {
   if (r2Instance) return r2Instance;
   if (!isR2Configured()) return null;
 
-  r2Instance = new S3Client({
-    region: 'auto',
-    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-    },
-  });
-  return r2Instance;
+  try {
+    r2Instance = new S3Client({
+      region: 'auto',
+      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+      },
+    });
+    return r2Instance;
+  } catch (e) {
+    console.error("Failed to initialize R2 Client:", e);
+    return null;
+  }
 };
 
 /**

@@ -1,4 +1,3 @@
-
 import { callGroq } from './providers/groq';
 import { callOpenRouter } from './providers/openrouter';
 import { callGemini } from './providers/gemini';
@@ -14,8 +13,9 @@ import { isGeminiEnabled } from '../env-server';
 /**
  * NEURAL PROVIDER CONFIGURATION
  * Optimized for Gemini 3 and high-speed hardware nodes.
+ * Calculates state dynamically to prevent static caching of missing environment variables.
  */
-export const PROVIDERS: ProviderConfig[] = [
+export const getProvidersConfig = (): ProviderConfig[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled() },
   { name: 'cerebras', rpm: 100, rpd: 10000, enabled: !!process.env.CEREBRAS_API_KEY },
   { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
@@ -55,7 +55,8 @@ export async function synthesize(
   systemInstruction: string = DEFAULT_MASTER_PROMPT
 ): Promise<{ text: string; provider: string; groundingMetadata?: any }> {
   return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any }>(async () => {
-    const sortedProviders = [...PROVIDERS]
+    const currentProviders = getProvidersConfig();
+    const sortedProviders = [...currentProviders]
       .filter(p => p.enabled)
       .sort((a, b) => {
         if (a.name === preferredProvider) return -1;
@@ -64,7 +65,7 @@ export async function synthesize(
       });
 
     for (const config of sortedProviders) {
-      if (!rateLimiter.canMakeRequest(config.name, config)) continue;
+      if (!await rateLimiter.canMakeRequest(config.name, config)) continue;
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         
@@ -76,8 +77,6 @@ export async function synthesize(
           resultPromise,
           new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
         ]);
-
-        rateLimiter.trackRequest(config.name);
 
         if (typeof response === 'string') {
           return { text: response, provider: config.name };

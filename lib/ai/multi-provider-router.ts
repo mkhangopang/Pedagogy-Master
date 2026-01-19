@@ -1,23 +1,41 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { rateLimiter } from './rate-limiter';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
-import { synthesize, MODEL_SPECIALIZATION, PROVIDERS } from './synthesizer-core';
+import { synthesize, MODEL_SPECIALIZATION, getProvidersConfig } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
 import { extractSLOCodes } from '../rag/slo-extractor';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
  * Returns the current operational status of all AI nodes.
+ * Updated with strict awaiting and default values to prevent UI "red" status on unresolved data.
  */
-export function getProviderStatus() {
-  return PROVIDERS.map(p => ({
-    name: p.name,
-    enabled: p.enabled,
-    limits: { rpm: p.rpm, rpd: p.rpd },
-    remaining: rateLimiter.getRemainingRequests(p.name, p)
+export async function getProviderStatus() {
+  const configs = getProvidersConfig();
+  const statuses = await Promise.all(configs.map(async (p) => {
+    try {
+      const remaining = await rateLimiter.getRemainingRequests(p.name, p);
+      return {
+        name: p.name,
+        enabled: p.enabled,
+        limits: { rpm: p.rpm, rpd: p.rpd },
+        remaining: {
+          minute: remaining?.minute ?? 0,
+          day: remaining?.day ?? 0
+        }
+      };
+    } catch (e) {
+      console.error(`Status check failed for ${p.name}:`, e);
+      return {
+        name: p.name,
+        enabled: false,
+        limits: { rpm: p.rpm, rpd: p.rpd },
+        remaining: { minute: 0, day: 0 }
+      };
+    }
   }));
+  return statuses;
 }
 
 /**
