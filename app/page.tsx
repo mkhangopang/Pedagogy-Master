@@ -50,10 +50,10 @@ export default function App() {
   const checkDb = useCallback(async () => {
     let health = await getSupabaseHealth();
     
-    // Retry with backoff for Supabase cold starts
+    // Aggressive retry with backoff for Supabase cold starts / initial deployment lag
     if (health.status !== 'connected' && isSupabaseConfigured()) {
-       console.log('📡 [Handshake] Data plane lagging, retrying connection...');
-       await new Promise(r => setTimeout(r, 2500));
+       console.log('📡 [System] Handshake lagging, performing deep re-sync...');
+       await new Promise(r => setTimeout(r, 3000));
        health = await getSupabaseHealth();
     }
     
@@ -75,79 +75,63 @@ export default function App() {
     setIsBackgroundSyncing(true);
     const isSystemAdmin = isAppAdmin(email);
     
-    // 1. Authoritative Optimistic State
-    // If the email matches the primary developer list, force the role IMMEDIATELY
-    const optimistic: UserProfile = {
-      id: userId,
-      name: email?.split('@')[0] || 'Educator',
-      email: email || '',
-      role: isSystemAdmin ? UserRole.APP_ADMIN : UserRole.TEACHER,
-      plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : SubscriptionPlan.FREE,
-      queriesUsed: 0,
-      queriesLimit: isSystemAdmin ? 999999 : 30,
-      generationCount: 0,
-      successRate: 0,
-      editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-    };
-
-    // Apply optimism immediately to bypass "Guest mode" logic for developers
-    if (!userProfile || (isSystemAdmin && userProfile.role !== UserRole.APP_ADMIN)) {
-      setUserProfile(optimistic);
-    }
-
     try {
-      // 2. Fetch/Commit real profile data
+      // 1. Force Handshake Health Check
+      const ok = await checkDb();
+      if (!ok) {
+        console.warn("⚠️ [Handshake] Data plane not ready, profile sync deferred.");
+      }
+
+      // 2. Authoritative Sync
       const profile: any = await getOrCreateProfile(userId, email);
       if (profile) {
         setUserProfile({
           id: profile.id,
-          name: profile.name || optimistic.name,
+          name: profile.name || email?.split('@')[0] || 'Educator',
           email: profile.email || email || '',
-          role: isSystemAdmin ? UserRole.APP_ADMIN : (profile.role as UserRole || UserRole.TEACHER),
-          plan: isSystemAdmin ? SubscriptionPlan.ENTERPRISE : (profile.plan as SubscriptionPlan || SubscriptionPlan.FREE),
+          role: profile.role as UserRole || UserRole.TEACHER,
+          plan: profile.plan as SubscriptionPlan || SubscriptionPlan.FREE,
           queriesUsed: profile.queries_used || 0,
-          queriesLimit: isSystemAdmin ? 999999 : (profile.queries_limit || 30),
+          queriesLimit: profile.queries_limit || 30,
           generationCount: profile.generation_count || 0,
           successRate: profile.success_rate || 0,
-          editPatterns: profile.edit_patterns || optimistic.editPatterns
+          editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         });
       }
 
-      // 3. Sync Documents
-      if (isActuallyConnected || isSupabaseConfigured()) {
-        const { data: docs } = await supabase
-          .from('documents')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false });
+      // 3. Document Sync
+      const { data: docs } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
 
-        if (docs) {
-          setDocuments(docs.map(d => ({
-            id: d.id,
-            userId: d.user_id,
-            name: d.name,
-            status: d.status as any,
-            curriculumName: d.curriculum_name || d.name,
-            authority: d.authority || 'General',
-            subject: d.subject || 'General',
-            gradeLevel: d.grade_level || 'Auto',
-            versionYear: d.version_year || '2024',
-            version: d.version || 1,
-            geminiProcessed: d.rag_indexed,
-            isSelected: d.is_selected,
-            sourceType: d.source_type as any || 'markdown',
-            isApproved: d.is_approved || false,
-            createdAt: d.created_at
-          })));
-        }
+      if (docs) {
+        setDocuments(docs.map(d => ({
+          id: d.id,
+          userId: d.user_id,
+          name: d.name,
+          status: d.status as any,
+          curriculumName: d.curriculum_name || d.name,
+          authority: d.authority || 'General',
+          subject: d.subject || 'General',
+          gradeLevel: d.grade_level || 'Auto',
+          versionYear: d.version_year || '2024',
+          version: d.version || 1,
+          geminiProcessed: d.rag_indexed,
+          isSelected: d.is_selected,
+          sourceType: d.source_type as any || 'markdown',
+          isApproved: d.is_approved || false,
+          createdAt: d.created_at
+        })));
       }
     } catch (e: any) {
-      console.warn("⚠️ [Neural Handshake] Background node sync degraded:", e.message);
+      console.warn("⚠️ [Neural Handshake] Sync degraded:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
     }
-  }, [userProfile, isActuallyConnected]);
+  }, [checkDb]);
 
   useEffect(() => {
     if (initializationRef.current) return;
@@ -156,7 +140,7 @@ export default function App() {
     const initialize = async () => {
       try {
         paymentService.init();
-        await checkDb();
+        const connected = await checkDb();
 
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
         
@@ -164,8 +148,6 @@ export default function App() {
 
         if (initialSession) {
           setSession(initialSession);
-          // If we have a session, we're essentially "loaded" into the app shell
-          // fetchProfileAndDocs will handle the granular role logic
           await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
         }
       } catch (e: any) {
@@ -199,7 +181,7 @@ export default function App() {
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-    if (isActuallyConnected && isSupabaseConfigured()) {
+    if (isActuallyConnected) {
       try {
         const dbUpdates: any = {};
         if (updates.status) dbUpdates.status = updates.status;
@@ -221,8 +203,8 @@ export default function App() {
         </div>
       </div>
       <div className="text-center space-y-2">
-        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Authorizing Session</p>
-        <p className="text-slate-400 font-medium text-xs italic">Verifying credentials with neural gateway...</p>
+        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Synchronizing Hub</p>
+        <p className="text-slate-400 font-medium text-xs italic">Waking up neural data plane...</p>
       </div>
     </div>
   );
@@ -294,7 +276,7 @@ export default function App() {
           
           <div className="flex items-center gap-3">
              <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
-                <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-50 animate-pulse' : 'bg-rose-500'}`} />
+                <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse' : 'bg-rose-500'}`} />
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{isActuallyConnected ? 'Node: Linked' : 'Node: Disconnected'}</span>
              </div>
           </div>
