@@ -93,7 +93,8 @@ export async function retrieveRelevantChunks({
     
     if (error) throw error;
     
-    const processed = (chunks || []).map(d => ({
+    // Fix: Explicitly type 'd' to 'any' to resolve build failure on RPC return mapping
+    const processed = (chunks as any[] || []).map((d: any) => ({
       chunk_id: d.chunk_id,
       chunk_text: d.chunk_text,
       slo_codes: d.slo_codes || [],

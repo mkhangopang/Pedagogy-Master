@@ -1,7 +1,8 @@
-
 /**
- * PLATFORM SYNC (v2.5)
+ * PLATFORM SYNC (v2.9)
  * High-priority environment injection and diagnostic layer.
+ * This file ensures that critical infrastructure keys are available to both
+ * server-side and client-side modules before the React tree initializes.
  */
 const performSystemHandshake = () => {
   if (typeof window === 'undefined') return;
@@ -19,6 +20,7 @@ const performSystemHandshake = () => {
            '';
   };
 
+  // Critical key list for neural (AI) and data (Supabase) nodes
   const keys = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'API_KEY', 'GEMINI_API_KEY'];
   
   keys.forEach(k => {
@@ -31,14 +33,14 @@ const performSystemHandshake = () => {
     }
   });
 
-  // Cross-pollination for AI keys to ensure engine stability
+  // Cross-pollination to ensure both variants of AI keys are present
   if (win.process.env.GEMINI_API_KEY && !win.process.env.API_KEY) {
     win.process.env.API_KEY = win.process.env.GEMINI_API_KEY;
   } else if (win.process.env.API_KEY && !win.process.env.GEMINI_API_KEY) {
     win.process.env.GEMINI_API_KEY = win.process.env.API_KEY;
   }
 
-  console.log('📡 [System] Neural Handshake verified. Environment mapped.');
+  console.log('📡 [System] Neural Handshake verified. Authoritative nodes mapped.');
 };
 
 // Execute immediately before any imports
@@ -46,14 +48,14 @@ performSystemHandshake();
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import App from './app/page';
+import RootLayout from './app/layout';
 
 const renderErrorUI = (error: any) => {
-  const root = document.getElementById('root');
-  if (root) {
+  const rootElement = document.getElementById('root');
+  if (rootElement) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    const isConfigError = errorMsg.includes('SUPABASE_URL') || errorMsg.includes('environment');
-    
-    root.innerHTML = `
+    rootElement.innerHTML = `
       <div style="padding: 40px; font-family: sans-serif; text-align: center; background: #0a0a0a; min-height: 100vh; display: flex; align-items: center; justify-content: center; color: white;">
         <div style="background: #111; padding: 48px; border-radius: 32px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); max-width: 500px; border: 1px solid #333;">
           <div style="margin-bottom: 24px; display: inline-flex; padding: 16px; background: rgba(239, 68, 68, 0.1); border-radius: 20px; color: #ef4444;">
@@ -62,8 +64,7 @@ const renderErrorUI = (error: any) => {
           <h1 style="color: #ef4444; font-weight: 900; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 2px;">Neural Node Offline</h1>
           <p style="color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">${errorMsg}</p>
           <div style="display: flex; gap: 12px; justify-content: center;">
-            <button onclick="window.location.reload()" style="padding: 12px 24px; background: #4f46e5; color: white; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; transition: all 0.2s;">Retry Handshake</button>
-            ${isConfigError ? `<a href="/api/check-env" target="_blank" style="padding: 12px 24px; background: transparent; color: #94a3b8; border: 1px solid #333; border-radius: 12px; cursor: pointer; font-weight: bold; text-decoration: none; font-size: 13px; display: flex; align-items: center;">View Diagnostics</a>` : ''}
+            <button onclick="window.location.reload()" style="background: #4f46e5; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 700; cursor: pointer;">Retry Handshake</button>
           </div>
         </div>
       </div>
@@ -71,21 +72,19 @@ const renderErrorUI = (error: any) => {
   }
 };
 
-const startApp = async () => {
-  try {
-    const { default: App } = await import('./app/page');
-    const container = document.getElementById('root');
-    if (container) {
-      createRoot(container).render(<React.StrictMode><App /></React.StrictMode>);
-    }
-  } catch (error) {
-    console.error("Fatal boot error:", error);
-    renderErrorUI(error);
+try {
+  const container = document.getElementById('root');
+  if (container) {
+    const root = createRoot(container);
+    root.render(
+      <React.StrictMode>
+        <RootLayout>
+          <App />
+        </RootLayout>
+      </React.StrictMode>
+    );
   }
-};
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', startApp);
-} else {
-  startApp();
+} catch (error) {
+  console.error('Critical boot failure:', error);
+  renderErrorUI(error);
 }

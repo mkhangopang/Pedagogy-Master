@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -10,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu, RefreshCw, X, AlertTriangle } from 'lucide-react';
+import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -53,7 +52,8 @@ export default function App() {
     
     // Retry with backoff for Supabase cold starts
     if (health.status !== 'connected' && isSupabaseConfigured()) {
-       await new Promise(r => setTimeout(r, 2000));
+       console.log('📡 [Handshake] Data plane lagging, retrying connection...');
+       await new Promise(r => setTimeout(r, 2500));
        health = await getSupabaseHealth();
     }
     
@@ -76,7 +76,7 @@ export default function App() {
     const isSystemAdmin = isAppAdmin(email);
     
     // 1. Authoritative Optimistic State
-    // If the email is in the admin list, we force the admin role IMMEDIATELY in the UI
+    // If the email matches the primary developer list, force the role IMMEDIATELY
     const optimistic: UserProfile = {
       id: userId,
       name: email?.split('@')[0] || 'Educator',
@@ -90,9 +90,13 @@ export default function App() {
       editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
     };
 
-    if (!userProfile) setUserProfile(optimistic);
+    // Apply optimism immediately to bypass "Guest mode" logic for developers
+    if (!userProfile || (isSystemAdmin && userProfile.role !== UserRole.APP_ADMIN)) {
+      setUserProfile(optimistic);
+    }
 
     try {
+      // 2. Fetch/Commit real profile data
       const profile: any = await getOrCreateProfile(userId, email);
       if (profile) {
         setUserProfile({
@@ -109,7 +113,8 @@ export default function App() {
         });
       }
 
-      if (isActuallyConnected) {
+      // 3. Sync Documents
+      if (isActuallyConnected || isSupabaseConfigured()) {
         const { data: docs } = await supabase
           .from('documents')
           .select('*')
@@ -137,7 +142,7 @@ export default function App() {
         }
       }
     } catch (e: any) {
-      console.warn("Background node sync degraded:", e.message);
+      console.warn("⚠️ [Neural Handshake] Background node sync degraded:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -159,7 +164,8 @@ export default function App() {
 
         if (initialSession) {
           setSession(initialSession);
-          // Kick off profile fetch but the app is no longer "loading" if optimistic state is set
+          // If we have a session, we're essentially "loaded" into the app shell
+          // fetchProfileAndDocs will handle the granular role logic
           await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
         }
       } catch (e: any) {
@@ -182,6 +188,7 @@ export default function App() {
         setSession(null);
         setUserProfile(null);
         setDocuments([]);
+        setLoading(false);
       }
     });
 
@@ -287,7 +294,7 @@ export default function App() {
           
           <div className="flex items-center gap-3">
              <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
-                <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-50 animate-pulse' : 'bg-rose-500'}`} />
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{isActuallyConnected ? 'Node: Linked' : 'Node: Disconnected'}</span>
              </div>
           </div>
