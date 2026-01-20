@@ -2,20 +2,34 @@ import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan } from '../types';
 import { ADMIN_EMAILS } from '../constants';
 
-// Internal state management for the neural data plane
+// Internal state management
 let supabaseInstance: SupabaseClient | null = null;
 let currentConfigFingerprint: string | null = null;
+let runtimeConfig: { url: string; key: string } | null = null;
 
 /**
- * MASTER ENVIRONMENT RESOLVER (v9.0)
- * Performs a deep scan of the runtime for production credentials.
+ * SET RUNTIME CONFIG
+ * Allows the bootloader to inject credentials fetched via the scavenger bridge.
+ */
+export const setRuntimeConfig = (url: string, key: string) => {
+  if (url && key) {
+    console.log('📡 [Infra] Injecting runtime credentials via Scavenger Bridge.');
+    runtimeConfig = { url, key };
+    supabaseInstance = null; // Force reset
+  }
+};
+
+/**
+ * MASTER ENVIRONMENT RESOLVER (v11.0)
+ * Deep-scans build-time, runtime, and injected sources.
  */
 export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : {};
 
-  // Aggressively search all potential key-value pairs in the process and window roots
+  // Hierarchy: 1. Runtime Config -> 2. Build process.env -> 3. Global window
   const url = (
+    runtimeConfig?.url ||
     process.env.NEXT_PUBLIC_SUPABASE_URL || 
     win.NEXT_PUBLIC_SUPABASE_URL || 
     win.SUPABASE_URL || 
@@ -24,6 +38,7 @@ export const getCredentials = () => {
   ).trim();
 
   const key = (
+    runtimeConfig?.key ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
     win.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
     win.SUPABASE_ANON_KEY || 
@@ -36,29 +51,24 @@ export const getCredentials = () => {
 
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  // Valid if keys exist, contain standard Supabase markers, and have sufficient length
   return !!(url && key && url.includes('supabase.co') && key.length > 20);
 };
 
 /**
- * GET SUPABASE CLIENT
- * Singleton factory with automatic "Hot-Reload" support for late environment hydration.
+ * Singleton factory for Supabase Client
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const { url, key } = getCredentials();
   const fingerprint = `${url}-${key}`;
 
-  // RESET LOGIC: If we have a dummy client but real keys just arrived, purge and rebuild.
   if (supabaseInstance && currentConfigFingerprint !== fingerprint && isSupabaseConfigured()) {
-    console.log('🔄 [Infra] Environment variables detected. Synchronizing neural node...');
     supabaseInstance = null;
   }
 
   if (supabaseInstance) return supabaseInstance;
 
-  // Use temporary placeholders to prevent the SDK from throwing 'Invalid URL' during boot
-  const finalUrl = isSupabaseConfigured() ? url : 'https://pending-node.supabase.co';
-  const finalKey = isSupabaseConfigured() ? key : 'placeholder-node-initialization-key-32-chars';
+  const finalUrl = isSupabaseConfigured() ? url : 'https://pending-bridge.supabase.co';
+  const finalKey = isSupabaseConfigured() ? key : 'placeholder-key-required-for-boot-cycle-32-chars-min';
   
   currentConfigFingerprint = fingerprint;
 
@@ -74,10 +84,6 @@ export const getSupabaseClient = (): SupabaseClient => {
   return supabaseInstance;
 };
 
-/**
- * SUPABASE PROXY
- * Ensures all components (Auth, DB, Storage) always use the most recent, valid client.
- */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     const client = getSupabaseClient() as any;
@@ -87,18 +93,9 @@ export const supabase = new Proxy({} as SupabaseClient, {
   }
 });
 
-export async function getAuthenticatedUser(): Promise<User | null> {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * MASTER ADMIN LOCK
- * Ensures mkgopang@gmail.com is recognized as the Root Authority in all logic.
+ * ROOT AUTHORITY CHECK
+ * mkgopang@gmail.com is hard-coded as the master admin.
  */
 export function isAppAdmin(email: string | undefined): boolean {
   if (!email) return false;
@@ -119,9 +116,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       .maybeSingle();
 
     if (profile) {
-      // Automatic privilege escalation for Root Admin email
       if (isAdminUser && (profile.role !== UserRole.APP_ADMIN || profile.queries_limit < 9999)) {
-         console.log('⚡ [Admin] Syncing master authority for root email.');
          await supabase.from('profiles').update({ 
            role: UserRole.APP_ADMIN, 
            plan: SubscriptionPlan.ENTERPRISE,
@@ -131,7 +126,6 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       return profile;
     }
 
-    // Provision new Root profile if missing
     const { data: newProfile, error: upsertError } = await supabase
       .from('profiles')
       .upsert({
@@ -149,19 +143,19 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     if (upsertError) throw upsertError;
     return newProfile;
   } catch (err) {
-    console.error("❌ [Auth Node] Profile sync failure:", err);
+    console.error("❌ [System] Profile Sync Error:", err);
     return null;
   }
 }
 
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
-  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Environment keys pending hydration.' };
+  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Credentials pending hydration.' };
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error && error.code !== 'PGRST116') throw error;
-    return { status: 'connected', message: 'Cloud Data Plane: Linked' };
+    return { status: 'connected', message: 'Neural Node Linked' };
   } catch (err: any) {
-    return { status: 'disconnected', message: err.message || 'Supabase unreachable' };
+    return { status: 'disconnected', message: err.message || 'Database unreachable' };
   }
 };
 

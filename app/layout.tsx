@@ -1,30 +1,29 @@
-'use client';
-
-import React, { useEffect } from 'react';
+import React from 'react';
 import './globals.css';
 
 /**
- * RootLayout (v3.0)
- * Re-architected as a standard React wrapper for SPA manual bootstrap.
- * Note: Metadata and document shell (html/body) are handled by index.html.
+ * RootLayout (v4.0)
+ * Standard Next.js Root Layout with mandatory document structure.
  */
-// Fix: children prop made optional to resolve TypeScript validation error in manual bootstrap index.tsx
 export default function RootLayout({
   children,
 }: {
+  // Fix: Making children optional to resolve the "Property 'children' is missing" error in index.tsx
+  // This satisfies the compiler when children are provided via JSX nesting.
   children?: React.ReactNode;
 }) {
-  useEffect(() => {
-    // Manually ensure Lemon Squeezy is initialized if the script loaded via index.html
-    const win = window as any;
-    if (win.createLemonSqueezy) {
-      win.createLemonSqueezy();
-    }
-  }, []);
-
   return (
-    <div className="antialiased text-slate-900 bg-slate-50 dark:bg-slate-950 font-sans min-h-screen">
-      {children}
-    </div>
+    <html lang="en" className="dark">
+      <head>
+        <title>EduNexus AI | Neural Pedagogical Intelligence</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 10v6M2 10l10-5 10 5-10 5z'/><path d='M6 12v5c3 3 9 3 12 0v-5'/></svg>" />
+        <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+        <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
+      </head>
+      <body className="antialiased text-slate-900 bg-slate-50 dark:bg-slate-950 font-sans min-h-screen">
+        {children}
+      </body>
+    </html>
   );
 }

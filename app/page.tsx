@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile, getCredentials } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile, getCredentials, setRuntimeConfig } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -9,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle, ShieldCheck, Terminal } from 'lucide-react';
+import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle, Terminal, ShieldCheck, Zap } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -25,11 +25,12 @@ export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [bootAttempt, setBootAttempt] = useState(0);
+  const [bootStatus, setBootStatus] = useState('Initializing...');
   
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [bootAttempt, setBootAttempt] = useState(0);
   
   const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ 
     status: 'checking', 
@@ -54,7 +55,7 @@ export default function App() {
       setHealthStatus(health);
       return health.status === 'connected';
     } catch (e) {
-      setHealthStatus({ status: 'disconnected', message: 'Node timeout' });
+      setHealthStatus({ status: 'disconnected', message: 'Handshake timeout' });
       return false;
     }
   }, []);
@@ -105,7 +106,7 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.warn("⚠️ [Sync] Neural Jitter:", e.message);
+      console.warn("⚠️ [Sync] Handshake jitter:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -118,14 +119,15 @@ export default function App() {
 
     const initialize = async () => {
       let attempts = 0;
-      const maxAttempts = 10; // Poll for 10 seconds to allow Vercel/Studio hydration
+      const maxAttempts = 15; // Poll for 15 seconds
 
       const bootLoop = async () => {
         setBootAttempt(attempts);
         
+        // Try standard configuration first
         if (isSupabaseConfigured()) {
+          setBootStatus('Verifying Data Plane...');
           try {
-            console.log("✅ [System] Infrastructure Verified. Initiating Handshake...");
             paymentService.init();
             await checkDb();
             const { data: { session: initialSession } } = await supabase.auth.getSession();
@@ -139,12 +141,31 @@ export default function App() {
             setBootError(e.message || "Primary node heartbeat failed.");
             setLoading(false);
           }
-        } else if (attempts < maxAttempts) {
+          return;
+        }
+
+        // Bridge Attempt: Keys missing from browser? Scavenge from Server.
+        if (attempts === 5) {
+          setBootStatus('Bridging Scavenger Node...');
+          try {
+            const res = await fetch('/api/check-env');
+            const data = await res.json();
+            if (data.config?.url && data.config?.key) {
+              setRuntimeConfig(data.config.url, data.config.key);
+              // Retry loop will now see configured state
+            }
+          } catch (e) {
+            console.error("Scavenger Bridge Failure:", e);
+          }
+        }
+
+        if (attempts < maxAttempts) {
           attempts++;
+          setBootStatus(`Attempting Handshake (${attempts}/${maxAttempts})...`);
           setTimeout(bootLoop, 1000); 
         } else {
           const { url, key } = getCredentials();
-          setBootError(`Fatal Infrastructure Error: Production keys not detected in browser bundle after polling. URL(${!!url}), KEY(${!!key}).`);
+          setBootError(`Fatal: Production Keys not detected. URL: ${!!url}, Key: ${!!key}. Ensure Vercel environment variables are set and redeploy with 'Clear Cache'.`);
           setLoading(false);
         }
       };
@@ -182,7 +203,7 @@ export default function App() {
       if (updates.isSelected !== undefined) dbUpdates.is_selected = updates.isSelected;
       await supabase.from('documents').update(dbUpdates).eq('id', id);
     } catch (e) {
-      console.error("Neural sync failure:", e);
+      console.error("Sync failure:", e);
     }
   };
 
@@ -190,17 +211,15 @@ export default function App() {
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-8 px-6 text-center">
       <div className="relative">
         <div className="absolute inset-0 bg-indigo-500 rounded-full blur-3xl opacity-20 animate-pulse" />
-        <div className="relative bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/5">
+        <div className="relative bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5">
           <Cpu className="text-indigo-600 w-16 h-16 animate-spin-slow" />
         </div>
       </div>
-      <div className="space-y-3">
+      <div className="space-y-4">
         <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-xs">Neural Handshake</p>
-        <div className="flex flex-col gap-1 items-center">
-          <p className="text-slate-400 font-medium text-sm italic">Synchronizing institutional grid nodes...</p>
-          <div className="w-48 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mt-4 overflow-hidden">
-             <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${(bootAttempt / 10) * 100}%` }} />
-          </div>
+        <p className="text-slate-400 font-medium text-sm italic">{bootStatus}</p>
+        <div className="w-48 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto overflow-hidden">
+           <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${(bootAttempt / 15) * 100}%` }} />
         </div>
       </div>
     </div>
@@ -208,28 +227,26 @@ export default function App() {
 
   if (bootError && !session) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-       <div className="bg-white dark:bg-slate-900 p-12 rounded-[3.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.2)] border border-rose-100 dark:border-rose-900/20 max-w-xl text-center space-y-8">
-          <div className="w-24 h-24 bg-rose-50 dark:bg-rose-950/30 rounded-[2rem] flex items-center justify-center mx-auto text-rose-500">
+       <div className="bg-white dark:bg-slate-900 p-10 md:p-14 rounded-[3.5rem] shadow-[0_40px_100px_-20px_rgba(0,0,0,0.2)] border border-rose-100 dark:border-rose-900/20 max-w-2xl w-full text-center space-y-10">
+          <div className="w-24 h-24 bg-rose-50 dark:bg-rose-950/30 rounded-[2.5rem] flex items-center justify-center mx-auto text-rose-500">
              <AlertTriangle size={48} />
           </div>
-          <div className="space-y-2">
-            <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Infrastructure Offline</h2>
-            <p className="text-slate-500 text-sm font-medium">The browser node failed to synchronize with your Vercel Environment.</p>
+          <div className="space-y-3">
+            <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Sync Refused</h2>
+            <p className="text-slate-500 font-medium leading-relaxed">Infrastructure handshake failed. Vercel environment variables are not hydrating in the browser.</p>
           </div>
           
-          <div className="bg-slate-950 p-6 rounded-3xl border border-white/5 text-left font-mono">
-            <div className="flex items-center gap-2 mb-3 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+          <div className="bg-slate-950 p-8 rounded-3xl border border-white/5 text-left space-y-4 font-mono">
+            <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
                <Terminal size={12}/> Diagnostic Log
             </div>
-            <p className="text-slate-400 text-[11px] leading-relaxed break-words">{bootError}</p>
+            <p className="text-slate-400 text-xs leading-relaxed break-words">{bootError}</p>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
-            <button onClick={() => window.location.reload()} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl shadow-indigo-600/20 hover:bg-indigo-700 active:scale-95 transition-all text-sm uppercase tracking-widest">
-               Retry Handshake
-            </button>
+            <button onClick={() => window.location.reload()} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl hover:bg-indigo-700 transition-all text-sm uppercase tracking-widest">Retry Bridge</button>
             <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">
-               TIP: Ensure you redeployed with "Clear Cache" in Vercel.
+               TIP: Verify NEXT_PUBLIC_SUPABASE_URL is correct in Vercel settings and trigger a redeploy with "Clear Cache".
             </p>
           </div>
        </div>
