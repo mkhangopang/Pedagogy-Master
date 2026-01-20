@@ -46,14 +46,21 @@ SELECT
          THEN '✅ LINKED' ELSE '⚠️ DISCONNECTED' END as status;`;
 
   const performanceSql = `-- EDUNEXUS AI: MASTER REPAIR & OPTIMIZATION (v46.0)
--- 🎯 Target: Fix "Profile Exists" errors and Neural Sync hangs.
+-- 🎯 Target: Fix "Profile Already Exists" errors and Neural Sync hangs.
 
 -- 1. REPAIR AUTH TRIGGER (UPSERT PATTERN)
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.profiles (id, email, name, role, plan, queries_limit)
-  VALUES (NEW.id, NEW.email, split_part(NEW.email, '@', 1), 'teacher', 'free', 30)
+  VALUES (
+    NEW.id, 
+    NEW.email, 
+    split_part(NEW.email, '@', 1), 
+    'teacher', 
+    'free', 
+    30
+  )
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
     updated_at = NOW();
@@ -348,7 +355,7 @@ VACUUM ANALYZE public.documents;`;
                  <div className="p-3 bg-emerald-500 rounded-2xl text-white shadow-lg"><Rocket size={24} /></div>
                  <div>
                     <h2 className="text-2xl font-black tracking-tight">Master Infrastructure Repair (v46.0)</h2>
-                    <p className="text-slate-400 text-sm font-medium">Execute this script in Supabase SQL Editor to resolve "Profile already exists" errors and sync hangs.</p>
+                    <p className="text-slate-400 text-sm font-medium">Execute this script in Supabase SQL Editor to resolve "Profile Already Exists" errors and sync hangs.</p>
                  </div>
               </div>
 

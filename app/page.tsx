@@ -48,23 +48,20 @@ export default function App() {
   });
 
   const checkDb = useCallback(async () => {
-    const health = await getSupabaseHealth();
-    setHealthStatus(health);
-    return health.status === 'connected';
-  }, []);
-
-  useEffect(() => {
-    const savedCollapse = localStorage.getItem('sidebar_collapsed');
-    if (savedCollapse === 'true') setIsCollapsed(true);
+    try {
+      const health = await getSupabaseHealth();
+      setHealthStatus(health);
+      return health.status === 'connected';
+    } catch (e) {
+      setHealthStatus({ status: 'disconnected', message: 'Handshake timeout' });
+      return false;
+    }
   }, []);
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     setIsBackgroundSyncing(true);
     try {
-      // 1. Ensure connectivity before profile attempt
       await checkDb();
-
-      // 2. Authoritative Sync (Trigger handles DB conflict, frontend handles UI state)
       const profile: any = await getOrCreateProfile(userId, email);
       if (profile) {
         setUserProfile({
@@ -81,7 +78,6 @@ export default function App() {
         });
       }
 
-      // 3. Document Sync
       const { data: docs, error: docError } = await supabase
         .from('documents')
         .select('*')
@@ -108,7 +104,7 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.warn("⚠️ [Sync] Handshake jitter detected:", e.message);
+      console.warn("⚠️ [Sync] Handshake jitter:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -120,26 +116,35 @@ export default function App() {
     initializationRef.current = true;
 
     const initialize = async () => {
-      try {
-        paymentService.init();
-        const configured = isSupabaseConfigured();
-        
-        // Aggressive DB warm-up for serverless cold starts
-        if (configured) await checkDb();
-
-        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-        if (sessionError) throw sessionError;
-
-        if (initialSession) {
-          setSession(initialSession);
-          await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+      // Allow up to 5 seconds of polling for keys (Fixes late hydration on Vercel/Studio)
+      let retries = 0;
+      const maxRetries = 10;
+      
+      const bootLoop = async () => {
+        if (isSupabaseConfigured()) {
+          try {
+            paymentService.init();
+            await checkDb();
+            const { data: { session: initialSession } } = await supabase.auth.getSession();
+            if (initialSession) {
+              setSession(initialSession);
+              await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+            }
+            setLoading(false);
+          } catch (e: any) {
+            setBootError(e.message || "Neural data plane failed to respond.");
+            setLoading(false);
+          }
+        } else if (retries < maxRetries) {
+          retries++;
+          setTimeout(bootLoop, 500); // Polling every 500ms
+        } else {
+          setBootError("Infrastructure Handshake Failed: Supabase keys missing after polling. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in Vercel.");
+          setLoading(false);
         }
-      } catch (e: any) {
-        console.error("Critical boot failure:", e);
-        setBootError(e.message || "Neural data plane failed to respond.");
-      } finally {
-        setLoading(false);
-      }
+      };
+
+      bootLoop();
     };
 
     initialize();
@@ -172,7 +177,7 @@ export default function App() {
       if (updates.isSelected !== undefined) dbUpdates.is_selected = updates.isSelected;
       await supabase.from('documents').update(dbUpdates).eq('id', id);
     } catch (e) {
-      console.error("Sync failure for document update:", e);
+      console.error("Sync failure:", e);
     }
   };
 
@@ -197,9 +202,12 @@ export default function App() {
           <div className="w-16 h-16 bg-rose-50 dark:bg-rose-950/30 rounded-2xl flex items-center justify-center mx-auto text-rose-500">
              <AlertTriangle size={32} />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Infrastructure Node Offline</h2>
-          <p className="text-slate-500 text-sm leading-relaxed">{bootError}</p>
-          <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20">Retry Handshake</button>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Infrastructure Offline</h2>
+          <p className="text-slate-500 text-xs leading-relaxed font-mono bg-slate-50 dark:bg-black/20 p-4 rounded-xl text-left border dark:border-white/5">{bootError}</p>
+          <div className="pt-4 space-y-3">
+            <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20">Retry Handshake</button>
+            <p className="text-[10px] text-slate-400 font-bold uppercase">Open your browser console (F12) to see environment diagnostics.</p>
+          </div>
        </div>
     </div>
   );
