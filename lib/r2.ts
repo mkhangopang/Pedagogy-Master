@@ -28,10 +28,9 @@ export const getR2Client = (): S3Client | null => {
 };
 
 /**
- * Singleton instance of the R2 client for direct use in server-side routes.
- * Initialized at module load time if environment variables are present.
+ * Singleton instance of the R2 client for server-side routes.
  */
-export const r2Client = getR2Client();
+export const r2Client = typeof window === 'undefined' ? getR2Client() : null;
 
 export const R2_BUCKET = process.env.R2_BUCKET_NAME || 'documents';
 export const R2_PUBLIC_BASE_URL = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;

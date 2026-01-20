@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile, getCredentials } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
-import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
+import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { paymentService } from '../services/paymentService';
 import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 
@@ -54,7 +54,7 @@ export default function App() {
       setHealthStatus(health);
       return health.status === 'connected';
     } catch (e) {
-      setHealthStatus({ status: 'disconnected', message: 'Node unreachable' });
+      setHealthStatus({ status: 'disconnected', message: 'Handshake timeout' });
       return false;
     }
   }, []);
@@ -105,7 +105,7 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.warn("⚠️ [Sync Hub] Jitter:", e.message);
+      console.warn("⚠️ [Sync] Handshake jitter:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -116,18 +116,16 @@ export default function App() {
     if (initializationRef.current) return;
     initializationRef.current = true;
 
-    // RESCUE WATCHDOG: Show options if handshake takes > 8 seconds
-    const rescueTimer = setTimeout(() => {
+    // RESCUE WATCHDOG: Show recovery options if handshake stalls
+    const watchdogTimer = setTimeout(() => {
       if (loading && !session) setShowRescueOptions(true);
-    }, 8000);
+    }, 10000);
 
     const initialize = async () => {
-      let attempts = 0;
-      const maxAttempts = 5;
+      let retries = 0;
+      const maxRetries = 12; // Poll for 12 seconds to allow Vercel hydration
 
-      const tryBoot = async () => {
-        console.log(`📡 [Boot] Scavenging for credentials... Attempt ${attempts + 1}`);
-        
+      const bootLoop = async () => {
         if (isSupabaseConfigured()) {
           try {
             paymentService.init();
@@ -139,21 +137,23 @@ export default function App() {
             } else {
               setLoading(false);
             }
+            clearTimeout(watchdogTimer);
           } catch (e: any) {
-            console.error("Boot Failure:", e);
-            setBootError(e.message || "Primary infrastructure node failed to respond.");
+            setBootError(e.message || "Primary node unreachable.");
             setLoading(false);
           }
-        } else if (attempts < maxAttempts) {
-          attempts++;
-          setTimeout(tryBoot, 1500); 
+        } else if (retries < maxRetries) {
+          retries++;
+          console.debug(`📡 [System] Handshake Attempt ${retries}/12...`);
+          setTimeout(bootLoop, 1000); 
         } else {
-          setBootError("Fatal: NEXT_PUBLIC_SUPABASE_URL not found in browser bundle. Ensure Vercel environment variables are set and you have redeployed with 'Clear Cache'.");
+          const { url, key } = getCredentials();
+          setBootError(`Fatal: Critical keys missing in browser bundle. URL Detected: ${!!url}, Key Detected: ${!!key}. Ensure NEXT_PUBLIC_ prefixes are correct in Vercel.`);
           setLoading(false);
         }
       };
 
-      tryBoot();
+      bootLoop();
     };
 
     initialize();
@@ -173,7 +173,7 @@ export default function App() {
     });
 
     return () => {
-      clearTimeout(rescueTimer);
+      clearTimeout(watchdogTimer);
       if (subscription) subscription.unsubscribe();
     };
   }, [checkDb, fetchProfileAndDocs]);
@@ -201,20 +201,15 @@ export default function App() {
       </div>
       <div className="space-y-4 max-w-sm">
         <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-xs">Neural Handshake</p>
-        <p className="text-slate-400 font-medium text-sm italic">Synchronizing with institutional grid nodes...</p>
+        <p className="text-slate-400 font-medium text-sm italic">Synchronizing institutional nodes...</p>
         
         {showRescueOptions && (
           <div className="pt-6 animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-3">
              <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-dashed border-amber-200 dark:border-amber-900/30 rounded-2xl">
-               <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase leading-tight mb-2">Sync Taking longer than expected</p>
-               <p className="text-[9px] text-slate-500">This often means the browser bundle hasn't received your environment variables from Vercel yet.</p>
+               <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase leading-tight mb-1">Latency Detected</p>
+               <p className="text-[9px] text-slate-500">The browser is still waiting for environment variables from Vercel.</p>
              </div>
-             <button 
-               onClick={() => setLoading(false)} 
-               className="w-full py-3 px-6 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-300 transition-all"
-             >
-               Bypass Handshake (Recovery Mode)
-             </button>
+             <button onClick={() => setLoading(false)} className="w-full py-3 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-900 transition-all">Bypass Handshake (Recovery Mode)</button>
           </div>
         )}
       </div>
@@ -224,26 +219,15 @@ export default function App() {
   if (bootError && !session) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
        <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-rose-100 dark:border-rose-900/20 max-w-md text-center space-y-6">
-          <div className="w-20 h-20 bg-rose-50 dark:bg-rose-950/30 rounded-3xl flex items-center justify-center mx-auto text-rose-500 shadow-xl shadow-rose-500/10">
+          <div className="w-20 h-20 bg-rose-50 dark:bg-rose-950/30 rounded-3xl flex items-center justify-center mx-auto text-rose-500">
              <AlertTriangle size={40} />
           </div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Node Sync Failed</h2>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Sync Failed</h2>
           <div className="p-5 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/5 text-left">
-            <p className="text-slate-500 text-[11px] leading-relaxed font-mono whitespace-pre-wrap">{bootError}</p>
+            <p className="text-slate-500 text-[11px] leading-relaxed font-mono break-words">{bootError}</p>
           </div>
-          <div className="pt-2 space-y-4">
-            <button onClick={() => window.location.reload()} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl shadow-indigo-600/20 hover:bg-indigo-700 active:scale-95 transition-all text-sm uppercase tracking-widest">
-               Retry Handshake
-            </button>
-            <div className="space-y-1">
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Crucial Checklist:</p>
-              <ul className="text-left text-[9px] text-slate-500 space-y-1 ml-4 list-disc">
-                <li>Are NEXT_PUBLIC_SUPABASE_URL/KEY set in Vercel?</li>
-                <li>Did you trigger a NEW DEPLOYMENT after adding them?</li>
-                <li>Try 'Redeploy' with 'Clear Cache' in Vercel settings.</li>
-              </ul>
-            </div>
-          </div>
+          <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs">Retry Handshake</button>
+          <p className="text-[9px] text-slate-400 font-bold uppercase">TIP: Ensure you redeployed with "Clear Cache" in Vercel after adding keys.</p>
        </div>
     </div>
   );
