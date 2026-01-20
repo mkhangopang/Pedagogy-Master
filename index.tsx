@@ -1,33 +1,42 @@
 /**
- * NEURAL INITIALIZATION LAYER (v4.0)
- * Ensuring process.env and win.process are hydrated before any hoisted imports execute.
+ * NEURAL INITIALIZATION LAYER (v5.0)
+ * Robust environment hydration for Vercel / AI Studio / Local nodes.
  */
 if (typeof window !== 'undefined') {
   const win = window as any;
   win.process = win.process || { env: {} };
   win.process.env = win.process.env || {};
   
-  const getVal = (key: string) => {
-    // Check various common sources for environment keys in studio/preview environments
+  // Scavenger function to pull keys from all possible runtime injections
+  const scavenge = (key: string) => {
     return (process.env as any)?.[key] || 
            (process.env as any)?.[`NEXT_PUBLIC_${key}`] ||
            win[key] || 
            win[`NEXT_PUBLIC_${key}`] ||
+           win.process?.env?.[key] ||
+           win.process?.env?.[`NEXT_PUBLIC_${key}`] ||
            '';
   };
 
-  ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'API_KEY', 'GEMINI_API_KEY'].forEach(k => {
-    const val = getVal(k);
+  const criticalKeys = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'API_KEY', 'GEMINI_API_KEY'];
+  
+  criticalKeys.forEach(k => {
+    const val = scavenge(k);
     if (val) {
+      // Map to both standard and NEXT_PUBLIC formats for cross-compatibility
       win.process.env[k] = val;
       win.process.env[`NEXT_PUBLIC_${k}`] = val;
+      // Also inject into window root for legacy node support
+      win[`NEXT_PUBLIC_${k}`] = val;
     }
   });
 
+  // Alias API_KEY to GEMINI_API_KEY for the SDK
   if (win.process.env.API_KEY && !win.process.env.GEMINI_API_KEY) {
     win.process.env.GEMINI_API_KEY = win.process.env.API_KEY;
   }
-  console.log('📡 [System] Handshake initiated.');
+
+  console.log('📡 [System] Neural Handshake: Hydration Grid Active');
 }
 
 import React from 'react';

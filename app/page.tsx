@@ -9,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES, APP_NAME } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -29,6 +29,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [showRescueOptions, setShowRescueOptions] = useState(false);
   
   const [healthStatus, setHealthStatus] = useState<{status: string, message: string}>({ 
     status: 'checking', 
@@ -53,7 +54,7 @@ export default function App() {
       setHealthStatus(health);
       return health.status === 'connected';
     } catch (e) {
-      setHealthStatus({ status: 'disconnected', message: 'Handshake timeout' });
+      setHealthStatus({ status: 'disconnected', message: 'Node unreachable' });
       return false;
     }
   }, []);
@@ -78,13 +79,13 @@ export default function App() {
         });
       }
 
-      const { data: docs, error: docError } = await supabase
+      const { data: docs } = await supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (!docError && docs) {
+      if (docs) {
         setDocuments(docs.map(d => ({
           id: d.id,
           userId: d.user_id,
@@ -104,7 +105,7 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.warn("⚠️ [Sync] Handshake jitter:", e.message);
+      console.warn("⚠️ [Sync Hub] Jitter:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -115,12 +116,18 @@ export default function App() {
     if (initializationRef.current) return;
     initializationRef.current = true;
 
+    // RESCUE WATCHDOG: Show options if handshake takes > 8 seconds
+    const rescueTimer = setTimeout(() => {
+      if (loading && !session) setShowRescueOptions(true);
+    }, 8000);
+
     const initialize = async () => {
-      // Allow up to 5 seconds of polling for keys (Fixes late hydration on Vercel/Studio)
-      let retries = 0;
-      const maxRetries = 10;
-      
-      const bootLoop = async () => {
+      let attempts = 0;
+      const maxAttempts = 5;
+
+      const tryBoot = async () => {
+        console.log(`📡 [Boot] Scavenging for credentials... Attempt ${attempts + 1}`);
+        
         if (isSupabaseConfigured()) {
           try {
             paymentService.init();
@@ -129,22 +136,24 @@ export default function App() {
             if (initialSession) {
               setSession(initialSession);
               await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+            } else {
+              setLoading(false);
             }
-            setLoading(false);
           } catch (e: any) {
-            setBootError(e.message || "Neural data plane failed to respond.");
+            console.error("Boot Failure:", e);
+            setBootError(e.message || "Primary infrastructure node failed to respond.");
             setLoading(false);
           }
-        } else if (retries < maxRetries) {
-          retries++;
-          setTimeout(bootLoop, 500); // Polling every 500ms
+        } else if (attempts < maxAttempts) {
+          attempts++;
+          setTimeout(tryBoot, 1500); 
         } else {
-          setBootError("Infrastructure Handshake Failed: Supabase keys missing after polling. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are set in Vercel.");
+          setBootError("Fatal: NEXT_PUBLIC_SUPABASE_URL not found in browser bundle. Ensure Vercel environment variables are set and you have redeployed with 'Clear Cache'.");
           setLoading(false);
         }
       };
 
-      bootLoop();
+      tryBoot();
     };
 
     initialize();
@@ -164,6 +173,7 @@ export default function App() {
     });
 
     return () => {
+      clearTimeout(rescueTimer);
       if (subscription) subscription.unsubscribe();
     };
   }, [checkDb, fetchProfileAndDocs]);
@@ -182,31 +192,57 @@ export default function App() {
   };
 
   if (loading && !session) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-6">
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-8 px-6 text-center">
       <div className="relative">
-        <div className="absolute inset-0 bg-indigo-500 rounded-full blur-2xl opacity-20 animate-pulse" />
-        <div className="relative bg-white dark:bg-slate-900 p-6 rounded-[2rem] shadow-2xl border border-slate-100 dark:border-white/5">
-          <Cpu className="text-indigo-600 w-12 h-12 animate-spin-slow" />
+        <div className="absolute inset-0 bg-indigo-500 rounded-full blur-3xl opacity-20 animate-pulse" />
+        <div className="relative bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl border border-slate-100 dark:border-white/5">
+          <Cpu className="text-indigo-600 w-16 h-16 animate-spin-slow" />
         </div>
       </div>
-      <div className="text-center space-y-2">
-        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Neural Handshake</p>
-        <p className="text-slate-400 font-medium text-xs italic">Syncing pedagogical grid...</p>
+      <div className="space-y-4 max-w-sm">
+        <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-xs">Neural Handshake</p>
+        <p className="text-slate-400 font-medium text-sm italic">Synchronizing with institutional grid nodes...</p>
+        
+        {showRescueOptions && (
+          <div className="pt-6 animate-in fade-in slide-in-from-bottom-2 duration-500 space-y-3">
+             <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-dashed border-amber-200 dark:border-amber-900/30 rounded-2xl">
+               <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase leading-tight mb-2">Sync Taking longer than expected</p>
+               <p className="text-[9px] text-slate-500">This often means the browser bundle hasn't received your environment variables from Vercel yet.</p>
+             </div>
+             <button 
+               onClick={() => setLoading(false)} 
+               className="w-full py-3 px-6 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-300 transition-all"
+             >
+               Bypass Handshake (Recovery Mode)
+             </button>
+          </div>
+        )}
       </div>
     </div>
   );
 
   if (bootError && !session) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-       <div className="bg-white dark:bg-slate-900 p-10 rounded-[2.5rem] shadow-2xl border border-rose-100 dark:border-rose-900/20 max-w-md text-center space-y-6">
-          <div className="w-16 h-16 bg-rose-50 dark:bg-rose-950/30 rounded-2xl flex items-center justify-center mx-auto text-rose-500">
-             <AlertTriangle size={32} />
+       <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-rose-100 dark:border-rose-900/20 max-w-md text-center space-y-6">
+          <div className="w-20 h-20 bg-rose-50 dark:bg-rose-950/30 rounded-3xl flex items-center justify-center mx-auto text-rose-500 shadow-xl shadow-rose-500/10">
+             <AlertTriangle size={40} />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Infrastructure Offline</h2>
-          <p className="text-slate-500 text-xs leading-relaxed font-mono bg-slate-50 dark:bg-black/20 p-4 rounded-xl text-left border dark:border-white/5">{bootError}</p>
-          <div className="pt-4 space-y-3">
-            <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20">Retry Handshake</button>
-            <p className="text-[10px] text-slate-400 font-bold uppercase">Open your browser console (F12) to see environment diagnostics.</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-none">Node Sync Failed</h2>
+          <div className="p-5 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/5 text-left">
+            <p className="text-slate-500 text-[11px] leading-relaxed font-mono whitespace-pre-wrap">{bootError}</p>
+          </div>
+          <div className="pt-2 space-y-4">
+            <button onClick={() => window.location.reload()} className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black shadow-2xl shadow-indigo-600/20 hover:bg-indigo-700 active:scale-95 transition-all text-sm uppercase tracking-widest">
+               Retry Handshake
+            </button>
+            <div className="space-y-1">
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Crucial Checklist:</p>
+              <ul className="text-left text-[9px] text-slate-500 space-y-1 ml-4 list-disc">
+                <li>Are NEXT_PUBLIC_SUPABASE_URL/KEY set in Vercel?</li>
+                <li>Did you trigger a NEW DEPLOYMENT after adding them?</li>
+                <li>Try 'Redeploy' with 'Clear Cache' in Vercel settings.</li>
+              </ul>
+            </div>
           </div>
        </div>
     </div>
@@ -261,7 +297,7 @@ export default function App() {
           <div className="flex items-center gap-3">
              <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
                 <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`} />
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{isActuallyConnected ? 'Node: Linked' : 'Node: Disconnected'}</span>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{isActuallyConnected ? 'Node: Linked' : 'Node: Offline'}</span>
              </div>
           </div>
         </header>

@@ -4,73 +4,62 @@ import { ADMIN_EMAILS } from '../constants';
 
 // Internal state management
 let supabaseInstance: SupabaseClient | null = null;
-let activeConfigKey: string | null = null;
+let currentConfigFingerprint: string | null = null;
 
 /**
- * ULTRA-ROBUST ENVIRONMENT RESOLVER (v5.0)
- * Aggressively scans all possible injection points for Supabase credentials.
+ * ULTRA-ROBUST ENVIRONMENT RESOLVER (v7.0)
+ * Scans every possible injection point to find Supabase credentials.
  */
-const getAuthDetails = () => {
+const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : {};
 
-  // 1. Check process.env (Next.js Standard)
+  // Check 1: Standard NEXT_PUBLIC_ (Injected at build time)
   let url = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
   let key = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
-  // 2. Check window.process.env (Polyfill)
-  if (!url || url.length < 10) {
-    url = (win.process?.env?.NEXT_PUBLIC_SUPABASE_URL || win.process?.env?.SUPABASE_URL || '').trim();
-  }
-  if (!key || key.length < 20) {
-    key = (win.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || win.process?.env?.SUPABASE_ANON_KEY || '').trim();
-  }
+  // Check 2: Window Globals (Injected by index.tsx or AI Studio)
+  if (!url) url = (win.NEXT_PUBLIC_SUPABASE_URL || win.SUPABASE_URL || '').trim();
+  if (!key) key = (win.NEXT_PUBLIC_SUPABASE_ANON_KEY || win.SUPABASE_ANON_KEY || '').trim();
 
-  // 3. Check Global Window (AI Studio/Custom Injection)
-  if (!url || url.length < 10) {
-    url = (win.NEXT_PUBLIC_SUPABASE_URL || win.SUPABASE_URL || '').trim();
-  }
-  if (!key || key.length < 20) {
-    key = (win.NEXT_PUBLIC_SUPABASE_ANON_KEY || win.SUPABASE_ANON_KEY || '').trim();
-  }
+  // Check 3: process.env polyfill
+  if (!url) url = (win.process?.env?.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+  if (!key) key = (win.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
   return { url, key };
 };
 
 export const isSupabaseConfigured = (): boolean => {
-  const { url, key } = getAuthDetails();
-  const isValid = !!(url && key && url.includes('supabase.co') && key.length > 20);
+  const { url, key } = getCredentials();
+  const valid = !!(url && key && url.includes('supabase.co') && key.length > 20);
   
-  if (!isValid && typeof window !== 'undefined') {
-    // Silent diagnostic for developer console
-    console.debug('📡 [Env Diagnostic] URL:', url ? 'Detected' : 'MISSING', '| Key:', key ? `Len(${key.length})` : 'MISSING');
+  if (!valid && typeof window !== 'undefined') {
+    console.warn('📡 [Infra] Missing Supabase Config. URL:', !!url, 'Key:', !!key);
   }
   
-  return isValid;
+  return valid;
 };
 
 /**
  * GET SUPABASE CLIENT
- * Singleton that re-evaluates if configuration arrives after module load.
+ * Singleton factory with hot-reloading support for late-hydrating environment variables.
  */
 export const getSupabaseClient = (): SupabaseClient => {
-  const { url, key } = getAuthDetails();
-  const currentKey = `${url}-${key}`;
+  const { url, key } = getCredentials();
+  const fingerprint = `${url}-${key}`;
 
-  // Reset if keys were previously missing but are now found
-  if (supabaseInstance && activeConfigKey !== currentKey && isSupabaseConfigured()) {
-    console.log('🔄 [Infrastructure] Neural handshake upgraded with production keys.');
+  if (supabaseInstance && currentConfigFingerprint !== fingerprint && isSupabaseConfigured()) {
+    console.log('🔄 [Infra] Environment hydrated. Resetting Supabase Node.');
     supabaseInstance = null;
   }
 
   if (supabaseInstance) return supabaseInstance;
 
-  // Use valid placeholders to prevent createClient from throwing 'invalid URL' error
-  // This ensures the application doesn't crash during the "Handshake" phase
+  // Use dummy nodes to prevent SDK initialization crashes
   const finalUrl = isSupabaseConfigured() ? url : 'https://placeholder-node.supabase.co';
-  const finalKey = isSupabaseConfigured() ? key : 'placeholder-anon-key-required-for-initial-proxy-boot';
+  const finalKey = isSupabaseConfigured() ? key : 'placeholder-key-required-for-boot-cycle-only-length-32-chars-min';
   
-  activeConfigKey = currentKey;
+  currentConfigFingerprint = fingerprint;
 
   supabaseInstance = createClient(finalUrl, finalKey, {
     auth: {
@@ -86,7 +75,6 @@ export const getSupabaseClient = (): SupabaseClient => {
 
 /**
  * SUPABASE PROXY
- * High-availability proxy that ensures all components access the live client.
  */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
@@ -107,18 +95,14 @@ export async function getAuthenticatedUser(): Promise<User | null> {
 }
 
 /**
- * AUTH AUTHORITY CHECK
- * Ensures mkgopang@gmail.com is always recognized as the primary admin.
+ * ROOT AUTHORITY CHECK
+ * Hard-coded master access for the developer node.
  */
 export function isAppAdmin(email: string | undefined): boolean {
   if (!email) return false;
   const cleanEmail = email.toLowerCase().trim();
-  const AUTHORITY_EMAILS = [
-    'mkgopang@gmail.com', // Primary Email
-    ...ADMIN_EMAILS
-  ].map(e => e.toLowerCase().trim());
-  
-  return AUTHORITY_EMAILS.includes(cleanEmail);
+  const ROOT_AUTHORITY = ['mkgopang@gmail.com', ...ADMIN_EMAILS].map(e => e.toLowerCase().trim());
+  return ROOT_AUTHORITY.includes(cleanEmail);
 }
 
 export async function getOrCreateProfile(userId: string, email?: string) {
@@ -160,23 +144,23 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     if (upsertError) throw upsertError;
     return newProfile;
   } catch (err) {
-    console.error("❌ [Identity Node] Sync Failure:", err);
+    console.error("❌ [Identity] Sync Error:", err);
     return null;
   }
 }
 
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
-  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Credentials missing in runtime.' };
+  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Credentials not detected in bundle.' };
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error && error.code !== 'PGRST116') throw error;
-    return { status: 'connected', message: 'Neural Data Plane Active' };
+    return { status: 'connected', message: 'Database Node Online' };
   } catch (err: any) {
-    return { status: 'disconnected', message: err.message || 'Supabase node unreachable' };
+    return { status: 'disconnected', message: err.message || 'Database unreachable' };
   }
 };
 
 export const getSupabaseServerClient = (token: string): SupabaseClient => {
-  const { url, key } = getAuthDetails();
+  const { url, key } = getCredentials();
   return createClient(url, key, { global: { headers: { Authorization: `Bearer ${token}` } } });
 }
