@@ -1,42 +1,30 @@
 /**
- * NEURAL INITIALIZATION LAYER (v5.0)
- * Robust environment hydration for Vercel / AI Studio / Local nodes.
+ * NEURAL INITIALIZATION LAYER (v6.0)
+ * Aggressive environment hydration for Vercel / Cloudflare nodes.
  */
 if (typeof window !== 'undefined') {
   const win = window as any;
   win.process = win.process || { env: {} };
   win.process.env = win.process.env || {};
   
-  // Scavenger function to pull keys from all possible runtime injections
-  const scavenge = (key: string) => {
-    return (process.env as any)?.[key] || 
-           (process.env as any)?.[`NEXT_PUBLIC_${key}`] ||
-           win[key] || 
-           win[`NEXT_PUBLIC_${key}`] ||
-           win.process?.env?.[key] ||
-           win.process?.env?.[`NEXT_PUBLIC_${key}`] ||
-           '';
+  // Explicitly map Next.js build-time variables to the runtime window
+  // This ensures that even if process.env is cleared by the bundler,
+  // the Supabase client can still find the keys.
+  const coreVariables = {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    API_KEY: process.env.API_KEY || process.env.GEMINI_API_KEY,
+    NEXT_PUBLIC_R2_PUBLIC_URL: process.env.NEXT_PUBLIC_R2_PUBLIC_URL
   };
 
-  const criticalKeys = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'API_KEY', 'GEMINI_API_KEY'];
-  
-  criticalKeys.forEach(k => {
-    const val = scavenge(k);
-    if (val) {
-      // Map to both standard and NEXT_PUBLIC formats for cross-compatibility
-      win.process.env[k] = val;
-      win.process.env[`NEXT_PUBLIC_${k}`] = val;
-      // Also inject into window root for legacy node support
-      win[`NEXT_PUBLIC_${k}`] = val;
+  Object.entries(coreVariables).forEach(([k, v]) => {
+    if (v) {
+      win.process.env[k] = v;
+      win[k] = v;
     }
   });
 
-  // Alias API_KEY to GEMINI_API_KEY for the SDK
-  if (win.process.env.API_KEY && !win.process.env.GEMINI_API_KEY) {
-    win.process.env.GEMINI_API_KEY = win.process.env.API_KEY;
-  }
-
-  console.log('📡 [System] Neural Handshake: Hydration Grid Active');
+  console.log('📡 [System] Infrastructure Handshake: Primary Node Active');
 }
 
 import React from 'react';
