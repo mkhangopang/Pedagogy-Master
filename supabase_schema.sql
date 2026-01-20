@@ -1,10 +1,10 @@
--- EDUNEXUS AI: PERSISTENT INFRASTRUCTURE LAYER (v34.0)
--- TARGET: Eliminate "Profile Exists" and "Handshake Failure" errors.
+-- EDUNEXUS AI: PRODUCTION INFRASTRUCTURE v36.0
+-- TARGET: ELIMINATE "SYNC HANGS" AND "PROFILE CONFLICTS"
 
--- 1. EXTENSIONS
+-- 1. BASE EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. IDEMPOTENT HEALTH RPCs
+-- 2. SYSTEM DIAGNOSTICS (Ensures Frontend Status Grid stays GREEN)
 CREATE OR REPLACE FUNCTION get_extension_status(ext TEXT) 
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -26,7 +26,11 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3. IDENTITY LAYER (RESILIENT)
+-- CRITICAL: Grant execution to anon so the "Node: Linked" check works before login
+GRANT EXECUTE ON FUNCTION get_extension_status(TEXT) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_vector_dimensions() TO anon, authenticated;
+
+-- 3. IDENTITY LAYER (RESILIENT PROFILE STORAGE)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
     name TEXT,
@@ -48,7 +52,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 -- 4. FIX: "Profile already exists" error handling
--- This function now updates the existing record if a conflict occurs
+-- This trigger function handles conflicts by updating existing records instead of failing
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -74,7 +78,7 @@ CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 5. ASSET & GRID TABLES
+-- 5. ASSET & GRID TABLES (With IF NOT EXISTS)
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users ON DELETE CASCADE,
@@ -116,14 +120,13 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. SECURITY & PERMISSIONS (Eliminates "Node Disconnected" UI error)
+-- 6. SECURITY & PERMISSIONS HARDENING
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
 DO $$ 
 BEGIN
-    -- Profile Policies
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view own profile') THEN
         CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
     END IF;
@@ -132,17 +135,12 @@ BEGIN
         CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
     END IF;
 
-    -- Document Policies
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage own documents') THEN
         CREATE POLICY "Users can manage own documents" ON public.documents FOR ALL USING (auth.uid() = user_id);
     END IF;
 END $$;
 
--- GRANT EXECUTION (Critical for frontend status checking)
-GRANT EXECUTE ON FUNCTION get_extension_status(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION get_vector_dimensions() TO anon, authenticated;
-
--- 7. DIAGNOSTIC VIEW
+-- 7. RECOVERY VIEW (Ensures dashboard diagnostics work even during sync)
 CREATE OR REPLACE VIEW public.rag_health_report AS
 SELECT 
     d.id,
@@ -159,3 +157,5 @@ SELECT
 FROM documents d
 LEFT JOIN document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
+
+GRANT SELECT ON public.rag_health_report TO authenticated;

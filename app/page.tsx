@@ -50,10 +50,10 @@ export default function App() {
   const checkDb = useCallback(async () => {
     let health = await getSupabaseHealth();
     
-    // Aggressive retry with backoff for Supabase cold starts / initial deployment lag
+    // Aggressive retry for Supabase Cold Starts (Common in Vercel/Preview)
     if (health.status !== 'connected' && isSupabaseConfigured()) {
-       console.log('📡 [System] Handshake lagging, performing deep re-sync...');
-       await new Promise(r => setTimeout(r, 3000));
+       console.log('📡 [System] Handshake lagging, performing deep warm-up...');
+       await new Promise(r => setTimeout(r, 2000));
        health = await getSupabaseHealth();
     }
     
@@ -73,16 +73,12 @@ export default function App() {
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     setIsBackgroundSyncing(true);
-    const isSystemAdmin = isAppAdmin(email);
     
     try {
-      // 1. Force Handshake Health Check
-      const ok = await checkDb();
-      if (!ok) {
-        console.warn("⚠️ [Handshake] Data plane not ready, profile sync deferred.");
-      }
+      // 1. Ensure data plane is responsive before querying
+      await checkDb();
 
-      // 2. Authoritative Sync
+      // 2. Authoritative Identity Sync (Handles conflicts internally)
       const profile: any = await getOrCreateProfile(userId, email);
       if (profile) {
         setUserProfile({
@@ -99,12 +95,14 @@ export default function App() {
         });
       }
 
-      // 3. Document Sync
-      const { data: docs } = await supabase
+      // 3. Document Grid Sync
+      const { data: docs, error: docError } = await supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
+
+      if (docError) throw docError;
 
       if (docs) {
         setDocuments(docs.map(d => ({
@@ -126,7 +124,7 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.warn("⚠️ [Neural Handshake] Sync degraded:", e.message);
+      console.warn("⚠️ [Neural Sync] Partial Degeneration:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -140,10 +138,9 @@ export default function App() {
     const initialize = async () => {
       try {
         paymentService.init();
-        const connected = await checkDb();
+        await checkDb();
 
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
-        
         if (sessionError) throw sessionError;
 
         if (initialSession) {
@@ -203,7 +200,7 @@ export default function App() {
         </div>
       </div>
       <div className="text-center space-y-2">
-        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Synchronizing Hub</p>
+        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Establishing Handshake</p>
         <p className="text-slate-400 font-medium text-xs italic">Waking up neural data plane...</p>
       </div>
     </div>
@@ -215,9 +212,9 @@ export default function App() {
           <div className="w-16 h-16 bg-rose-50 dark:bg-rose-950/30 rounded-2xl flex items-center justify-center mx-auto text-rose-500">
              <AlertTriangle size={32} />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Handshake Failed</h2>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Infrastructure Offline</h2>
           <p className="text-slate-500 text-sm leading-relaxed">{bootError}</p>
-          <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20">Restart Engine</button>
+          <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20">Retry Handshake</button>
        </div>
     </div>
   );

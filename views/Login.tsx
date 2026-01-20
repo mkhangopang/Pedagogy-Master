@@ -3,7 +3,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface LoginProps {
-  onSession: (user: any) => void; // Kept for prop compatibility, but no longer used internally
+  onSession: (user: any) => void;
   onBack?: () => void;
 }
 
@@ -22,8 +22,10 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
     e.preventDefault();
     if (honeypot) return;
 
-    // Check configuration but allow attempt even if it's flickering
-    const configOk = isSupabaseConfigured();
+    if (!isSupabaseConfigured()) {
+      setError("Infrastructure handshake pending. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set correctly in Vercel.");
+      return;
+    }
     
     setLoading(true);
     setError(null);
@@ -33,11 +35,7 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
         const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
         if (authError) {
            if (authError.message.includes('Email not confirmed')) {
-             throw new Error("Confirmation Pending: Please check your inbox or disable 'Confirm Email' in Supabase Auth settings.");
-           }
-           // If request failed because of keys, provide a helpful message
-           if (authError.message.includes('apiKey') || authError.message.includes('fetch')) {
-             throw new Error("Infrastructure node not yet fully initialized. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set in Vercel with NEXT_PUBLIC_ prefix.");
+             throw new Error("Verification Pending: Check your inbox or adjust Supabase Auth settings.");
            }
            throw authError;
         }
@@ -56,22 +54,20 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
         setView('reset-sent');
       }
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || "Authentication node failed to respond.");
       setLoading(false);
-    } finally {
-      // Success will cause App.tsx to unmount this component
     }
   };
 
   if (view === 'signup-success') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
-        <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl text-center">
-          <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-xl text-center border border-slate-100 dark:border-white/5">
+          <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle2 className="w-12 h-12 text-emerald-500" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Check your email</h2>
-          <p className="text-slate-500 mb-8">Verification link sent to <span className="font-semibold text-slate-800">{email}</span>.</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Check your email</h2>
+          <p className="text-slate-500 mb-8">Verification link sent to <span className="font-semibold text-slate-800 dark:text-slate-200">{email}</span>.</p>
           <button onClick={() => setView('login')} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all">Return to Login</button>
         </div>
       </div>
@@ -132,7 +128,7 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
             )}
 
             {error && (
-              <div className="p-3 bg-rose-50 border border-rose-100 text-rose-600 text-[11px] font-bold rounded-xl flex items-start gap-2">
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400 text-[11px] font-bold rounded-xl flex items-start gap-2">
                 <AlertCircle size={14} className="shrink-0 mt-0.5" /> 
                 <span>{error}</span>
               </div>
@@ -152,11 +148,10 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
           )}
         </div>
 
-        {/* Neural Infrastructure Status (Internal Diagnostic) */}
         {!isSupabaseConfigured() && !loading && (
-          <div className="mt-8 p-4 bg-slate-900/5 dark:bg-white/5 rounded-2xl border border-dashed border-slate-200 dark:border-white/10 flex items-center gap-3">
+          <div className="mt-8 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-2xl border border-dashed border-amber-200 dark:border-amber-900/30 flex items-center gap-3">
              <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-             <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-tight">
+             <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400 leading-tight">
                Infrastructure Handshake Pending... Ensure NEXT_PUBLIC_SUPABASE_URL is set in Vercel.
              </p>
           </div>
