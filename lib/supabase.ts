@@ -8,23 +8,23 @@ let activeConfigKey: string | null = null;
 
 /**
  * ENVIRONMENT RESOLVER
- * Robust resolution for Next.js build-time vars and window polyfills.
+ * Maps Next.js build-time vars or window polyfills.
  */
 const getAuthDetails = () => {
   // 1. Literal Check (Mandatory for Next.js build optimization)
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+  const key = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
   // 2. Browser Window Check (Fallback for Preview/Studio environments)
   if (typeof window !== 'undefined') {
     const win = window as any;
-    const fallbackUrl = win.NEXT_PUBLIC_SUPABASE_URL || win.SUPABASE_URL || win.process?.env?.NEXT_PUBLIC_SUPABASE_URL || '';
-    const fallbackKey = win.NEXT_PUBLIC_SUPABASE_ANON_KEY || win.SUPABASE_ANON_KEY || win.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+    const fallbackUrl = (win.NEXT_PUBLIC_SUPABASE_URL || win.SUPABASE_URL || win.process?.env?.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+    const fallbackKey = (win.NEXT_PUBLIC_SUPABASE_ANON_KEY || win.SUPABASE_ANON_KEY || win.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
     
-    return {
-      url: (url && url.length > 10) ? url : fallbackUrl,
-      key: (key && key.length > 20) ? key : fallbackKey
-    };
+    const finalUrl = (url && url.length > 10) ? url : fallbackUrl;
+    const finalKey = (key && key.length > 20) ? key : fallbackKey;
+
+    return { url: finalUrl, key: finalKey };
   }
 
   return { url, key };
@@ -32,7 +32,6 @@ const getAuthDetails = () => {
 
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getAuthDetails();
-  // Validates if the keys exist and look correct (not placeholders)
   return !!(url && key && url.includes('supabase.co') && key.length > 20);
 };
 
@@ -44,9 +43,9 @@ export const getSupabaseClient = (): SupabaseClient => {
   const { url, key } = getAuthDetails();
   const currentKey = `${url}-${key}`;
 
-  // If we have a placeholder instance but real keys are now available, reset.
+  // Reset if keys were previously missing but are now found
   if (supabaseInstance && activeConfigKey !== currentKey && isSupabaseConfigured()) {
-    console.log('🔄 [Infrastructure] Neural handshake upgraded with production keys.');
+    console.log('🔄 [Infrastructure] Neural handshake upgraded with live keys.');
     supabaseInstance = null;
   }
 
@@ -54,7 +53,7 @@ export const getSupabaseClient = (): SupabaseClient => {
 
   // Use valid placeholders to prevent createClient from throwing 'invalid URL' error
   const finalUrl = isSupabaseConfigured() ? url : 'https://placeholder.supabase.co';
-  const finalKey = isSupabaseConfigured() ? key : 'placeholder-anon-key-must-be-long-enough-to-be-valid';
+  const finalKey = isSupabaseConfigured() ? key : 'placeholder-anon-key-must-be-long-enough-to-be-valid-for-supabase';
   
   activeConfigKey = currentKey;
 
@@ -72,7 +71,7 @@ export const getSupabaseClient = (): SupabaseClient => {
 
 /**
  * SUPABASE PROXY
- * Ensures all components access the most recent client instance without crashing during hydration.
+ * Ensures all components access the most recent client instance without crashing.
  */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
@@ -103,7 +102,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   const isAdminUser = isAppAdmin(email);
 
   try {
-    // 1. Check if trigger already created the profile
+    // 1. Authoritative check (Trigger might have already run)
     const { data: profile } = await supabase
       .from('profiles')
       .select('*')
@@ -121,7 +120,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
       return profile;
     }
 
-    // 2. Resilient Upsert (Handles trigger race conditions)
+    // 2. Resilient manual upsert (Fallback if trigger lags)
     const { data: newProfile, error: upsertError } = await supabase
       .from('profiles')
       .upsert({
@@ -139,20 +138,22 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     if (upsertError) throw upsertError;
     return newProfile;
   } catch (err) {
-    console.error("❌ [Identity Node] Critical Failure during profile sync:", err);
+    console.error("❌ [Identity Node] Sync Failure:", err);
     return null;
   }
 }
 
 export const getSupabaseHealth = async (): Promise<{ status: 'connected' | 'disconnected', message: string }> => {
-  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Environment keys missing in bundle.' };
+  if (!isSupabaseConfigured()) {
+    return { status: 'disconnected', message: 'Environment keys missing. Check Vercel vars.' };
+  }
   try {
-    // Ping profiles to verify PostgreSQL connectivity
-    const { error } = await supabase.from('profiles').select('id').limit(1);
+    // Use an anonymous RPC or public-accessible check to verify the link
+    const { error } = await supabase.rpc('get_extension_status', { ext: 'vector' });
     if (error && error.code !== 'PGRST116') throw error;
-    return { status: 'connected', message: 'PostgreSQL Interface Active' };
+    return { status: 'connected', message: 'Neural Data Plane: Operational' };
   } catch (err: any) {
-    console.warn('📡 [Handshake Check] Degraded:', err.message);
+    console.warn('📡 [Handshake Check] Failed:', err.message);
     return { status: 'disconnected', message: err.message || 'Supabase node unreachable' };
   }
 };

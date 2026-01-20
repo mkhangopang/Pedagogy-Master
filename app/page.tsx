@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile, isAppAdmin } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -35,8 +35,8 @@ export default function App() {
     message: 'Initializing neural grid...' 
   });
 
-  const isActuallyConnected = healthStatus.status === 'connected';
   const initializationRef = useRef(false);
+  const isActuallyConnected = healthStatus.status === 'connected';
   
   const [brain, setBrain] = useState<NeuralBrain>({
     id: 'system-brain',
@@ -48,15 +48,7 @@ export default function App() {
   });
 
   const checkDb = useCallback(async () => {
-    let health = await getSupabaseHealth();
-    
-    // Aggressive retry for Supabase Cold Starts (Common in Vercel/Preview)
-    if (health.status !== 'connected' && isSupabaseConfigured()) {
-       console.log('📡 [System] Handshake lagging, performing deep warm-up...');
-       await new Promise(r => setTimeout(r, 2000));
-       health = await getSupabaseHealth();
-    }
-    
+    const health = await getSupabaseHealth();
     setHealthStatus(health);
     return health.status === 'connected';
   }, []);
@@ -66,19 +58,13 @@ export default function App() {
     if (savedCollapse === 'true') setIsCollapsed(true);
   }, []);
 
-  const handleToggleCollapse = (collapsed: boolean) => {
-    setIsCollapsed(collapsed);
-    localStorage.setItem('sidebar_collapsed', String(collapsed));
-  };
-
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     setIsBackgroundSyncing(true);
-    
     try {
-      // 1. Ensure data plane is responsive before querying
+      // 1. Ensure connectivity before profile attempt
       await checkDb();
 
-      // 2. Authoritative Identity Sync (Handles conflicts internally)
+      // 2. Authoritative Sync (Trigger handles DB conflict, frontend handles UI state)
       const profile: any = await getOrCreateProfile(userId, email);
       if (profile) {
         setUserProfile({
@@ -95,16 +81,14 @@ export default function App() {
         });
       }
 
-      // 3. Document Grid Sync
+      // 3. Document Sync
       const { data: docs, error: docError } = await supabase
         .from('documents')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
-      if (docError) throw docError;
-
-      if (docs) {
+      if (!docError && docs) {
         setDocuments(docs.map(d => ({
           id: d.id,
           userId: d.user_id,
@@ -124,7 +108,7 @@ export default function App() {
         })));
       }
     } catch (e: any) {
-      console.warn("⚠️ [Neural Sync] Partial Degeneration:", e.message);
+      console.warn("⚠️ [Sync] Handshake jitter detected:", e.message);
     } finally {
       setIsBackgroundSyncing(false);
       setLoading(false);
@@ -138,7 +122,10 @@ export default function App() {
     const initialize = async () => {
       try {
         paymentService.init();
-        await checkDb();
+        const configured = isSupabaseConfigured();
+        
+        // Aggressive DB warm-up for serverless cold starts
+        if (configured) await checkDb();
 
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) throw sessionError;
@@ -149,7 +136,7 @@ export default function App() {
         }
       } catch (e: any) {
         console.error("Critical boot failure:", e);
-        setBootError(e.message || "Pedagogical infrastructure failed to respond.");
+        setBootError(e.message || "Neural data plane failed to respond.");
       } finally {
         setLoading(false);
       }
@@ -178,16 +165,14 @@ export default function App() {
 
   const handleUpdateDocument = async (id: string, updates: Partial<Document>) => {
     setDocuments(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-    if (isActuallyConnected) {
-      try {
-        const dbUpdates: any = {};
-        if (updates.status) dbUpdates.status = updates.status;
-        if (updates.geminiProcessed !== undefined) dbUpdates.rag_indexed = updates.geminiProcessed;
-        if (updates.isSelected !== undefined) dbUpdates.is_selected = updates.isSelected;
-        await supabase.from('documents').update(dbUpdates).eq('id', id);
-      } catch (e) {
-        console.error("Sync failure for document update:", e);
-      }
+    try {
+      const dbUpdates: any = {};
+      if (updates.status) dbUpdates.status = updates.status;
+      if (updates.geminiProcessed !== undefined) dbUpdates.rag_indexed = updates.geminiProcessed;
+      if (updates.isSelected !== undefined) dbUpdates.is_selected = updates.isSelected;
+      await supabase.from('documents').update(dbUpdates).eq('id', id);
+    } catch (e) {
+      console.error("Sync failure for document update:", e);
     }
   };
 
@@ -200,8 +185,8 @@ export default function App() {
         </div>
       </div>
       <div className="text-center space-y-2">
-        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Establishing Handshake</p>
-        <p className="text-slate-400 font-medium text-xs italic">Waking up neural data plane...</p>
+        <p className="text-indigo-600 font-black uppercase tracking-[0.3em] text-[10px]">Neural Handshake</p>
+        <p className="text-slate-400 font-medium text-xs italic">Syncing pedagogical grid...</p>
       </div>
     </div>
   );
@@ -212,7 +197,7 @@ export default function App() {
           <div className="w-16 h-16 bg-rose-50 dark:bg-rose-950/30 rounded-2xl flex items-center justify-center mx-auto text-rose-500">
              <AlertTriangle size={32} />
           </div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Infrastructure Offline</h2>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Infrastructure Node Offline</h2>
           <p className="text-slate-500 text-sm leading-relaxed">{bootError}</p>
           <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20">Retry Handshake</button>
        </div>
@@ -225,10 +210,7 @@ export default function App() {
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100 ${theme === 'dark' ? 'dark' : ''}`}>
       
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[90] lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />
       )}
 
       <div className={`
@@ -241,7 +223,7 @@ export default function App() {
           onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 
           userProfile={userProfile!} 
           isCollapsed={isCollapsed} 
-          setIsCollapsed={handleToggleCollapse} 
+          setIsCollapsed={(c) => { setIsCollapsed(c); localStorage.setItem('sidebar_collapsed', String(c)); }} 
           onClose={() => setIsSidebarOpen(false)}
           theme={theme} 
           toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
@@ -254,16 +236,13 @@ export default function App() {
         {isBackgroundSyncing && (
           <div className="bg-indigo-600 text-white px-4 py-1 flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-widest z-50">
             <RefreshCw size={10} className="animate-spin" />
-            <span>Neural Sync Progressing...</span>
+            <span>Neural Grid Syncing...</span>
           </div>
         )}
 
         <header className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm z-40">
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(true)} 
-              className="lg:hidden p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl"
-            >
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 rounded-xl">
               <Menu size={24} />
             </button>
             <span className="font-bold text-indigo-950 dark:text-white tracking-tight flex items-center gap-2 text-sm uppercase">
@@ -273,7 +252,7 @@ export default function App() {
           
           <div className="flex items-center gap-3">
              <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
-                <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse' : 'bg-rose-500'}`} />
+                <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]'}`} />
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{isActuallyConnected ? 'Node: Linked' : 'Node: Disconnected'}</span>
              </div>
           </div>

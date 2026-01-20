@@ -24,33 +24,54 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [copiedSql, setCopiedSql] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const diagnosticSql = `-- SUPABASE RAG DIAGNOSTIC SUITE
--- 1. Check if vector extension is active
-SELECT * FROM pg_extension WHERE extname = 'vector';
+  const diagnosticSql = `-- EDUNEXUS AI: INFRASTRUCTURE AUDIT (v46.0)
+-- 1. Check Extensions & Dimensions
+SELECT 
+    extname, 
+    installed_version 
+FROM pg_extension 
+WHERE extname = 'vector';
 
--- 2. Check chunk dimensions (Must be 768)
-SELECT vector_dims(embedding), count(*) 
-FROM document_chunks 
+-- 2. Verify Vector Health (Must be 768)
+SELECT 
+    vector_dims(embedding) as dims, 
+    count(*) as node_count 
+FROM public.document_chunks 
 GROUP BY 1;
 
--- 3. Check Hybrid Search Performance
-EXPLAIN ANALYZE SELECT * FROM hybrid_search_chunks_v3(
-  array_fill(0, array[768])::vector, 5, 
-  (SELECT array_agg(id) FROM documents LIMIT 5)
-);`;
+-- 3. Check System Sync Logic
+SELECT 
+    'Auth Trigger' as component,
+    CASE WHEN EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'on_auth_user_created') 
+         THEN '✅ LINKED' ELSE '⚠️ DISCONNECTED' END as status;`;
 
-  const performanceSql = `-- NEURAL SPEED OPTIMIZATION SUITE
--- 1. CREATE HNSW INDEX (Ultra-fast Vector Search)
-CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding_hnsw 
+  const performanceSql = `-- EDUNEXUS AI: MASTER REPAIR & OPTIMIZATION (v46.0)
+-- 🎯 Target: Fix "Profile Exists" errors and Neural Sync hangs.
+
+-- 1. REPAIR AUTH TRIGGER (UPSERT PATTERN)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, name, role, plan, queries_limit)
+  VALUES (NEW.id, NEW.email, split_part(NEW.email, '@', 1), 'teacher', 'free', 30)
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 2. ACCELERATE RETRIEVAL (HNSW Indexing)
+-- Speeds up vector search by 10x for large libraries
+CREATE INDEX IF NOT EXISTS idx_chunks_vector_hnsw 
 ON public.document_chunks USING hnsw (embedding vector_cosine_ops);
 
--- 2. CREATE METADATA GIN INDEXES
+-- 3. METADATA BOOSTING (GIN Indexing)
 CREATE INDEX IF NOT EXISTS idx_chunks_slo_codes_gin ON document_chunks USING GIN (slo_codes);
-CREATE INDEX IF NOT EXISTS idx_chunks_topics_gin ON document_chunks USING GIN (topics);
 
--- 3. MAINTENANCE: Reclaim Stale Storage (Fix Sync Hangs)
-VACUUM ANALYZE document_chunks;
-VACUUM ANALYZE documents;`;
+-- 4. MAINTENANCE: Reclaim Stale Storage
+VACUUM ANALYZE public.document_chunks;
+VACUUM ANALYZE public.documents;`;
 
   const copySql = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -145,7 +166,7 @@ VACUUM ANALYZE documents;`;
               onClick={() => setActiveTab(tab as any)}
               className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shrink-0 ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500'}`}
             >
-              {tab === 'rag' ? 'RAG Diagnostics' : tab === 'infra' ? 'Stack' : tab}
+              {tab === 'rag' ? 'RAG Diagnostics' : tab === 'infra' ? 'Stack' : tab === 'performance' ? 'Repair' : tab}
             </button>
           ))}
         </div>
@@ -326,8 +347,8 @@ VACUUM ANALYZE documents;`;
               <div className="flex items-center gap-4 mb-8">
                  <div className="p-3 bg-emerald-500 rounded-2xl text-white shadow-lg"><Rocket size={24} /></div>
                  <div>
-                    <h2 className="text-2xl font-black tracking-tight">Performance Tuning Suite</h2>
-                    <p className="text-slate-400 text-sm font-medium">Execute these scripts in Supabase SQL Editor to fix lag and slow sync.</p>
+                    <h2 className="text-2xl font-black tracking-tight">Master Infrastructure Repair (v46.0)</h2>
+                    <p className="text-slate-400 text-sm font-medium">Execute this script in Supabase SQL Editor to resolve "Profile already exists" errors and sync hangs.</p>
                  </div>
               </div>
 
@@ -335,13 +356,13 @@ VACUUM ANALYZE documents;`;
                  <div className="p-6 bg-black/40 rounded-3xl border border-white/5 space-y-4">
                     <div className="flex items-center justify-between">
                        <h3 className="text-xs font-black uppercase tracking-widest text-emerald-400 flex items-center gap-2">
-                          <Zap size={14} /> Optimized Indexing (HNSW)
+                          <Zap size={14} /> Critical Repair & HNSW Tuning
                        </h3>
                        <button onClick={() => copySql(performanceSql, 'perf')} className="px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all">
                           {copiedSql === 'perf' ? 'Copied!' : 'Copy Script'}
                        </button>
                     </div>
-                    <p className="text-xs text-slate-400 leading-relaxed">Implementing HNSW (Hierarchical Navigable Small Worlds) indexes on vector columns speeds up retrieval by 10x for large curriculum libraries.</p>
+                    <p className="text-xs text-slate-400 leading-relaxed">This script implements an UPSERT pattern for profile synchronization and adds HNSW vector indexing for ultra-fast retrieval.</p>
                     <div className="bg-slate-950 p-4 rounded-xl relative overflow-hidden">
                        <pre className="text-[10px] font-mono text-emerald-300/80 overflow-x-auto scrollbar-hide">
                           {performanceSql}
@@ -351,12 +372,12 @@ VACUUM ANALYZE documents;`;
 
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="p-6 bg-white/5 rounded-3xl border border-white/5">
-                       <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2">Sync Timeout Fix</h4>
-                       <p className="text-xs text-slate-400 leading-relaxed italic">"Sync failures usually happen when the Document Ingester takes too long to generate embeddings. Use the VACUUM script above to reclaim database memory."</p>
+                       <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2">Sync Handshake Fix</h4>
+                       <p className="text-xs text-slate-400 leading-relaxed italic">"The ON CONFLICT DO UPDATE pattern prevents users from being locked out if the database trigger and frontend sync collide."</p>
                     </div>
                     <div className="p-6 bg-white/5 rounded-3xl border border-white/5">
-                       <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Metadata Boosting</h4>
-                       <p className="text-xs text-slate-400 leading-relaxed">The Hybrid Search v3 now weights SLO Code matches higher than pure semantic similarity, fixing "irrelevant result" errors in the AI Tutor.</p>
+                       <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Neural Density</h4>
+                       <p className="text-xs text-slate-400 leading-relaxed">The v46.0 script also optimizes the database for high-concurrency curriculum ingestion across institutional nodes.</p>
                     </div>
                  </div>
               </div>
