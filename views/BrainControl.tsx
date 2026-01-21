@@ -373,7 +373,7 @@ VACUUM ANALYZE public.documents;`;
                     </li>
                     <li className="flex gap-3">
                       <div className="w-5 h-5 bg-amber-200 dark:bg-amber-800 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-200 shrink-0 mt-0.5">2</div>
-                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Ingestion Lag</b>: Heavy documents (>100 pages) can timeout. Re-run manual indexing for individual assets from the Curriculum Library view if healing fails.</p>
+                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Ingestion Lag</b>: Heavy documents (&gt;100 pages) can timeout. Re-run manual indexing for individual assets from the Curriculum Library view if healing fails.</p>
                     </li>
                   </ul>
                </div>
