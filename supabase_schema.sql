@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v58.0
--- TARGET: Resolve Function Signature Overloading Conflict & Implement Hybrid Search
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v59.0
+-- TARGET: Eliminate "Function Not Unique" Ambiguity & Finalize Hybrid Search
 
 -- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -8,6 +8,7 @@ CREATE SCHEMA IF NOT EXISTS extensions;
 DO $$ 
 BEGIN 
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    -- Ensure it's in the extensions schema
     IF (SELECT nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector') != 'extensions' THEN
       ALTER EXTENSION vector SET SCHEMA extensions;
     END IF;
@@ -20,28 +21,31 @@ END $$;
 ALTER ROLE authenticated SET search_path TO public, extensions;
 ALTER ROLE service_role SET search_path TO public, extensions;
 ALTER ROLE postgres SET search_path TO public, extensions;
+SET search_path = public, extensions;
 
--- 4. DYNAMIC CLEANUP OF OVERLOADED FUNCTIONS
--- This block identifies and drops ALL versions of the function to prevent "is not unique" errors.
+-- 4. NUCLEAR CLEANUP OF OVERLOADED FUNCTIONS
+-- This dynamic block removes every single signature found in the catalog for this function name.
 DO $$
 DECLARE
     _f record;
 BEGIN
     FOR _f IN (
-        SELECT 'public.' || quote_ident(p.proname) || '(' || pg_get_function_identity_arguments(p.oid) || ')' as ident
+        SELECT n.nspname as schema_name, 
+               p.proname as func_name, 
+               pg_get_function_identity_arguments(p.oid) as args
         FROM pg_proc p
         JOIN pg_namespace n ON p.pronamespace = n.oid
-        WHERE n.nspname = 'public' AND p.proname = 'hybrid_search_chunks_v3'
+        WHERE p.proname = 'hybrid_search_chunks_v3'
     ) LOOP
-        EXECUTE 'DROP FUNCTION ' || _f.ident;
+        EXECUTE 'DROP FUNCTION IF EXISTS ' || _f.schema_name || '.' || _f.func_name || '(' || _f.args || ') CASCADE';
     END LOOP;
 END $$;
 
--- 5. RE-INITIALIZE HEALTH VIEW (If exists)
+-- 5. RE-INITIALIZE HEALTH VIEW (Cascade handles dependencies)
 DROP VIEW IF EXISTS public.rag_health_report CASCADE;
 
 -- 6. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights and 9 Granular Parameters)
--- WEIGHTS: 70% Semantic (Vector) | 30% Keyword (ts_rank)
+-- SIGNATURE: (TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[])
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_text TEXT,
     query_embedding extensions.vector,
@@ -109,7 +113,7 @@ FROM public.documents d
 LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
 
--- 8. PERMISSIONS
--- Since we cleared all versions, these grants will apply unambiguously to the new function.
-GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3 TO authenticated, service_role;
+-- 8. UNAMBIGUOUS PERMISSIONS
+-- Explicitly providing the signature to the GRANT command to prevent "not unique" errors.
+GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3(TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[]) TO authenticated, service_role;
 GRANT SELECT ON public.rag_health_report TO authenticated;
