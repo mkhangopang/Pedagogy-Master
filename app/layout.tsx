@@ -9,8 +9,8 @@ import './globals.css';
 export default function RootLayout({
   children,
 }: {
-  // Fixed children to be required to match HydrationBoundary and standard Next.js layout patterns
-  children: React.ReactNode;
+  // Changed children to be optional to avoid hydration prop issues in certain environments
+  children?: React.ReactNode;
 }) {
   return (
     <div className="neural-app-root min-h-screen bg-slate-50 dark:bg-slate-950 font-sans selection:bg-indigo-500 selection:text-white">

@@ -15,9 +15,9 @@ function sanitizeText(text: string): string {
 }
 
 /**
- * VECTOR SYNTHESIS ENGINE (v26.0)
+ * VECTOR SYNTHESIS ENGINE (v27.0)
  * MODEL: text-embedding-004 (768 dimensions)
- * Implements persistent caching and performance metrics.
+ * Implements strict dimension enforcement to match PostgreSQL HNSW.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   const start = performance.now();
@@ -44,9 +44,17 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       throw new Error("Invalid vector values returned.");
     }
 
-    // Force 768 dimensions for PostgreSQL HNSW compatibility
-    const finalVector = vector.length === 768 ? vector : 
-      (vector.length < 768 ? [...vector, ...new Array(768 - vector.length).fill(0)] : vector.slice(0, 768));
+    // STRICT DIMENSION ENFORCEMENT (Must be 768)
+    let finalVector: number[];
+    if (vector.length === 768) {
+      finalVector = vector;
+    } else if (vector.length < 768) {
+      console.warn(`[Embedding] Zero-padding vector from ${vector.length} to 768.`);
+      finalVector = [...vector, ...new Array(768 - vector.length).fill(0)];
+    } else {
+      console.warn(`[Embedding] Truncating vector from ${vector.length} to 768.`);
+      finalVector = vector.slice(0, 768);
+    }
     
     // 2. Commit to Persistent Cache
     await embeddingCache.set(cleanText, finalVector);
@@ -55,6 +63,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     return finalVector;
   } catch (error: any) {
     console.error('❌ [Embedding Node] Fatal:', error.message);
+    // Return zeros rather than crashing, to allow RAG to proceed with FTS fallback
     return new Array(768).fill(0);
   }
 }

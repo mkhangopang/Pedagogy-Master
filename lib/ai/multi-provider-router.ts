@@ -9,7 +9,6 @@ import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../consta
 
 /**
  * Returns the current operational status of all AI nodes.
- * Updated with strict awaiting and default values to prevent UI "red" status on unresolved data.
  */
 export async function getProviderStatus() {
   const configs = getProvidersConfig();
@@ -39,7 +38,7 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v33.0)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v34.0)
  * Specialized for Multi-Modal Canvas Workspaces and Complex Pedagogical Tasks.
  */
 export async function generateAIResponse(
@@ -67,7 +66,7 @@ export async function generateAIResponse(
   // 2. Context Enforcement Check
   if (documentIds.length === 0) {
     return {
-      text: "> ⚠️ **CONTEXT NOT SYNCED**: You haven't selected a curriculum asset yet. \n\nTo generate precise lesson plans, assessments, or rubrics grounded in your specific standards, please **select a document from the 'Curriculum Assets' sidebar** first. \n\nOnce selected, I will automatically anchor all synthesis to your verified SLOs and board requirements.",
+      text: "> ⚠️ **CONTEXT NOT SYNCED**: You haven't selected a curriculum asset yet. \n\nTo generate precise lesson plans, assessments, or rubrics grounded in your specific standards, please **select a document from the 'Curriculum Assets' sidebar** first.",
       provider: 'orchestrator',
       metadata: { isGrounded: false, chunksUsed: 0 }
     };
@@ -79,7 +78,7 @@ export async function generateAIResponse(
     query: userPrompt,
     documentIds: priorityDocumentId ? [priorityDocumentId, ...documentIds] : documentIds,
     supabase,
-    matchCount: 20 // Increased for better tool synthesis
+    matchCount: 20 
   });
   
   // 4. Metadata Extraction
@@ -101,7 +100,7 @@ export async function generateAIResponse(
 
   const fullPrompt = `
 <AUTHORITATIVE_VAULT>
-${vaultContent || "ERROR: NO DATA FOUND IN SELECTED ASSETS. WARN USER."}
+${vaultContent || "ERROR: NO DATA FOUND IN SELECTED ASSETS."}
 </AUTHORITATIVE_VAULT>
 
 ${NUCLEAR_GROUNDING_DIRECTIVE}
@@ -112,13 +111,11 @@ ${NUCLEAR_GROUNDING_DIRECTIVE}
 ## EXECUTION PARAMETERS:
 - TASK_ENGINE: ${toolType || 'chat'}
 - GROUNDING_LEVEL: AUTHORITATIVE
-- OUTPUT_FORMAT: HIGH_FIDELITY_MARKDOWN
 ${responseInstructions}
 
 RESPONSE:`;
 
-  // 6. Strategic Routing (Gemini 3 Pro for all Tools)
-  // Tool synthesis requires high reasoning; standard chat can use Flash/Cerebras.
+  // 6. Strategic Routing
   const isComplexTool = toolType && ['lesson-plan', 'assessment', 'rubric'].includes(toolType);
   const preferredProvider = (isComplexTool || queryAnalysis.queryType === 'lesson_plan' || userPrompt.includes('research')) 
     ? 'gemini' 
@@ -133,14 +130,20 @@ RESPONSE:`;
     masterSystem
   );
   
-  // 7. Grounding Metadata Extraction
+  // 7. Grounding Metadata & Final Formatting
   const groundingSources = result.groundingMetadata?.groundingChunks?.map((chunk: any) => ({
     title: chunk.web?.title || 'Educational Resource',
     uri: chunk.web?.uri
   })).filter((s: any) => s.uri) || [];
 
+  let finalOutput = result.text;
+  if (groundingSources.length > 0) {
+    finalOutput += `\n\n### 🌐 Research Sources:\n${groundingSources.map((s: any) => `- [${s.title}](${s.uri})`).join('\n')}`;
+  }
+
   return {
-    ...result,
+    text: finalOutput,
+    provider: result.provider,
     metadata: {
       chunksUsed: retrievedChunks.length,
       isGrounded: true,

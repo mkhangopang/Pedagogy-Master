@@ -1,16 +1,14 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v50.0
--- TARGET: FIX 42P13 (Return Type Mismatch) & 42704 (Type Missing)
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v54.0
+-- TARGET: RESOLVE METADATA PASS-THROUGH AND OVERLOADED FUNCTIONS
 
 -- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
 
 -- 2. SAFE VECTOR ENGINE MIGRATION
--- This moves the extension without dropping tables/data
 DO $$ 
 BEGIN 
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
-    -- If it's in public, move it. If it's already in extensions, this does nothing.
-    IF (SELECT nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector') = 'public' THEN
+    IF (SELECT nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector') != 'extensions' THEN
       ALTER EXTENSION vector SET SCHEMA extensions;
     END IF;
   ELSE
@@ -19,18 +17,35 @@ BEGIN
 END $$;
 
 -- 3. GLOBAL SEARCH PATH ALIGNMENT
--- This allows the DB to find the 'vector' type in 'extensions' without the prefix
 ALTER ROLE authenticated SET search_path TO public, extensions;
 ALTER ROLE service_role SET search_path TO public, extensions;
 ALTER ROLE postgres SET search_path TO public, extensions;
 
--- 4. CLEANUP (The fix for 42P13)
--- We must drop the function because the return table structure changed
-DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v3(extensions.vector, integer, uuid[], uuid, text[], text[], text[], text[]);
-DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v3(vector, integer, uuid[], uuid, text[], text[], text[], text[]);
+-- 4. ROBUST CLEANUP (Handles Overloaded Functions)
+DO $$
+DECLARE
+    _sql text;
+BEGIN
+    SELECT INTO _sql
+        string_agg(format('DROP FUNCTION %s(%s);', oid::regproc, pg_get_function_identity_arguments(oid)), ' ')
+    FROM pg_proc
+    WHERE proname IN ('hybrid_search_chunks_v3', 'semantic_search_chunks', 'get_vector_dimensions', 'get_extension_status')
+      AND pronamespace = 'public'::regnamespace;
 
--- 5. REPAIR SEARCH ENGINE
--- Using extensions.vector explicitly in the signature to avoid ambiguity
+    IF _sql IS NOT NULL THEN
+        EXECUTE _sql;
+    END IF;
+END $$;
+
+-- 5. REPAIR TABLE DIMENSIONS
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'document_chunks' AND column_name = 'embedding') THEN
+        ALTER TABLE public.document_chunks ALTER COLUMN embedding TYPE extensions.vector(768);
+    END IF;
+END $$;
+
+-- 6. REPAIR SEARCH ENGINE (Optimized Signature with Metadata)
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_embedding extensions.vector,
     match_count INTEGER,
@@ -48,7 +63,10 @@ RETURNS TABLE (
     slo_codes TEXT[],
     section_title TEXT,
     page_number INTEGER,
-    combined_score DOUBLE PRECISION
+    combined_score DOUBLE PRECISION,
+    grade_levels TEXT[],
+    topics TEXT[],
+    bloom_levels TEXT[]
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -61,22 +79,58 @@ BEGIN
         dc.chunk_text,
         dc.document_id,
         dc.slo_codes,
-        (dc.metadata->>'section_title')::TEXT as section_title,
-        (dc.metadata->>'page_number')::INTEGER as page_number,
-        (1 - (dc.embedding <=> query_embedding)) * 
-        (CASE WHEN dc.document_id = priority_document_id THEN 1.2 ELSE 1.0 END) *
-        (CASE WHEN dc.slo_codes && boost_slo_codes THEN 1.3 ELSE 1.0 END) as combined_score
+        COALESCE(dc.metadata->>'section_title', 'General')::TEXT as section_title,
+        COALESCE(dc.metadata->>'page_number', '0')::INTEGER as page_number,
+        ((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
+        (CASE WHEN dc.slo_codes && boost_slo_codes THEN 0.3 ELSE 0 END) +
+        (CASE WHEN dc.document_id = priority_document_id THEN 0.05 ELSE 0 END) as combined_score,
+        dc.grade_levels,
+        dc.topics,
+        dc.bloom_levels
     FROM public.document_chunks dc
     WHERE dc.document_id = ANY(filter_document_ids)
-      AND (filter_grades IS NULL OR dc.metadata->'grade_levels' ?| filter_grades)
-      AND (filter_topics IS NULL OR dc.metadata->'topics' ?| filter_topics)
-      AND (filter_bloom IS NULL OR dc.metadata->'bloom_levels' ?| filter_bloom)
+      AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
+      AND (filter_topics IS NULL OR dc.topics && filter_topics)
+      AND (filter_bloom IS NULL OR dc.bloom_levels && filter_bloom)
     ORDER BY combined_score DESC
     LIMIT match_count;
 END;
 $$;
 
--- 6. SYSTEM DIAGNOSTICS REPAIR
+-- 7. SEMANTIC SEARCH
+CREATE OR REPLACE FUNCTION public.semantic_search_chunks(
+    query_embedding extensions.vector,
+    match_count INTEGER DEFAULT 10,
+    filter_document_ids UUID[] DEFAULT NULL,
+    filter_user_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+    id UUID,
+    content TEXT,
+    similarity DOUBLE PRECISION,
+    metadata JSONB
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        dc.id,
+        dc.chunk_text as content,
+        (1 - (dc.embedding <=> query_embedding)) as similarity,
+        dc.metadata
+    FROM public.document_chunks dc
+    JOIN public.documents d ON dc.document_id = d.id
+    WHERE (filter_document_ids IS NULL OR dc.document_id = ANY(filter_document_ids))
+      AND (filter_user_id IS NULL OR d.user_id = filter_user_id)
+    ORDER BY dc.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+
+-- 8. UTILITIES
 CREATE OR REPLACE FUNCTION public.get_extension_status(ext TEXT) 
 RETURNS BOOLEAN 
 LANGUAGE plpgsql 
@@ -106,18 +160,30 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- 7. CLEANUP OBSOLETE NODES
-DROP FUNCTION IF EXISTS public.semantic_search_chunks;
-DROP FUNCTION IF EXISTS public.find_similar_slos;
-DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v2;
-DROP FUNCTION IF EXISTS public.find_slo_chunks;
-DROP FUNCTION IF EXISTS public.hybrid_search_chunks;
+-- 9. PERFORMANCE INDEX
+CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding_hnsw 
+ON public.document_chunks USING hnsw (embedding vector_cosine_ops);
 
--- 8. PERMISSIONS
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3 TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_extension_status TO authenticated;
-GRANT SELECT ON public.profiles TO authenticated;
+-- 10. PERMISSIONS
+GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3 TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.semantic_search_chunks TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_extension_status TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_vector_dimensions TO authenticated, service_role;
 
--- 9. VERIFY
-SELECT n.nspname, e.extname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector';
+-- 11. HEALTH VIEW
+CREATE OR REPLACE VIEW public.rag_health_report AS
+SELECT 
+    d.id, 
+    d.name, 
+    d.is_selected,
+    count(dc.id) as chunk_count,
+    CASE 
+        WHEN count(dc.id) = 0 THEN 'BROKEN: NO CHUNKS'
+        WHEN d.rag_indexed = false THEN 'STALE: NEEDS REINDEX'
+        ELSE 'HEALTHY'
+    END as health_status
+FROM public.documents d
+LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
+GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
+
+GRANT SELECT ON public.rag_health_report TO authenticated;

@@ -17,8 +17,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * NEURAL RE-RANKER (Next Step 1 Implementation)
- * Uses Gemini 3 Flash to pick the absolute top 5 most relevant chunks from a pool of 20.
+ * NEURAL RE-RANKER
+ * Refines vector results using a reasoning model.
  */
 async function reRankChunks(query: string, candidates: RetrievedChunk[]): Promise<RetrievedChunk[]> {
   if (candidates.length <= 5) return candidates;
@@ -27,19 +27,18 @@ async function reRankChunks(query: string, candidates: RetrievedChunk[]): Promis
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Simplified chunk representations for re-ranking prompt
-    const chunkOptions = candidates.map((c, i) => `[ID:${i}] ${c.chunk_text.substring(0, 300)}`).join('\n\n');
+    const chunkOptions = candidates.map((c, i) => `[ID:${i}] ${c.chunk_text.substring(0, 400)}`).join('\n\n');
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `You are a high-precision re-ranking node. Given a teacher's query and a list of curriculum chunks, select the IDs of the TOP 5 most pedagogically relevant chunks.
+      contents: `Identify the TOP 5 most relevant curriculum segments for this teacher query.
       
       QUERY: "${query}"
       
-      CHUNKS:
+      CANDIDATES:
       ${chunkOptions}
       
-      Respond ONLY with a comma-separated list of IDs (e.g., "0,4,7,12,19").`,
+      Respond only with comma-separated IDs.`,
     });
 
     const selectedIds = response.text?.match(/\d+/g)?.map(Number) || [];
@@ -48,16 +47,15 @@ async function reRankChunks(query: string, candidates: RetrievedChunk[]): Promis
       .filter(Boolean)
       .slice(0, 5);
 
-    performanceMonitor.track('semantic_re_rank', performance.now() - start, { selectedCount: topChunks.length });
+    performanceMonitor.track('semantic_re_rank', performance.now() - start);
     return topChunks.length > 0 ? topChunks : candidates.slice(0, 5);
   } catch (e) {
-    console.warn('⚠️ [Re-ranker] Failed, falling back to vector ordering.');
     return candidates.slice(0, 5);
   }
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v32.0 - RE-RANKING ENABLED)
+ * HIGH-PRECISION RAG RETRIEVER (v32.1)
  */
 export async function retrieveRelevantChunks({
   query,
@@ -79,7 +77,7 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // 1. Hybrid Vector Search (Retrieves pool of 20)
+    // 1. Hybrid Vector Search
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_embedding: queryEmbedding,
       match_count: matchCount,
@@ -93,7 +91,6 @@ export async function retrieveRelevantChunks({
     
     if (error) throw error;
     
-    // Fix: Explicitly type 'd' to 'any' to resolve build failure on RPC return mapping
     const processed = (chunks as any[] || []).map((d: any) => ({
       chunk_id: d.chunk_id,
       chunk_text: d.chunk_text,
@@ -101,19 +98,19 @@ export async function retrieveRelevantChunks({
       page_number: d.page_number,
       section_title: d.section_title,
       combined_score: d.combined_score,
-      grade_levels: d.grade_levels,
-      topics: d.topics,
-      bloom_levels: d.bloom_levels
+      grade_levels: d.grade_levels || [],
+      topics: d.topics || [],
+      bloom_levels: d.bloom_levels || []
     }));
 
-    // 2. Semantic Re-ranking (Refines to top 5)
+    // 2. Semantic Re-ranking
     const finalResults = await reRankChunks(query, processed);
     
     performanceMonitor.track('rag_retrieval_full_pipeline', performance.now() - start);
     return finalResults;
     
   } catch (err) {
-    console.error('❌ [Retriever] Critical Fault:', err);
+    console.error('❌ [Retriever] Fault:', err);
     return [];
   }
 }

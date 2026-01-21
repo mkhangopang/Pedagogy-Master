@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v31.1)
- * Updated to support gemini-2.5-flash-image and resolve TypeScript null-safety issues.
+ * HIGH-FIDELITY GEMINI ADAPTER (v31.2)
+ * Updated to enforce guidelines regarding thinkingConfig and maxOutputTokens.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -62,7 +62,9 @@ export async function callGemini(
     const config: any = {
       systemInstruction: systemInstruction || "You are a world-class pedagogical assistant.",
       temperature: hasDocuments ? 0.1 : 0.7,
-      thinkingConfig: isComplexTask ? { thinkingBudget: 16000 } : { thinkingBudget: 0 }
+      // GUIDELINE: When setting thinkingBudget, also set maxOutputTokens.
+      maxOutputTokens: isComplexTask ? 8192 : 4096,
+      thinkingConfig: isComplexTask ? { thinkingBudget: 4000 } : { thinkingBudget: 0 }
     };
 
     if (modelName === 'gemini-3-pro-preview' && (fullPrompt.includes('research') || fullPrompt.includes('latest'))) {

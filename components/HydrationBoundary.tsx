@@ -10,7 +10,8 @@ export default function HydrationBoundary({
   children,
   fallback 
 }: { 
-  children: ReactNode
+  // Changed children to optional to resolve property missing errors
+  children?: ReactNode
   fallback?: ReactNode 
 }) {
   const [mounted, setMounted] = useState(false);
