@@ -25,7 +25,8 @@ export function extractSLOCodes(query: string): string[] {
   const patterns = [
     /S-?\d{1,2}-?[A-Z]-?\d{1,2}/gi,
     /SLO[:\s]*S-?\d{1,2}-?[A-Z]-?\d{1,2}/gi,
-    /\b[A-Z]\d{1,2}[A-Z]\d{1,2}\b/gi
+    /\b[A-Z]\d{1,2}[A-Z]\d{1,2}\b/gi,
+    /\b[A-Z]\d{1,2}[A-Z]\b/gi // Matches S8C style
   ];
   
   const matches: string[] = [];
@@ -36,15 +37,12 @@ export function extractSLOCodes(query: string): string[] {
       found.forEach(match => {
         const raw = match.replace(/SLO[:\s]*/i, '');
         const normalized = normalizeSLO(raw);
-        if (normalized && !matches.includes(normalized)) {
+        if (normalized && normalized.length >= 3 && !matches.includes(normalized)) {
           matches.push(normalized);
         }
       });
     }
   });
   
-  if (matches.length > 0) {
-    console.log('🎯 [SLO Extractor] Normalized Codes:', matches);
-  }
   return matches;
 }

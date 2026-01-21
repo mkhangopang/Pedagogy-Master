@@ -1,4 +1,4 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v60.0
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v61.0
 -- TARGET: Implement "Exact Match" Priority Boosting for SLO precision
 
 -- 1. SECURE SCHEMA LAYER
@@ -43,6 +43,7 @@ END $$;
 DROP VIEW IF EXISTS public.rag_health_report CASCADE;
 
 -- 6. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights + EXACT MATCH BOOST)
+-- SIGNATURE: (TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[])
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_text TEXT,
     query_embedding extensions.vector,
@@ -76,11 +77,17 @@ BEGIN
         (1 - (dc.embedding <=> query_embedding))::DOUBLE PRECISION as similarity,
         ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) as text_rank,
         (
-            -- BASE HYBRID SCORE (70/30)
+            -- BASE HYBRID SCORE (70% Vector | 30% Keyword)
             (((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
             (ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) * 0.3)) +
-            -- EXACT SLO MATCH BOOST (Adds 1.0 to ensure it tops the list if the code matches)
-            (CASE WHEN filter_tags IS NOT NULL AND dc.slo_codes && filter_tags THEN 1.0 ELSE 0.0 END)
+            
+            -- EXACT SLO MATCH BOOST
+            -- We add a huge constant (10.0) if the normalized tag matches perfectly. 
+            -- This ensures that "S08C03" matches ALWAYS beat "S08A03" regardless of semantic similarity.
+            (CASE 
+                WHEN filter_tags IS NOT NULL AND dc.slo_codes && filter_tags THEN 10.0 
+                ELSE 0.0 
+             END)
         )::DOUBLE PRECISION as combined_score,
         dc.metadata
     FROM public.document_chunks dc
@@ -90,8 +97,8 @@ BEGIN
         AND (filter_user_id IS NULL OR d.user_id = filter_user_id)
         AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
         AND (filter_subjects IS NULL OR dc.topics && filter_subjects)
-        -- We make the tag filter optional but high-priority via the boost above
-        AND (filter_tags IS NULL OR dc.slo_codes && filter_tags OR (1 - (dc.embedding <=> query_embedding)) > 0.4)
+        -- Optimization: If tags are provided, we don't strictly filter (to allow semantic fallback), 
+        -- but the boost above will sort exact matches to the top.
         AND (filter_content_types IS NULL OR dc.metadata->>'type' = ANY(filter_content_types))
     ORDER BY combined_score DESC
     LIMIT match_count;

@@ -10,13 +10,13 @@ export interface ParsedQuery {
 }
 
 /**
- * NEURAL QUERY PARSER (v3.0)
- * Decodes teacher intent and metadata requirements from natural language.
+ * NEURAL QUERY PARSER (v4.0)
+ * Decodes teacher intent with canonical SLO support.
  */
 export function parseUserQuery(query: string): ParsedQuery {
   const lower = query.toLowerCase();
   
-  // 1. SLO Extraction (Now using normalized S08A03 format)
+  // 1. SLO Extraction (Normalized format S08C03)
   const sloCodes = extractSLOCodes(query);
 
   // 2. Grade Level Extraction

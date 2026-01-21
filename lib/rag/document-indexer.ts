@@ -4,12 +4,11 @@ import { normalizeSLO } from './slo-extractor';
 
 /**
  * PEDAGOGICAL METADATA EXTRACTOR
- * Contextualizes content for advanced RAG filtering.
  */
 function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: string) {
   const grades = new Set<string>();
   sloCodes.forEach(code => {
-    const match = code.match(/S(\d{2})/i); // Matching normalized "S08"
+    const match = code.match(/S(\d{2})/i); 
     if (match) grades.add(parseInt(match[1], 10).toString());
   });
   
@@ -48,8 +47,8 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v30.0)
- * Synchronizes curriculum content and pedagogical metadata with the vector search grid.
+ * WORLD-CLASS NEURAL INDEXER (v31.0)
+ * Synchronizes curriculum content with normalized SLO IDs.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -62,7 +61,7 @@ export async function indexDocumentForRAG(
   }
 
   try {
-    console.log(`📡 [Indexer] Normalizing and Syncing Document ${documentId}...`);
+    console.log(`📡 [Indexer] Syncing and Normalizing Document ${documentId}...`);
     
     await supabase.from('documents').update({ 
       status: 'processing', 
@@ -92,14 +91,13 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number, unitName: string) {
-      // Robust SLO detection within blocks
       const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
       const codes: string[] = [];
       let match;
       
       while ((match = sloRegex.exec(text)) !== null) {
         const normalized = normalizeSLO(match[1]);
-        if (normalized && normalized.length > 2) {
+        if (normalized && normalized.length >= 3) {
           codes.push(normalized);
         }
       }
@@ -119,10 +117,10 @@ export async function indexDocumentForRAG(
       };
     }
 
-    if (processedChunks.length <= 1) {
+    if (processedChunks.length === 0) {
        const words = content.split(/\s+/);
-       for (let i = 0; i < words.length; i += 250) {
-         const slice = words.slice(i, i + 400).join(' ');
+       for (let i = 0; i < words.length; i += 300) {
+         const slice = words.slice(i, i + 500).join(' ');
          if (slice.length > 100) {
            processedChunks.push({ 
              text: slice, 
@@ -162,12 +160,12 @@ export async function indexDocumentForRAG(
       rag_indexed: true 
     }).eq('id', documentId);
     
-    console.log(`✅ [Indexer] Neural Grid Sync complete for ${documentId} with ${chunkRecords.length} normalized chunks.`);
+    console.log(`✅ [Indexer] Ingestion complete: ${chunkRecords.length} normalized chunks for ${documentId}.`);
 
     return { success: true, chunkCount: chunkRecords.length };
 
   } catch (error: any) {
-    console.error("❌ [Indexer] Fatal Ingestion Error:", error);
+    console.error("❌ [Indexer] Fatal Error:", error);
     await supabase.from('documents').update({ status: 'failed', rag_indexed: false }).eq('id', documentId);
     throw error;
   }
