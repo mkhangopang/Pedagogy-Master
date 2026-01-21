@@ -19,10 +19,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { task, toolType, userInput, brain, priorityDocumentId, message } = body;
     
-    // Enterprise Check for Visuals
+    // Enterprise Check for Visuals (Allow Admins)
     if (task === 'generate-visual') {
-      const { data: profile } = await anonClient.from('profiles').select('plan').eq('id', user.id).single();
-      if (profile?.plan !== 'enterprise') {
+      const { data: profile } = await anonClient.from('profiles').select('plan, role').eq('id', user.id).single();
+      const isAuthorized = profile?.plan === 'enterprise' || profile?.role === 'app_admin';
+      
+      if (!isAuthorized) {
         return NextResponse.json({ error: "Premium node required. Upgrade to Enterprise for Neural Visuals." }, { status: 403 });
       }
 

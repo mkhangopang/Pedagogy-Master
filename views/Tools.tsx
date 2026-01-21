@@ -7,11 +7,11 @@ import {
   Maximize2, LayoutPanelLeft, Edit3, Save, FileJson, Globe, ArrowRight,
   MessageSquare, FileEdit, ChevronLeft, Search, Zap, X, ChevronRight,
   Info, ShieldCheck, Library, Circle, CheckCircle, Layout, Image as ImageIcon,
-  Rocket
+  Rocket, Tags
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
-import { NeuralBrain, Document, UserProfile, SubscriptionPlan } from '../types';
+import { NeuralBrain, Document, UserProfile, SubscriptionPlan, UserRole } from '../types';
 import { ChatInput } from '../components/chat/ChatInput';
 import { MessageItem } from '../components/chat/MessageItem';
 import { DocumentSelector } from '../components/chat/DocumentSelector';
@@ -42,7 +42,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
 
-  const isEnterprise = user.plan === SubscriptionPlan.ENTERPRISE;
+  const isEnterprise = user.plan === SubscriptionPlan.ENTERPRISE || user.role === UserRole.APP_ADMIN;
 
   useEffect(() => {
     setLocalDocs(documents);
@@ -170,7 +170,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Standards-aligned MCQ/CRQ', color: 'bg-emerald-600' },
     { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Bloom-scaled Criteria', color: 'bg-amber-600' },
     { id: 'visual-aid', name: 'Visual Aid', icon: ImageIcon, desc: 'Enterprise Diagram Node', color: 'bg-rose-600', enterprise: true },
-    { id: 'learning-path', name: 'Pathways', icon: GitMerge, desc: 'Prerequisite Sequencing', color: 'bg-purple-600' },
+    { id: 'slo-tagger', name: 'SLO Tagger', icon: Tags, desc: 'Bloom-scaled Metadata Extraction', color: 'bg-cyan-600' },
   ];
 
   if (!activeTool) {
@@ -185,7 +185,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Active Context</h2>
                   <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1">Curriculum Library</p>
                 </div>
-                <button onClick={() => setIsSliderOpen(false)} className="p-3 hover:bg-slate-200 dark:hover:bg-white/10 rounded-2xl transition-all text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={24}/></button>
+                <button onClick={() => setIsSliderOpen(false)} className="p-3 hover:bg-slate-200 dark:hover:white/10 rounded-2xl transition-all text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={24}/></button>
               </div>
               <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
                 <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />
@@ -387,7 +387,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Active Context</h2>
                 <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1">Curriculum Library</p>
               </div>
-              <button onClick={() => setIsSliderOpen(false)} className="p-3 hover:bg-slate-200 dark:hover:bg-white/10 rounded-2xl transition-all text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={24}/></button>
+              <button onClick={() => setIsSliderOpen(false)} className="p-3 hover:bg-slate-200 dark:hover:white/10 rounded-2xl transition-all text-slate-400 hover:text-slate-900 dark:hover:text-white"><X size={24}/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
               <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />

@@ -1,9 +1,8 @@
-
 import { QueryAnalysis } from './query-analyzer';
 
 /**
- * STRATEGIC RESPONSE FORMATTER (v32.0)
- * Optimized for Tool-based Pedagogical Synthesis.
+ * STRATEGIC RESPONSE FORMATTER (v33.0)
+ * Optimized for Tool-based Pedagogical Synthesis & Expert SLO Tagging.
  */
 export function formatResponseInstructions(analysis: QueryAnalysis, toolType?: string, docMetadata?: any): string {
   const metadataBlock = docMetadata ? `
@@ -65,18 +64,24 @@ function getToolSpecificInstructions(tool: string, slo?: string): string {
 3. **PRECISION**: Use observable behaviors in the descriptors.
 4. **REFERENCE**: Explicitly link the 'Proficient' column to the verbatim curriculum standard.
 `;
+    case 'slo-tagger':
+      return `
+### 🛠️ TOOL: EXPERT SLO TAGGER (BLOOM ANALYZER)
+1. **AUDIT**: Scan the user input and find matching Student Learning Objectives (SLOs) in the <AUTHORITATIVE_VAULT>.
+2. **COGNITIVE MAPPING**: For each matched SLO, assign a Bloom's Taxonomy level (Remember, Understand, Apply, Analyze, Evaluate, Create) based on the operative verbs.
+3. **KEYWORD EXTRACTION**: List 3-5 technical keywords associated with the objective.
+4. **OUTPUT FORMAT**: 
+   - [SLO CODE] | [BLOOM LEVEL]
+   - **Verbatim Standard**: [Description from Vault]
+   - **Keywords**: [List]
+   - **Alignment Note**: Brief explanation of why it matches.
+`;
     case 'learning-path':
       return `
 ### 🛠️ TOOL: SEQUENTIAL LEARNING PATHWAY
 1. **PREREQUISITES**: Identify earlier units/SLOs in the vault that must be taught first.
 2. **FLOW**: Create a 3-step sequence: [Foundation] -> [Active Lesson] -> [Extension].
 3. **GAPS**: If the vault is missing a prerequisite, explicitly state "External Knowledge Required: [Concept]".
-`;
-    case 'slo-tagger':
-      return `
-### 🛠️ TOOL: METADATA EXTRACTION & TAGGING
-1. **AUDIT**: Scan the user input and find matches in the <AUTHORITATIVE_VAULT>.
-2. **OUTPUT**: Return a JSON-style list of [Matched SLO Code] | [Confidence Score] | [Topic Alignment].
 `;
     default:
       return "\nProceed with pedagogical synthesis anchored to the provided curriculum assets.";
