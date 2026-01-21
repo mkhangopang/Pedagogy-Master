@@ -1,13 +1,13 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Upload, FileText, Plus, Target, 
   Loader2, AlertCircle, CheckCircle2, X,
-  Database, Check, Trash2, ExternalLink, Globe, Sparkles, BrainCircuit, RefreshCw, Layers, ListChecks
+  Database, Check, Trash2, ExternalLink, Globe, Sparkles, BrainCircuit, RefreshCw, Layers, ListChecks, BookOpen
 } from 'lucide-react';
 import { Document, SubscriptionPlan, UserProfile, UserRole } from '../types';
 import { ROLE_LIMITS } from '../constants';
 import DocumentUploader from '../components/DocumentUploader';
+import { DocumentReader } from '../components/DocumentReader';
 import { getR2PublicUrl } from '../lib/r2';
 import { supabase } from '../lib/supabase';
 
@@ -31,6 +31,7 @@ const Documents: React.FC<DocumentsProps> = ({
   const [showUploader, setShowUploader] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [indexingId, setIndexingId] = useState<string | null>(null);
+  const [readingDoc, setReadingDoc] = useState<Document | null>(null);
   
   const docLimit = ROLE_LIMITS[userProfile.plan].docs;
   const limitReached = documents.length >= docLimit;
@@ -44,7 +45,7 @@ const Documents: React.FC<DocumentsProps> = ({
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from('documents')
-        .select('id, status, document_summary, difficulty_level, rag_indexed, generated_json')
+        .select('id, status, document_summary, difficulty_level, rag_indexed, generated_json, extracted_text')
         .in('id', processingDocs.map(d => d.id));
 
       if (data) {
@@ -55,7 +56,8 @@ const Documents: React.FC<DocumentsProps> = ({
               documentSummary: updated.document_summary,
               difficultyLevel: updated.difficulty_level,
               geminiProcessed: updated.rag_indexed,
-              generatedJson: updated.generated_json
+              generatedJson: updated.generated_json,
+              extractedText: updated.extracted_text
             });
           }
         });
@@ -113,6 +115,17 @@ const Documents: React.FC<DocumentsProps> = ({
     }
   };
 
+  const handleOpenReader = async (doc: Document) => {
+    // If text is missing, fetch full record first
+    if (!doc.extractedText) {
+      const { data } = await supabase.from('documents').select('extracted_text').eq('id', doc.id).single();
+      if (data) {
+        doc.extractedText = data.extracted_text;
+      }
+    }
+    setReadingDoc(doc);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24">
       {showUploader && (
@@ -124,6 +137,13 @@ const Documents: React.FC<DocumentsProps> = ({
             onCancel={() => setShowUploader(false)}
           />
         </div>
+      )}
+
+      {readingDoc && (
+        <DocumentReader 
+          document={readingDoc} 
+          onClose={() => setReadingDoc(null)} 
+        />
       )}
 
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -166,6 +186,15 @@ const Documents: React.FC<DocumentsProps> = ({
                     {isProcessing || isIndexing ? <BrainCircuit size={32} className="animate-spin duration-[3s]" /> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
+                    {isReady && (
+                      <button 
+                        onClick={() => handleOpenReader(doc)}
+                        className="p-2.5 bg-indigo-600 text-white rounded-full shadow-lg hover:scale-110 transition-all"
+                        title="Neural Analysis"
+                      >
+                        <BookOpen size={16} />
+                      </button>
+                    )}
                     {publicUrl && (
                       <a href={publicUrl} target="_blank" rel="noopener noreferrer" className="p-2.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full shadow-lg hover:bg-indigo-600 hover:text-white transition-all">
                         <ExternalLink size={16} />

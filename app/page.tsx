@@ -110,6 +110,7 @@ export default function App() {
             isSelected: d.is_selected,
             sourceType: d.source_type as any || 'markdown',
             isApproved: d.is_approved || false,
+            extractedText: d.extracted_text,
             createdAt: d.created_at
           })));
         }
