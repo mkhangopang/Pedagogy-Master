@@ -43,6 +43,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   theme,
   toggleTheme
 }) => {
+  // Safety check: Don't render sidebar items that depend on roles if profile is null
+  if (!userProfile) return null;
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Curriculum Docs', icon: FileText },
@@ -145,7 +148,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           </div>
           <button 
             onClick={() => { onViewChange('pricing'); if (onClose) onClose(); }}
-            className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95"
+            className="w-full py-2 bg-indigo-600 hover:bg-indigo-50 text-white text-[11px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg active:scale-95"
           >
             Go Enterprise
           </button>

@@ -120,6 +120,8 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
+          // Re-engage loading during profile sync to prevent null-reference crashes
+          setLoading(true);
           setSession(currentSession);
           await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
         }
@@ -134,6 +136,7 @@ export default function App() {
     return () => subscription?.unsubscribe();
   }, [checkDb, fetchProfileAndDocs]);
 
+  // If loading is true, we display the neural sync screen
   if (loading) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-8 px-6 text-center">
       <div className="relative">
@@ -155,7 +158,17 @@ export default function App() {
     </div>
   );
   
+  // If no session, show Login
   if (!session) return <Login onSession={() => {}} />;
+
+  // CRITICAL FIX: If we have a session but profile is missing, don't render the shell yet
+  // This prevents Sidebar from accessing null userProfile.role
+  if (!userProfile) return (
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <Loader2 className="animate-spin text-indigo-600" size={32} />
+      <p className="mt-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Hydrating Educator Identity...</p>
+    </div>
+  );
 
   return (
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100 ${theme === 'dark' ? 'dark' : ''}`}>
@@ -163,11 +176,20 @@ export default function App() {
       {isSidebarOpen && <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
 
       <div className={`fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'} ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={userProfile!} isCollapsed={isCollapsed} setIsCollapsed={(c) => { setIsCollapsed(c); localStorage.setItem('sidebar_collapsed', String(c)); }} onClose={() => setIsSidebarOpen(false)} theme={theme} toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />
+        <Sidebar 
+          currentView={currentView} 
+          onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} 
+          userProfile={userProfile} 
+          isCollapsed={isCollapsed} 
+          setIsCollapsed={(c) => { setIsCollapsed(c); localStorage.setItem('sidebar_collapsed', String(c)); }} 
+          onClose={() => setIsSidebarOpen(false)} 
+          theme={theme} 
+          toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} 
+        />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {userProfile?.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
+        {userProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         
         <header className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm z-40">
           <div className="flex items-center gap-4">
@@ -184,7 +206,6 @@ export default function App() {
           <div className="max-w-6xl mx-auto w-full">
             <Suspense fallback={<div className="flex flex-col items-center justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
               {(() => {
-                if (!userProfile) return null;
                 const props = { user: userProfile, documents, onProfileUpdate: setUserProfile, health: healthStatus as any, onCheckHealth: checkDb };
                 switch (currentView) {
                   case 'dashboard': return <Dashboard {...props} />;
