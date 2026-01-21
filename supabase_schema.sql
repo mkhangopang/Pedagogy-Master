@@ -1,10 +1,11 @@
--- EDUNEXUS AI: PRODUCTION INFRASTRUCTURE v46.0
--- TARGET: ELIMINATE "SYNC HANGS" AND "PROFILE CONFLICTS"
+-- EDUNEXUS AI: PRODUCTION INFRASTRUCTURE v47.0
+-- TARGET: FIX SECURITY LINT (SECURITY DEFINER VIEW) & GLOBAL ADMIN VISIBILITY
 
 -- 1. BASE EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. SYSTEM DIAGNOSTICS (Ensures Frontend Status Grid stays GREEN)
+-- 2. SYSTEM DIAGNOSTICS (Restricted Security Definer Functions)
+-- These must be security definer to access system catalogs, but we restrict execution.
 CREATE OR REPLACE FUNCTION get_extension_status(ext TEXT) 
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -26,11 +27,10 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- CRITICAL: Grant execution to anon so the "Node: Linked" check works before login
-GRANT EXECUTE ON FUNCTION get_extension_status(TEXT) TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION get_vector_dimensions() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_extension_status(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_vector_dimensions() TO authenticated;
 
--- 3. IDENTITY LAYER (RESILIENT PROFILE STORAGE)
+-- 3. IDENTITY LAYER
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
     name TEXT,
@@ -51,8 +51,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. FIX: "Profile already exists" error handling
--- This trigger function handles conflicts by updating existing records instead of failing
+-- 4. RESILIENT AUTH TRIGGER
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -61,9 +60,9 @@ BEGIN
     NEW.id, 
     NEW.email, 
     split_part(NEW.email, '@', 1), 
-    'teacher', 
-    'free', 
-    30
+    CASE WHEN NEW.email = 'mkgopang@gmail.com' THEN 'app_admin' ELSE 'teacher' END, 
+    CASE WHEN NEW.email = 'mkgopang@gmail.com' THEN 'enterprise' ELSE 'free' END, 
+    CASE WHEN NEW.email = 'mkgopang@gmail.com' THEN 999999 ELSE 30 END
   )
   ON CONFLICT (id) DO UPDATE SET
     email = EXCLUDED.email,
@@ -72,13 +71,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Re-create trigger safely
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 5. ASSET & GRID TABLES
+-- 5. ASSET TABLES
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users ON DELETE CASCADE,
@@ -120,28 +118,49 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. SECURITY & PERMISSIONS HARDENING
+-- 6. SECURITY & PERMISSIONS (RESOLVING LINT ERROR)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
-DO $$ 
+-- Dynamic Policy: Users see their own, Admins see everything.
+CREATE OR REPLACE FUNCTION public.is_master_admin() 
+RETURNS BOOLEAN AS $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can view own profile') THEN
-        CREATE POLICY "Users can view own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
-    END IF;
-    
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can update own profile') THEN
-        CREATE POLICY "Users can update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-    END IF;
+  RETURN (
+    SELECT role = 'app_admin' 
+    FROM public.profiles 
+    WHERE id = auth.uid()
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Users can manage own documents') THEN
-        CREATE POLICY "Users can manage own documents" ON public.documents FOR ALL USING (auth.uid() = user_id);
-    END IF;
-END $$;
+-- Profiles Policies
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile" ON public.profiles 
+FOR SELECT USING (auth.uid() = id OR is_master_admin());
 
--- 7. RECOVERY VIEW (Ensures dashboard diagnostics work even during sync)
-CREATE OR REPLACE VIEW public.rag_health_report AS
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile" ON public.profiles 
+FOR UPDATE USING (auth.uid() = id);
+
+-- Documents Policies
+DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
+CREATE POLICY "Users can manage own documents" ON public.documents 
+FOR ALL USING (auth.uid() = user_id OR is_master_admin());
+
+-- Chunks Policies
+DROP POLICY IF EXISTS "Users can read relevant chunks" ON public.document_chunks;
+CREATE POLICY "Users can read relevant chunks" ON public.document_chunks 
+FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.documents WHERE id = document_id AND (user_id = auth.uid() OR is_master_admin()))
+);
+
+-- 7. RECOVERY VIEW (FIX: Defined as SECURITY INVOKER via WITH clause)
+DROP VIEW IF EXISTS public.rag_health_report;
+CREATE VIEW public.rag_health_report 
+WITH (security_invoker = true) -- RESOLVES SUPABASE LINT ERROR 0010
+AS
 SELECT 
     d.id,
     d.name,
