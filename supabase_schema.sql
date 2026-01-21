@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v56.0
--- TARGET: Implement Advanced Hybrid Search with 70/30 Weighting
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v57.0
+-- TARGET: Resolve Function Signature Overloading Conflict
 
 -- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -21,11 +21,15 @@ ALTER ROLE authenticated SET search_path TO public, extensions;
 ALTER ROLE service_role SET search_path TO public, extensions;
 ALTER ROLE postgres SET search_path TO public, extensions;
 
--- 4. CLEANUP OLD DEFINITIONS
-DROP VIEW IF EXISTS public.rag_health_report CASCADE;
+-- 4. AGGRESSIVE CLEANUP OF OVERLOADED SIGNATURES
+-- This prevents the "function name is not unique" error by targeting known variants
 DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v3(extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[]);
+DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v3(TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[]);
 
--- 5. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights and Granular Filters)
+-- 5. RE-INITIALIZE HEALTH VIEW (If exists)
+DROP VIEW IF EXISTS public.rag_health_report CASCADE;
+
+-- 6. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights and 9 Granular Parameters)
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_text TEXT,
     query_embedding extensions.vector,
@@ -77,7 +81,7 @@ BEGIN
 END;
 $$;
 
--- 6. HEALTH VIEW (Recreated)
+-- 7. RECREATE HEALTH VIEW
 CREATE OR REPLACE VIEW public.rag_health_report AS
 SELECT 
     d.id, 
@@ -93,6 +97,6 @@ FROM public.documents d
 LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
 
--- 7. PERMISSIONS
+-- 8. PERMISSIONS
 GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3 TO authenticated, service_role;
 GRANT SELECT ON public.rag_health_report TO authenticated;
