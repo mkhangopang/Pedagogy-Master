@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useMemo } from 'react';
@@ -18,7 +17,6 @@ interface MessageItemProps {
 export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timestamp, id, metadata }) => {
   const isAi = role === 'assistant';
   const [copied, setCopied] = useState(false);
-  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
 
   const handleCopy = async () => {
     const cleanText = content.split('--- Synthesis by Node:')[0].trim();
@@ -40,28 +38,42 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
     }
   }, [content]);
 
+  // AI messages use a spacious layout (Claude/GPT style), User messages use a distinct bubble
   return (
-    <div className={`flex w-full group animate-chat-turn ${isAi ? 'justify-start' : 'justify-end'} mb-12 px-4`}>
-      <div className={`flex gap-4 max-w-[95%] md:max-w-[85%] ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
-        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-1 shadow-md border ${
-          isAi ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-200 text-slate-600'
-        }`}>
-          {isAi ? <Bot size={18} /> : <User size={18} />}
+    <div className={`w-full animate-chat-turn mb-10 ${isAi ? 'bg-transparent' : ''}`}>
+      <div className={`flex flex-col gap-4 mx-auto max-w-full px-5 md:px-8`}>
+        
+        {/* Header: Identity & Actions */}
+        <div className={`flex items-center gap-3 ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 shadow-sm border ${
+            isAi ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-200 text-slate-600'
+          }`}>
+            {isAi ? <Bot size={16} /> : <User size={16} />}
+          </div>
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+            {isAi ? 'Pedagogy Master' : 'Educator'}
+          </span>
+          {isAi && content && (
+            <button onClick={handleCopy} className="p-1.5 text-slate-400 hover:text-indigo-600 transition-all ml-1">
+              {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+            </button>
+          )}
         </div>
         
-        <div className={`flex flex-col gap-4 ${isAi ? 'items-start' : 'items-end'}`}>
-          <div className={`px-6 py-5 rounded-[2rem] text-[15px] leading-relaxed shadow-sm border ${
+        {/* Content Node */}
+        <div className={`w-full ${isAi ? '' : 'flex justify-end'}`}>
+          <div className={`relative ${
             isAi 
-              ? 'bg-white dark:bg-[#1a1a1a] text-slate-800 dark:text-slate-200 border-slate-200 dark:border-white/5 rounded-tl-none' 
-              : 'bg-indigo-600 border-indigo-500 text-white rounded-tr-none'
+              ? 'w-full' 
+              : 'bg-indigo-600 text-white px-5 py-3.5 rounded-[1.5rem] rounded-tr-none shadow-md max-w-[90%] md:max-w-[70%]'
           }`}>
             <div 
-              className="prose dark:prose-invert max-w-none"
+              className={`prose dark:prose-invert max-w-none text-[15px] leading-[1.75] ${isAi ? 'text-slate-800 dark:text-slate-200' : 'text-white'}`}
               dangerouslySetInnerHTML={{ __html: renderedHtml }}
             />
 
             {isAi && metadata?.sources?.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-slate-100 dark:border-white/5 space-y-3">
+              <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5 space-y-3">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
                   <Globe size={12} className="text-indigo-500" /> Research Grounding
                 </p>
@@ -82,21 +94,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
               </div>
             )}
           </div>
-          
-          {isAi && content && (
-            <div className="flex flex-wrap items-center gap-3 px-2 w-full">
-              <button onClick={handleCopy} className="p-2 text-slate-400 hover:text-indigo-600 transition-all">
-                {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-              </button>
-              <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 dark:bg-white/5 px-2.5 py-1 rounded-lg">
-                <Sparkles size={10} className="text-indigo-500" />
-                {metadata?.chunksUsed > 0 ? 'Curriculum Grounded' : 'Neural Synthesis'}
-              </div>
-              <span className="text-[10px] text-slate-400 font-bold ml-auto opacity-60">
-                {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
+        </div>
+
+        {/* Footer: Metadata */}
+        <div className={`flex items-center gap-3 px-1 ${isAi ? 'justify-start' : 'justify-end opacity-40'}`}>
+          {isAi && (
+            <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-100 dark:bg-white/5 px-2 py-0.5 rounded-md">
+              <Sparkles size={8} className="text-indigo-500" />
+              {metadata?.chunksUsed > 0 ? 'Curriculum Grounded' : 'Neural Synthesis'}
             </div>
           )}
+          <span className="text-[9px] font-bold text-slate-300 uppercase tracking-widest">
+            {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
         </div>
       </div>
     </div>

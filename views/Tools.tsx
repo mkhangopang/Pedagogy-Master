@@ -178,7 +178,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   if (!activeTool) {
     return (
-      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 animate-in fade-in duration-500">
+      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-6 animate-in fade-in duration-500">
         {isSliderOpen && (
           <>
             <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100] animate-in fade-in duration-300" onClick={() => setIsSliderOpen(false)} />
@@ -273,7 +273,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden">
-      <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0a0a] z-30">
+      <div className="flex items-center justify-between px-5 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 bg-white dark:bg-[#0a0a0a] z-30 shadow-sm">
         <div className="flex items-center gap-3 md:gap-5">
           <button 
             onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent(''); setCanvasImage(null);}} 
@@ -308,8 +308,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-500 ${viewMode === 'chat' ? 'w-full' : 'w-full md:w-[380px] lg:w-[450px] shrink-0'} ${viewMode === 'canvas' ? 'hidden' : 'flex'} ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'}`}>
-          <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white/50 dark:bg-[#0d0d0d]">
+        <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-500 ${viewMode === 'chat' ? 'w-full' : 'w-full md:w-[380px] lg:w-[480px] shrink-0'} ${viewMode === 'canvas' ? 'hidden' : 'flex'} ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'}`}>
+          <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white/50 dark:bg-[#0d0d0d] shadow-sm">
             <div className="flex items-center gap-2">
               <MessageSquare size={14} className="text-slate-400" />
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Strategy Logs</span>
@@ -320,9 +320,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
             )}
           </div>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-4">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar py-8 space-y-2">
             {messages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center space-y-6 opacity-40">
+              <div className="flex flex-col items-center justify-center h-full text-center space-y-6 opacity-40 px-8">
                 <Bot size={48} className="text-slate-300" />
                 <p className="text-xs md:text-sm font-medium text-slate-400 max-w-[200px]">Prompt the engine to begin synthesis.</p>
               </div>
@@ -332,12 +332,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               ))
             )}
             {isGenerating && (
-              <div className="flex justify-center py-4">
+              <div className="flex justify-center py-6">
                 <Loader2 size={24} className="animate-spin text-indigo-500 opacity-50" />
               </div>
             )}
           </div>
-          <div className="p-4 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d]">
+          <div className="p-4 md:p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d]">
             <ChatInput 
               onSend={handleGenerate} 
               isLoading={isGenerating} 
@@ -347,7 +347,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         </div>
 
         <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-500 ${viewMode === 'chat' ? 'hidden' : 'flex'} ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'}`}>
-           <div className="px-6 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50/50 dark:bg-[#0d0d0d] shrink-0">
+           <div className="px-6 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50/50 dark:bg-[#0d0d0d] shrink-0 shadow-sm">
               <div className="flex items-center gap-2 md:gap-3">
                 <FileEdit size={18} className="text-indigo-600" />
                 <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Artifact</span>
@@ -360,8 +360,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                  }} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400 transition-all"><Copy size={16}/></button>
               </div>
            </div>
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-8 md:p-12 lg:p-16 rounded-[2rem] shadow-sm border border-slate-100 dark:border-white/5 min-h-full relative">
+           <div className="flex-1 overflow-y-auto custom-scrollbar p-5 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
+              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full relative overflow-x-hidden">
                 {canvasImage ? (
                   <div className="space-y-6 animate-in fade-in zoom-in-95 duration-700">
                     <img src={canvasImage} alt="Neural Visual Aid" className="w-full h-auto rounded-3xl shadow-2xl border border-white/5" />
@@ -370,7 +370,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                     </div>
                   </div>
                 ) : canvasContent ? (
-                  <div className="prose dark:prose-invert max-w-none text-sm md:text-base leading-loose animate-in fade-in duration-700" dangerouslySetInnerHTML={{ __html: marked.parse(canvasContent.split('--- Synthesis by Node:')[0]) }} />
+                  <div className="prose dark:prose-invert max-w-none text-base leading-[1.8] animate-in fade-in duration-700 w-full overflow-x-hidden" 
+                    dangerouslySetInnerHTML={{ __html: marked.parse(canvasContent.split('--- Synthesis by Node:')[0]) }} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-40 text-center space-y-6 opacity-30">
                     <div className="w-20 h-20 bg-slate-50 dark:bg-white/5 rounded-full flex items-center justify-center text-slate-200"><Edit3 size={40} /></div>
