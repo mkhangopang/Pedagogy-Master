@@ -42,7 +42,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
 
-  const isEnterprise = user.plan === SubscriptionPlan.ENTERPRISE || user.role === UserRole.APP_ADMIN;
+  // Secure case-insensitive authorization check
+  const isEnterprise = user.role?.toLowerCase() === 'app_admin' || 
+                       user.role?.toLowerCase() === 'enterprise_admin' || 
+                       user.plan?.toLowerCase() === 'enterprise';
 
   useEffect(() => {
     setLocalDocs(documents);
@@ -58,7 +61,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     if (isSwitchingContext) return;
     setIsSwitchingContext(true);
     
-    // Optimistic UI Update
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -69,7 +71,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       const target = updated.find(d => d.id === docId);
       const shouldBeSelected = target?.isSelected || false;
 
-      // Atomic Update Pattern: Set all to false, then target to intended state
       await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
       
       if (shouldBeSelected) {
@@ -79,7 +80,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       onQuery(); 
     } catch (e) {
       console.error("Context Switch Fail:", e);
-      // Revert optimism on failure
       setLocalDocs(documents);
     } finally {
       setIsSwitchingContext(false);
@@ -89,7 +89,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const handleGenerate = async (userInput: string) => {
     if (!userInput.trim() || isGenerating || !canQuery) return;
     
-    if (activeTool === 'visual-aid' && isEnterprise) {
+    if (activeTool === 'visual-aid') {
+      if (!isEnterprise) {
+        alert("Enterprise node required for Neural Vision features. Contact support if you believe this is an error.");
+        return;
+      }
       setIsGenerating(true);
       setCanvasImage(null);
       try {
@@ -135,7 +139,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       let fullContent = '';
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
       
-      // Crucial: Use current activeDoc from state for immediate request payload
       const stream = geminiService.generatePedagogicalToolStream(
         effectiveTool, 
         userInput, 
@@ -147,7 +150,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         }, 
         brain, 
         user, 
-        activeDoc?.id // Passing explicitly as priorityDocumentId
+        activeDoc?.id 
       );
 
       for await (const chunk of stream) {
@@ -233,8 +236,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
             <button
               key={tool.id}
               onClick={() => {
+                // Enterprise bypass for admins
                 if (tool.enterprise && !isEnterprise) { 
-                  alert("Enterprise node required for Neural Vision features."); 
+                  alert("Enterprise Node Locked. Admin or Enterprise-tier credentials required."); 
                   return; 
                 }
                 setActiveTool(tool.id);

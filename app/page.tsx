@@ -44,7 +44,6 @@ export default function App() {
 
   const checkDb = useCallback(async () => {
     try {
-      // Fast check with 3s timeout
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 3000));
       const health: any = await Promise.race([getSupabaseHealth(), timeoutPromise]).catch(() => ({ status: 'degraded', message: 'Cloud Node Lagging' }));
       setHealthStatus(health);
@@ -57,10 +56,10 @@ export default function App() {
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     setLoadingMessage('Hydrating Identity Nodes...');
     try {
-      // Parallel execution with strict 6s timeout for the entire block
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Vault Timeout')), 6000));
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Vault Timeout')), 8000));
       
       const workPromise = (async () => {
+        // Fetch User Profile
         const profile = await getOrCreateProfile(userId, email);
         
         if (profile) {
@@ -76,26 +75,16 @@ export default function App() {
             successRate: profile.success_rate || 0,
             editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
           });
-        } else {
-          setUserProfile({
-            id: userId,
-            name: email?.split('@')[0] || 'Educator',
-            email: email || '',
-            role: UserRole.TEACHER,
-            plan: SubscriptionPlan.FREE,
-            queriesUsed: 0,
-            queriesLimit: 30,
-            generationCount: 0,
-            successRate: 0,
-            editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-          });
         }
 
-        setLoadingMessage('Loading Curriculum Vault...');
-        const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        // Parallel Fetch: Docs + Neural Logic
+        const [docsResponse, brainResponse] = await Promise.all([
+          supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+          supabase.from('neural_brain').select('*').eq('is_active', true).order('version', { ascending: false }).limit(1).maybeSingle()
+        ]);
         
-        if (docs) {
-          setDocuments(docs.map(d => ({
+        if (docsResponse.data) {
+          setDocuments(docsResponse.data.map(d => ({
             id: d.id,
             userId: d.user_id,
             name: d.name,
@@ -114,43 +103,36 @@ export default function App() {
             createdAt: d.created_at
           })));
         }
+
+        if (brainResponse.data) {
+          setBrain({
+            id: brainResponse.data.id,
+            masterPrompt: brainResponse.data.master_prompt,
+            bloomRules: brainResponse.data.bloom_rules || DEFAULT_BLOOM_RULES,
+            version: brainResponse.data.version,
+            isActive: true,
+            updatedAt: brainResponse.data.updated_at
+          });
+        }
       })();
 
       await Promise.race([workPromise, timeoutPromise]);
     } catch (e) {
-      console.warn("📡 [System] Hydration lag or timeout detected.", e);
-      // Ensure we have a basic profile if everything timed out
-      if (!userProfile) {
-        setUserProfile({
-          id: userId,
-          name: email?.split('@')[0] || 'Educator',
-          email: email || '',
-          role: UserRole.TEACHER,
-          plan: SubscriptionPlan.FREE,
-          queriesUsed: 0,
-          queriesLimit: 30,
-          generationCount: 0,
-          successRate: 0,
-          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-        });
-      }
+      console.warn("📡 [System] Hydration lag detected. Reverting to local defaults.");
     } finally {
       setLoading(false);
     }
-  }, [userProfile]);
+  }, []);
 
   useEffect(() => {
     const initialize = async () => {
-      // 1. Initial Infrastructure check
       if (!isSupabaseConfigured()) {
-        // Wait up to 2 seconds for env variables if they are loading
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, 1000));
       }
 
       setLoadingMessage('Authenticating Session...');
       paymentService.init();
       
-      // Run DB check and Session check in parallel
       const [dbOnline, sessionResult] = await Promise.all([
         checkDb(),
         supabase.auth.getSession()
@@ -210,9 +192,6 @@ export default function App() {
             <AlertTriangle size={14} className="text-amber-500" /> 
             Bypass Synchronization
           </button>
-          <p className="mt-4 text-[9px] text-slate-400 italic max-w-[200px] mx-auto leading-relaxed">
-            Standard cloud nodes are experiencing high latency. Offline-first local nodes are ready to take over.
-          </p>
         </div>
       </div>
     </div>

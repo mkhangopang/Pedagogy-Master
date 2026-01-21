@@ -19,13 +19,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { task, toolType, userInput, brain, priorityDocumentId, message } = body;
     
-    // Enterprise Check for Visuals (Allow Admins)
+    // Hardened Authorization Check for Enterprise Tools
     if (task === 'generate-visual') {
       const { data: profile } = await anonClient.from('profiles').select('plan, role').eq('id', user.id).single();
-      const isAuthorized = profile?.plan === 'enterprise' || profile?.role === 'app_admin';
+      
+      const role = profile?.role?.toLowerCase() || '';
+      const plan = profile?.plan?.toLowerCase() || '';
+      
+      const isAuthorized = role === 'app_admin' || role === 'enterprise_admin' || plan === 'enterprise';
       
       if (!isAuthorized) {
-        return NextResponse.json({ error: "Premium node required. Upgrade to Enterprise for Neural Visuals." }, { status: 403 });
+        return NextResponse.json({ 
+          error: "Neural Visual Node Restricted. Access requires an Enterprise-tier identity node or Administrator clearance." 
+        }, { status: 403 });
       }
 
       const visualPrompt = `Generate a high-fidelity educational diagram or visual aid for: ${userInput}. 

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
-  Database, ShieldCheck, Terminal, ShieldAlert, AlertTriangle, Activity, Server, Search, Code, AlertCircle, Cpu, Layers, Rocket
+  Database, ShieldCheck, Terminal, ShieldAlert, AlertTriangle, Activity, Server, Search, Code, AlertCircle, Cpu, Layers, Rocket, Download, History, Sparkles, HeartPulse
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
@@ -124,7 +124,7 @@ VACUUM ANALYZE public.documents;`;
   };
 
   const handleBulkIndex = async () => {
-    if (!window.confirm("Initialize global neural synchronization?")) return;
+    if (!window.confirm("Initialize global neural synchronization? This will heal broken links and refresh embeddings.")) return;
     setIsIndexing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -133,9 +133,31 @@ VACUUM ANALYZE public.documents;`;
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }
       });
       const data = await response.json();
-      setIndexStatus(`✅ Success: ${data.message}`);
+      setIndexStatus(`✅ Grid Healed: ${data.message}`);
       fetchRagHealth();
-    } catch (err: any) { setIndexStatus(`❌ Error: ${err.message}`); } finally { setIsIndexing(false); }
+    } catch (err: any) { setIndexStatus(`❌ Indexer Failed: ${err.message}`); } finally { setIsIndexing(false); }
+  };
+
+  const handleCreateSnapshot = () => {
+    const snapshot = {
+      system_id: "edunexus-ai-v2",
+      timestamp: new Date().toISOString(),
+      brain_version: formData.version,
+      logic_prompt: formData.masterPrompt,
+      infrastructure: {
+        vector_dims: 768,
+        search_engine: "hybrid_search_v3",
+        specialization: "pedagogy_master_grid"
+      }
+    };
+    
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `edunexus_v${formData.version}_snapshot.json`;
+    a.click();
+    alert("SYSTEM STATE CAPTURED: Snapshot file generated. Keep this file to restore logic if the grid malfunctions.");
   };
 
   useEffect(() => { 
@@ -153,8 +175,8 @@ VACUUM ANALYZE public.documents;`;
       }]);
       if (error) throw error;
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
-      alert("Deployed Core Logic successfully.");
-    } catch (err: any) { alert(`Error: ${err.message}`); } finally { setIsSaving(false); }
+      alert("DEPLOYMENT SUCCESSFUL: Core Logic synchronized across all nodes. Behavioral grid is now persistent.");
+    } catch (err: any) { alert(`Deployment Error: ${err.message}`); } finally { setIsSaving(false); }
   };
 
   return (
@@ -182,30 +204,40 @@ VACUUM ANALYZE public.documents;`;
       {activeTab === 'logic' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-sm space-y-6">
-            <h2 className="text-xl font-bold flex items-center gap-2 dark:text-white">
-              <Terminal size={20} className="text-indigo-500" /> Neural Logic (v{formData.version})
-            </h2>
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold flex items-center gap-2 dark:text-white">
+                <Terminal size={20} className="text-indigo-500" /> Neural Logic (v{formData.version})
+              </h2>
+              <button 
+                onClick={handleCreateSnapshot}
+                title="Capture stable configuration for recovery"
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-800"
+              >
+                <History size={12} /> Favorite Snapshot
+              </button>
+            </div>
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-96 p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300"
+              className="w-full h-96 p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-3xl font-mono text-xs leading-loose outline-none focus:ring-2 focus:ring-indigo-500 dark:text-indigo-300 shadow-inner"
+              placeholder="Inject custom system instructions here..."
             />
-            <button onClick={handleSave} disabled={isSaving} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
+            <button onClick={handleSave} disabled={isSaving} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95">
               {isSaving ? <RefreshCw className="animate-spin" size={20}/> : <Zap size={20}/>} Deploy Core Logic
             </button>
           </div>
           <div className="bg-slate-900 text-white p-12 rounded-[3rem] flex flex-col justify-center shadow-2xl relative overflow-hidden">
              <div className="absolute top-0 right-0 p-12 opacity-10"><Cpu size={200} /></div>
-             <h3 className="text-2xl font-bold mb-4 tracking-tight text-emerald-400">RAG High Precision Active</h3>
-             <p className="text-slate-400 text-sm leading-relaxed mb-8 font-medium">Authoritative Vault system is forcing AI synthesis over summarization using Gemini 3 thinking protocols.</p>
+             <h3 className="text-2xl font-bold mb-4 tracking-tight text-emerald-400 flex items-center gap-2"><Sparkles size={24}/> Persistence Guard</h3>
+             <p className="text-slate-400 text-sm leading-relaxed mb-8 font-medium">Neural logic edits are persistent. Once deployed, the orchestrator updates its behavior grid globally. Use the snapshot feature to archive stable configurations.</p>
              <div className="grid grid-cols-2 gap-4 relative z-10">
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
                    <p className="text-[10px] font-bold text-slate-500 uppercase">Embedding Node</p>
                    <p className="text-sm font-bold text-indigo-400">text-embedding-004</p>
                 </div>
                 <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
-                   <p className="text-[10px] font-bold text-slate-500 uppercase">Vector Dims</p>
-                   <p className="text-sm font-bold text-indigo-400">768-Wide</p>
+                   <p className="text-[10px] font-bold text-slate-500 uppercase">Sync Mode</p>
+                   <p className="text-sm font-bold text-indigo-400">Atomic Persistence</p>
                 </div>
              </div>
           </div>
@@ -238,6 +270,9 @@ VACUUM ANALYZE public.documents;`;
             <div className="flex items-center justify-between mb-8">
                <h2 className="text-xl md:text-2xl font-bold flex items-center gap-3 dark:text-white"><Activity size={24} className="text-indigo-600" /> RAG Diagnostics</h2>
                <div className="flex gap-2">
+                 <button onClick={handleBulkIndex} disabled={isIndexing} className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg disabled:opacity-50">
+                   {isIndexing ? <RefreshCw className="animate-spin" size={14} /> : <HeartPulse size={14} />} Heal Grid
+                 </button>
                  <button onClick={fetchRagHealth} disabled={isChecking} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 transition-all">
                    {isChecking ? <RefreshCw className="animate-spin" /> : <Search size={20} />}
                  </button>
@@ -334,11 +369,11 @@ VACUUM ANALYZE public.documents;`;
                   <ul className="space-y-4">
                     <li className="flex gap-3">
                       <div className="w-5 h-5 bg-amber-200 dark:bg-amber-800 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-200 shrink-0 mt-0.5">1</div>
-                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Ghost Documents</b>: If chunks are 0, the ingestion likely timed out. Use "Global Neural Refresh".</p>
+                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Broken Links</b>: This means metadata exists but vector chunks are missing (often due to ingestion timeouts). Use <b>Heal Grid</b> to fix these documents automatically.</p>
                     </li>
                     <li className="flex gap-3">
                       <div className="w-5 h-5 bg-amber-200 dark:bg-amber-800 rounded-full flex items-center justify-center text-[10px] font-bold text-amber-800 dark:text-amber-200 shrink-0 mt-0.5">2</div>
-                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Selection Filter</b>: RAG only queries documents with <code>is_selected = true</code>. Ensure context is active.</p>
+                      <p className="text-xs text-amber-800 dark:text-amber-200 leading-relaxed font-medium"><b>Ingestion Lag</b>: Heavy documents (>100 pages) can timeout. Re-run manual indexing for individual assets from the Curriculum Library view if healing fails.</p>
                     </li>
                   </ul>
                </div>
@@ -374,17 +409,6 @@ VACUUM ANALYZE public.documents;`;
                        <pre className="text-[10px] font-mono text-emerald-300/80 overflow-x-auto scrollbar-hide">
                           {performanceSql}
                        </pre>
-                    </div>
-                 </div>
-
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="p-6 bg-white/5 rounded-3xl border border-white/5">
-                       <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2">Sync Handshake Fix</h4>
-                       <p className="text-xs text-slate-400 leading-relaxed italic">"The ON CONFLICT DO UPDATE pattern prevents users from being locked out if the database trigger and frontend sync collide."</p>
-                    </div>
-                    <div className="p-6 bg-white/5 rounded-3xl border border-white/5">
-                       <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-400 mb-2">Neural Density</h4>
-                       <p className="text-xs text-slate-400 leading-relaxed">The v46.0 script also optimizes the database for high-concurrency curriculum ingestion across institutional nodes.</p>
                     </div>
                  </div>
               </div>
