@@ -1,4 +1,4 @@
-import { extractSLOCodes } from './slo-extractor';
+import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 export interface ParsedQuery {
   sloCodes: string[];
@@ -10,16 +10,16 @@ export interface ParsedQuery {
 }
 
 /**
- * NEURAL QUERY PARSER
+ * NEURAL QUERY PARSER (v3.0)
  * Decodes teacher intent and metadata requirements from natural language.
  */
 export function parseUserQuery(query: string): ParsedQuery {
   const lower = query.toLowerCase();
   
-  // 1. SLO Extraction
+  // 1. SLO Extraction (Now using normalized S08A03 format)
   const sloCodes = extractSLOCodes(query);
 
-  // 2. Grade Level Extraction (Matches: Grade 4, Class 5, Grade IV, Year 8)
+  // 2. Grade Level Extraction
   const gradePatterns = [
     /(?:grade|class|level|yr|year|gr)\s*(\d{1,2})/gi,
     /(?:grade|class|level|yr|year|gr)\s*(IV|V|VI|VII|VIII|IX|X)/gi
@@ -30,7 +30,6 @@ export function parseUserQuery(query: string): ParsedQuery {
     const matches = Array.from(query.matchAll(pattern));
     matches.forEach(m => {
       const g = m[1].toUpperCase();
-      // Basic normalization of Roman numerals for science grades
       if (g === 'IV') gradesSet.add('4');
       else if (g === 'V') gradesSet.add('5');
       else if (g === 'VI') gradesSet.add('6');
@@ -44,11 +43,11 @@ export function parseUserQuery(query: string): ParsedQuery {
   const commonTopics = [
     'photosynthesis', 'energy', 'force', 'cells', 'ecosystem', 'matter', 
     'water cycle', 'weather', 'space', 'electricity', 'human body', 
-    'plants', 'animals', 'chemistry', 'physics', 'biology', 'gravity'
+    'plants', 'animals', 'chemistry', 'physics', 'biology', 'gravity', 'dna', 'genetics'
   ];
   const topics = commonTopics.filter(t => lower.includes(t));
 
-  // 4. Bloom's Taxonomy Detection (Verb-based intent)
+  // 4. Bloom's Taxonomy Detection
   const bloomVerbs: Record<string, string[]> = {
     'Remember': ['define', 'list', 'what is', 'recall', 'identify'],
     'Understand': ['explain', 'describe', 'summarize', 'classify'],
@@ -66,7 +65,7 @@ export function parseUserQuery(query: string): ParsedQuery {
     }
   }
 
-  // 5. Difficulty/Scaffolding Preference
+  // 5. Difficulty preference
   let difficultyPreference: string | undefined;
   if (lower.includes('struggling') || lower.includes('support') || lower.includes('easy')) {
     difficultyPreference = 'Low';

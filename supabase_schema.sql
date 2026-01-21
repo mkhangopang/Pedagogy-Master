@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v59.0
--- TARGET: Eliminate "Function Not Unique" Ambiguity & Finalize Hybrid Search
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v60.0
+-- TARGET: Implement "Exact Match" Priority Boosting for SLO precision
 
 -- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -8,7 +8,6 @@ CREATE SCHEMA IF NOT EXISTS extensions;
 DO $$ 
 BEGIN 
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
-    -- Ensure it's in the extensions schema
     IF (SELECT nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector') != 'extensions' THEN
       ALTER EXTENSION vector SET SCHEMA extensions;
     END IF;
@@ -24,7 +23,6 @@ ALTER ROLE postgres SET search_path TO public, extensions;
 SET search_path = public, extensions;
 
 -- 4. NUCLEAR CLEANUP OF OVERLOADED FUNCTIONS
--- This dynamic block removes every single signature found in the catalog for this function name.
 DO $$
 DECLARE
     _f record;
@@ -41,11 +39,10 @@ BEGIN
     END LOOP;
 END $$;
 
--- 5. RE-INITIALIZE HEALTH VIEW (Cascade handles dependencies)
+-- 5. RE-INITIALIZE HEALTH VIEW
 DROP VIEW IF EXISTS public.rag_health_report CASCADE;
 
--- 6. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights and 9 Granular Parameters)
--- SIGNATURE: (TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[])
+-- 6. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights + EXACT MATCH BOOST)
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_text TEXT,
     query_embedding extensions.vector,
@@ -79,8 +76,11 @@ BEGIN
         (1 - (dc.embedding <=> query_embedding))::DOUBLE PRECISION as similarity,
         ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) as text_rank,
         (
-            ((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
-            (ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) * 0.3)
+            -- BASE HYBRID SCORE (70/30)
+            (((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
+            (ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) * 0.3)) +
+            -- EXACT SLO MATCH BOOST (Adds 1.0 to ensure it tops the list if the code matches)
+            (CASE WHEN filter_tags IS NOT NULL AND dc.slo_codes && filter_tags THEN 1.0 ELSE 0.0 END)
         )::DOUBLE PRECISION as combined_score,
         dc.metadata
     FROM public.document_chunks dc
@@ -90,7 +90,8 @@ BEGIN
         AND (filter_user_id IS NULL OR d.user_id = filter_user_id)
         AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
         AND (filter_subjects IS NULL OR dc.topics && filter_subjects)
-        AND (filter_tags IS NULL OR dc.slo_codes && filter_tags)
+        -- We make the tag filter optional but high-priority via the boost above
+        AND (filter_tags IS NULL OR dc.slo_codes && filter_tags OR (1 - (dc.embedding <=> query_embedding)) > 0.4)
         AND (filter_content_types IS NULL OR dc.metadata->>'type' = ANY(filter_content_types))
     ORDER BY combined_score DESC
     LIMIT match_count;
@@ -114,6 +115,5 @@ LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
 
 -- 8. UNAMBIGUOUS PERMISSIONS
--- Explicitly providing the signature to the GRANT command to prevent "not unique" errors.
 GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3(TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[]) TO authenticated, service_role;
 GRANT SELECT ON public.rag_health_report TO authenticated;

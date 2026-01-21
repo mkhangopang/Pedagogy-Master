@@ -1,28 +1,26 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
+import { normalizeSLO } from './slo-extractor';
 
 /**
  * PEDAGOGICAL METADATA EXTRACTOR
  * Contextualizes content for advanced RAG filtering.
  */
 function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: string) {
-  // 1. Grade Level Mapping from SLO Codes (e.g., S-04-A-01 -> 4)
   const grades = new Set<string>();
   sloCodes.forEach(code => {
-    const match = code.match(/S-?(\d{1,2})/i);
-    if (match) grades.add(match[1]);
+    const match = code.match(/S(\d{2})/i); // Matching normalized "S08"
+    if (match) grades.add(parseInt(match[1], 10).toString());
   });
   
-  // 2. STEM Topic Extraction
   const commonTopics = [
     'photosynthesis', 'energy', 'force', 'cells', 'ecosystem', 'matter', 
     'water cycle', 'weather', 'space', 'electricity', 'human body', 
     'plants', 'animals', 'chemistry', 'physics', 'biology', 'gravity',
-    'natural resources', 'environment', 'solids', 'liquids', 'gases'
+    'natural resources', 'environment', 'solids', 'liquids', 'gases', 'dna'
   ];
   const topics = commonTopics.filter(t => text.toLowerCase().includes(t));
 
-  // 3. Bloom's Taxonomy Level Mapping
   const bloomVerbs: Record<string, string[]> = {
     'Remember': ['define', 'list', 'state', 'recall', 'identify', 'name'],
     'Understand': ['explain', 'describe', 'summarize', 'interpret', 'classify'],
@@ -36,7 +34,6 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
     .filter(([_, verbs]) => verbs.some(v => new RegExp(`\\b${v}\\b`, 'i').test(text)))
     .map(([level]) => level);
 
-  // 4. Cognitive Difficulty Mapping
   let difficulty = 'Medium';
   if (detectedBloom.includes('Create') || detectedBloom.includes('Evaluate')) difficulty = 'High';
   else if (detectedBloom.includes('Remember') && detectedBloom.length === 1) difficulty = 'Low';
@@ -51,7 +48,7 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v29.0)
+ * WORLD-CLASS NEURAL INDEXER (v30.0)
  * Synchronizes curriculum content and pedagogical metadata with the vector search grid.
  */
 export async function indexDocumentForRAG(
@@ -61,12 +58,11 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient
 ) {
   if (!content || content.length < 50) {
-    console.warn(`[Indexer] Document ${documentId} content too sparse to index.`);
     throw new Error("Content too sparse for neural indexing.");
   }
 
   try {
-    console.log(`📡 [Indexer] Syncing Document ${documentId} with Metadata Grid...`);
+    console.log(`📡 [Indexer] Normalizing and Syncing Document ${documentId}...`);
     
     await supabase.from('documents').update({ 
       status: 'processing', 
@@ -76,14 +72,12 @@ export async function indexDocumentForRAG(
     const processedChunks: { text: string; sloCodes: string[]; metadata: any }[] = [];
     let currentUnitName = "General Context";
 
-    // 1. Structural Splitting Logic (Curriculum Aware)
     const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|SLO:))/gim);
     
     blocks.forEach((block, index) => {
       let trimmed = block.trim();
       if (trimmed.length < 20) return;
 
-      // Extract unit name if block starts with header
       const unitMatch = trimmed.match(/^(?:#{1,4}\s+)?(?:Unit|Chapter|Section|Module)\s*[:\s]*([^:\n]+)/im);
       if (unitMatch) currentUnitName = unitMatch[1].trim();
 
@@ -98,15 +92,15 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number, unitName: string) {
+      // Robust SLO detection within blocks
       const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
       const codes: string[] = [];
       let match;
       
       while ((match = sloRegex.exec(text)) !== null) {
-        const rawCode = match[1].toUpperCase();
-        const cleaned = rawCode.replace(/[-\.]/g, '');
-        if (cleaned && cleaned !== 'SLO' && cleaned !== 'UNIT' && cleaned.length > 1) {
-          codes.push(cleaned);
+        const normalized = normalizeSLO(match[1]);
+        if (normalized && normalized.length > 2) {
+          codes.push(normalized);
         }
       }
       
@@ -118,14 +112,13 @@ export async function indexDocumentForRAG(
         sloCodes: Array.from(new Set(codes)),
         metadata: {
           ...pedagogicalMeta,
-          section_title: titleMatch ? titleMatch[1].substring(0, 50) : "General Context",
+          section_title: titleMatch ? titleMatch[1].substring(0, 50).trim() : "General Context",
           chunk_index: index,
           timestamp: new Date().toISOString()
         }
       };
     }
 
-    // 2. Fallback: Sliding Window for small/unstructured assets
     if (processedChunks.length <= 1) {
        const words = content.split(/\s+/);
        for (let i = 0; i < words.length; i += 250) {
@@ -140,11 +133,9 @@ export async function indexDocumentForRAG(
        }
     }
 
-    // 3. Vector Synthesis
     const texts = processedChunks.map(c => c.text);
     const embeddings = await generateEmbeddingsBatch(texts);
 
-    // 4. Grid Sync with Enhanced Columns
     const chunkRecords = processedChunks.map((chunk, i) => ({
       document_id: documentId,
       chunk_text: chunk.text,
@@ -152,7 +143,6 @@ export async function indexDocumentForRAG(
       slo_codes: chunk.sloCodes,
       chunk_index: i,
       metadata: chunk.metadata,
-      // Mapping metadata to top-level columns for direct PG filtering
       grade_levels: chunk.metadata.grade_levels,
       topics: chunk.metadata.topics,
       unit_name: chunk.metadata.unit_name,
@@ -172,7 +162,7 @@ export async function indexDocumentForRAG(
       rag_indexed: true 
     }).eq('id', documentId);
     
-    console.log(`✅ [Indexer] Neural Grid Sync complete for ${documentId}.`);
+    console.log(`✅ [Indexer] Neural Grid Sync complete for ${documentId} with ${chunkRecords.length} normalized chunks.`);
 
     return { success: true, chunkCount: chunkRecords.length };
 
