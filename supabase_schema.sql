@@ -1,41 +1,30 @@
--- EDUNEXUS AI: PRODUCTION INFRASTRUCTURE v48.0
--- TARGET: RESOLVE LINTER (SEARCH_PATH & EXTENSION_IN_PUBLIC)
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v49.0
+-- TARGET: FIX 42704 (Type Missing) & 42883 (Function Undefined)
 
--- 1. SECURE EXTENSIONS LAYER
+-- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
-CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 
--- 2. SYSTEM DIAGNOSTICS (Security Hardened)
-CREATE OR REPLACE FUNCTION public.get_extension_status(ext TEXT) 
-RETURNS BOOLEAN 
-LANGUAGE plpgsql 
-SECURITY DEFINER
-SET search_path = public, extensions
-AS $$
-BEGIN
-    RETURN EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
-END;
-$$;
+-- 2. SAFE VECTOR ENGINE MIGRATION
+-- This moves the extension without dropping tables/data
+DO $$ 
+BEGIN 
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    -- If it's in public, move it. If it's already in extensions, this does nothing.
+    IF (SELECT nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector') = 'public' THEN
+      ALTER EXTENSION vector SET SCHEMA extensions;
+    END IF;
+  ELSE
+    CREATE EXTENSION vector WITH SCHEMA extensions;
+  END IF;
+END $$;
 
-CREATE OR REPLACE FUNCTION public.get_vector_dimensions() 
-RETURNS INTEGER 
-LANGUAGE plpgsql 
-SECURITY DEFINER
-SET search_path = public, extensions
-AS $$
-BEGIN
-    RETURN (
-        SELECT atttypmod - 4 
-        FROM pg_attribute 
-        WHERE attrelid = 'public.document_chunks'::regclass 
-        AND attname = 'embedding'
-    );
-EXCEPTION WHEN OTHERS THEN
-    RETURN 768;
-END;
-$$;
+-- 3. GLOBAL SEARCH PATH ALIGNMENT
+-- This allows the DB to find the 'vector' type without the 'extensions.' prefix
+ALTER ROLE authenticated SET search_path TO public, extensions;
+ALTER ROLE service_role SET search_path TO public, extensions;
+ALTER ROLE postgres SET search_path TO public, extensions;
 
--- 3. IDENTITY LAYER
+-- 4. IDENTITY LAYER REPAIR
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
     name TEXT,
@@ -56,7 +45,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. RESILIENT AUTH TRIGGER (Security Hardened)
+-- Secure Auth Trigger
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER 
 LANGUAGE plpgsql 
@@ -80,116 +69,10 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-
--- 5. ASSET TABLES
-CREATE TABLE IF NOT EXISTS public.documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users ON DELETE CASCADE,
-    name TEXT NOT NULL,
-    source_type TEXT DEFAULT 'markdown',
-    status TEXT DEFAULT 'processing',
-    is_approved BOOLEAN DEFAULT FALSE,
-    extracted_text TEXT,
-    file_path TEXT,
-    storage_type TEXT DEFAULT 'r2',
-    curriculum_name TEXT,
-    authority TEXT,
-    subject TEXT,
-    grade_level TEXT,
-    version_year TEXT,
-    generated_json JSONB,
-    version INTEGER DEFAULT 1,
-    is_selected BOOLEAN DEFAULT FALSE,
-    rag_indexed BOOLEAN DEFAULT FALSE,
-    document_summary TEXT,
-    difficulty_level TEXT,
-    gemini_metadata JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS public.document_chunks (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID REFERENCES public.documents ON DELETE CASCADE,
-    chunk_text TEXT NOT NULL,
-    embedding extensions.vector(768),
-    slo_codes TEXT[] DEFAULT '{}',
-    grade_levels TEXT[] DEFAULT '{}',
-    topics TEXT[] DEFAULT '{}',
-    unit_name TEXT,
-    difficulty TEXT,
-    bloom_levels TEXT[] DEFAULT '{}',
-    chunk_index INTEGER,
-    metadata JSONB,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 6. SECURITY & PERMISSIONS
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
-
-CREATE OR REPLACE FUNCTION public.is_master_admin() 
-RETURNS BOOLEAN 
-LANGUAGE plpgsql 
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  RETURN (
-    SELECT role = 'app_admin' 
-    FROM public.profiles 
-    WHERE id = auth.uid()
-  );
-END;
-$$;
-
--- RLS Policies
-DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
-CREATE POLICY "Users can view own profile" ON public.profiles 
-FOR SELECT USING (auth.uid() = id OR is_master_admin());
-
-DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
-CREATE POLICY "Users can update own profile" ON public.profiles 
-FOR UPDATE USING (auth.uid() = id);
-
-DROP POLICY IF EXISTS "Users can manage own documents" ON public.documents;
-CREATE POLICY "Users can manage own documents" ON public.documents 
-FOR ALL USING (auth.uid() = user_id OR is_master_admin());
-
-DROP POLICY IF EXISTS "Users can read relevant chunks" ON public.document_chunks;
-CREATE POLICY "Users can read relevant chunks" ON public.document_chunks 
-FOR SELECT USING (
-  EXISTS (SELECT 1 FROM public.documents WHERE id = document_id AND (user_id = auth.uid() OR is_master_admin()))
-);
-
--- 7. RECOVERY VIEW (Security Hardened)
-DROP VIEW IF EXISTS public.rag_health_report;
-CREATE VIEW public.rag_health_report 
-WITH (security_invoker = true) 
-AS
-SELECT 
-    d.id,
-    d.name,
-    d.is_selected,
-    d.rag_indexed,
-    COUNT(dc.id) as chunk_count,
-    CASE 
-        WHEN d.rag_indexed = true AND COUNT(dc.id) = 0 THEN 'BROKEN (NO CHUNKS)'
-        WHEN d.rag_indexed = false AND COUNT(dc.id) > 0 THEN 'BROKEN (STALE INDEX)'
-        WHEN COUNT(dc.id) > 0 THEN 'HEALTHY'
-        ELSE 'PENDING'
-    END as health_status
-FROM documents d
-LEFT JOIN document_chunks dc ON d.id = dc.document_id
-GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
-
--- 8. SEARCH HELPERS (Security Hardened)
+-- 5. REPAIR SEARCH ENGINE (hybrid_search_chunks_v3)
+-- Using extensions.vector explicitly in the signature
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
-    query_embedding extensions.vector(768),
+    query_embedding extensions.vector,
     match_count INTEGER,
     filter_document_ids UUID[],
     priority_document_id UUID DEFAULT NULL,
@@ -225,14 +108,53 @@ BEGIN
         (CASE WHEN dc.slo_codes && boost_slo_codes THEN 1.3 ELSE 1.0 END) as combined_score
     FROM document_chunks dc
     WHERE dc.document_id = ANY(filter_document_ids)
-      AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
-      AND (filter_topics IS NULL OR dc.topics && filter_topics)
-      AND (filter_bloom IS NULL OR dc.bloom_levels && filter_bloom)
+      AND (filter_grades IS NULL OR dc.metadata->'grade_levels' ?| filter_grades)
+      AND (filter_topics IS NULL OR dc.metadata->'topics' ?| filter_topics)
+      AND (filter_bloom IS NULL OR dc.metadata->'bloom_levels' ?| filter_bloom)
     ORDER BY combined_score DESC
     LIMIT match_count;
 END;
 $$;
 
-GRANT SELECT ON public.rag_health_report TO authenticated;
-GRANT EXECUTE ON FUNCTION get_extension_status(TEXT) TO authenticated;
-GRANT EXECUTE ON FUNCTION get_vector_dimensions() TO authenticated;
+-- 6. SYSTEM DIAGNOSTICS REPAIR
+CREATE OR REPLACE FUNCTION public.get_extension_status(ext TEXT) 
+RETURNS BOOLEAN 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_vector_dimensions() 
+RETURNS INTEGER 
+LANGUAGE plpgsql 
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+    RETURN (
+        SELECT atttypmod - 4 
+        FROM pg_attribute 
+        WHERE attrelid = 'public.document_chunks'::regclass 
+        AND attname = 'embedding'
+    );
+EXCEPTION WHEN OTHERS THEN
+    RETURN 768;
+END;
+$$;
+
+-- 7. CLEANUP OBSOLETE NODES
+DROP FUNCTION IF EXISTS public.semantic_search_chunks;
+DROP FUNCTION IF EXISTS public.find_similar_slos;
+DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v2;
+DROP FUNCTION IF EXISTS public.find_slo_chunks;
+DROP FUNCTION IF EXISTS public.hybrid_search_chunks;
+
+-- 8. PERMISSIONS
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3 TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_extension_status TO authenticated;
+GRANT SELECT ON public.profiles TO authenticated;
