@@ -43,43 +43,83 @@ export default function App() {
   });
 
   const checkDb = useCallback(async () => {
-    const health = await getSupabaseHealth();
-    setHealthStatus(health as any);
-    return health.status === 'connected';
+    try {
+      // Fast check with 3s timeout
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('DB Timeout')), 3000));
+      const health: any = await Promise.race([getSupabaseHealth(), timeoutPromise]).catch(() => ({ status: 'degraded', message: 'Cloud Node Lagging' }));
+      setHealthStatus(health);
+      return health.status === 'connected';
+    } catch {
+      return false;
+    }
   }, []);
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     setLoadingMessage('Hydrating Identity Nodes...');
     try {
-      // Parallel execution for faster boot
-      const profilePromise = getOrCreateProfile(userId, email);
-      const docsPromise = supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      // Parallel execution with strict 6s timeout for the entire block
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Vault Timeout')), 6000));
       
-      // Watchdog for profile sync (8 seconds timeout for better UX)
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Hydration Timeout')), 8000)
-      );
+      const workPromise = (async () => {
+        const profile = await getOrCreateProfile(userId, email);
+        
+        if (profile) {
+          setUserProfile({
+            id: profile.id,
+            name: profile.name || email?.split('@')[0] || 'Educator',
+            email: profile.email || email || '',
+            role: profile.role as UserRole || UserRole.TEACHER,
+            plan: profile.plan as SubscriptionPlan || SubscriptionPlan.FREE,
+            queriesUsed: profile.queries_used || 0,
+            queriesLimit: profile.queries_limit || 30,
+            generationCount: profile.generation_count || 0,
+            successRate: profile.success_rate || 0,
+            editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+          });
+        } else {
+          setUserProfile({
+            id: userId,
+            name: email?.split('@')[0] || 'Educator',
+            email: email || '',
+            role: UserRole.TEACHER,
+            plan: SubscriptionPlan.FREE,
+            queriesUsed: 0,
+            queriesLimit: 30,
+            generationCount: 0,
+            successRate: 0,
+            editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+          });
+        }
 
-      const profile: any = await Promise.race([profilePromise, timeoutPromise]).catch(err => {
-        console.warn("📡 [System] Hydration lag detected, using adaptive local state.", err);
-        return null;
-      });
+        setLoadingMessage('Loading Curriculum Vault...');
+        const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+        
+        if (docs) {
+          setDocuments(docs.map(d => ({
+            id: d.id,
+            userId: d.user_id,
+            name: d.name,
+            status: d.status as any,
+            curriculumName: d.curriculum_name || d.name,
+            authority: d.authority || 'General',
+            subject: d.subject || 'General',
+            gradeLevel: d.grade_level || 'Auto',
+            versionYear: d.version_year || '2024',
+            version: d.version || 1,
+            geminiProcessed: d.rag_indexed,
+            isSelected: d.is_selected,
+            sourceType: d.source_type as any || 'markdown',
+            isApproved: d.is_approved || false,
+            createdAt: d.created_at
+          })));
+        }
+      })();
 
-      if (profile) {
-        setUserProfile({
-          id: profile.id,
-          name: profile.name || email?.split('@')[0] || 'Educator',
-          email: profile.email || email || '',
-          role: profile.role as UserRole || UserRole.TEACHER,
-          plan: profile.plan as SubscriptionPlan || SubscriptionPlan.FREE,
-          queriesUsed: profile.queries_used || 0,
-          queriesLimit: profile.queries_limit || 30,
-          generationCount: profile.generation_count || 0,
-          successRate: profile.success_rate || 0,
-          editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-        });
-      } else {
-        // Fallback for timeout or failure
+      await Promise.race([workPromise, timeoutPromise]);
+    } catch (e) {
+      console.warn("📡 [System] Hydration lag or timeout detected.", e);
+      // Ensure we have a basic profile if everything timed out
+      if (!userProfile) {
         setUserProfile({
           id: userId,
           name: email?.split('@')[0] || 'Educator',
@@ -93,59 +133,36 @@ export default function App() {
           editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         });
       }
-
-      setLoadingMessage('Loading Curriculum Vault...');
-      const { data: docs } = await docsPromise;
-      if (docs) {
-        setDocuments(docs.map(d => ({
-          id: d.id,
-          userId: d.user_id,
-          name: d.name,
-          status: d.status as any,
-          curriculumName: d.curriculum_name || d.name,
-          authority: d.authority || 'General',
-          subject: d.subject || 'General',
-          gradeLevel: d.grade_level || 'Auto',
-          versionYear: d.version_year || '2024',
-          version: d.version || 1,
-          geminiProcessed: d.rag_indexed,
-          isSelected: d.is_selected,
-          sourceType: d.source_type as any || 'markdown',
-          isApproved: d.is_approved || false,
-          createdAt: d.created_at
-        })));
-      }
-    } catch (e) {
-      console.error("❌ [System] Fatal Infrastructure Sync:", e);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [userProfile]);
 
   useEffect(() => {
     const initialize = async () => {
-      let attempts = 0;
-      const bootLoop = async () => {
-        setBootAttempt(attempts);
-        // Faster timeout logic: proceed if configured OR after 4 seconds total
-        if (isSupabaseConfigured() || attempts > 3) {
-          setLoadingMessage('Authenticating Session...');
-          paymentService.init();
-          await checkDb();
-          const { data: { session: initialSession } } = await supabase.auth.getSession();
-          if (initialSession) {
-            setSession(initialSession);
-            await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
-          } else {
-            setLoading(false);
-          }
-        } else {
-          attempts++;
-          setLoadingMessage(`Awaiting Cloud Handshake... (${attempts})`);
-          setTimeout(bootLoop, 1000);
-        }
-      };
-      bootLoop();
+      // 1. Initial Infrastructure check
+      if (!isSupabaseConfigured()) {
+        // Wait up to 2 seconds for env variables if they are loading
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      setLoadingMessage('Authenticating Session...');
+      paymentService.init();
+      
+      // Run DB check and Session check in parallel
+      const [dbOnline, sessionResult] = await Promise.all([
+        checkDb(),
+        supabase.auth.getSession()
+      ]);
+
+      const initialSession = sessionResult.data?.session;
+      
+      if (initialSession) {
+        setSession(initialSession);
+        await fetchProfileAndDocs(initialSession.user.id, initialSession.user.email);
+      } else {
+        setLoading(false);
+      }
     };
 
     initialize();
@@ -171,27 +188,31 @@ export default function App() {
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-8 px-6 text-center">
       <div className="relative">
         <div className="absolute inset-0 bg-indigo-500 rounded-full blur-3xl opacity-20 animate-pulse" />
-        <div className="relative bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border dark:border-white/5">
+        <div className="relative bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border dark:border-white/5 transition-transform hover:scale-105">
           <Cpu className="text-indigo-600 w-16 h-16 animate-spin-slow" />
         </div>
       </div>
       <div className="space-y-4 max-w-sm">
-        <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-xs">Neural Sync</p>
-        <p className="text-slate-400 font-medium text-sm italic min-h-[1.5rem]">{loadingMessage}</p>
-        <div className="w-48 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto overflow-hidden">
-           <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${Math.min(100, (bootAttempt / 4) * 100)}%` }} />
+        <div className="space-y-1">
+          <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px]">Neural Sync</p>
+          <p className="text-slate-900 dark:text-white font-bold text-lg">EduNexus AI</p>
         </div>
-        {(bootAttempt > 3 || loadingMessage.includes('Timeout')) && (
-           <div className="pt-6 animate-in fade-in slide-in-from-bottom-2">
-             <button 
-               onClick={() => setLoading(false)} 
-               className="flex items-center gap-2 mx-auto px-4 py-2 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold uppercase tracking-widest border border-amber-200 dark:border-amber-900 rounded-xl hover:bg-amber-100 transition-all shadow-sm"
-             >
-               <AlertTriangle size={12} /> Force Enter Workspace
-             </button>
-             <p className="mt-2 text-[9px] text-slate-400 italic">Institutional sync is lagging. Using adaptive local nodes.</p>
-           </div>
-        )}
+        <p className="text-slate-400 font-medium text-sm italic min-h-[1.5rem] animate-pulse">{loadingMessage}</p>
+        <div className="w-48 h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto overflow-hidden shadow-inner">
+           <div className="h-full bg-indigo-600 transition-all duration-700 ease-out" style={{ width: loading ? '60%' : '100%' }} />
+        </div>
+        <div className="pt-6 animate-in fade-in slide-in-from-bottom-2 duration-1000">
+          <button 
+            onClick={() => setLoading(false)} 
+            className="flex items-center gap-2 mx-auto px-6 py-3 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest border border-slate-200 dark:border-slate-800 rounded-2xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-xl active:scale-95"
+          >
+            <AlertTriangle size={14} className="text-amber-500" /> 
+            Bypass Synchronization
+          </button>
+          <p className="mt-4 text-[9px] text-slate-400 italic max-w-[200px] mx-auto leading-relaxed">
+            Standard cloud nodes are experiencing high latency. Offline-first local nodes are ready to take over.
+          </p>
+        </div>
       </div>
     </div>
   );
