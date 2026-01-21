@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v57.0
--- TARGET: Resolve Function Signature Overloading Conflict
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v58.0
+-- TARGET: Resolve Function Signature Overloading Conflict & Implement Hybrid Search
 
 -- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -21,15 +21,27 @@ ALTER ROLE authenticated SET search_path TO public, extensions;
 ALTER ROLE service_role SET search_path TO public, extensions;
 ALTER ROLE postgres SET search_path TO public, extensions;
 
--- 4. AGGRESSIVE CLEANUP OF OVERLOADED SIGNATURES
--- This prevents the "function name is not unique" error by targeting known variants
-DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v3(extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[]);
-DROP FUNCTION IF EXISTS public.hybrid_search_chunks_v3(TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[]);
+-- 4. DYNAMIC CLEANUP OF OVERLOADED FUNCTIONS
+-- This block identifies and drops ALL versions of the function to prevent "is not unique" errors.
+DO $$
+DECLARE
+    _f record;
+BEGIN
+    FOR _f IN (
+        SELECT 'public.' || quote_ident(p.proname) || '(' || pg_get_function_identity_arguments(p.oid) || ')' as ident
+        FROM pg_proc p
+        JOIN pg_namespace n ON p.pronamespace = n.oid
+        WHERE n.nspname = 'public' AND p.proname = 'hybrid_search_chunks_v3'
+    ) LOOP
+        EXECUTE 'DROP FUNCTION ' || _f.ident;
+    END LOOP;
+END $$;
 
 -- 5. RE-INITIALIZE HEALTH VIEW (If exists)
 DROP VIEW IF EXISTS public.rag_health_report CASCADE;
 
 -- 6. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights and 9 Granular Parameters)
+-- WEIGHTS: 70% Semantic (Vector) | 30% Keyword (ts_rank)
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_text TEXT,
     query_embedding extensions.vector,
@@ -98,5 +110,6 @@ LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
 
 -- 8. PERMISSIONS
+-- Since we cleared all versions, these grants will apply unambiguously to the new function.
 GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3 TO authenticated, service_role;
 GRANT SELECT ON public.rag_health_report TO authenticated;
