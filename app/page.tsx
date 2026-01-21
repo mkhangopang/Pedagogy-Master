@@ -9,7 +9,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu, RefreshCw, Terminal, Zap } from 'lucide-react';
+import { Loader2, Menu, Cpu, RefreshCw, Terminal, Zap, AlertTriangle } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -21,6 +21,7 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [bootAttempt, setBootAttempt] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('Initializing Core Infrastructure...');
   const [currentView, setCurrentView] = useState('dashboard');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -48,8 +49,27 @@ export default function App() {
   }, []);
 
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
+    setLoadingMessage('Hydrating Identity Nodes...');
     try {
-      const profile: any = await getOrCreateProfile(userId, email);
+      const profilePromise = getOrCreateProfile(userId, email);
+      
+      // Watchdog for profile sync (10 seconds timeout)
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Hydration Timeout')), 10000)
+      );
+
+      const profile: any = await Promise.race([profilePromise, timeoutPromise]).catch(err => {
+        console.warn("Profile hydration lagged, using local fallback.", err);
+        return {
+          id: userId,
+          email: email || 'local-user',
+          name: email?.split('@')[0] || 'Educator',
+          role: UserRole.TEACHER,
+          plan: SubscriptionPlan.FREE,
+          queries_limit: 30
+        };
+      });
+
       if (profile) {
         setUserProfile({
           id: profile.id,
@@ -65,6 +85,7 @@ export default function App() {
         });
       }
 
+      setLoadingMessage('Loading Curriculum Vault...');
       const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
       if (docs) {
         setDocuments(docs.map(d => ({
@@ -86,7 +107,7 @@ export default function App() {
         })));
       }
     } catch (e) {
-      console.warn("Sync jitter:", e);
+      console.error("Infrastructure Sync Fatal:", e);
     } finally {
       setLoading(false);
     }
@@ -97,7 +118,8 @@ export default function App() {
       let attempts = 0;
       const bootLoop = async () => {
         setBootAttempt(attempts);
-        if (isSupabaseConfigured() || attempts > 10) {
+        if (isSupabaseConfigured() || attempts > 5) {
+          setLoadingMessage('Authenticating Session...');
           paymentService.init();
           await checkDb();
           const { data: { session: initialSession } } = await supabase.auth.getSession();
@@ -109,7 +131,8 @@ export default function App() {
           }
         } else {
           attempts++;
-          setTimeout(bootLoop, 1000);
+          setLoadingMessage(`Awaiting Cloud Handshake... (${attempts})`);
+          setTimeout(bootLoop, 1500);
         }
       };
       bootLoop();
@@ -120,7 +143,6 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
-          // Re-engage loading during profile sync to prevent null-reference crashes
           setLoading(true);
           setSession(currentSession);
           await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
@@ -136,7 +158,6 @@ export default function App() {
     return () => subscription?.unsubscribe();
   }, [checkDb, fetchProfileAndDocs]);
 
-  // If loading is true, we display the neural sync screen
   if (loading) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 space-y-8 px-6 text-center">
       <div className="relative">
@@ -145,28 +166,33 @@ export default function App() {
           <Cpu className="text-indigo-600 w-16 h-16 animate-spin-slow" />
         </div>
       </div>
-      <div className="space-y-4">
+      <div className="space-y-4 max-w-sm">
         <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-xs">Neural Sync</p>
-        <p className="text-slate-400 font-medium text-sm italic">Synchronizing Institutional Nodes...</p>
+        <p className="text-slate-400 font-medium text-sm italic min-h-[1.5rem]">{loadingMessage}</p>
         <div className="w-48 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto overflow-hidden">
-           <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${(bootAttempt / 10) * 100}%` }} />
+           <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${Math.min(100, (bootAttempt / 6) * 100)}%` }} />
         </div>
-        {bootAttempt > 5 && (
-           <button onClick={() => setLoading(false)} className="mt-4 text-[10px] font-bold text-slate-400 uppercase border-b border-dashed border-slate-300">Bypass Sync</button>
+        {(bootAttempt > 4 || loadingMessage.includes('Timeout')) && (
+           <div className="pt-6 animate-in fade-in slide-in-from-bottom-2">
+             <button 
+               onClick={() => setLoading(false)} 
+               className="flex items-center gap-2 mx-auto px-4 py-2 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold uppercase tracking-widest border border-amber-200 dark:border-amber-900 rounded-xl hover:bg-amber-100 transition-all shadow-sm"
+             >
+               <AlertTriangle size={12} /> Force Enter Workspace
+             </button>
+             <p className="mt-2 text-[9px] text-slate-400 italic">Institutional sync is lagging. Some assets may be read-only.</p>
+           </div>
         )}
       </div>
     </div>
   );
   
-  // If no session, show Login
   if (!session) return <Login onSession={() => {}} />;
 
-  // CRITICAL FIX: If we have a session but profile is missing, don't render the shell yet
-  // This prevents Sidebar from accessing null userProfile.role
   if (!userProfile) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
       <Loader2 className="animate-spin text-indigo-600" size={32} />
-      <p className="mt-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Hydrating Educator Identity...</p>
+      <p className="mt-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Constructing Workspace...</p>
     </div>
   );
 
