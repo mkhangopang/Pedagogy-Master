@@ -1,6 +1,7 @@
+import { normalizeSLO, extractSLOCodes } from '../rag/slo-extractor';
 
 /**
- * INTELLIGENT QUERY ANALYSIS
+ * INTELLIGENT QUERY ANALYSIS (v3.0)
  * Determines what the user actually wants from the document.
  */
 
@@ -9,6 +10,7 @@ export interface QueryAnalysis {
   complexityLevel: 'simple' | 'moderate' | 'complex';
   expectedResponseLength: 'short' | 'medium' | 'long';
   extractedSLO?: string;
+  allSLOCodes: string[];
   keywords: string[];
   userIntent: string;
 }
@@ -19,7 +21,10 @@ export interface QueryAnalysis {
 export function analyzeUserQuery(query: string): QueryAnalysis {
   const lowerQuery = query.toLowerCase();
   const keywords = extractKeywords(query);
-  const extractedSLO = extractSLOCode(query);
+  
+  // Use the canonical extractor for precision
+  const allSLOCodes = extractSLOCodes(query);
+  const extractedSLO = allSLOCodes.length > 0 ? allSLOCodes[0] : undefined;
   
   // PATTERN 1: Simple SLO Lookup
   if (
@@ -32,6 +37,7 @@ export function analyzeUserQuery(query: string): QueryAnalysis {
       complexityLevel: 'simple',
       expectedResponseLength: 'short',
       extractedSLO,
+      allSLOCodes,
       keywords,
       userIntent: 'User wants brief definition of SLO from curriculum document',
     };
@@ -46,6 +52,7 @@ export function analyzeUserQuery(query: string): QueryAnalysis {
       complexityLevel: 'complex',
       expectedResponseLength: 'long',
       extractedSLO,
+      allSLOCodes,
       keywords,
       userIntent: 'User wants complete structured lesson plan',
     };
@@ -60,6 +67,7 @@ export function analyzeUserQuery(query: string): QueryAnalysis {
       complexityLevel: 'moderate',
       expectedResponseLength: 'medium',
       extractedSLO,
+      allSLOCodes,
       keywords,
       userIntent: 'User wants specific teaching strategies and activities',
     };
@@ -74,6 +82,7 @@ export function analyzeUserQuery(query: string): QueryAnalysis {
       complexityLevel: 'moderate',
       expectedResponseLength: 'medium',
       extractedSLO,
+      allSLOCodes,
       keywords,
       userIntent: 'User wants quiz/test questions with answer key',
     };
@@ -88,6 +97,7 @@ export function analyzeUserQuery(query: string): QueryAnalysis {
       complexityLevel: 'moderate',
       expectedResponseLength: 'medium',
       extractedSLO,
+      allSLOCodes,
       keywords,
       userIntent: 'User wants differentiation strategies for diverse learners',
     };
@@ -98,28 +108,15 @@ export function analyzeUserQuery(query: string): QueryAnalysis {
     complexityLevel: 'moderate',
     expectedResponseLength: 'medium',
     extractedSLO,
+    allSLOCodes,
     keywords,
     userIntent: 'General educational query',
   };
 }
 
-function extractSLOCode(query: string): string | undefined {
-  const patterns = [
-    /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/,
-    /\bSLO[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?([a-z])[-\s]?(\d{1,2})\b/i,
-  ];
-  
-  for (const pattern of patterns) {
-    const match = query.match(pattern);
-    if (match) return match[0];
-  }
-  
-  return undefined;
-}
-
-function extractKeywords(query: string): string[] {
+function extractKeywords(text: string): string[] {
   const stopWords = ['what', 'is', 'the', 'how', 'do', 'i', 'can', 'you', 'a', 'an', 'to', 'for', 'in', 'on'];
-  const words = query.toLowerCase().split(/\s+/);
+  const words = text.toLowerCase().split(/\s+/);
   
   return words
     .filter(word => word.length > 3 && !stopWords.includes(word))

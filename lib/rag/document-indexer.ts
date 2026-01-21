@@ -47,7 +47,7 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v31.0)
+ * WORLD-CLASS NEURAL INDEXER (v32.0)
  * Synchronizes curriculum content with normalized SLO IDs.
  */
 export async function indexDocumentForRAG(
@@ -91,23 +91,33 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number, unitName: string) {
-      const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
-      const codes: string[] = [];
-      let match;
+      // Priority 1: Extract from Header (Standard: S-08-C-03)
+      const headerSloMatch = text.match(/^(?:#{1,4}\s+)?(?:Standard|SLO|Outcome)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/im);
       
+      // Priority 2: Extract all codes within the block
+      const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
+      const codesSet = new Set<string>();
+      
+      if (headerSloMatch) {
+        const hNorm = normalizeSLO(headerSloMatch[1]);
+        if (hNorm) codesSet.add(hNorm);
+      }
+
+      let match;
       while ((match = sloRegex.exec(text)) !== null) {
         const normalized = normalizeSLO(match[1]);
         if (normalized && normalized.length >= 3) {
-          codes.push(normalized);
+          codesSet.add(normalized);
         }
       }
       
+      const codes = Array.from(codesSet);
       const pedagogicalMeta = extractPedagogicalMetadata(text, codes, unitName);
       const titleMatch = text.match(/^(?:#{1,4}\s+)?(.+)/m);
       
       return { 
         text, 
-        sloCodes: Array.from(new Set(codes)),
+        sloCodes: codes,
         metadata: {
           ...pedagogicalMeta,
           section_title: titleMatch ? titleMatch[1].substring(0, 50).trim() : "General Context",

@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v61.0
--- TARGET: Implement "Exact Match" Priority Boosting for SLO precision
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v62.0
+-- TARGET: Implement "Nuclear Match" Priority Boosting for exact SLO precision
 
 -- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -42,7 +42,7 @@ END $$;
 -- 5. RE-INITIALIZE HEALTH VIEW
 DROP VIEW IF EXISTS public.rag_health_report CASCADE;
 
--- 6. REPAIR SEARCH ENGINE (Hybrid v3 with 70/30 weights + EXACT MATCH BOOST)
+-- 6. REPAIR SEARCH ENGINE (Hybrid v3 with NUCLEAR EXACT MATCH BOOST)
 -- SIGNATURE: (TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[])
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_text TEXT,
@@ -81,11 +81,10 @@ BEGIN
             (((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
             (ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) * 0.3)) +
             
-            -- EXACT SLO MATCH BOOST
-            -- We add a huge constant (10.0) if the normalized tag matches perfectly. 
-            -- This ensures that "S08C03" matches ALWAYS beat "S08A03" regardless of semantic similarity.
+            -- NUCLEAR EXACT SLO MATCH BOOST
+            -- Boost is set to 50.0 to ensure correct SLO tags ALWAYS win over semantic noise.
             (CASE 
-                WHEN filter_tags IS NOT NULL AND dc.slo_codes && filter_tags THEN 10.0 
+                WHEN filter_tags IS NOT NULL AND dc.slo_codes && filter_tags THEN 50.0 
                 ELSE 0.0 
              END)
         )::DOUBLE PRECISION as combined_score,
@@ -97,8 +96,6 @@ BEGIN
         AND (filter_user_id IS NULL OR d.user_id = filter_user_id)
         AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
         AND (filter_subjects IS NULL OR dc.topics && filter_subjects)
-        -- Optimization: If tags are provided, we don't strictly filter (to allow semantic fallback), 
-        -- but the boost above will sort exact matches to the top.
         AND (filter_content_types IS NULL OR dc.metadata->>'type' = ANY(filter_content_types))
     ORDER BY combined_score DESC
     LIMIT match_count;

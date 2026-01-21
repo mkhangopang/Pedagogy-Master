@@ -14,31 +14,54 @@ export interface RetrievedChunk {
   grade_levels?: string[];
   topics?: string[];
   bloom_levels?: string[];
+  document_id?: string;
 }
 
 /**
- * NEURAL RE-RANKER
- * Refines vector results using a reasoning model.
+ * NEURAL RE-RANKER (v5.0)
+ * Implements "Hard-Match" filtering for curriculum standards.
  */
-async function reRankChunks(query: string, candidates: RetrievedChunk[]): Promise<RetrievedChunk[]> {
-  if (candidates.length <= 5) return candidates;
+async function reRankChunks(query: string, candidates: RetrievedChunk[], targetSLOs: string[]): Promise<RetrievedChunk[]> {
+  if (candidates.length === 0) return [];
   
+  // STRATEGY: If target SLOs are extracted from the query, 
+  // we MUST ensure those chunks appear first and other similar standards are suppressed.
+  if (targetSLOs.length > 0) {
+    const exactMatches = candidates.filter(c => 
+      c.slo_codes.some(code => targetSLOs.includes(code))
+    );
+
+    if (exactMatches.length > 0) {
+      console.log(`🎯 [Re-ranker] Found ${exactMatches.length} exact standard matches. Prioritizing.`);
+      // Return exact matches first, then fill remaining slots with semantic matches 
+      // that are NOT different SLO codes (to avoid cross-talk).
+      const relevantNonSlo = candidates.filter(c => 
+        !exactMatches.includes(c) && 
+        (c.slo_codes.length === 0 || c.slo_codes.some(code => targetSLOs.includes(code)))
+      );
+      
+      return [...exactMatches, ...relevantNonSlo].slice(0, 7);
+    }
+  }
+
+  // Fallback to standard re-ranking for general queries
+  if (candidates.length <= 3) return candidates;
+
   const start = performance.now();
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
     const chunkOptions = candidates.map((c, i) => `[ID:${i}] ${c.chunk_text.substring(0, 400)}`).join('\n\n');
     
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Identify the TOP 5 most relevant curriculum segments for this teacher query.
-      
+      contents: `Rank the most relevant curriculum chunks.
       QUERY: "${query}"
+      TARGETS: ${targetSLOs.join(', ') || 'General Concept'}
       
       CANDIDATES:
       ${chunkOptions}
       
-      Respond only with comma-separated IDs.`,
+      Return top 5 IDs comma-separated.`,
     });
 
     const selectedIds = response.text?.match(/\d+/g)?.map(Number) || [];
@@ -55,14 +78,13 @@ async function reRankChunks(query: string, candidates: RetrievedChunk[]): Promis
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v33.0)
- * Integrated with Hybrid 70/30 Scoring function.
+ * HIGH-PRECISION RAG RETRIEVER (v35.0)
  */
 export async function retrieveRelevantChunks({
   query,
   documentIds,
   supabase,
-  matchCount = 20 
+  matchCount = 25 
 }: {
   query: string;
   documentIds: string[];
@@ -78,9 +100,8 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // 1. Hybrid Vector & Full-Text Search
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
-      query_text: query, // Explicitly passing the raw text for ts_rank
+      query_text: query,
       query_embedding: queryEmbedding,
       match_count: matchCount,
       filter_document_ids: documentIds,
@@ -100,11 +121,11 @@ export async function retrieveRelevantChunks({
       combined_score: d.combined_score,
       grade_levels: d.grade_levels || [],
       topics: d.topics || [],
-      bloom_levels: d.bloom_levels || []
+      bloom_levels: d.bloom_levels || [],
+      document_id: d.document_id
     }));
 
-    // 2. Semantic Re-ranking
-    const finalResults = await reRankChunks(query, processed);
+    const finalResults = await reRankChunks(query, processed, parsed.sloCodes);
     
     performanceMonitor.track('rag_retrieval_full_pipeline', performance.now() - start);
     return finalResults;
