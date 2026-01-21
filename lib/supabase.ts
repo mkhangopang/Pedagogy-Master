@@ -7,25 +7,19 @@ let supabaseInstance: SupabaseClient | null = null;
 /**
  * MASTER ENVIRONMENT RESOLVER
  * Aggressively scans for Supabase keys in various potential global scopes.
- * This handles Vercel's build-time vs runtime variable injection.
  */
 export const getCredentials = () => {
   const isServer = typeof window === 'undefined';
   
-  // Strategy: Try process.env first, then window globals (hydrated in index.tsx)
   const url = (
     process.env.NEXT_PUBLIC_SUPABASE_URL || 
-    (process.env as any).SUPABASE_URL ||
     (!isServer ? (window as any).NEXT_PUBLIC_SUPABASE_URL : '') || 
-    (!isServer ? (window as any).process?.env?.NEXT_PUBLIC_SUPABASE_URL : '') ||
     ''
   ).trim();
 
   const key = (
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-    (process.env as any).SUPABASE_ANON_KEY ||
     (!isServer ? (window as any).NEXT_PUBLIC_SUPABASE_ANON_KEY : '') || 
-    (!isServer ? (window as any).process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY : '') ||
     ''
   ).trim();
 
@@ -34,9 +28,7 @@ export const getCredentials = () => {
 
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  const validUrl = url && url.startsWith('https://') && url.includes('supabase.co');
-  const validKey = key && key.length > 20;
-  return !!(validUrl && validKey);
+  return !!(url && url.startsWith('https://') && key && key.length > 20);
 };
 
 export const getSupabaseClient = (): SupabaseClient => {
@@ -45,7 +37,6 @@ export const getSupabaseClient = (): SupabaseClient => {
   const { url, key } = getCredentials();
   
   if (!isSupabaseConfigured()) {
-    // Dummy client to prevent crashing during build hydration
     return createClient('https://placeholder.supabase.co', 'placeholder-key');
   }
 
@@ -54,26 +45,39 @@ export const getSupabaseClient = (): SupabaseClient => {
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true,
-      flowType: 'pkce'
-    }
+      flowType: 'pkce',
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    },
+    global: {
+      headers: { 'x-application-name': 'edunexus-ai' },
+    },
   });
 
   return supabaseInstance;
 };
 
-/**
- * Creates a new Supabase client for server-side operations, optionally with an auth token.
- */
+// Added getSupabaseServerClient to handle server-side requests with auth tokens
 export const getSupabaseServerClient = (token?: string): SupabaseClient => {
   const { url, key } = getCredentials();
+  
+  if (!isSupabaseConfigured()) {
+    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+  }
+
   return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
     global: {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: { 
+        'x-application-name': 'edunexus-ai',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
     },
   });
 };
 
-// Export a proxy that always uses the latest initialized instance
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     const client = getSupabaseClient() as any;
@@ -94,7 +98,6 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 
     if (profile) return profile;
 
-    // Use standard teacher role for new signups unless recognized as admin
     const { data: newProfile, error: upsertError } = await supabase
       .from('profiles')
       .upsert({
@@ -102,7 +105,8 @@ export async function getOrCreateProfile(userId: string, email?: string) {
         email: email || '',
         role: isAdminUser ? 'app_admin' : 'teacher',
         plan: isAdminUser ? 'enterprise' : 'free',
-        queries_limit: isAdminUser ? 999999 : 30
+        queries_limit: isAdminUser ? 999999 : 30,
+        created_at: new Date().toISOString()
       }, { onConflict: 'id' })
       .select()
       .single();
@@ -119,11 +123,9 @@ export const getSupabaseHealth = async () => {
   if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Infrastructure node initializing...' };
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
-    // Ignore error if it's just 'row not found'
     if (error && error.code !== 'PGRST116') throw error;
     return { status: 'connected', message: 'Neural Node: Active' };
   } catch (err: any) {
-    console.warn("Health check unreachable:", err.message);
     return { status: 'disconnected', message: 'Node unreachable - check Vercel Keys' };
   }
 };

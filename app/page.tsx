@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile, getCredentials } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -51,23 +51,18 @@ export default function App() {
   const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
     setLoadingMessage('Hydrating Identity Nodes...');
     try {
+      // Parallel execution for faster boot
       const profilePromise = getOrCreateProfile(userId, email);
+      const docsPromise = supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
       
-      // Watchdog for profile sync (10 seconds timeout)
+      // Watchdog for profile sync (8 seconds timeout for better UX)
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Hydration Timeout')), 10000)
+        setTimeout(() => reject(new Error('Hydration Timeout')), 8000)
       );
 
       const profile: any = await Promise.race([profilePromise, timeoutPromise]).catch(err => {
-        console.warn("Profile hydration lagged, using local fallback.", err);
-        return {
-          id: userId,
-          email: email || 'local-user',
-          name: email?.split('@')[0] || 'Educator',
-          role: UserRole.TEACHER,
-          plan: SubscriptionPlan.FREE,
-          queries_limit: 30
-        };
+        console.warn("📡 [System] Hydration lag detected, using adaptive local state.", err);
+        return null;
       });
 
       if (profile) {
@@ -83,10 +78,24 @@ export default function App() {
           successRate: profile.success_rate || 0,
           editPatterns: profile.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
         });
+      } else {
+        // Fallback for timeout or failure
+        setUserProfile({
+          id: userId,
+          name: email?.split('@')[0] || 'Educator',
+          email: email || '',
+          role: UserRole.TEACHER,
+          plan: SubscriptionPlan.FREE,
+          queriesUsed: 0,
+          queriesLimit: 30,
+          generationCount: 0,
+          successRate: 0,
+          editPatterns: { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        });
       }
 
       setLoadingMessage('Loading Curriculum Vault...');
-      const { data: docs } = await supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false });
+      const { data: docs } = await docsPromise;
       if (docs) {
         setDocuments(docs.map(d => ({
           id: d.id,
@@ -107,7 +116,7 @@ export default function App() {
         })));
       }
     } catch (e) {
-      console.error("Infrastructure Sync Fatal:", e);
+      console.error("❌ [System] Fatal Infrastructure Sync:", e);
     } finally {
       setLoading(false);
     }
@@ -118,7 +127,8 @@ export default function App() {
       let attempts = 0;
       const bootLoop = async () => {
         setBootAttempt(attempts);
-        if (isSupabaseConfigured() || attempts > 5) {
+        // Faster timeout logic: proceed if configured OR after 4 seconds total
+        if (isSupabaseConfigured() || attempts > 3) {
           setLoadingMessage('Authenticating Session...');
           paymentService.init();
           await checkDb();
@@ -132,7 +142,7 @@ export default function App() {
         } else {
           attempts++;
           setLoadingMessage(`Awaiting Cloud Handshake... (${attempts})`);
-          setTimeout(bootLoop, 1500);
+          setTimeout(bootLoop, 1000);
         }
       };
       bootLoop();
@@ -143,7 +153,6 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
-          setLoading(true);
           setSession(currentSession);
           await fetchProfileAndDocs(currentSession.user.id, currentSession.user.email);
         }
@@ -170,9 +179,9 @@ export default function App() {
         <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-xs">Neural Sync</p>
         <p className="text-slate-400 font-medium text-sm italic min-h-[1.5rem]">{loadingMessage}</p>
         <div className="w-48 h-1 bg-slate-200 dark:bg-slate-800 rounded-full mx-auto overflow-hidden">
-           <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${Math.min(100, (bootAttempt / 6) * 100)}%` }} />
+           <div className="h-full bg-indigo-600 transition-all duration-1000" style={{ width: `${Math.min(100, (bootAttempt / 4) * 100)}%` }} />
         </div>
-        {(bootAttempt > 4 || loadingMessage.includes('Timeout')) && (
+        {(bootAttempt > 3 || loadingMessage.includes('Timeout')) && (
            <div className="pt-6 animate-in fade-in slide-in-from-bottom-2">
              <button 
                onClick={() => setLoading(false)} 
@@ -180,7 +189,7 @@ export default function App() {
              >
                <AlertTriangle size={12} /> Force Enter Workspace
              </button>
-             <p className="mt-2 text-[9px] text-slate-400 italic">Institutional sync is lagging. Some assets may be read-only.</p>
+             <p className="mt-2 text-[9px] text-slate-400 italic">Institutional sync is lagging. Using adaptive local nodes.</p>
            </div>
         )}
       </div>

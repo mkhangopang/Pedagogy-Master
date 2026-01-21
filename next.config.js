@@ -3,11 +3,13 @@ const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
   env: {
-    // These MUST be set in Vercel UI for the build to pass them to the client
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_PUBLIC_R2_PUBLIC_URL: process.env.NEXT_PUBLIC_R2_PUBLIC_URL,
     API_KEY: process.env.API_KEY || process.env.GEMINI_API_KEY,
+  },
+  experimental: {
+    optimizePackageImports: ['@supabase/supabase-js', 'lucide-react'],
   },
   async headers() {
     return [
@@ -21,6 +23,10 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: "frame-ancestors 'self' https://*.google.com https://*.aistudio.google.com;",
+          },
+          {
+            key: 'X-DNS-Prefetch-Control',
+            value: 'on'
           },
         ],
       },
