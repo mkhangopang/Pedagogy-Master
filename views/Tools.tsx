@@ -58,6 +58,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     if (isSwitchingContext) return;
     setIsSwitchingContext(true);
     
+    // Optimistic UI Update
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -65,14 +66,21 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     setLocalDocs(updated);
 
     try {
-      await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
       const target = updated.find(d => d.id === docId);
-      if (target?.isSelected) {
+      const shouldBeSelected = target?.isSelected || false;
+
+      // Atomic Update Pattern: Set all to false, then target to intended state
+      await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+      
+      if (shouldBeSelected) {
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
+      
       onQuery(); 
     } catch (e) {
       console.error("Context Switch Fail:", e);
+      // Revert optimism on failure
+      setLocalDocs(documents);
     } finally {
       setIsSwitchingContext(false);
     }
@@ -127,13 +135,19 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       let fullContent = '';
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
       
+      // Crucial: Use current activeDoc from state for immediate request payload
       const stream = geminiService.generatePedagogicalToolStream(
         effectiveTool, 
         userInput, 
-        { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath }, 
+        { 
+          base64: activeDoc?.base64Data, 
+          mimeType: activeDoc?.mimeType, 
+          filePath: activeDoc?.filePath,
+          id: activeDoc?.id 
+        }, 
         brain, 
         user, 
-        activeDoc?.id
+        activeDoc?.id // Passing explicitly as priorityDocumentId
       );
 
       for await (const chunk of stream) {
@@ -143,7 +157,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           setCanvasContent(fullContent); 
         }
       }
-      await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool });
+      await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id });
     } catch (err) {
       setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: "Synthesis gate error. Neural grid under high load." } : m));
     } finally { 

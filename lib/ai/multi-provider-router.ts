@@ -38,7 +38,7 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v34.0)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v35.0)
  * Specialized for Multi-Modal Canvas Workspaces and Complex Pedagogical Tasks.
  */
 export async function generateAIResponse(
@@ -53,7 +53,7 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Context Scoping
+  // 1. Context Scoping - Pull active selections from DB
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, rag_indexed, authority, subject, grade_level, version_year')
@@ -61,9 +61,23 @@ export async function generateAIResponse(
     .eq('is_selected', true); 
   
   const activeDocs = selectedDocs || [];
-  const documentIds = activeDocs.map(d => d.id) || [];
+  let documentIds = activeDocs.map(d => d.id) || [];
   
-  // 2. Context Enforcement Check
+  // 2. Priority Injection: Ensure the explicitly passed ID is treated as active context
+  if (priorityDocumentId && !documentIds.includes(priorityDocumentId)) {
+    documentIds = [priorityDocumentId, ...documentIds];
+    
+    // Fetch info for the priority doc if it wasn't in activeDocs
+    const { data: priorityDocInfo } = await supabase
+      .from('documents')
+      .select('id, name, rag_indexed, authority, subject, grade_level, version_year')
+      .eq('id', priorityDocumentId)
+      .single();
+      
+    if (priorityDocInfo) activeDocs.push(priorityDocInfo);
+  }
+  
+  // 3. Context Enforcement Check
   if (documentIds.length === 0) {
     return {
       text: "> ⚠️ **CONTEXT NOT SYNCED**: You haven't selected a curriculum asset yet. \n\nTo generate precise lesson plans, assessments, or rubrics grounded in your specific standards, please **select a document from the 'Curriculum Assets' sidebar** first.",
@@ -72,20 +86,20 @@ export async function generateAIResponse(
     };
   }
 
-  // 3. RAG Retrieval (Metadata-Aware)
+  // 4. RAG Retrieval (Metadata-Aware)
   let retrievedChunks: RetrievedChunk[] = [];
   retrievedChunks = await retrieveRelevantChunks({
     query: userPrompt,
-    documentIds: priorityDocumentId ? [priorityDocumentId, ...documentIds] : documentIds,
+    documentIds: documentIds,
     supabase,
     matchCount: 20 
   });
   
-  // 4. Metadata Extraction
+  // 5. Metadata Extraction
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const extractedSLOs = extractSLOCodes(userPrompt);
   
-  // 5. Authoritative Vault Construction
+  // 6. Authoritative Vault Construction
   let vaultContent = "";
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
@@ -115,7 +129,7 @@ ${responseInstructions}
 
 RESPONSE:`;
 
-  // 6. Strategic Routing
+  // 7. Strategic Routing
   const isComplexTool = toolType && ['lesson-plan', 'assessment', 'rubric'].includes(toolType);
   const preferredProvider = (isComplexTool || queryAnalysis.queryType === 'lesson_plan' || userPrompt.includes('research')) 
     ? 'gemini' 
@@ -130,7 +144,7 @@ RESPONSE:`;
     masterSystem
   );
   
-  // 7. Grounding Metadata & Final Formatting
+  // 8. Grounding Metadata & Final Formatting
   const groundingSources = result.groundingMetadata?.groundingChunks?.map((chunk: any) => ({
     title: chunk.web?.title || 'Educational Resource',
     uri: chunk.web?.uri
