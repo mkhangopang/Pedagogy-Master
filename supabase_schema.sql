@@ -1,5 +1,5 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v54.0
--- TARGET: RESOLVE METADATA PASS-THROUGH AND OVERLOADED FUNCTIONS
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v55.0
+-- TARGET: RESOLVE ERROR 42P16 (Cannot drop columns from view)
 
 -- 1. SECURE SCHEMA LAYER
 CREATE SCHEMA IF NOT EXISTS extensions;
@@ -21,7 +21,10 @@ ALTER ROLE authenticated SET search_path TO public, extensions;
 ALTER ROLE service_role SET search_path TO public, extensions;
 ALTER ROLE postgres SET search_path TO public, extensions;
 
--- 4. ROBUST CLEANUP (Handles Overloaded Functions)
+-- 4. ROBUST CLEANUP (Functions & Views)
+-- Dropping the view first to prevent dependency issues during function drops
+DROP VIEW IF EXISTS public.rag_health_report CASCADE;
+
 DO $$
 DECLARE
     _sql text;
@@ -45,7 +48,7 @@ BEGIN
     END IF;
 END $$;
 
--- 6. REPAIR SEARCH ENGINE (Optimized Signature with Metadata)
+-- 6. REPAIR SEARCH ENGINE (Hybrid v3 with Metadata)
 CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
     query_embedding extensions.vector,
     match_count INTEGER,
@@ -170,8 +173,8 @@ GRANT EXECUTE ON FUNCTION public.semantic_search_chunks TO authenticated, servic
 GRANT EXECUTE ON FUNCTION public.get_extension_status TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION public.get_vector_dimensions TO authenticated, service_role;
 
--- 11. HEALTH VIEW
-CREATE OR REPLACE VIEW public.rag_health_report AS
+-- 11. HEALTH VIEW (Fresh Creation)
+CREATE VIEW public.rag_health_report AS
 SELECT 
     d.id, 
     d.name, 
