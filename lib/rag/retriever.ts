@@ -55,7 +55,8 @@ async function reRankChunks(query: string, candidates: RetrievedChunk[]): Promis
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v32.1)
+ * HIGH-PRECISION RAG RETRIEVER (v33.0)
+ * Integrated with Hybrid 70/30 Scoring function.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -77,16 +78,15 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // 1. Hybrid Vector Search
+    // 1. Hybrid Vector & Full-Text Search
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
+      query_text: query, // Explicitly passing the raw text for ts_rank
       query_embedding: queryEmbedding,
       match_count: matchCount,
       filter_document_ids: documentIds,
-      priority_document_id: documentIds[0], 
-      boost_slo_codes: parsed.sloCodes,
+      filter_tags: parsed.sloCodes.length > 0 ? parsed.sloCodes : null,
       filter_grades: parsed.grades.length > 0 ? parsed.grades : null,
-      filter_topics: parsed.topics.length > 0 ? parsed.topics : null,
-      filter_bloom: parsed.bloomLevel ? [parsed.bloomLevel] : null
+      filter_subjects: parsed.topics.length > 0 ? parsed.topics : null
     });
     
     if (error) throw error;
@@ -95,8 +95,8 @@ export async function retrieveRelevantChunks({
       chunk_id: d.chunk_id,
       chunk_text: d.chunk_text,
       slo_codes: d.slo_codes || [],
-      page_number: d.page_number,
-      section_title: d.section_title,
+      page_number: d.metadata?.page_number,
+      section_title: d.metadata?.section_title,
       combined_score: d.combined_score,
       grade_levels: d.grade_levels || [],
       topics: d.topics || [],

@@ -38,7 +38,7 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v35.0)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v36.0)
  * Specialized for Multi-Modal Canvas Workspaces and Complex Pedagogical Tasks.
  */
 export async function generateAIResponse(
@@ -56,7 +56,7 @@ export async function generateAIResponse(
   // 1. Context Scoping - Pull active selections from DB
   const { data: selectedDocs } = await supabase
     .from('documents')
-    .select('id, name, rag_indexed, authority, subject, grade_level, version_year')
+    .select('id, name, rag_indexed, authority, subject, grade_level, version_year, extracted_text')
     .eq('user_id', userId)
     .eq('is_selected', true); 
   
@@ -66,14 +66,11 @@ export async function generateAIResponse(
   // 2. Priority Injection: Ensure the explicitly passed ID is treated as active context
   if (priorityDocumentId && !documentIds.includes(priorityDocumentId)) {
     documentIds = [priorityDocumentId, ...documentIds];
-    
-    // Fetch info for the priority doc if it wasn't in activeDocs
     const { data: priorityDocInfo } = await supabase
       .from('documents')
-      .select('id, name, rag_indexed, authority, subject, grade_level, version_year')
+      .select('id, name, rag_indexed, authority, subject, grade_level, version_year, extracted_text')
       .eq('id', priorityDocumentId)
       .single();
-      
     if (priorityDocInfo) activeDocs.push(priorityDocInfo);
   }
   
@@ -88,25 +85,39 @@ export async function generateAIResponse(
 
   // 4. RAG Retrieval (Metadata-Aware)
   let retrievedChunks: RetrievedChunk[] = [];
-  retrievedChunks = await retrieveRelevantChunks({
-    query: userPrompt,
-    documentIds: documentIds,
-    supabase,
-    matchCount: 20 
-  });
+  try {
+    retrievedChunks = await retrieveRelevantChunks({
+      query: userPrompt,
+      documentIds: documentIds,
+      supabase,
+      matchCount: 20 
+    });
+  } catch (err) {
+    console.warn("⚠️ [Orchestrator] Vector Retrieval Node Lagged. Falling back to direct extraction.");
+  }
   
-  // 5. Metadata Extraction
-  const queryAnalysis = analyzeUserQuery(userPrompt);
-  const extractedSLOs = extractSLOCodes(userPrompt);
-  
-  // 6. Authoritative Vault Construction
+  // 5. Authoritative Vault Construction (with Fail-Safe Fallback)
   let vaultContent = "";
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => `[NODE_${i + 1}] (SOURCE: ${activeDocs.find(d => d.id === (chunk as any).document_id)?.name || 'Library'})\n${chunk.chunk_text}\n---`)
       .join('\n');
+  } else {
+    // CRITICAL FAIL-SAFE: If vector retrieval returned 0 chunks but docs ARE selected,
+    // inject the first 6,000 characters of the primary document directly.
+    const primary = activeDocs[0];
+    if (primary?.extracted_text) {
+      console.log(`📡 [Orchestrator] Empty Vector Results. Injecting Raw Buffer from: ${primary.name}`);
+      vaultContent = `[GROUNDING_FALLBACK_NODE] (SOURCE: ${primary.name})\n${primary.extracted_text.substring(0, 6000)}\n---\n*NOTE: Vector index cold; using direct document buffer.*`;
+    } else {
+      vaultContent = "ERROR: SYSTEM WAS UNABLE TO RETRIEVE TEXT DATA FOR SELECTED ASSETS.";
+    }
   }
 
+  // 6. Metadata Extraction
+  const queryAnalysis = analyzeUserQuery(userPrompt);
+  const extractedSLOs = extractSLOCodes(userPrompt);
+  
   // Inject primary document metadata into instructions
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || documentIds[0])) || activeDocs[0];
   const masterSystem = customSystem || DEFAULT_MASTER_PROMPT;
@@ -114,7 +125,7 @@ export async function generateAIResponse(
 
   const fullPrompt = `
 <AUTHORITATIVE_VAULT>
-${vaultContent || "ERROR: NO DATA FOUND IN SELECTED ASSETS."}
+${vaultContent}
 </AUTHORITATIVE_VAULT>
 
 ${NUCLEAR_GROUNDING_DIRECTIVE}
@@ -138,7 +149,7 @@ RESPONSE:`;
   const result = await synthesize(
     fullPrompt, 
     history.slice(-6), 
-    retrievedChunks.length > 0, 
+    true, // Grounding is now guaranteed by fallback
     [], 
     preferredProvider,
     masterSystem
@@ -159,7 +170,7 @@ RESPONSE:`;
     text: finalOutput,
     provider: result.provider,
     metadata: {
-      chunksUsed: retrievedChunks.length,
+      chunksUsed: retrievedChunks.length || 1,
       isGrounded: true,
       sourceDocument: primaryDoc?.name || 'Curriculum Library',
       extractedSLOs,

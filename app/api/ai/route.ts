@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const body = await req.json();
-    const { task, toolType, userInput, brain, priorityDocumentId } = body;
+    const { task, toolType, userInput, brain, priorityDocumentId, message } = body;
     
     // Enterprise Check for Visuals
     if (task === 'generate-visual') {
@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabaseServerClient(token);
-    let promptText = body.message;
+    let promptText = message || body.message;
+    
     if (task === 'generate-tool') {
       promptText = `COMMAND: Generate a high-fidelity ${toolType?.replace('-', ' ')}.\n\n` +
                    `INPUT PARAMETERS: ${userInput}\n\n` +
@@ -42,7 +43,15 @@ export async function POST(req: NextRequest) {
     }
 
     const { text, provider, metadata } = await generateAIResponse(
-      promptText, body.history || [], user.id, supabase, body.adaptiveContext, undefined, toolType, brain?.masterPrompt, priorityDocumentId 
+      promptText, 
+      body.history || [], 
+      user.id, 
+      supabase, 
+      body.adaptiveContext, 
+      undefined, 
+      toolType, 
+      brain?.masterPrompt, 
+      priorityDocumentId || body.priorityDocumentId
     );
 
     const encoder = new TextEncoder();
