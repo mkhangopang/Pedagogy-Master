@@ -5,6 +5,7 @@ import { supabase, isSupabaseConfigured, getSupabaseHealth, getOrCreateProfile }
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
+import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
@@ -20,7 +21,6 @@ const TrackerView = lazy(() => import('../views/Tracker'));
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [bootAttempt, setBootAttempt] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState('Initializing Core Infrastructure...');
   const [currentView, setCurrentView] = useState('dashboard');
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -59,7 +59,6 @@ export default function App() {
       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Vault Timeout')), 8000));
       
       const workPromise = (async () => {
-        // Fetch User Profile
         const profile = await getOrCreateProfile(userId, email);
         
         if (profile) {
@@ -77,7 +76,6 @@ export default function App() {
           });
         }
 
-        // Parallel Fetch: Docs + Neural Logic
         const [docsResponse, brainResponse] = await Promise.all([
           supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
           supabase.from('neural_brain').select('*').eq('is_active', true).order('version', { ascending: false }).limit(1).maybeSingle()
@@ -249,7 +247,8 @@ export default function App() {
                   case 'tools': return <ToolsView user={userProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={true} />;
                   case 'tracker': return <TrackerView user={userProfile} documents={documents} />;
                   case 'brain': return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
-                  case 'pricing': return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
+                  case 'pricing': return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} onShowPolicy={() => setCurrentView('policy')} />;
+                  case 'policy': return <Policy onBack={() => setCurrentView('pricing')} />;
                   default: return <Dashboard {...props} />;
                 }
               })()}
