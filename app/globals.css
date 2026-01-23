@@ -17,126 +17,54 @@
 
   * {
     @apply transition-colors duration-200;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
 body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-start-rgb));
-  -webkit-tap-highlight-color: transparent;
 }
 
-/* Custom Scrollbar */
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  @apply bg-slate-200 dark:bg-slate-800 rounded-full;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-300 dark:bg-slate-700;
-}
+/* Scrollbar Engineering */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar::-webkit-scrollbar-thumb { @apply bg-slate-200 dark:bg-slate-800 rounded-full; }
 
-.glass-panel {
-  @apply bg-white/80 dark:bg-[#1a1a1a]/80 backdrop-blur-xl border border-slate-200 dark:border-white/5;
-}
-
-/* Prose (Markdown) Styling - Professional GPT-Style */
-.prose {
-  @apply text-slate-700 dark:text-slate-300 leading-relaxed max-w-none break-words;
-}
-.prose h1, .prose h2, .prose h3 {
-  @apply font-bold text-slate-900 dark:text-white mt-10 mb-5 tracking-tight;
-}
-.prose h1 { @apply text-2xl lg:text-3xl border-b border-slate-100 dark:border-white/5 pb-4; }
-.prose h2 { @apply text-xl lg:text-2xl border-b border-slate-50 dark:border-white/5 pb-3; }
-.prose h3 { @apply text-lg lg:text-xl; }
-
-.prose p {
-  @apply mb-6 last:mb-0 text-[15px] lg:text-[16px];
-}
-
-/* Professional Table Styling */
-.prose .table-container {
-  @apply w-full overflow-x-auto my-8 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm bg-white dark:bg-white/[0.02];
-  -webkit-overflow-scrolling: touch;
+/* Mobile Table Strategy */
+.table-container {
+  @apply w-full overflow-x-auto my-6 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 shadow-sm;
+  max-width: calc(100vw - 32px); /* Prevention of edge clipping on mobile */
 }
 
 .prose table {
-  @apply w-full border-collapse text-left text-[14px];
-  display: table;
-  min-width: 500px;
-}
-
-.prose thead {
-  @apply bg-slate-50/50 dark:bg-white/5;
+  @apply w-full border-collapse text-left text-xs md:text-sm min-w-[500px];
 }
 
 .prose th {
-  @apply p-4 font-bold text-slate-900 dark:text-white border-b border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-slate-900/50;
-  white-space: nowrap;
+  @apply p-3 md:p-4 font-bold bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-white/10;
 }
 
 .prose td {
-  @apply p-4 text-slate-600 dark:text-slate-400 border-b border-slate-100 dark:border-white/5 align-top;
+  @apply p-3 md:p-4 border-b border-slate-100 dark:border-white/5;
 }
 
-.prose tr:last-child td {
-  @apply border-b-0;
+/* World-Class Prose Padding */
+.prose {
+  @apply text-slate-700 dark:text-slate-300 leading-relaxed max-w-full;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
-.prose tr:nth-child(even) {
-  @apply bg-slate-50/30 dark:bg-white/[0.01];
+.prose h1, .prose h2, .prose h3 {
+  @apply font-black text-slate-900 dark:text-white mt-8 mb-4 tracking-tight;
 }
 
-.prose tr:hover td {
-  @apply bg-indigo-50/20 dark:bg-indigo-500/[0.02] transition-colors;
-}
-
-.prose ul {
-  @apply list-disc list-outside space-y-3.5 my-6 ml-6;
-}
-.prose ol {
-  @apply list-decimal list-outside space-y-3.5 my-6 ml-6;
-}
-
-.prose code {
-  @apply bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded font-mono text-xs text-indigo-600 dark:text-indigo-400 font-semibold;
-}
-
-.prose blockquote {
-  @apply border-l-4 border-indigo-500 pl-6 py-2 my-8 italic text-slate-600 dark:text-slate-400 bg-indigo-50/30 dark:bg-indigo-500/5 rounded-r-xl;
-}
+.prose p { @apply mb-4 last:mb-0; }
 
 /* Animations */
-@keyframes slideInUp {
-  from { transform: translateY(12px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
+@keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.animate-spin-slow { animation: spin-slow 12s linear infinite; }
 
-.animate-chat-turn {
-  animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
-
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 8s linear infinite;
-}
-
-/* Hide scrollbar for Chrome, Safari and Opera */
-.scrollbar-hide::-webkit-scrollbar {
-    display: none;
-}
-
-/* Hide scrollbar for IE, Edge and Firefox */
-.scrollbar-hide {
-    -ms-overflow-style: none;  /* IE and Edge */
-    scrollbar-width: none;  /* Firefox */
-}
+@keyframes slideInUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.animate-chat-turn { animation: slideInUp 0.3s ease-out forwards; }
