@@ -1,11 +1,11 @@
-
 'use client';
 
 import React from 'react';
 import { 
   ArrowRight, BrainCircuit, ShieldCheck, 
   Zap, FileText, Globe, GraduationCap, 
-  CheckCircle2, Target, BarChart3, Users
+  CheckCircle2, Target, BarChart3, Users,
+  Network, Cpu, Scale, Lock
 } from 'lucide-react';
 import { APP_NAME } from '../constants';
 
@@ -26,8 +26,9 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
             <span className="text-xl font-black text-slate-900 dark:text-white tracking-tight">{APP_NAME}</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
-            <a href="#features" className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">Features</a>
-            <a href="#impact" className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">Impact</a>
+            <a href="#features" className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">Technology</a>
+            <a href="#global" className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">Global Reach</a>
+            <a href="#impact" className="text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">Enterprise</a>
             <button 
               onClick={onStart}
               className="px-6 py-2.5 bg-slate-900 dark:bg-indigo-600 text-white rounded-xl font-bold text-sm hover:scale-105 transition-all active:scale-95 shadow-lg shadow-indigo-600/20"
@@ -44,14 +45,14 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
           <div className="space-y-8 animate-in slide-in-from-left duration-700">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-500/20 rounded-full">
               <SparkleIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Next-Gen Pedagogical Engine</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Institutional Infrastructure Node</span>
             </div>
             <h1 className="text-6xl lg:text-7xl font-black text-slate-900 dark:text-white tracking-tighter leading-[0.9]">
               Synthesize <span className="text-indigo-600">Intelligence</span> into every Lesson.
             </h1>
             <p className="text-xl text-slate-500 dark:text-slate-400 leading-relaxed font-medium max-w-xl">
-              Upload your curriculum documents and let our Neural AI ground your instructional design in verified standards. 
-              The ultimate workspace for the modern educator.
+              Deterministic standards alignment for Ministries, Schools, and Global EdTech. 
+              Ground your instructional design in verified curriculum standards with 100% precision.
             </p>
             <div className="flex flex-col sm:flex-row items-center gap-4">
               <button 
@@ -147,9 +148,58 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
             <FeatureCard 
               icon={<Globe className="text-cyan-500" />}
               title="Universal Standards"
-              description="Compatible with Sindh Board, Cambridge, IB, and Federal frameworks out of the box."
+              description="Compatible with Sindh Board, GCC Visions, Cambridge, IB, and US/UK frameworks."
             />
           </div>
+        </div>
+      </section>
+
+      {/* Global Reach Section */}
+      <section id="global" className="py-20 px-6 bg-slate-50 dark:bg-[#0a0a0a]">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
+           <div className="relative">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="p-8 bg-white dark:bg-[#111] rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 space-y-4">
+                    <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-sm">PK</div>
+                    <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">Pakistan</h4>
+                    <p className="text-[10px] text-slate-500 leading-relaxed font-medium">Sindh, FBISE, Punjab Curriculum support with indigenous SLO extraction.</p>
+                 </div>
+                 <div className="p-8 bg-white dark:bg-[#111] rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 space-y-4 mt-8">
+                    <div className="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-black text-sm">GCC</div>
+                    <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">Middle East</h4>
+                    <p className="text-[10px] text-slate-500 leading-relaxed font-medium">Aligned with KSA Vision 2030 and UAE Madariss pedagogical directives.</p>
+                 </div>
+                 <div className="p-8 bg-white dark:bg-[#111] rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 space-y-4">
+                    <div className="w-10 h-10 bg-amber-600 rounded-xl flex items-center justify-center text-white font-black text-sm">INT</div>
+                    <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">International</h4>
+                    <p className="text-[10px] text-slate-500 leading-relaxed font-medium">Cambridge O/A Level, IB MYP/DP, and Common Core compatibility.</p>
+                 </div>
+                 <div className="p-8 bg-white dark:bg-[#111] rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 space-y-4 mt-8">
+                    <div className="w-10 h-10 bg-rose-600 rounded-xl flex items-center justify-center text-white font-black text-sm">NGO</div>
+                    <h4 className="font-bold text-slate-900 dark:text-white uppercase tracking-tight">Development</h4>
+                    <p className="text-[10px] text-slate-500 leading-relaxed font-medium">Empowering UNESCO/UNICEF projects with rapid curriculum localization.</p>
+                 </div>
+              </div>
+           </div>
+           <div className="space-y-8">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest">Borderless Pedagogy</div>
+              <h2 className="text-5xl font-black tracking-tight text-slate-900 dark:text-white leading-[1.1]">The Neural Bridge for Global Education.</h2>
+              <p className="text-lg text-slate-500 dark:text-slate-400 font-medium">Whether you are a private school chain in Dubai, a public ministry in Karachi, or a development agency in Africa, EduNexus AI adapts its neural logic to your specific instructional context.</p>
+              <div className="space-y-4">
+                 <div className="flex items-center gap-3">
+                    <div className="p-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-full"><CheckCircle2 size={16}/></div>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">100% Deterministic SLO Matching</span>
+                 </div>
+                 <div className="flex items-center gap-3">
+                    <div className="p-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-full"><CheckCircle2 size={16}/></div>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Multi-tenant Cloud Isolation</span>
+                 </div>
+                 <div className="flex items-center gap-3">
+                    <div className="p-1 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 rounded-full"><CheckCircle2 size={16}/></div>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Regional Data Sovereignty Options</span>
+                 </div>
+              </div>
+           </div>
         </div>
       </section>
 
@@ -175,13 +225,14 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                 </div>
               </div>
             </div>
-            <div className="flex justify-center">
+            <div className="flex flex-col items-center gap-6">
               <button 
                 onClick={onStart}
                 className="px-12 py-6 bg-white text-indigo-950 rounded-[2rem] font-black text-xl shadow-2xl hover:scale-105 transition-all active:scale-95"
               >
                 Join the Network
               </button>
+              <p className="text-indigo-200 text-xs font-bold uppercase tracking-widest">Enterprise API Access Available</p>
             </div>
           </div>
         </div>
@@ -192,6 +243,11 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
           <div className="flex items-center gap-3">
             <GraduationCap size={24} className="text-indigo-600" />
             <span className="text-xl font-black text-slate-900 dark:text-white tracking-tight">{APP_NAME}</span>
+          </div>
+          <div className="flex gap-8">
+             <a href="#" className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600">Privacy Policy</a>
+             <a href="#" className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600">Terms of Service</a>
+             <a href="#" className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-indigo-600">Audit Protocol</a>
           </div>
           <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">© 2024 EduNexus AI. All nodes operational.</p>
         </div>
