@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileText, Zap, Target, 
   Activity, GraduationCap,
-  RefreshCw, Server, BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building
+  RefreshCw, Server, BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff
 } from 'lucide-react';
 import { UserProfile, Document } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -46,6 +46,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   };
 
   const isConnected = health.status === 'connected';
+  const isChecking = health.status === 'checking';
 
   return (
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
@@ -60,13 +61,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </div>
         <button 
           onClick={handleRefreshHealth}
-          disabled={isRefreshingHealth}
-          className={`flex items-center gap-3 px-4 py-2 rounded-xl border shadow-sm transition-all ${
-            isConnected ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'
+          disabled={isRefreshingHealth || isChecking}
+          className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl border shadow-sm transition-all ${
+            isChecking ? 'bg-slate-50 border-slate-200 text-slate-400' :
+            isConnected ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 
+            'bg-rose-50 border-rose-100 text-rose-700'
           }`}
         >
-          {isRefreshingHealth ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Server className="w-3 h-3" />}
-          <span className="text-[10px] font-black uppercase tracking-widest">{isConnected ? 'Active Cloud' : 'Node Disconnected'}</span>
+          {isRefreshingHealth || isChecking ? (
+            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+          ) : isConnected ? (
+            <Cloud className="w-3.5 h-3.5" />
+          ) : (
+            <CloudOff className="w-3.5 h-3.5" />
+          )}
+          <span className="text-[10px] font-black uppercase tracking-[0.15em]">
+            {isChecking ? 'Establishing Node...' : isConnected ? 'Active Cloud' : 'Reconnect Node'}
+          </span>
         </button>
       </header>
 
@@ -100,7 +111,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{documents.length} Records</span>
              </div>
              <div className="space-y-4">
-                {documents.slice(0, 3).map(doc => (
+                {documents.length > 0 ? documents.slice(0, 3).map(doc => (
                   <div key={doc.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
                     <div className="flex items-center gap-4">
                        <div className={`p-2 rounded-xl ${doc.geminiProcessed ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
@@ -115,7 +126,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                        <p className="text-[10px] font-black text-indigo-600">{doc.subject}</p>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="py-10 text-center border-2 border-dashed border-slate-100 dark:border-white/5 rounded-3xl opacity-40 italic text-xs">
+                    No curriculum nodes mapped yet.
+                  </div>
+                )}
              </div>
           </section>
         </div>

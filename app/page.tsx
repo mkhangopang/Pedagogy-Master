@@ -10,7 +10,7 @@ import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Loader2, Menu, Cpu, RefreshCw, AlertTriangle, ShieldCheck } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -25,16 +25,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Initializing Core Infrastructure...');
   const [currentView, setCurrentView] = useState('dashboard');
+  
+  // Data States
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  
-  const [healthStatus, setHealthStatus] = useState({ status: 'checking', message: 'Connecting to neural grid...' });
-  const isActuallyConnected = healthStatus.status === 'connected';
-
   const [brain, setBrain] = useState<NeuralBrain>({
     id: 'system-brain',
     masterPrompt: DEFAULT_MASTER_PROMPT,
@@ -43,6 +37,12 @@ export default function App() {
     isActive: true,
     updatedAt: new Date().toISOString()
   });
+
+  // UI States
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [healthStatus, setHealthStatus] = useState({ status: 'checking', message: 'Connecting...' });
 
   const checkDb = useCallback(async () => {
     try {
@@ -55,49 +55,23 @@ export default function App() {
     }
   }, []);
 
-  const fetchProfileAndDocs = useCallback(async (userId: string, email: string | undefined) => {
-    setLoadingMessage('Hydrating Identity Nodes...');
+  const fetchContextualData = useCallback(async (userId: string) => {
     try {
-      // Parallel execution for world-class performance
-      const [profileData, docsResponse, brainResponse] = await Promise.all([
-        getOrCreateProfile(userId, email),
+      // Load background data without blocking main UI
+      const [docsResponse, brainResponse] = await Promise.all([
         supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
         supabase.from('neural_brain').select('*').eq('is_active', true).order('version', { ascending: false }).limit(1).maybeSingle()
       ]);
-      
-      if (profileData) {
-        setUserProfile({
-          id: profileData.id,
-          name: profileData.name || email?.split('@')[0] || 'Educator',
-          email: profileData.email || email || '',
-          role: profileData.role as UserRole || UserRole.TEACHER,
-          plan: profileData.plan as SubscriptionPlan || SubscriptionPlan.FREE,
-          queriesUsed: profileData.queries_used || 0,
-          queriesLimit: profileData.queries_limit || 30,
-          generationCount: profileData.generation_count || 0,
-          successRate: profileData.success_rate || 0,
-          editPatterns: profileData.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
-        });
-      }
 
       if (docsResponse.data) {
         setDocuments(docsResponse.data.map(d => ({
-          id: d.id,
-          userId: d.user_id,
-          name: d.name,
-          status: d.status as any,
-          curriculumName: d.curriculum_name || d.name,
-          authority: d.authority || 'General',
-          subject: d.subject || 'General',
-          gradeLevel: d.grade_level || 'Auto',
-          versionYear: d.version_year || '2024',
-          version: d.version || 1,
-          geminiProcessed: d.rag_indexed,
-          isSelected: d.is_selected,
-          sourceType: d.source_type as any || 'markdown',
-          isApproved: d.is_approved || false,
-          extractedText: d.extracted_text,
-          createdAt: d.created_at
+          id: d.id, userId: d.user_id, name: d.name, status: d.status as any,
+          curriculumName: d.curriculum_name || d.name, authority: d.authority || 'General',
+          subject: d.subject || 'General', gradeLevel: d.grade_level || 'Auto',
+          versionYear: d.version_year || '2024', version: d.version || 1,
+          geminiProcessed: d.rag_indexed, isSelected: d.is_selected,
+          sourceType: d.source_type as any || 'markdown', isApproved: d.is_approved || false,
+          extractedText: d.extracted_text, createdAt: d.created_at
         })));
       }
 
@@ -112,36 +86,59 @@ export default function App() {
         });
       }
     } catch (e) {
-      console.warn("📡 [System] Partial Hydration Lag.");
-    } finally {
-      setLoading(false);
+      console.warn("📡 [System] Contextual data lag.");
     }
   }, []);
 
+  const initializeIdentity = useCallback(async (userId: string, email?: string) => {
+    setLoadingMessage('Synchronizing Identity Node...');
+    try {
+      const profileData = await getOrCreateProfile(userId, email);
+      if (profileData) {
+        setUserProfile({
+          id: profileData.id,
+          name: profileData.name || email?.split('@')[0] || 'Educator',
+          email: profileData.email || email || '',
+          role: profileData.role as UserRole || UserRole.TEACHER,
+          plan: profileData.plan as SubscriptionPlan || SubscriptionPlan.FREE,
+          queriesUsed: profileData.queries_used || 0,
+          queriesLimit: profileData.queries_limit || 30,
+          generationCount: profileData.generation_count || 0,
+          successRate: profileData.success_rate || 0,
+          editPatterns: profileData.edit_patterns || { avgLengthChange: 0, examplesCount: 0, structureModifications: 0 }
+        });
+      }
+      // Release UI block immediately after profile is ready
+      setLoading(false);
+      // Kick off background tasks
+      checkDb();
+      fetchContextualData(userId);
+    } catch (e) {
+      console.error("Fatal initialization error:", e);
+      setLoading(false); // Safety fallback
+    }
+  }, [checkDb, fetchContextualData]);
+
   useEffect(() => {
-    const initialize = async () => {
+    const bootstrap = async () => {
       paymentService.init();
       const { data: { session: initialSession } } = await supabase.auth.getSession();
       
       if (initialSession) {
         setSession(initialSession);
-        // Automatic Node Handshake on mount
-        await Promise.all([
-          checkDb(),
-          fetchProfileAndDocs(initialSession.user.id, initialSession.user.email)
-        ]);
+        await initializeIdentity(initialSession.user.id, initialSession.user.email);
       } else {
         setLoading(false);
       }
     };
 
-    initialize();
+    bootstrap();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
           setSession(currentSession);
-          await Promise.all([checkDb(), fetchProfileAndDocs(currentSession.user.id, currentSession.user.email)]);
+          await initializeIdentity(currentSession.user.id, currentSession.user.email);
         }
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
@@ -152,22 +149,30 @@ export default function App() {
     });
 
     return () => subscription?.unsubscribe();
-  }, [checkDb, fetchProfileAndDocs]);
+  }, [initializeIdentity]);
 
   if (loading) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 text-center">
-      <div className="relative mb-8">
-        <div className="absolute inset-0 bg-indigo-500 rounded-full blur-3xl opacity-20 animate-pulse" />
-        <div className="relative bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border dark:border-white/5">
-          <Cpu className="text-indigo-600 w-16 h-16 animate-spin-slow" />
+      <div className="relative mb-12">
+        <div className="absolute inset-0 bg-indigo-500 rounded-full blur-[100px] opacity-10 animate-pulse" />
+        <div className="relative bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border dark:border-white/5 flex flex-col items-center justify-center min-w-[200px] min-h-[200px]">
+          <Cpu className="text-indigo-600 w-16 h-16 animate-spin-slow mb-6" />
+          <div className="flex gap-1.5">
+             <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+             <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+             <div className="w-1.5 h-1.5 bg-indigo-600 rounded-full animate-bounce" />
+          </div>
         </div>
       </div>
-      <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] mb-2">Neural Sync</p>
-      <p className="text-slate-400 font-medium text-sm italic min-h-[1.5rem] animate-pulse">{loadingMessage}</p>
+      <p className="text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] mb-2">Neural Handshake</p>
+      <p className="text-slate-400 font-bold text-xs italic animate-pulse px-10 max-w-sm">{loadingMessage}</p>
     </div>
   );
   
   if (!session) return <Login onSession={() => {}} />;
+
+  const isActuallyConnected = healthStatus.status === 'connected';
+  const isChecking = healthStatus.status === 'checking';
 
   return (
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden text-slate-900 dark:text-slate-100 ${theme === 'dark' ? 'dark' : ''}`}>
@@ -183,8 +188,10 @@ export default function App() {
             <span className="font-black text-indigo-950 dark:text-white tracking-tight text-sm uppercase">{currentView.replace('-', ' ')}</span>
           </div>
           <div className={`flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5`}>
-            <div className={`w-2 h-2 rounded-full ${isActuallyConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{isActuallyConnected ? 'Linked' : 'Offline'}</span>
+            <div className={`w-2 h-2 rounded-full ${isChecking ? 'bg-amber-400 animate-pulse' : isActuallyConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500'}`} />
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">
+              {isChecking ? 'Syncing...' : isActuallyConnected ? 'Linked' : 'Offline'}
+            </span>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar bg-slate-50 dark:bg-slate-950">
@@ -194,7 +201,7 @@ export default function App() {
                 const props = { user: userProfile!, documents, onProfileUpdate: setUserProfile, health: healthStatus as any, onCheckHealth: checkDb };
                 switch (currentView) {
                   case 'dashboard': return <Dashboard {...props} />;
-                  case 'documents': return <DocumentsView documents={documents} userProfile={userProfile!} onAddDocument={async () => fetchProfileAndDocs(userProfile!.id, userProfile!.email)} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={isActuallyConnected} />;
+                  case 'documents': return <DocumentsView documents={documents} userProfile={userProfile!} onAddDocument={async () => fetchContextualData(userProfile!.id)} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={isActuallyConnected} />;
                   case 'tools': return <ToolsView user={userProfile!} brain={brain} documents={documents} onQuery={() => {}} canQuery={userProfile!.queriesUsed < userProfile!.queriesLimit} />;
                   case 'tracker': return <TrackerView user={userProfile!} documents={documents} />;
                   case 'brain': return userProfile?.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
