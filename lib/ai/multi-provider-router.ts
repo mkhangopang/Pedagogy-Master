@@ -139,6 +139,13 @@ RESPONSE:`;
     customSystem || DEFAULT_MASTER_PROMPT
   );
   
+  // Add comment above each fix
+  // Fix: Extract grounding metadata chunks for compliance with GenAI search grounding requirements
+  const sources = [
+    ...(result.groundingMetadata?.groundingChunks?.map((c: any) => c.web).filter(Boolean) || []),
+    ...(result.groundingMetadata?.groundingChunks?.map((c: any) => c.maps).filter(Boolean) || [])
+  ];
+
   return {
     text: result.text,
     provider: result.provider,
@@ -146,7 +153,8 @@ RESPONSE:`;
       chunksUsed: retrievedChunks.length,
       isGrounded: true,
       sourceDocument: primaryDoc?.name,
-      extractedSLOs
+      extractedSLOs,
+      sources: sources.length > 0 ? sources : undefined
     }
   };
 }

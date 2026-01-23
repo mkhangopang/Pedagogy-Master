@@ -1,123 +1,68 @@
--- EDUNEXUS AI: MASTER INFRASTRUCTURE REPAIR v62.0
--- TARGET: Implement "Nuclear Match" Priority Boosting for exact SLO precision
+-- EDUNEXUS AI: PRODUCTION INFRASTRUCTURE v65.0
+-- Focus: Performance, Role-based Security, and Data Residency
 
--- 1. SECURE SCHEMA LAYER
-CREATE SCHEMA IF NOT EXISTS extensions;
+-- 1. OPTIMIZED PROFILES TABLE
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    name TEXT,
+    role TEXT NOT NULL DEFAULT 'teacher',
+    plan TEXT NOT NULL DEFAULT 'free',
+    queries_used INTEGER DEFAULT 0,
+    queries_limit INTEGER DEFAULT 30,
+    generation_count INTEGER DEFAULT 0,
+    success_rate DOUBLE PRECISION DEFAULT 0.0,
+    grade_level TEXT,
+    subject_area TEXT,
+    teaching_style TEXT,
+    pedagogical_approach TEXT,
+    edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::JSONB,
+    tenant_config JSONB DEFAULT '{"primary_color": "#4f46e5", "brand_name": "EduNexus AI"}'::JSONB,
+    active_doc_id UUID,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 
--- 2. SAFE VECTOR ENGINE MIGRATION
-DO $$ 
-BEGIN 
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
-    IF (SELECT nspname FROM pg_extension e JOIN pg_namespace n ON e.extnamespace = n.oid WHERE e.extname = 'vector') != 'extensions' THEN
-      ALTER EXTENSION vector SET SCHEMA extensions;
-    END IF;
-  ELSE
-    CREATE EXTENSION vector WITH SCHEMA extensions;
-  END IF;
-END $$;
+-- 2. ACCESS OPTIMIZATION INDEXES
+CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles(role);
+CREATE INDEX IF NOT EXISTS idx_profiles_plan ON public.profiles(plan);
+CREATE INDEX IF NOT EXISTS idx_documents_user_selection ON public.documents(user_id, is_selected);
 
--- 3. GLOBAL SEARCH PATH ALIGNMENT
-ALTER ROLE authenticated SET search_path TO public, extensions;
-ALTER ROLE service_role SET search_path TO public, extensions;
-ALTER ROLE postgres SET search_path TO public, extensions;
-SET search_path = public, extensions;
+-- 3. ENABLE ROW LEVEL SECURITY (RLS)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 
--- 4. NUCLEAR CLEANUP OF OVERLOADED FUNCTIONS
-DO $$
-DECLARE
-    _f record;
+-- 4. POLICIES (Privacy First)
+CREATE POLICY "Users can only view their own profile." 
+ON public.profiles FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can update their own non-sensitive profile fields."
+ON public.profiles FOR UPDATE USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
+
+-- 5. NEURAL RECOVERY TRIGGER
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
 BEGIN
-    FOR _f IN (
-        SELECT n.nspname as schema_name, 
-               p.proname as func_name, 
-               pg_get_function_identity_arguments(p.oid) as args
-        FROM pg_proc p
-        JOIN pg_namespace n ON p.pronamespace = n.oid
-        WHERE p.proname = 'hybrid_search_chunks_v3'
-    ) LOOP
-        EXECUTE 'DROP FUNCTION IF EXISTS ' || _f.schema_name || '.' || _f.func_name || '(' || _f.args || ') CASCADE';
-    END LOOP;
-END $$;
-
--- 5. RE-INITIALIZE HEALTH VIEW
-DROP VIEW IF EXISTS public.rag_health_report CASCADE;
-
--- 6. REPAIR SEARCH ENGINE (Hybrid v3 with NUCLEAR EXACT MATCH BOOST)
--- SIGNATURE: (TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[])
-CREATE OR REPLACE FUNCTION public.hybrid_search_chunks_v3(
-    query_text TEXT,
-    query_embedding extensions.vector,
-    match_count INTEGER,
-    filter_document_ids UUID[] DEFAULT NULL,
-    filter_user_id UUID DEFAULT NULL,
-    filter_tags TEXT[] DEFAULT NULL,
-    filter_subjects TEXT[] DEFAULT NULL,
-    filter_grades TEXT[] DEFAULT NULL,
-    filter_content_types TEXT[] DEFAULT NULL
-)
-RETURNS TABLE (
-    chunk_id UUID,
-    chunk_text TEXT,
-    document_id UUID,
-    similarity DOUBLE PRECISION,
-    text_rank REAL,
-    combined_score DOUBLE PRECISION,
-    metadata JSONB
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, extensions
-AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        dc.id as chunk_id,
-        dc.chunk_text,
-        dc.document_id,
-        (1 - (dc.embedding <=> query_embedding))::DOUBLE PRECISION as similarity,
-        ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) as text_rank,
-        (
-            -- BASE HYBRID SCORE (70% Vector | 30% Keyword)
-            (((1 - (dc.embedding <=> query_embedding)) * 0.7) + 
-            (ts_rank(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) * 0.3)) +
-            
-            -- NUCLEAR EXACT SLO MATCH BOOST
-            -- Boost is set to 50.0 to ensure correct SLO tags ALWAYS win over semantic noise.
-            (CASE 
-                WHEN filter_tags IS NOT NULL AND dc.slo_codes && filter_tags THEN 50.0 
-                ELSE 0.0 
-             END)
-        )::DOUBLE PRECISION as combined_score,
-        dc.metadata
-    FROM public.document_chunks dc
-    JOIN public.documents d ON dc.document_id = d.id
-    WHERE 
-        (filter_document_ids IS NULL OR dc.document_id = ANY(filter_document_ids))
-        AND (filter_user_id IS NULL OR d.user_id = filter_user_id)
-        AND (filter_grades IS NULL OR dc.grade_levels && filter_grades)
-        AND (filter_subjects IS NULL OR dc.topics && filter_subjects)
-        AND (filter_content_types IS NULL OR dc.metadata->>'type' = ANY(filter_content_types))
-    ORDER BY combined_score DESC
-    LIMIT match_count;
+  INSERT INTO public.profiles (id, email, name, role, plan, queries_limit)
+  VALUES (
+    NEW.id, 
+    NEW.email, 
+    split_part(NEW.email, '@', 1), 
+    'teacher', 
+    'free', 
+    30
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    updated_at = NOW();
+  RETURN NEW;
 END;
-$$;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 7. RECREATE HEALTH VIEW
-CREATE OR REPLACE VIEW public.rag_health_report AS
-SELECT 
-    d.id, 
-    d.name, 
-    d.is_selected,
-    count(dc.id) as chunk_count,
-    CASE 
-        WHEN count(dc.id) = 0 THEN 'BROKEN: NO CHUNKS'
-        WHEN d.rag_indexed = false THEN 'STALE: NEEDS REINDEX'
-        ELSE 'HEALTHY'
-    END as health_status
-FROM public.documents d
-LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
-GROUP BY d.id, d.name, d.is_selected, d.rag_indexed;
-
--- 8. UNAMBIGUOUS PERMISSIONS
-GRANT EXECUTE ON FUNCTION public.hybrid_search_chunks_v3(TEXT, extensions.vector, INTEGER, UUID[], UUID, TEXT[], TEXT[], TEXT[], TEXT[]) TO authenticated, service_role;
-GRANT SELECT ON public.rag_health_report TO authenticated;
+-- 6. RPC: IDENTITY SCAN (Used by Audit View)
+CREATE OR REPLACE FUNCTION public.get_extension_status(ext TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;

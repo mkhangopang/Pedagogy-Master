@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan } from '../types';
-import { ADMIN_EMAILS, DEFAULT_MASTER_PROMPT } from '../constants';
+import { DEFAULT_MASTER_PROMPT } from '../constants';
 
 let supabaseInstance: SupabaseClient | null = null;
 
@@ -34,10 +34,6 @@ export const getSupabaseClient = (): SupabaseClient => {
   return supabaseInstance;
 };
 
-/**
- * SERVER-SIDE CLIENT FACTORY
- * Creates a dedicated, stateless client for API routes.
- */
 export const getSupabaseServerClient = (token?: string): SupabaseClient => {
   const { url, key } = getCredentials();
   if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'placeholder-key');
@@ -69,34 +65,18 @@ export const supabase = new Proxy({} as SupabaseClient, {
   }
 });
 
-/**
- * IP PROTECTION: Fetches the 'Recipe' from the DB. 
- * If the DB is compromised or empty, it uses a generic fallback.
- */
-export async function getActiveNeuralLogic() {
-  try {
-    const { data } = await supabase
-      .from('neural_brain')
-      .select('master_prompt')
-      .eq('is_active', true)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    return data?.master_prompt || DEFAULT_MASTER_PROMPT;
-  } catch (e) {
-    return DEFAULT_MASTER_PROMPT;
-  }
-}
-
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
-  const isAdminUser = email && ADMIN_EMAILS.includes(email.toLowerCase());
+  
+  // SECURITY: Get admins from ENV instead of constants file
+  const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  const isAdminUser = email && adminEmails.includes(email.toLowerCase());
 
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (profile) return profile;
 
-    // Default registration logic
     const { data: newProfile, error } = await supabase
       .from('profiles')
       .upsert({
@@ -105,7 +85,6 @@ export async function getOrCreateProfile(userId: string, email?: string) {
         role: isAdminUser ? 'app_admin' : 'teacher',
         plan: isAdminUser ? 'enterprise' : 'free',
         queries_limit: isAdminUser ? 999999 : 30,
-        // Bootstrapping: Set default white-label config
         tenant_config: { primary_color: '#4f46e5', brand_name: 'EduNexus AI' }
       }, { onConflict: 'id' })
       .select().single();
@@ -119,7 +98,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
 }
 
 export const getSupabaseHealth = async () => {
-  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Node initializing...' };
+  if (!isSupabaseConfigured()) return { status: 'disconnected', message: 'Offline' };
   try {
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error && error.code !== 'PGRST116') throw error;

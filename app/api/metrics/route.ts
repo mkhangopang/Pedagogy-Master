@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { performanceMonitor } from '../../../lib/monitoring/performance';
 import { embeddingCache } from '../../../lib/rag/embedding-cache';
-import { ADMIN_EMAILS } from '../../../constants';
+// Removed missing ADMIN_EMAILS import from constants
 import { supabase } from '../../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +14,12 @@ export async function GET(req: Request) {
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user || !ADMIN_EMAILS.includes(user.email || '')) {
+    
+    // Add comment above each fix
+    // Fix: Validate admin status using environment variable to resolve missing export error
+    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 

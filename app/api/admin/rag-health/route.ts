@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../lib/supabase';
-import { ADMIN_EMAILS } from '../../../../constants';
+// Removed missing ADMIN_EMAILS import from constants
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,7 +20,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
     }
 
-    const isAdmin = user.email && ADMIN_EMAILS.some(e => e.toLowerCase() === user.email?.toLowerCase());
+    // Add comment above each fix
+    // Fix: Retrieve admin emails from environment variable to resolve missing export error from constants
+    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
     if (!isAdmin) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }

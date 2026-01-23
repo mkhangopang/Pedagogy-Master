@@ -3,16 +3,9 @@ import { UserRole, SubscriptionPlan } from './types';
 export const APP_NAME = "EduNexus AI";
 
 /**
- * SECURITY OPTIMIZATION: 
- * Hardcoded admins should be migrated to NEXT_PUBLIC_ADMIN_EMAILS in .env for production.
+ * SECURITY: Admin emails removed from source code.
+ * Managed via NEXT_PUBLIC_ADMIN_EMAILS in .env and 'role' column in Supabase.
  */
-const ENV_ADMINS = typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '').split(',').filter(Boolean) : [];
-
-export const ADMIN_EMAILS = ENV_ADMINS.length > 0 ? ENV_ADMINS : [
-  'mkgopang@gmail.com',
-  'admin@edunexus.ai',
-  'fasi.2001@live.com'
-];
 
 export const BLOOM_LEVELS = [
   "Remember", "Understand", "Apply", 
@@ -40,9 +33,6 @@ export const ROLE_LIMITS = {
   },
 };
 
-/**
- * EDUNEXUS AI - PEDAGOGY MASTER MULTI-AGENT AI v12.0 (STRICT CONTEXT)
- */
 export const DEFAULT_MASTER_PROMPT = `You are the **Pedagogy Master Multi-Agent AI**, a specialized instructional designer. Your mission is to synthesize curriculum-aligned pedagogical tools.
 
 ## ABSOLUTE CONTEXT RULE:
