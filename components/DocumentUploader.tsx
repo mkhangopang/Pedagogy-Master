@@ -87,14 +87,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: Docum
   };
 
   const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
-    // Robust key resolution for various environment configurations
-    const win = (typeof window !== 'undefined' ? window : {}) as any;
-    const apiKey = win.process?.env?.API_KEY || win.API_KEY || process.env.API_KEY;
-    
-    if (!apiKey) throw new Error("Neural synthesis node offline: AI API key not found in build.");
-
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      // Add comment above each fix
+      // GUIDELINE: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const processingText = rawText.substring(0, 250000);
       
       const prompt = `You are the World-Class Ingestion Engineer for EduNexus AI. 

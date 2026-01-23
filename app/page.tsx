@@ -18,6 +18,7 @@ const BrainControlView = lazy(() => import('../views/BrainControl'));
 const PricingView = lazy(() => import('../views/Pricing'));
 const TrackerView = lazy(() => import('../views/Tracker'));
 const AuditView = lazy(() => import('../views/AuditDashboard'));
+const MissionView = lazy(() => import('../views/MissionControl'));
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -249,6 +250,7 @@ export default function App() {
                   case 'tracker': return <TrackerView user={userProfile} documents={documents} />;
                   case 'brain': return userProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
                   case 'audit': return userProfile.role === UserRole.APP_ADMIN ? <AuditView user={userProfile} /> : <Dashboard {...props} />;
+                  case 'mission': return userProfile.role === UserRole.APP_ADMIN ? <MissionView /> : <Dashboard {...props} />;
                   case 'pricing': return <PricingView currentPlan={userProfile.plan} onUpgrade={() => setCurrentView('dashboard')} onShowPolicy={() => setCurrentView('policy')} />;
                   case 'policy': return <Policy onBack={() => setCurrentView('pricing')} />;
                   default: return <Dashboard {...props} />;

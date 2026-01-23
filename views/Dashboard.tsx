@@ -1,11 +1,10 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
 import { 
   FileText, Zap, Target, 
   Activity, GraduationCap,
-  RefreshCw, Server, BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database
+  RefreshCw, Server, BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building
 } from 'lucide-react';
 import { UserProfile, Document } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -23,6 +22,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   const [isRefreshingHealth, setIsRefreshingHealth] = useState(false);
   const [coverage, setCoverage] = useState({ total: 0, completed: 0, percentage: 0 });
   const [recentArtifacts, setRecentArtifacts] = useState<any[]>([]);
+
+  // White-labeling logic
+  const brandName = (user as any).tenant_config?.brand_name || 'EduNexus AI';
+  const primaryColor = (user as any).tenant_config?.primary_color || '#4f46e5';
 
   useEffect(() => {
     curriculumService.getCoverageStats(user.id).then(stats => {
@@ -48,8 +51,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
     <div className="space-y-10 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
+          <div className="flex items-center gap-2 mb-2">
+             <Building size={16} className="text-slate-400" />
+             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{brandName} Node</span>
+          </div>
           <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight">Workspace</h1>
-          <p className="text-slate-500 mt-1 font-medium">Educator: <span className="text-indigo-600 font-bold">{displayName}</span></p>
+          <p className="text-slate-500 mt-1 font-medium">Identity Node: <span className="text-indigo-600 font-bold">{displayName}</span></p>
         </div>
         <button 
           onClick={handleRefreshHealth}
@@ -59,40 +66,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
           }`}
         >
           {isRefreshingHealth ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Server className="w-3 h-3" />}
-          <span className="text-[10px] font-black uppercase tracking-widest">{isConnected ? 'Cloud Node Online' : 'Cloud Sync Error'}</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">{isConnected ? 'Active Cloud' : 'Node Disconnected'}</span>
         </button>
       </header>
 
       {/* Hero Stats Section */}
       <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Library" value={documents.length.toString()} icon={<FileText className="w-5 h-5 text-indigo-600" />} color="indigo" />
-        <StatCard title="AI Usage" value={`${user.queriesUsed}/${user.queriesLimit}`} icon={<Zap className="w-5 h-5 text-emerald-600" />} color="emerald" />
-        <StatCard title="Coverage" value={`${coverage.percentage}%`} icon={<CheckCircle className="w-5 h-5 text-amber-600" />} color="amber" />
-        <StatCard title="Account" value={user.plan.toUpperCase()} icon={<GraduationCap className="w-5 h-5 text-purple-600" />} color="purple" />
+        <StatCard title="Assets" value={documents.length.toString()} icon={<FileText className="w-5 h-5 text-indigo-600" />} color="indigo" />
+        <StatCard title="Inference" value={`${user.queriesUsed}/${user.queriesLimit}`} icon={<Zap className="w-5 h-5 text-emerald-600" />} color="emerald" />
+        <StatCard title="Mastery" value={`${coverage.percentage}%`} icon={<CheckCircle className="w-5 h-5 text-amber-600" />} color="amber" />
+        <StatCard title="Identity" value={user.plan.toUpperCase()} icon={<GraduationCap className="w-5 h-5 text-purple-600" />} color="purple" />
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content Area */}
         <div className="lg:col-span-2 space-y-8">
-          <section className="bg-indigo-600 rounded-[2.5rem] p-10 md:p-12 shadow-2xl relative overflow-hidden text-white">
+          <section className="bg-indigo-600 rounded-[2.5rem] p-10 md:p-12 shadow-2xl relative overflow-hidden text-white" style={{ backgroundColor: primaryColor }}>
             <div className="absolute top-0 right-0 p-8 opacity-[0.1] text-white"><BookOpen size={240} /></div>
             <div className="relative z-10 max-w-lg space-y-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-widest">Neural Link Active</div>
-              <h2 className="text-4xl font-black tracking-tight leading-none">Ready for Synthesis?</h2>
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-widest">Neural Ingestion Ready</div>
+              <h2 className="text-4xl font-black tracking-tight leading-none">Synthesize Intelligence</h2>
               <p className="text-indigo-100 leading-relaxed font-medium">
-                Your workspace is synchronized with your curriculum library. Use the <span className="underline font-bold">AI Chat</span> to generate lesson plans grounded in your specific SLOs.
+                Select a curriculum asset to begin standards-aligned synthesis. Your current plan allows for <span className="font-bold">{user.queriesLimit - user.queriesUsed}</span> more generations this period.
               </p>
               <div className="pt-2 flex items-center gap-4">
-                 <div className="px-6 py-3 bg-white text-indigo-950 rounded-2xl font-black text-sm shadow-xl hover:scale-105 transition-all cursor-pointer">Start New Draft</div>
+                 <div className="px-6 py-3 bg-white text-indigo-950 rounded-2xl font-black text-sm shadow-xl hover:scale-105 transition-all cursor-pointer">Explore Neural Tools</div>
               </div>
             </div>
           </section>
 
-          {/* Curriculum Health Grid */}
           <section className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm">
              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2"><Database size={18} className="text-indigo-500" /> Curriculum Health</h3>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{documents.length} Assets</span>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2"><Database size={18} className="text-indigo-500" /> Active Contexts</h3>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{documents.length} Records</span>
              </div>
              <div className="space-y-4">
                 {documents.slice(0, 3).map(doc => (
@@ -103,26 +108,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                        </div>
                        <div>
                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[200px]">{doc.name}</p>
-                         <p className="text-[10px] text-slate-400 font-bold uppercase">{doc.geminiProcessed ? 'Neural Indexed' : 'Processing...'}</p>
+                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{doc.geminiProcessed ? 'Vector Indexed' : 'Neural Extraction...'}</p>
                        </div>
                     </div>
                     <div className="text-right">
                        <p className="text-[10px] font-black text-indigo-600">{doc.subject}</p>
-                       <p className="text-[10px] text-slate-400">Grade {doc.gradeLevel}</p>
                     </div>
                   </div>
                 ))}
-                {documents.length === 0 && (
-                   <div className="text-center py-10 text-slate-400 text-sm font-medium italic">No curriculum assets found.</div>
-                )}
              </div>
           </section>
         </div>
 
-        {/* Sidebar Activity Feed */}
         <div className="space-y-8">
           <section className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm h-full flex flex-col">
-            <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2 mb-6"><Sparkles size={18} className="text-amber-500" /> Recent Successes</h3>
+            <h3 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2 mb-6"><Sparkles size={18} className="text-amber-500" /> Neural Legacy</h3>
             <div className="space-y-6 flex-1">
               {recentArtifacts.map((artifact, idx) => (
                 <div key={artifact.id} className="relative pl-6 pb-6 border-l border-slate-100 dark:border-white/5 last:pb-0">
@@ -130,7 +130,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                    <div>
                       <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">{artifact.contentType}</p>
                       <p className="text-xs font-bold text-slate-700 dark:text-slate-300 line-clamp-2 mb-2 leading-relaxed">
-                        {artifact.content.substring(0, 100).replace(/[#*`]/g, '')}...
+                        {artifact.content.substring(0, 80).replace(/[#*`]/g, '')}...
                       </p>
                       <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase">
                         <span>{new Date(artifact.createdAt).toLocaleDateString()}</span>
@@ -142,12 +142,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
               {recentArtifacts.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
                   <Activity size={32} className="text-slate-200" />
-                  <p className="text-xs text-slate-400 font-medium italic">Your pedagogical history will appear here as you generate content.</p>
+                  <p className="text-xs text-slate-400 font-medium italic">Your synthesis history will materialize here.</p>
                 </div>
               )}
             </div>
             <button className="mt-8 w-full py-4 bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-2xl flex items-center justify-center gap-3 text-xs font-black uppercase tracking-widest text-slate-500 transition-all">
-              View All History <ArrowRight size={14} />
+              View Strategy Logs <ArrowRight size={14} />
             </button>
           </section>
         </div>

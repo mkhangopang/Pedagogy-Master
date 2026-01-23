@@ -17,7 +17,8 @@ import {
   Sun,
   Moon,
   ClipboardCheck,
-  Scale
+  Scale,
+  ShieldAlert
 } from 'lucide-react';
 import { UserRole, UserProfile, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
@@ -58,6 +59,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   if (userProfile.role === UserRole.APP_ADMIN) {
     navItems.push({ id: 'brain', label: 'Neural Brain', icon: BrainCircuit });
     navItems.push({ id: 'audit', label: 'System Audit', icon: Scale });
+    navItems.push({ id: 'mission', label: 'Mission Control', icon: ShieldAlert });
   }
 
   const handleSignOut = async () => {

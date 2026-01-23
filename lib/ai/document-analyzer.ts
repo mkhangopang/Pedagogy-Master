@@ -19,7 +19,9 @@ export async function analyzeDocumentWithAI(
   supabase: SupabaseClient
 ) {
   try {
-    const apiKey = resolveApiKey();
+    // Add comment above each fix
+    // GUIDELINE: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+    const apiKey = process.env.API_KEY;
     if (!apiKey) throw new Error("Neural Node Error: API Key missing for analysis.");
 
     const { data: doc, error: fetchError } = await supabase
@@ -44,7 +46,7 @@ export async function analyzeDocumentWithAI(
       return;
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     // Increased window to 100k for better summary of large curriculum files
     const response = await ai.models.generateContent({
@@ -155,7 +157,7 @@ export async function analyzeDocumentWithAI(
         teaching_strategies: s.teachingStrategies || [],
         assessment_ideas: s.assessmentIdeas || [],
         prerequisite_concepts: s.prerequisiteConcepts || [],
-        common_misconceptions: s.commonMisconceptions || [],
+        common_misconceptions: s.common_misconceptions || [],
         keywords: s.keywords || [],
         page_number: s.pageNumber,
         extraction_confidence: s.confidence || 0.95
