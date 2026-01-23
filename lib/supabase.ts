@@ -68,7 +68,6 @@ export const supabase = new Proxy({} as SupabaseClient, {
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
   
-  // SECURITY: Get admins from ENV instead of constants file
   const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
   const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
   const isAdminUser = email && adminEmails.includes(email.toLowerCase());
@@ -77,11 +76,17 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (profile) return profile;
 
+    // Capture metadata from Google if available
+    const { data: { user } } = await supabase.auth.getUser();
+    const metadata = user?.user_metadata || {};
+    const fallbackName = metadata.full_name || metadata.name || email?.split('@')[0] || 'Educator';
+
     const { data: newProfile, error } = await supabase
       .from('profiles')
       .upsert({
         id: userId,
         email: email || '',
+        name: fallbackName,
         role: isAdminUser ? 'app_admin' : 'teacher',
         plan: isAdminUser ? 'enterprise' : 'free',
         queries_limit: isAdminUser ? 999999 : 30,
