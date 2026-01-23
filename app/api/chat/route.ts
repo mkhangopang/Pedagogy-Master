@@ -1,6 +1,5 @@
-
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
+import { getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { DEFAULT_MASTER_PROMPT } from '../../../constants';
 
@@ -9,17 +8,23 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED CHAT ENGINE (v27.0)
- * Enforces strict grounding via the orchestrator layer.
+ * UNIFIED CHAT ENGINE (v27.1)
+ * Optimized session validation using stateless server client.
  */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
+    if (!token || token === 'undefined') {
+      return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
+    }
 
-    const { data: { user } } = await anonClient.auth.getUser(token);
-    if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
+    const supabase = getSupabaseServerClient();
+    const { data: { user } } = await supabase.auth.getUser(token);
+    
+    if (!user) {
+      return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
+    }
 
     const body = await req.json();
     const { 
@@ -33,13 +38,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Message required' }, { status: 400 });
     }
 
-    const supabase = getSupabaseServerClient(token);
+    const authenticatedSupabase = getSupabaseServerClient(token);
 
     const { text, provider, metadata } = await generateAIResponse(
       message,
       history,
       user.id,
-      supabase,
+      authenticatedSupabase,
       adaptiveContext,
       undefined,
       'chat_tutor',
@@ -50,22 +55,19 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
-        // Only stream the text. The orchestrator now includes context warnings in the text body if needed.
         controller.enqueue(encoder.encode(text));
-        
-        // Detailed synthesis footer
-        const footer = `\n\n---\n*Synthesis Node: ${provider}${metadata?.isGrounded ? ` | Intelligence anchored to: ${metadata.sourceDocument}` : ''}*`;
+        const groundedNote = metadata?.isGrounded ? ` | Intelligence anchored to: ${metadata.sourceDocument}` : '';
+        const footer = `\n\n---\n*Synthesis Node: ${provider}${groundedNote}*`;
         controller.enqueue(encoder.encode(footer));
-        
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
     console.error("❌ Unified Chat API Error:", error);
-    return new Response(JSON.stringify({ 
+    return NextResponse.json({ 
       error: 'Synthesis node error',
       details: error.message 
-    }), { status: 500 });
+    }, { status: 500 });
   }
 }

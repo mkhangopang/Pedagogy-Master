@@ -104,14 +104,22 @@ VACUUM ANALYZE public.documents;`;
     setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError("Neural link expired. Please re-authenticate.");
+        return;
+      }
+
       const res = await fetch('/api/admin/rag-health', {
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
       
       const data = await res.json();
       
       if (!res.ok) {
         setError(data.error || "Failed to fetch RAG health metrics.");
+        if (data.error === 'Invalid Session') {
+           // Force reload or logout could happen here if critical
+        }
         return;
       }
       
@@ -128,11 +136,14 @@ VACUUM ANALYZE public.documents;`;
     setIsIndexing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Session expired.");
+      
       const response = await fetch('/api/admin/index-all-documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` }
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` }
       });
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Indexer failed.");
       setIndexStatus(`✅ Grid Healed: ${data.message}`);
       fetchRagHealth();
     } catch (err: any) { setIndexStatus(`❌ Indexer Failed: ${err.message}`); } finally { setIsIndexing(false); }

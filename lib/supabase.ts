@@ -21,23 +21,33 @@ export const getSupabaseClient = (): SupabaseClient => {
   const { url, key } = getCredentials();
   if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'placeholder-key');
   
+  const isServer = typeof window === 'undefined';
+  
   supabaseInstance = createClient(url, key, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'pkce' },
+    auth: { 
+      persistSession: !isServer, 
+      autoRefreshToken: !isServer, 
+      detectSessionInUrl: !isServer, 
+      flowType: 'pkce' 
+    },
   });
   return supabaseInstance;
 };
 
-// Add comment above each fix
 /**
  * SERVER-SIDE CLIENT FACTORY
- * Creates a dedicated client for API routes, using the user's JWT for RLS when provided.
+ * Creates a dedicated, stateless client for API routes.
  */
 export const getSupabaseServerClient = (token?: string): SupabaseClient => {
   const { url, key } = getCredentials();
   if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'placeholder-key');
 
   const options: any = {
-    auth: { persistSession: false },
+    auth: { 
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
   };
 
   if (token) {
@@ -54,7 +64,8 @@ export const getSupabaseServerClient = (token?: string): SupabaseClient => {
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     const client = getSupabaseClient() as any;
-    return typeof client[prop] === 'function' ? client[prop].bind(client) : client[prop];
+    const val = client[prop];
+    return typeof val === 'function' ? val.bind(client) : val;
   }
 });
 
