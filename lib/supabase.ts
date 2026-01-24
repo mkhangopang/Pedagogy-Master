@@ -11,6 +11,20 @@ export const getCredentials = () => {
   return { url, key };
 };
 
+// Helper to get the correct redirect URL for OAuth
+export const getURL = () => {
+  let url =
+    process?.env?.NEXT_PUBLIC_SITE_URL ?? // Set this to your Vercel URL in env vars
+    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? // Automatically set by Vercel
+    'http://localhost:3000/';
+  
+  // Make sure to include `https://` when not localhost.
+  url = url.includes('http') ? url : `https://${url}`;
+  // Make sure to include a trailing `/`.
+  url = url.charAt(url.length - 1) === '/' ? url : `${url}/`;
+  return url;
+};
+
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
   return !!(url && url.startsWith('https://') && key && key.length > 20);
@@ -76,7 +90,6 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (profile) return profile;
 
-    // Capture metadata from Google if available
     const { data: { user } } = await supabase.auth.getUser();
     const metadata = user?.user_metadata || {};
     const fallbackName = metadata.full_name || metadata.name || email?.split('@')[0] || 'Educator';

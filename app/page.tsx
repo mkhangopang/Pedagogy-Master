@@ -5,6 +5,7 @@ import { supabase, getSupabaseHealth, getOrCreateProfile } from '../lib/supabase
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
+import Landing from '../views/Landing';
 import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
@@ -23,7 +24,7 @@ const MissionView = lazy(() => import('../views/MissionControl'));
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [isAuthResolving, setIsAuthResolving] = useState(true);
-  const [currentView, setCurrentView] = useState('dashboard');
+  const [currentView, setCurrentView] = useState('landing');
   const initStarted = useRef(false);
   
   // App Context Data
@@ -94,6 +95,7 @@ export default function App() {
       setSession(initialSession);
       if (initialSession) {
         fetchAppData(initialSession.user.id, initialSession.user.email);
+        setCurrentView('dashboard');
       }
       setIsAuthResolving(false);
     });
@@ -102,6 +104,9 @@ export default function App() {
       setSession(currentSession);
       if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         fetchAppData(currentSession.user.id, currentSession.user.email);
+        setCurrentView('dashboard');
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentView('landing');
       }
       setIsAuthResolving(false);
     });
@@ -123,7 +128,10 @@ export default function App() {
     </div>
   );
   
-  if (!session) return <Login onSession={() => {}} />;
+  if (!session) {
+    if (currentView === 'login') return <Login onSession={() => setCurrentView('dashboard')} onBack={() => setCurrentView('landing')} />;
+    return <Landing onStart={() => setCurrentView('login')} />;
+  }
 
   // Safety fallback for empty profile during initial sync
   const safeProfile = userProfile || {

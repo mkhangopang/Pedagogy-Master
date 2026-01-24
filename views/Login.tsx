@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import { supabase, isSupabaseConfigured, getURL } from '../lib/supabase';
+import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, HelpCircle, Globe } from 'lucide-react';
 
 interface LoginProps {
   onSession: (user: any) => void;
@@ -15,16 +15,21 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ message: string, code?: string } | null>(null);
+  const [isVercel, setIsVercel] = useState(false);
   
   const [honeypot, setHoneypot] = useState('');
+
+  useEffect(() => {
+    setIsVercel(window.location.hostname.includes('vercel.app'));
+  }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     if (honeypot) return;
 
     if (!isSupabaseConfigured()) {
-      setError("Infrastructure handshake pending. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set correctly in Vercel.");
+      setError({ message: "Infrastructure handshake pending. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set correctly in Vercel." });
       return;
     }
     
@@ -55,14 +60,14 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
         setView('reset-sent');
       }
     } catch (err: any) {
-      setError(err.message || "Authentication node failed to respond.");
+      setError({ message: err.message || "Authentication node failed to respond." });
       setLoading(false);
     }
   };
 
   const handleGoogleLogin = async () => {
     if (!isSupabaseConfigured()) {
-      setError("Infrastructure configuration missing.");
+      setError({ message: "Infrastructure configuration missing." });
       return;
     }
 
@@ -73,7 +78,7 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: window.location.origin,
+          redirectTo: getURL(),
           queryParams: {
             access_type: 'offline',
             prompt: 'select_account',
@@ -82,7 +87,11 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
       });
       if (error) throw error;
     } catch (err: any) {
-      setError(err.message || "Google authentication failed.");
+      console.error("OAuth Error:", err);
+      setError({ 
+        message: err.message || "Google authentication failed.",
+        code: err.status === 400 ? 'CONFIG_ERROR' : undefined
+      });
       setGoogleLoading(false);
     }
   };
@@ -118,7 +127,13 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
             <GraduationCap className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Pedagogy Master</h1>
-          <p className="text-slate-500 mt-2 font-medium">Elevating education with Neural AI</p>
+          {isVercel && (
+             <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 rounded-full">
+               <Globe size={10} className="text-emerald-600" />
+               <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Production Node Linked</span>
+             </div>
+          )}
+          {!isVercel && <p className="text-slate-500 mt-2 font-medium">Elevating education with Neural AI</p>}
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-white/5">
@@ -181,9 +196,17 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
             )}
 
             {error && (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400 text-[11px] font-bold rounded-xl flex items-start gap-2">
-                <AlertCircle size={14} className="shrink-0 mt-0.5" /> 
-                <span>{error}</span>
+              <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl space-y-2">
+                <div className="flex items-start gap-2 text-[11px] font-bold uppercase tracking-tight">
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" /> 
+                  <span>{error.message}</span>
+                </div>
+                {error.code === 'CONFIG_ERROR' && (
+                  <div className="pt-2 border-t border-rose-100/50 dark:border-rose-900/30 flex items-start gap-2 text-[10px] leading-relaxed">
+                    <HelpCircle size={12} className="shrink-0 mt-0.5" />
+                    <p><b>Check Keys:</b> Ensure the Client ID and Client Secret are pasted correctly into your Supabase Auth settings. Do not split the Client ID.</p>
+                  </div>
+                )}
               </div>
             )}
 
