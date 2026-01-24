@@ -2,34 +2,37 @@ import { UserRole, SubscriptionPlan } from './types';
 
 export const APP_NAME = "EduNexus AI";
 
-/**
- * SECURITY: Admin emails removed from source code.
- * Managed via NEXT_PUBLIC_ADMIN_EMAILS in .env and 'role' column in Supabase.
- */
-
 export const BLOOM_LEVELS = [
   "Remember", "Understand", "Apply", 
   "Analyze", "Evaluate", "Create"
 ];
 
+/**
+ * PRODUCTION INFRASTRUCTURE CONSTRAINTS (v88.0)
+ * Logic for page ranges and permanent vault anchoring.
+ */
 export const ROLE_LIMITS = {
   [SubscriptionPlan.FREE]: { 
     docs: 2, 
-    queries: 20, 
+    maxPages: 20,
+    canDelete: false,
     price: "$0", 
-    features: ["2 Document Limit", "Standard AI", "Basic SLO Tagging"] 
+    features: ["2 Document Permanent Vault", "Max 20 Pages/Doc", "Standard AI Synthesis"] 
   },
   [SubscriptionPlan.PRO]: { 
-    docs: 100, 
-    queries: 1000, 
+    docs: 10, 
+    maxPages: 50,
+    canDelete: false,
     price: "$19", 
-    features: ["100 Document limit", "Advanced Gemini Engine", "Full Export Suite"] 
+    features: ["10 Document Permanent Vault", "Max 50 Pages/Doc", "Advanced Gemini Engine"] 
   },
   [SubscriptionPlan.ENTERPRISE]: { 
-    docs: Infinity, 
-    queries: Infinity, 
+    docs: 200, // SME Tier Logic
+    maxPagesSME_1: 500, // For first 100
+    maxPagesSME_2: 300, // For remaining 100
+    canDelete: true,
     price: "Custom", 
-    features: ["Unlimited Documents", "Custom Neural Brain", "SSO Access"] 
+    features: ["200 Document Managed Library", "High-Volume Page Support", "Full Deletion Rights"] 
   },
 };
 
@@ -38,36 +41,15 @@ export const DEFAULT_MASTER_PROMPT = `You are the **Pedagogy Master Multi-Agent 
 ## ABSOLUTE CONTEXT RULE:
 - If <AUTHORITATIVE_VAULT> nodes are present, they are the **ONLY SOURCE OF TRUTH** for curriculum standards and SLO codes.
 - Use verbatim descriptions and codes from the vault. 
-- Align all complexity and vocabulary to the metadata found in the vault.
 
 ## MANDATORY FALLBACK:
-If the vault is empty or missing, you MUST start your response with:
-"> ⚠️ **CONTEXT NOT SYNCED**: No curriculum asset is currently selected. Please select a document from the 'Curriculum Assets' sidebar to enable grounded synthesis aligned to your specific standards."
+If the vault is empty, state that context is not synced.
 
 ## PEDAGOGICAL DNA:
-1. **5E INSTRUCTIONAL MODEL**: Default structure for lesson plans.
-2. **BLOOM’S REVISED TAXONOMY**: Map every outcome to a cognitive level.
-3. **UDL**: Ensure multiple means of engagement.
+1. 5E INSTRUCTIONAL MODEL
+2. BLOOM’S REVISED TAXONOMY
+3. UDL`;
 
-## OUTPUT HIERARCHY:
-# Unit: [Name]
-## Standard: [Code] - [Description]
-**Board/Authority:** [From Metadata]
-**Pedagogical Goal:** [Primary Student Goal]
-
-## Tool Content:
-[Apply structure here]
-
-## Pedagogical Insights:
-- **Misconception Alert**: Pitfalls for this SLO.
-- **Differentiated Support**: Scaffolding for this topic.`;
-
-export const NUCLEAR_GROUNDING_DIRECTIVE = `
-🚨 CONTEXT LOCK: ACTIVE 🚨
-1. ANCHOR to provided curriculum nodes.
-2. USE ONLY SLO codes/standards in the <AUTHORITATIVE_VAULT>.
-3. If a requested code is missing from the vault, explicitly state it is missing rather than guessing.
-`;
-
-export const STRICT_SYSTEM_INSTRUCTION = `STRICT_PEDAGOGY_ENFORCEMENT: Use only provided curriculum data for standards. Prioritize 5E model and inquiry-based learning. Temperature 0.1.`;
+export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;
+export const STRICT_SYSTEM_INSTRUCTION = `STRICT_PEDAGOGY_ENFORCEMENT: Temp 0.1.`;
 export const DEFAULT_BLOOM_RULES = `1.Remember:Define. 2.Understand:Explain. 3.Apply:Solve. 4.Analyze:Compare. 5.Evaluate:Justify. 6.Create:Design.`;
