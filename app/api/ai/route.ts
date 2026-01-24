@@ -22,38 +22,45 @@ export async function POST(req: NextRequest) {
     
     // 1. NEURAL VISUAL NODE (Hybrid Synthesis)
     if (task === 'generate-visual' || toolType === 'visual-aid') {
+      // Robust Profile Check
       const { data: profile } = await anonClient.from('profiles').select('plan, role').eq('id', user.id).single();
       
-      const role = profile?.role?.toLowerCase() || '';
-      const plan = profile?.plan?.toLowerCase() || '';
-      const isDev = role === 'app_admin';
-      const isPro = plan === 'enterprise' || plan === 'pro';
+      const role = (profile?.role || '').toLowerCase();
+      const plan = (profile?.plan || '').toLowerCase();
       
-      // ADMIN/PRO: High-Fidelity Pixel Synthesis (Gemini 2.5 Flash Image)
-      if (isDev || isPro) {
-        const visualPrompt = `Generate a high-fidelity, professional pedagogical diagram for: ${userInput}. 
-        REQUIREMENTS:
-        - Educational textbook style.
-        - Clean labels and structures.
-        - High contrast, academic palette.`;
-        
-        const result = await callGemini(visualPrompt, [], "", false, [], true);
-        
-        if (result.imageUrl) {
-          return NextResponse.json({ 
-            imageUrl: result.imageUrl,
-            content: `![Pedagogical Diagram](${result.imageUrl})\n\n*Synthesis Node: gemini-2.5-flash-image | Logic anchored to instructional visual standards.*`
-          });
+      // Expand access to Enterprise Admins and Pro/Enterprise Plans
+      const isAdmin = role === 'app_admin' || role === 'enterprise_admin';
+      const isPremiumPlan = plan === 'enterprise' || plan === 'pro';
+      
+      // ADMIN/PREMIUM: High-Fidelity Pixel Synthesis (Gemini 2.5 Flash Image)
+      if (isAdmin || isPremiumPlan) {
+        try {
+          const visualPrompt = `Generate a professional, high-fidelity pedagogical diagram for: ${userInput}. 
+          STYLE REQUIREMENTS:
+          - Textbook illustration style (clean and academic).
+          - Labeled parts with clear arrows.
+          - High contrast, bright educational colors.
+          - White background for classroom visibility.`;
+          
+          const result = await callGemini(visualPrompt, [], "You are a professional educational illustrator.", false, [], true);
+          
+          if (result.imageUrl) {
+            return NextResponse.json({ 
+              imageUrl: result.imageUrl,
+              content: `![Pedagogical Diagram](${result.imageUrl})\n\n*Synthesis Node: gemini-2.5-flash-image | High-fidelity pixel rendering for ${plan} node.*`
+            });
+          }
+        } catch (geminiError) {
+          console.error("Gemini Visual Node failed, attempting SVG fallback...", geminiError);
         }
       }
 
-      // FREE TIER FALLBACK: Neural SVG Synthesis (Groq/SambaNova)
+      // FALLBACK: Neural SVG Synthesis (Groq/SambaNova)
       const svgPrompt = `Create a professional SVG-based pedagogical diagram for: ${userInput}.
       RULES:
       1. Output ONLY the SVG code wrapped in a markdown code block.
       2. Use a clean academic style with readable labels.
-      3. Ensure the SVG is responsive (width="100%").
-      4. Avoid complex gradients; keep it flat and pedagogical.`;
+      3. Ensure the SVG is responsive (width="100%").`;
 
       const svgResult = await synthesize(svgPrompt, [], false, [], 'groq', 'You are a pedagogical SVG architect.');
       

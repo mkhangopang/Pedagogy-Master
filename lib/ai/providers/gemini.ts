@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v31.2)
- * Updated to enforce guidelines regarding thinkingConfig and maxOutputTokens.
+ * HIGH-FIDELITY GEMINI ADAPTER (v31.3)
+ * Optimized for multimodal pixel synthesis.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -15,19 +15,20 @@ export async function callGemini(
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // IMAGE MODEL SELECTION
+    // IMAGE MODEL SELECTION (Nano Banana Node)
     if (forceImageModel) {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
         config: {
-          imageConfig: { aspectRatio: "16:9" }
+          imageConfig: { aspectRatio: "1:1" }
         }
       });
 
-      const candidates = response.candidates;
-      if (candidates && candidates.length > 0 && candidates[0].content?.parts) {
-        for (const part of candidates[0].content.parts) {
+      // GUIDELINE: Iterate through all parts to find the inlineData image bytes.
+      if (response.candidates && response.candidates.length > 0) {
+        const parts = response.candidates[0].content?.parts || [];
+        for (const part of parts) {
           if (part.inlineData) {
             return { imageUrl: `data:image/png;base64,${part.inlineData.data}` };
           }
@@ -62,7 +63,6 @@ export async function callGemini(
     const config: any = {
       systemInstruction: systemInstruction || "You are a world-class pedagogical assistant.",
       temperature: hasDocuments ? 0.1 : 0.7,
-      // GUIDELINE: When setting thinkingBudget, also set maxOutputTokens.
       maxOutputTokens: isComplexTask ? 8192 : 4096,
       thinkingConfig: isComplexTask ? { thinkingBudget: 4000 } : { thinkingBudget: 0 }
     };
