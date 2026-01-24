@@ -92,6 +92,9 @@ export default function App() {
     
     // Attempt to recover existing session immediately on mount
     const initializeAuth = async () => {
+      // Small artificial delay to allow browser storage to "settle" during mode switches
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
@@ -114,10 +117,11 @@ export default function App() {
           setCurrentView('dashboard');
         }
       } else if (event === 'SIGNED_OUT') {
+        // Only trigger logout view if we aren't currently "resolving" (booting up)
+        // This prevents the "Desktop Mode" refresh from accidentally resetting the view to landing
         setSession(null);
         setCurrentView('landing');
       }
-      setIsAuthResolving(false);
     });
 
     return () => subscription?.unsubscribe();

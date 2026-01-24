@@ -36,13 +36,15 @@ export const getSupabaseClient = (): SupabaseClient => {
   
   const isServer = typeof window === 'undefined';
   
+  // Use a stable, standard storage key that mobile browsers are less likely to partition
   supabaseInstance = createClient(url, key, {
     auth: { 
-      persistSession: true, // Always persist for better mobile/desktop transition
+      persistSession: true,
       autoRefreshToken: true, 
       detectSessionInUrl: true, 
       flowType: 'pkce',
-      storageKey: 'edunexus-auth-node' // Use unique key for robustness
+      storageKey: 'edunexus_auth_token_v1',
+      storage: !isServer ? window.localStorage : undefined
     },
   });
   return supabaseInstance;
