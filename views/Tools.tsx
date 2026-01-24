@@ -6,7 +6,7 @@ import {
   Bot, FileText, Copy, ArrowRight,
   MessageSquare, FileEdit, Zap, X,
   ShieldCheck, Library, Image as ImageIcon,
-  Tags, ChevronLeft
+  Tags, ChevronLeft, Download
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -43,6 +43,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                        user.role?.toLowerCase() === 'enterprise_admin' || 
                        user.plan?.toLowerCase() === 'enterprise';
 
+  const isPro = user.plan?.toLowerCase() === 'pro' || isEnterprise;
+
   useEffect(() => {
     setLocalDocs(documents);
   }, [documents]);
@@ -54,7 +56,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   }, [messages, isGenerating]);
 
   const toggleDocContext = async (docId: string) => {
-    // Immediate local state update for snappy UI
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -64,16 +65,14 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
     try {
       const target = updated.find(d => d.id === docId);
-      // Background sync with database
       await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
       if (target?.isSelected) {
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
-      // Delayed close for smooth feel
       setTimeout(() => setIsSliderOpen(false), 200);
     } catch (e) {
       console.error("Context sync error:", e);
-      setLocalDocs(documents); // Revert on failure
+      setLocalDocs(documents);
     } finally {
       setIsSwitchingContext(false);
     }
@@ -85,6 +84,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     const effectiveTool = activeTool || 'general-chat';
     setIsGenerating(true);
     const aiMsgId = crypto.randomUUID();
+    
     setMessages(prev => [...prev, 
       { id: crypto.randomUUID(), role: 'user', content: userInput, timestamp: new Date().toISOString() },
       { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date().toISOString() }
@@ -92,9 +92,24 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
     try {
       onQuery();
-      let fullContent = '';
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
+
+      // SPECIAL CASE: VISUAL AID (Atomic Pixel Synthesis)
+      if (effectiveTool === 'visual-aid') {
+        const result = await geminiService.generateVisualAid(
+          userInput, 
+          effectiveTool, 
+          brain, 
+          user, 
+          activeDoc?.id
+        );
+        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: result.content } : m));
+        setCanvasContent(result.content);
+        await adaptiveService.captureGeneration(user.id, effectiveTool, result.content, { tool: effectiveTool, visual: true });
+        return;
+      }
       
+      // STANDARD CASE: TEXT TOOLS (Streaming Synthesis)
       const stream = geminiService.generatePedagogicalToolStream(
         effectiveTool, 
         userInput, 
@@ -104,6 +119,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         activeDoc?.id 
       );
 
+      let fullContent = '';
       for await (const chunk of stream) {
         if (chunk) {
           fullContent += chunk;
@@ -112,8 +128,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         }
       }
       await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id });
-    } catch (err) {
-      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: "Synthesis gate error." } : m));
+    } catch (err: any) {
+      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m));
     } finally { setIsGenerating(false); }
   };
 
@@ -121,7 +137,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     { id: 'lesson-plan', name: 'Lesson Plan', icon: BookOpen, desc: '5E Instructional Flow', color: 'bg-indigo-600' },
     { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Standards-aligned MCQ/CRQ', color: 'bg-emerald-600' },
     { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Bloom-scaled Criteria', color: 'bg-amber-600' },
-    { id: 'visual-aid', name: 'Visual Aid', icon: ImageIcon, desc: 'Enterprise Diagram Node', color: 'bg-rose-600', enterprise: true },
+    { id: 'visual-aid', name: 'Visual Aid', icon: ImageIcon, desc: 'Text-to-Diagram Synthesis', color: 'bg-rose-600', pro: true },
     { id: 'slo-tagger', name: 'SLO Tagger', icon: Tags, desc: 'Bloom-scaled Metadata Extraction', color: 'bg-cyan-600' },
   ];
 
@@ -158,10 +174,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {toolDefinitions.map((tool) => (
-            <button key={tool.id} onClick={() => tool.enterprise && !isEnterprise ? alert("Enterprise node locked.") : setActiveTool(tool.id)} className={`p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border transition-all text-left flex flex-col gap-4 md:gap-6 group shadow-sm hover:shadow-2xl ${tool.enterprise && !isEnterprise ? 'bg-slate-50 dark:bg-slate-900/50 grayscale border-dashed' : 'bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500'}`}>
+            <button key={tool.id} onClick={() => tool.pro && !isPro ? alert("Node locked. Requires Pro tier for pixel synthesis.") : setActiveTool(tool.id)} className={`p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border transition-all text-left flex flex-col gap-4 md:gap-6 group shadow-sm hover:shadow-2xl ${tool.pro && !isPro ? 'bg-slate-50 dark:bg-slate-900/50 grayscale border-dashed opacity-50' : 'bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500'}`}>
               <div className={`w-12 h-12 md:w-14 md:h-14 ${tool.color} rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-lg`}><tool.icon size={24} /></div>
               <div className="flex-1">
-                <div className="flex items-center gap-2"><h3 className="font-bold text-lg md:text-xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>{tool.enterprise && <span className="bg-amber-400 text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase">PRO</span>}</div>
+                <div className="flex items-center gap-2"><h3 className="font-bold text-lg md:text-xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>{tool.pro && <span className="bg-amber-400 text-white text-[8px] font-black px-1.5 py-0.5 rounded uppercase">PRO</span>}</div>
                 <p className="text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-1 font-medium leading-relaxed">{tool.desc}</p>
               </div>
               <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity"><ArrowRight size={20} className="text-indigo-600" /></div>
@@ -174,7 +190,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden">
-      {/* Mobile Tab Switcher */}
       <div className="md:hidden flex p-1 bg-white dark:bg-slate-900 border-b dark:border-white/5">
         <button onClick={() => setMobileActiveTab('logs')} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mobileActiveTab === 'logs' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>
           <MessageSquare size={14} /> Logs
@@ -185,14 +200,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Logs Panel */}
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] lg:w-[480px] shrink-0`}>
           <div className="px-4 md:px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
              <div className="flex items-center gap-2 md:gap-3">
                <button 
                  onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent('');}} 
                  className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 transition-all flex items-center justify-center active:scale-90"
-                 title="Back to Grid"
                >
                  <ChevronLeft size={22}/>
                </button>
@@ -201,7 +214,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategy Logs</span>
                </div>
              </div>
-             <button onClick={() => setIsSliderOpen(true)} className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg" title="Switch Context">
+             <button onClick={() => setIsSliderOpen(true)} className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg">
                 <Library size={18} />
              </button>
           </div>
@@ -216,7 +229,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
         </div>
 
-        {/* Canvas Panel - FIXED FOR MOBILE EDGES */}
         <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden`}>
            <div className="px-6 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 md:gap-3"><FileEdit size={18} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Artifact</span></div>
@@ -234,8 +246,28 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
               <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-4 sm:p-10 md:p-16 lg:p-20 rounded-3xl md:rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full overflow-x-hidden">
                 {canvasContent ? (
-                  <div className="prose dark:prose-invert max-w-full text-[13px] md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 break-words overflow-x-hidden" 
-                    dangerouslySetInnerHTML={{ __html: marked.parse(canvasContent.split('--- Synthesis by Node:')[0]) }} />
+                  <div className="prose dark:prose-invert max-w-full text-[13px] md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 break-words overflow-x-hidden">
+                    <div dangerouslySetInnerHTML={{ __html: marked.parse(canvasContent.split('--- Synthesis by Node:')[0]) }} />
+                    {activeTool === 'visual-aid' && canvasContent.includes('data:image') && (
+                       <div className="mt-8 pt-8 border-t dark:border-white/5 flex justify-center">
+                          <button 
+                            onClick={() => {
+                              const match = canvasContent.match(/src="([^"]+)"/) || canvasContent.match(/\((data:image\/[^)]+)\)/);
+                              const url = match ? match[1] : null;
+                              if (url) {
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.download = `EduNexus_Visual_${Date.now()}.png`;
+                                link.click();
+                              }
+                            }}
+                            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all"
+                          >
+                             <Download size={14} /> Download Diagram
+                          </button>
+                       </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-20 md:py-40 text-center opacity-30">
                     <FileText size={48} className="mb-6 text-slate-300" /><h2 className="text-lg font-bold text-slate-300 uppercase tracking-widest">Awaiting Synthesis</h2>

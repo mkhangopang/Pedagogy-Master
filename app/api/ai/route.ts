@@ -19,28 +19,42 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { task, toolType, userInput, brain, priorityDocumentId, message } = body;
     
-    // Hardened Authorization Check for Enterprise Tools
-    if (task === 'generate-visual') {
+    // 1. NEURAL VISUAL NODE (Dedicated Image Synthesis)
+    if (task === 'generate-visual' || toolType === 'visual-aid') {
       const { data: profile } = await anonClient.from('profiles').select('plan, role').eq('id', user.id).single();
       
       const role = profile?.role?.toLowerCase() || '';
       const plan = profile?.plan?.toLowerCase() || '';
       
-      const isAuthorized = role === 'app_admin' || role === 'enterprise_admin' || plan === 'enterprise';
+      const isAuthorized = role === 'app_admin' || role === 'enterprise_admin' || plan === 'enterprise' || plan === 'pro';
       
       if (!isAuthorized) {
         return NextResponse.json({ 
-          error: "Neural Visual Node Restricted. Access requires an Enterprise-tier identity node or Administrator clearance." 
+          error: "Visual Node Restricted. Access requires a Pro or Enterprise identity node." 
         }, { status: 403 });
       }
 
-      const visualPrompt = `Generate a high-fidelity educational diagram or visual aid for: ${userInput}. 
-      Focus on clarity, labeled parts, and professional pedagogical style. Subject: ${toolType}.`;
+      const visualPrompt = `Generate a high-fidelity, professional educational diagram for: ${userInput}. 
+      REQUIREMENTS:
+      - Clean, labeled structures.
+      - Academic pedagogical style (suitable for textbooks).
+      - Flat design with high contrast.
+      - Grounding Subject: ${toolType}.`;
       
+      // Call Gemini with forceImageModel set to true
       const result = await callGemini(visualPrompt, [], "", false, [], true);
-      return NextResponse.json({ imageUrl: result.imageUrl });
+      
+      if (!result.imageUrl) {
+        throw new Error("Neural vision node failed to synthesize pixels.");
+      }
+
+      return NextResponse.json({ 
+        imageUrl: result.imageUrl,
+        content: `![Pedagogical Diagram](${result.imageUrl})\n\n*Synthesis Node: gemini-2.5-flash-image | Logic anchored to instructional visual standards.*`
+      });
     }
 
+    // 2. STANDARD TEXT SYNTHESIS (Streaming)
     const supabase = getSupabaseServerClient(token);
     let promptText = message || body.message;
     

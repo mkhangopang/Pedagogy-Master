@@ -40,6 +40,34 @@ export const geminiService = {
     return remaining > 0 ? remaining : 0;
   },
 
+  async generateVisualAid(
+    userInput: string,
+    toolType: string,
+    brain: NeuralBrain,
+    user: UserProfile,
+    priorityDocumentId?: string
+  ): Promise<{ imageUrl: string, content: string }> {
+    const token = await this.getAuthToken();
+    const response = await fetch('/api/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        task: 'generate-visual',
+        toolType,
+        userInput,
+        brain,
+        priorityDocumentId
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || "Visual node failure");
+    }
+
+    return await response.json();
+  },
+
   async *chatWithDocumentStream(
     message: string, 
     doc: { base64?: string; mimeType?: string; filePath?: string; id?: string }, 
