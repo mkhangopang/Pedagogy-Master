@@ -6,7 +6,7 @@ import {
   Bot, FileText, Copy, ArrowRight,
   MessageSquare, FileEdit, Zap, X,
   ShieldCheck, Library, Image as ImageIcon,
-  Tags
+  Tags, ChevronLeft
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -30,7 +30,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [messages, setMessages] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [canvasContent, setCanvasContent] = useState<string>('');
-  const [canvasImage, setCanvasImage] = useState<string | null>(null);
   const [mobileActiveTab, setMobileActiveTab] = useState<'logs' | 'artifact'>('logs');
   
   const [isSliderOpen, setIsSliderOpen] = useState(false);
@@ -55,16 +54,26 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   }, [messages, isGenerating]);
 
   const toggleDocContext = async (docId: string) => {
-    if (isSwitchingContext) return;
-    setIsSwitchingContext(true);
-    const updated = localDocs.map(d => ({ ...d, isSelected: d.id === docId ? !d.isSelected : false }));
+    // Optimistic UI update for immediate responsiveness
+    const updated = localDocs.map(d => ({ 
+      ...d, 
+      isSelected: d.id === docId ? !d.isSelected : false 
+    }));
     setLocalDocs(updated);
+    setIsSwitchingContext(true);
+
     try {
       const target = updated.find(d => d.id === docId);
+      // Background sync with database
       await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
-      if (target?.isSelected) await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+      if (target?.isSelected) {
+        await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+      }
+      // Close slider after selection for smoother flow
+      setTimeout(() => setIsSliderOpen(false), 300);
     } catch (e) {
-      setLocalDocs(documents);
+      console.error("Context sync error:", e);
+      setLocalDocs(documents); // Revert on failure
     } finally {
       setIsSwitchingContext(false);
     }
@@ -73,11 +82,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const handleGenerate = async (userInput: string) => {
     if (!userInput.trim() || isGenerating || !canQuery) return;
     
-    if (activeTool === 'visual-aid' && !isEnterprise) {
-      alert("Enterprise node required.");
-      return;
-    }
-
     const effectiveTool = activeTool || 'general-chat';
     setIsGenerating(true);
     const aiMsgId = crypto.randomUUID();
@@ -127,14 +131,27 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div className="flex items-center gap-4 md:gap-6">
             <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl"><Zap size={24} className="md:size-8" /></div>
-            <div>
-              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
-              <p className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
-                {activeDoc ? <><ShieldCheck size={14} className="text-emerald-500" /> Anchored to: <span className="text-slate-900 dark:text-white font-bold truncate max-w-[120px] md:max-w-none">{activeDoc.name}</span></> : <><FileText size={14} /> Ready for general pedagogical synthesis.</>}
-              </p>
+            <div className="min-w-0">
+              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase truncate">Synthesis Hub</h1>
+              <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2 overflow-hidden">
+                {activeDoc ? (
+                  <>
+                    <ShieldCheck size={14} className="text-emerald-500 shrink-0" /> 
+                    <span className="truncate">Anchored to: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span>
+                  </>
+                ) : (
+                  <>
+                    <FileText size={14} className="shrink-0" /> 
+                    <span className="truncate">Ready for general pedagogical synthesis.</span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
-          <button onClick={() => setIsSliderOpen(true)} className="flex items-center justify-center gap-3 px-6 md:px-8 py-3 md:py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:shadow-xl transition-all shadow-sm">
+          <button 
+            onClick={() => setIsSliderOpen(true)} 
+            className="flex items-center justify-center gap-3 px-6 md:px-8 py-3 md:py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:shadow-xl transition-all shadow-sm active:scale-95"
+          >
             <Library size={18} /> Context Settings
           </button>
         </div>
@@ -169,9 +186,23 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       <div className="flex-1 flex overflow-hidden">
         {/* Logs Panel */}
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] lg:w-[480px] shrink-0`}>
-          <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
-             <div className="flex items-center gap-2"><MessageSquare size={14} className="text-slate-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategy Logs</span></div>
-             <button onClick={() => {setActiveTool(null); setMessages([]);}} className="p-2 text-slate-400 hover:text-rose-500"><X size={18}/></button>
+          <div className="px-4 md:px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
+             <div className="flex items-center gap-3">
+               <button 
+                 onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent('');}} 
+                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 transition-all"
+                 title="Back to Tools"
+               >
+                 <ChevronLeft size={20}/>
+               </button>
+               <div className="flex items-center gap-2">
+                 <MessageSquare size={14} className="text-slate-400" />
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Strategy Logs</span>
+               </div>
+             </div>
+             <button onClick={() => setIsSliderOpen(true)} className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg" title="Switch Context">
+                <Library size={18} />
+             </button>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar py-6 space-y-2">
             {messages.map((m) => (
@@ -180,7 +211,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
             {isGenerating && <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-indigo-500" /></div>}
           </div>
           <div className="p-4 md:p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d]">
-            <ChatInput onSend={handleGenerate} isLoading={isGenerating} placeholder="Enhance the synthesis..." />
+            <ChatInput onSend={handleGenerate} isLoading={isGenerating} placeholder={`Prompt the ${activeTool?.replace('-', ' ')} node...`} />
           </div>
         </div>
 
@@ -188,12 +219,20 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'}`}>
            <div className="px-6 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 md:gap-3"><FileEdit size={18} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Artifact</span></div>
-              <button onClick={() => navigator.clipboard.writeText(canvasContent.split('---')[0])} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400 transition-all"><Copy size={16}/></button>
+              <div className="flex items-center gap-2">
+                {activeDoc && <span className="hidden sm:block text-[9px] font-bold text-slate-400 uppercase tracking-tighter truncate max-w-[120px]">Anchored: {activeDoc.name}</span>}
+                <button onClick={() => {
+                  const cleanText = canvasContent.split('--- Synthesis by Node:')[0].trim();
+                  navigator.clipboard.writeText(cleanText);
+                }} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400 transition-all">
+                  <Copy size={16}/>
+                </button>
+              </div>
            </div>
            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-3xl md:rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full">
+              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-5 sm:p-10 md:p-16 lg:p-20 rounded-3xl md:rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full">
                 {canvasContent ? (
-                  <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500" 
+                  <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 overflow-hidden break-words px-1" 
                     dangerouslySetInnerHTML={{ __html: marked.parse(canvasContent.split('--- Synthesis by Node:')[0]) }} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-20 md:py-40 text-center opacity-30">
@@ -207,13 +246,30 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
       {isSliderOpen && (
         <>
-          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[100]" onClick={() => setIsSliderOpen(false)} />
-          <div className="fixed top-0 right-0 h-full w-full max-w-sm bg-white dark:bg-[#0d0d0d] z-[110] shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col border-l border-slate-200 dark:border-white/5">
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[500]" onClick={() => setIsSliderOpen(false)} />
+          <div className="fixed top-0 right-0 h-full w-full max-w-sm bg-white dark:bg-[#0d0d0d] z-[510] shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col border-l border-slate-200 dark:border-white/5">
             <div className="p-8 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
-              <div><h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Active Context</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1">Curriculum Library</p></div>
-              <button onClick={() => setIsSliderOpen(false)} className="p-3 text-slate-400 hover:text-slate-900"><X size={24}/></button>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Active Context</h2>
+                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1">Curriculum Library</p>
+              </div>
+              <button onClick={() => setIsSliderOpen(false)} className="p-3 text-slate-400 hover:text-slate-900 transition-all hover:rotate-90">
+                <X size={24}/>
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar"><DocumentSelector documents={localDocs} onToggle={toggleDocContext} /></div>
+            <div className="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
+              {isSwitchingContext && (
+                <div className="absolute inset-0 bg-white/50 dark:bg-black/50 backdrop-blur-[2px] z-10 flex items-center justify-center">
+                  <Loader2 size={32} className="animate-spin text-indigo-600" />
+                </div>
+              )}
+              <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />
+            </div>
+            <div className="p-8 bg-slate-50 dark:bg-white/5 border-t dark:border-white/5">
+              <p className="text-[10px] text-slate-400 font-bold uppercase leading-relaxed text-center">
+                Selecting a document anchors AI logic to those specific standards for maximum precision.
+              </p>
+            </div>
           </div>
         </>
       )}
