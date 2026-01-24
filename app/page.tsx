@@ -43,6 +43,7 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
+    // Fire all requests in parallel for maximum performance
     getSupabaseHealth().then(setHealthStatus);
     
     getOrCreateProfile(userId, email).then(profile => {
@@ -90,20 +91,18 @@ export default function App() {
 
     paymentService.init();
     
-    // Attempt to recover existing session immediately on mount
+    // ATOMIC AUTH BOOT SEQUENCE
     const initializeAuth = async () => {
-      // Small artificial delay to allow browser storage to "settle" during mode switches
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
         setSession(existingSession);
+        // Background fetch app data to not block the main UI render
         fetchAppData(existingSession.user.id, existingSession.user.email);
         setCurrentView('dashboard');
       }
       
-      // Stop the loading screen once we've checked local storage
+      // Immediately drop the loading screen as soon as session status is known
       setIsAuthResolving(false);
     };
 
@@ -117,8 +116,6 @@ export default function App() {
           setCurrentView('dashboard');
         }
       } else if (event === 'SIGNED_OUT') {
-        // Only trigger logout view if we aren't currently "resolving" (booting up)
-        // This prevents the "Desktop Mode" refresh from accidentally resetting the view to landing
         setSession(null);
         setCurrentView('landing');
       }
@@ -128,8 +125,8 @@ export default function App() {
   }, [fetchAppData]);
 
   if (isAuthResolving) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-center">
-      <div className="relative bg-white dark:bg-slate-900 p-12 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col items-center">
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-center animate-in fade-in duration-300">
+      <div className="relative bg-white dark:bg-slate-900 p-12 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col items-center scale-90">
         <Cpu className="text-indigo-600 w-16 h-16 animate-pulse mb-6" />
         <div className="flex gap-2">
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
@@ -137,7 +134,7 @@ export default function App() {
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" />
         </div>
       </div>
-      <p className="mt-8 text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px]">Neural Handshake</p>
+      <p className="mt-8 text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] opacity-50">Neural Handshake</p>
     </div>
   );
   
@@ -168,7 +165,7 @@ export default function App() {
             <span className="font-black text-indigo-950 dark:text-white tracking-tight text-sm uppercase">{currentView.replace('-', ' ')}</span>
           </div>
           <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
-            <div className={`w-2 h-2 rounded-full ${healthStatus.status === 'checking' ? 'bg-amber-400 animate-pulse' : isActuallyConnected ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-rose-500'}`} />
+            <div className={`w-2 h-2 rounded-full ${healthStatus.status === 'checking' ? 'bg-amber-400 animate-pulse' : isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-rose-500'}`} />
             <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{healthStatus.status === 'checking' ? 'Syncing...' : isActuallyConnected ? 'Linked' : 'Offline'}</span>
           </div>
         </header>
