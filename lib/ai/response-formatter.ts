@@ -1,8 +1,8 @@
 import { QueryAnalysis } from './query-analyzer';
 
 /**
- * STRATEGIC RESPONSE FORMATTER (v33.0)
- * Optimized for Tool-based Pedagogical Synthesis & Expert SLO Tagging.
+ * STRATEGIC RESPONSE FORMATTER (v34.0)
+ * Optimized for Neural Pedagogical Synthesis.
  */
 export function formatResponseInstructions(analysis: QueryAnalysis, toolType?: string, docMetadata?: any): string {
   const metadataBlock = docMetadata ? `
@@ -13,12 +13,10 @@ export function formatResponseInstructions(analysis: QueryAnalysis, toolType?: s
 - VERSION: ${docMetadata.version_year}
 ` : '';
 
-  // If a specific tool is active, use the Tool Synthesis Engine
   if (toolType) {
     return metadataBlock + getToolSpecificInstructions(toolType, analysis.extractedSLO);
   }
 
-  // Fallback to general query analysis
   const baseInstruction = `
 ${metadataBlock}
 🎯 USER QUERY ANALYSIS:
@@ -42,59 +40,46 @@ function getToolSpecificInstructions(tool: string, slo?: string): string {
     case 'lesson-plan':
       return `
 ### 🛠️ TOOL: ADVANCED LESSON SYNTHESIZER
-1. **ANCHOR**: Locate the specific SLO in the <AUTHORITATIVE_VAULT> matching "${slo || 'the requested topic'}".
-2. **OBJECTIVE**: Start with "Target SLO: [CODE] - [VERBATIM DESCRIPTION FROM VAULT]".
-3. **STRUCTURE**: Use the 5E Instructional Model exclusively.
-4. **ALIGNMENT**: Every activity MUST cite which part of the standard it addresses.
-5. **UDL**: Include specific scaffolds for the difficulty level found in metadata.
+1. **ANCHOR**: Locate specific SLO in <AUTHORITATIVE_VAULT>.
+2. **OBJECTIVE**: Start with "Target SLO: [CODE] - [VERBATIM DESCRIPTION]".
+3. **STRUCTURE**: Use 5E Instructional Model.
+4. **ALIGNMENT**: Every activity MUST cite the standard clause.
 `;
     case 'assessment':
       return `
 ### 🛠️ TOOL: NEURAL ASSESSMENT GENERATOR
-1. **SOURCE**: Use ONLY content and vocabulary found in the <AUTHORITATIVE_VAULT>.
-2. **DISTRACTORS**: For MCQs, ensure distractors are based on common misconceptions for this specific subject.
-3. **MAPPING**: For every question, include a line: "[Aligned to: SLO Code | Bloom's Level]".
-4. **KEY**: Provide a high-fidelity answer key with pedagogical explanations.
+1. **SOURCE**: Use ONLY content from <AUTHORITATIVE_VAULT>.
+2. **DISTRACTORS**: Base distractors on common misconceptions.
+3. **MAPPING**: Include: "[Aligned to: SLO Code | Bloom's Level]".
 `;
     case 'rubric':
       return `
 ### 🛠️ TOOL: CRITERIA & RUBRIC BUILDER
-1. **VERBS**: Identify the cognitive verbs in the vault's SLOs (e.g., "Analyze", "Calculate").
-2. **SCALING**: Create a 4-level rubric (Exceptional, Proficient, Developing, Beginning).
-3. **PRECISION**: Use observable behaviors in the descriptors.
-4. **REFERENCE**: Explicitly link the 'Proficient' column to the verbatim curriculum standard.
+1. **VERBS**: Identify cognitive verbs in vault SLOs.
+2. **SCALING**: 4-level rubric (Exceptional, Proficient, Developing, Beginning).
 `;
     case 'slo-tagger':
       return `
-### 🛠️ TOOL: EXPERT SLO TAGGER (BLOOM ANALYZER)
-1. **AUDIT**: Scan the user input and find matching Student Learning Objectives (SLOs) in the <AUTHORITATIVE_VAULT>.
-2. **COGNITIVE MAPPING**: For each matched SLO, assign a Bloom's Taxonomy level (Remember, Understand, Apply, Analyze, Evaluate, Create) based on the operative verbs.
-3. **KEYWORD EXTRACTION**: List 3-5 technical keywords associated with the objective.
+### 🛠️ TOOL: WORLD-CLASS NEURAL SLO TAGGER
+1. **DEEP AUDIT**: Scan the input and locate the exact Student Learning Objective (SLO) in the <AUTHORITATIVE_VAULT>.
+2. **CONTEXTUAL INFERENCE (CRITICAL)**: Assign a Bloom's Taxonomy level (Remember, Understand, Apply, Analyze, Evaluate, Create) by analyzing the **ENTIRE CLAUSE**. 
+   - *RULE*: Do NOT just match the verb. If the SLO says "Understand the process of photosynthesis by modeling the electron chain," the level is **CREATE/ANALYZE**, not just Understand.
+   - *AUDIT*: Evaluate the cognitive demand required to achieve the outcome.
+3. **KEYWORD EXTRACTION**: List 3-5 high-fidelity technical keywords.
 4. **OUTPUT FORMAT**: 
    - [SLO CODE] | [BLOOM LEVEL]
-   - **Verbatim Standard**: [Description from Vault]
+   - **Verbatim Standard**: [Full Description from Vault]
    - **Keywords**: [List]
-   - **Alignment Note**: Brief explanation of why it matches.
-`;
-    case 'learning-path':
-      return `
-### 🛠️ TOOL: SEQUENTIAL LEARNING PATHWAY
-1. **PREREQUISITES**: Identify earlier units/SLOs in the vault that must be taught first.
-2. **FLOW**: Create a 3-step sequence: [Foundation] -> [Active Lesson] -> [Extension].
-3. **GAPS**: If the vault is missing a prerequisite, explicitly state "External Knowledge Required: [Concept]".
+   - **Neural Alignment Note**: Provide a deep pedagogical reasoning for the assigned cognitive level based on the structural complexity of the standard.
 `;
     default:
       return "\nProceed with pedagogical synthesis anchored to the provided curriculum assets.";
   }
 }
 
-function getWordCount(length: 'short' | 'medium' | 'long'): string {
-  return { short: '50-150', medium: '200-500', long: '800-1500' }[length];
-}
-
 function getLookupInstructions(slo?: string): string {
   return `
-📋 RESPONSE INSTRUCTIONS FOR SLO LOOKUP:
+📋 SLO LOOKUP:
 FORMAT: Definition + Brief Pedagogical Application.
 CRITICAL: Use verbatim quote from vault.
 `;
@@ -102,8 +87,8 @@ CRITICAL: Use verbatim quote from vault.
 
 function getTeachingInstructions(slo?: string): string {
   return `
-🎓 RESPONSE INSTRUCTIONS FOR TEACHING STRATEGIES:
-FORMAT: 3-5 specific, actionable teaching strategies with time allocations.
+🎓 TEACHING STRATEGIES:
+FORMAT: 3-5 actionable strategies with time allocations. Prioritize evidence-based active learning.
 `;
 }
 
@@ -117,14 +102,14 @@ function getAssessmentInstructions(slo?: string): string {
 
 function getDifferentiationInstructions(slo?: string): string {
   return `
-🎭 RESPONSE INSTRUCTIONS FOR DIFFERENTIATION STRATEGIES:
-Provide Support (Tier 1), At-Level (Tier 2), and Extension (Tier 3) strategies specifically for the selected curriculum asset.
+🎭 DIFFERENTIATION:
+Provide Support (Tier 1), At-Level (Tier 2), and Extension (Tier 3) strategies.
 `;
 }
 
 function getGeneralInstructions(): string {
   return `
-💬 RESPONSE INSTRUCTIONS FOR GENERAL QUERY:
-Provide a helpful, focused response addressing the specific question using documents when relevant.
+💬 GENERAL QUERY:
+Provide a helpful, focused response addressing the specific question using documents.
 `;
 }

@@ -9,7 +9,6 @@ import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../consta
 
 /**
  * Provides status of all configured AI nodes.
- * Used by the system monitoring dashboard to track node health and availability.
  */
 export async function getProviderStatus() {
   const configs = getProvidersConfig();
@@ -25,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v37.0)
- * Implements "Hard-Anchor" logic for specific standard requests.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v38.0)
+ * Logic for routing complex pedagogical extractions to high-reasoning nodes.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -106,9 +105,8 @@ export async function generateAIResponse(
   // 5. Hard-Anchor Directive
   const strictLock = targetSLO ? `
 🚨 STRICT STANDARD LOCK: ON 🚨
-The user is requesting content specifically for SLO: **${targetSLO}**.
-You MUST locate the chunk marked [!!! TARGET MATCH !!!] and use it as your primary definition. 
-DO NOT confuse this with other standards mentioned in the vault (e.g., if target is S08C03, ignore S08A03 descriptions).
+User is requesting analysis for SLO: **${targetSLO}**.
+Locate [!!! TARGET MATCH !!!]. If the description contains multiple clauses, synthesize the cognitive level for the MOST COMPLEX clause.
 ` : '';
 
   const fullPrompt = `
@@ -127,7 +125,9 @@ ${responseInstructions}
 
 RESPONSE:`;
 
-  const isComplexTool = toolType && ['lesson-plan', 'assessment', 'rubric'].includes(toolType);
+  // FORCE GEMINI FOR PEDAGOGICAL TOOLS
+  // Added 'slo-tagger' to the mandatory Gemini list
+  const isComplexTool = toolType && ['lesson-plan', 'assessment', 'rubric', 'slo-tagger', 'visual-aid'].includes(toolType);
   const preferredProvider = (isComplexTool || queryAnalysis.queryType === 'lesson_plan') ? 'gemini' : 'groq';
   
   const result = await synthesize(
@@ -139,8 +139,6 @@ RESPONSE:`;
     customSystem || DEFAULT_MASTER_PROMPT
   );
   
-  // Add comment above each fix
-  // Fix: Extract grounding metadata chunks for compliance with GenAI search grounding requirements
   const sources = [
     ...(result.groundingMetadata?.groundingChunks?.map((c: any) => c.web).filter(Boolean) || []),
     ...(result.groundingMetadata?.groundingChunks?.map((c: any) => c.maps).filter(Boolean) || [])

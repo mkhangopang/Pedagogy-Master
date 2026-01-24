@@ -12,8 +12,6 @@ import { isGeminiEnabled } from '../env-server';
 
 /**
  * NEURAL PROVIDER CONFIGURATION
- * Optimized for Gemini 3 and high-speed hardware nodes.
- * Calculates state dynamically to prevent static caching of missing environment variables.
  */
 export const getProvidersConfig = (): ProviderConfig[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled() },
@@ -34,16 +32,16 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * STRATEGIC SPECIALIZATION
- * Maps user intent to the model best suited for that specific educational task.
+ * STRATEGIC SPECIALIZATION (v2.0)
+ * Updated to favor Gemini for all heavy pedagogical synthesis.
  */
 export const MODEL_SPECIALIZATION: Record<string, string> = {
-  'lookup': 'cerebras', // Ultra-fast response for simple SLO definitions
-  'teaching': 'gemini', // Deep reasoning for strategies
-  'lesson_plan': 'gemini', // Requires Gemini 3 Thinking Budget
-  'assessment': 'deepseek', // Strong logic for distractors and MCQ quality
-  'differentiation': 'sambanova', // High context handle for multiple tiers
-  'general': 'groq', // Low latency chat
+  'lookup': 'cerebras', 
+  'teaching': 'gemini', 
+  'lesson_plan': 'gemini', 
+  'assessment': 'gemini', // Upgraded to Gemini for better distractor logic
+  'differentiation': 'gemini', // Upgraded to Gemini for tiered complexity
+  'general': 'groq', 
 };
 
 export async function synthesize(
@@ -69,8 +67,7 @@ export async function synthesize(
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         
-        // Timeout handling
-        const timeout = 60000;
+        const timeout = 90000; // Increased for Gemini 3 Reasoning
         const resultPromise = (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts);
         
         const response = await Promise.race([
