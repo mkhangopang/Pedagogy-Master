@@ -1,8 +1,7 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock } from 'lucide-react';
 import { validateCurriculumMarkdown } from '../lib/curriculum/validator';
 import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
@@ -55,9 +54,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const pdf = await loadingTask.promise;
         pageCount = pdf.numPages;
 
-        // TIER VALIDATION FOR PDF
-        // Add comment above each fix
-        // Fix: Resolve TypeScript property missing errors by checking userPlan and using appropriate limit fields
         let allowedPages = 0;
         if (userPlan === SubscriptionPlan.ENTERPRISE) {
           const entLimits = limits as { maxPagesSME_1: number; maxPagesSME_2: number };
@@ -79,11 +75,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       } else {
         const result = await mammoth.extractRawText({ arrayBuffer });
         fullText = result.value;
-        // Approximation for Docx pages (standard 500 words/page)
         pageCount = Math.ceil(fullText.split(/\s+/).length / 500);
         
-        // Add comment above each fix
-        // Fix: Resolve TypeScript property missing errors by checking userPlan and using appropriate limit fields for Docx
         let allowedPages = 0;
         if (userPlan === SubscriptionPlan.ENTERPRISE) {
           const entLimits = limits as { maxPagesSME_1: number; maxPagesSME_2: number };
@@ -105,8 +98,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
   const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
     try {
-      // Add comment above each fix
-      // Fix: Follow initialization and usage guidelines for GoogleGenAI. Using gemini-3-flash-preview for basic text task.
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `Convert this raw curriculum text into high-fidelity markdown with sections for Metadata, Units, and SLOs. FILE: ${fileName}\n\nTEXT: ${rawText.substring(0, 150000)}`;
       const response = await ai.models.generateContent({
@@ -132,8 +123,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const text = await file.text();
         const pages = Math.ceil(text.split(/\s+/).length / 500);
         
-        // Add comment above each fix
-        // Fix: Resolve TypeScript property missing errors by checking userPlan and using appropriate limit fields for Markdown
         let allowedPages = 0;
         if (userPlan === SubscriptionPlan.ENTERPRISE) {
           const entLimits = limits as { maxPagesSME_1: number; maxPagesSME_2: number };
@@ -192,11 +181,24 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <button onClick={onCancel} className="p-2 text-slate-400"><X size={24}/></button>
         </div>
         <div className="flex-1 grid grid-cols-2 overflow-hidden">
-          <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="p-8 bg-slate-50/50 dark:bg-black/20 border-r dark:border-white/5 font-mono text-[11px] outline-none resize-none custom-scrollbar" placeholder="Neural buffer empty..." />
+          <div className="flex flex-col border-r dark:border-white/5">
+            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
+              <Lock size={14} className="text-indigo-600" />
+              <span className="text-[10px] font-black uppercase text-indigo-600">Editable Buffer Node</span>
+            </div>
+            <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-8 bg-slate-50/50 dark:bg-black/20 font-mono text-[11px] outline-none resize-none custom-scrollbar" placeholder="Neural buffer empty..." />
+          </div>
           <div className="p-8 overflow-y-auto custom-scrollbar prose dark:prose-invert" dangerouslySetInnerHTML={{ __html: previewHtml }} />
         </div>
         <div className="p-8 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-between">
-           <div className="max-w-md">{error && <p className="text-xs font-bold text-rose-600 flex gap-2"><AlertCircle size={14}/> {error}</p>}</div>
+           <div className="max-w-md">
+             {error ? <p className="text-xs font-bold text-rose-600 flex gap-2"><AlertCircle size={14}/> {error}</p> : (
+               <div className="flex items-center gap-3 text-amber-600">
+                 <AlertTriangle size={16} />
+                 <p className="text-[10px] font-black uppercase tracking-tight">Proceeding will lock this asset permanently to your {userPlan} node.</p>
+               </div>
+             )}
+           </div>
            <button onClick={handleFinalApproval} disabled={isProcessing || !draftMarkdown} className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl flex items-center gap-2 hover:bg-indigo-700 active:scale-95 disabled:opacity-50">
              {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Database size={20}/>} Commit to Vault
            </button>
@@ -206,26 +208,36 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 text-center">
+    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 text-center relative overflow-hidden">
+      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-amber-500 to-indigo-500" />
+      
       <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-indigo-600 shadow-xl"><ShieldCheck size={40}/></div>
       <h3 className="text-3xl font-black dark:text-white uppercase tracking-tight">Vault Ingestion</h3>
-      <p className="text-slate-500 mt-2 mb-10 font-medium">Add to your permanent curriculum library.</p>
+      <p className="text-slate-500 mt-2 mb-8 font-medium">Map curriculum nodes to your permanent library.</p>
       
+      {/* Permanent Ingestion Warning Node */}
+      <div className="mb-10 p-6 bg-amber-50 dark:bg-amber-950/20 border-2 border-amber-100 dark:border-amber-900/30 rounded-[2rem] text-left flex gap-4 items-start">
+         <AlertTriangle size={24} className="text-amber-600 shrink-0 mt-1" />
+         <div>
+            <h4 className="text-xs font-black uppercase text-amber-700 tracking-widest mb-1">Permanent Ingestion Warning</h4>
+            <p className="text-[11px] text-amber-600 leading-relaxed font-medium">
+               Successfully indexed curriculum assets <b>cannot be deleted</b> to prevent quota exploitation. 
+               Ensure you only upload <b>essential, final</b> documents.
+            </p>
+         </div>
+      </div>
+
       <div className="grid gap-4">
         <input type="file" id="pdf-up" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(e, 'pdf')} />
         <label htmlFor="pdf-up" className="p-6 border-2 border-dashed rounded-3xl border-slate-200 dark:border-white/10 hover:border-indigo-500 cursor-pointer transition-all flex items-center gap-4">
            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl"><FileText size={24}/></div>
-           <div className="text-left"><p className="font-bold dark:text-white">PDF Document</p><p className="text-[10px] text-slate-400">Enforced {
-             // Add comment above each fix
-             // Fix: Resolve TypeScript property missing errors by safely accessing maxPages or maxPagesSME_1 as fallback
-             (limits as any).maxPages || (limits as any).maxPagesSME_1
-           } page limit</p></div>
+           <div className="text-left"><p className="font-bold dark:text-white">PDF Document</p><p className="text-[10px] text-slate-400">Locked Ingestion Node</p></div>
         </label>
         
         <input type="file" id="docx-up" className="hidden" accept=".docx" onChange={(e) => handleFileUpload(e, 'docx')} />
         <label htmlFor="docx-up" className="p-6 border-2 border-dashed rounded-3xl border-slate-200 dark:border-white/10 hover:border-emerald-500 cursor-pointer transition-all flex items-center gap-4">
            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl"><FileCode size={24}/></div>
-           <div className="text-left"><p className="font-bold dark:text-white">Word / Markdown</p><p className="text-[10px] text-slate-400">Strict structural audit active</p></div>
+           <div className="text-left"><p className="font-bold dark:text-white">Word / Markdown</p><p className="text-[10px] text-slate-400">Strict Structural Audit</p></div>
         </label>
       </div>
 

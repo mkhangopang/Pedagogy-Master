@@ -8,31 +8,32 @@ export const BLOOM_LEVELS = [
 ];
 
 /**
- * PRODUCTION INFRASTRUCTURE CONSTRAINTS (v89.0)
- * Updated Policy: Deletion rights granted to all tiers for library optimization.
+ * PRODUCTION INFRASTRUCTURE CONSTRAINTS (v90.0)
+ * SECURITY POLICY: Permanent Vault Enforcement.
+ * Successful documents cannot be deleted by users to prevent quota exploitation.
  */
 export const ROLE_LIMITS = {
   [SubscriptionPlan.FREE]: { 
     docs: 2, 
     maxPages: 20,
-    canDelete: true,
+    canDeleteSuccessful: false,
     price: "$0", 
-    features: ["2 Document Active Vault", "Max 20 Pages/Doc", "Standard AI Synthesis", "Library Management"] 
+    features: ["2 Document Permanent Vault", "Max 20 Pages/Doc", "Standard AI Synthesis", "Failed Node Cleanup"] 
   },
   [SubscriptionPlan.PRO]: { 
     docs: 10, 
     maxPages: 50,
-    canDelete: true,
+    canDeleteSuccessful: false,
     price: "$19", 
-    features: ["10 Document Active Vault", "Max 50 Pages/Doc", "Advanced Gemini Engine", "Library Management"] 
+    features: ["10 Document Permanent Vault", "Max 50 Pages/Doc", "Advanced Gemini Engine", "Priority Support"] 
   },
   [SubscriptionPlan.ENTERPRISE]: { 
-    docs: 200, // SME Tier Logic
-    maxPagesSME_1: 500, // For first 100
-    maxPagesSME_2: 300, // For remaining 100
-    canDelete: true,
+    docs: 200, 
+    maxPagesSME_1: 500, 
+    maxPagesSME_2: 300, 
+    canDeleteSuccessful: false, // SME admins can request bulk purge via support
     price: "Custom", 
-    features: ["200 Document Managed Library", "High-Volume Page Support", "Full Deletion Rights"] 
+    features: ["200 Document Institutional Vault", "High-Volume Page Support", "Dedicated Node Isolation"] 
   },
 };
 

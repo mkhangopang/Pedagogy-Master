@@ -3,6 +3,10 @@ import { supabase as anonClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET } from '../../../../lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 
+/**
+ * NEURAL NODE PURGE PROTOCOL (v4.0)
+ * RESTRICTION: Successful assets are permanent for non-admins to prevent quota cycling.
+ */
 export async function DELETE(request: NextRequest) {
   try {
     const authHeader = request.headers.get('Authorization');
@@ -15,7 +19,7 @@ export async function DELETE(request: NextRequest) {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: 'Doc ID required' }, { status: 400 });
 
-    // 1. Fetch user profile
+    // 1. Fetch user profile for role check
     const { data: profile } = await anonClient
       .from('profiles')
       .select('role')
@@ -34,7 +38,16 @@ export async function DELETE(request: NextRequest) {
 
     if (fetchError || !doc) return NextResponse.json({ error: 'Document not found or unauthorized.' }, { status: 404 });
 
-    // 3. Physical File Deletion (Cloudflare R2)
+    // 3. PERMANENCE ENFORCEMENT
+    // Only allow non-admins to delete documents that FAILED processing or are still in draft
+    const isSuccessful = doc.status === 'ready' || doc.status === 'completed' || doc.rag_indexed === true;
+    if (isSuccessful && !isAdmin) {
+      return NextResponse.json({ 
+        error: 'PERMANENT VAULT POLICY: Successfully indexed curriculum assets cannot be removed. Contact administration for institutional purges.' 
+      }, { status: 403 });
+    }
+
+    // 4. Physical File Deletion (Cloudflare R2)
     if (doc.storage_type === 'r2' && r2Client) {
       try {
         await r2Client.send(new DeleteObjectCommand({
@@ -46,11 +59,10 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // 4. Vector Chunk Deletion (Supabase Vector Store)
-    // Cascading delete should handle this if foreign keys are set, but we'll be explicit
+    // 5. Vector Chunk Deletion
     await anonClient.from('document_chunks').delete().eq('document_id', id);
 
-    // 5. Database record deletion
+    // 6. Database record deletion
     const { error: deleteError } = await anonClient
       .from('documents')
       .delete()
