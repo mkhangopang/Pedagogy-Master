@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileText, Zap, Target, 
   Activity, GraduationCap,
-  RefreshCw, Server, BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff
+  RefreshCw, Server, BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer
 } from 'lucide-react';
 import { UserProfile, Document } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -94,13 +94,15 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
           <section className="bg-indigo-600 rounded-[2.5rem] p-10 md:p-12 shadow-2xl relative overflow-hidden text-white" style={{ backgroundColor: primaryColor }}>
             <div className="absolute top-0 right-0 p-8 opacity-[0.1] text-white"><BookOpen size={240} /></div>
             <div className="relative z-10 max-w-lg space-y-6">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-widest">Neural Ingestion Ready</div>
-              <h2 className="text-4xl font-black tracking-tight leading-none">Synthesize Intelligence</h2>
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-widest">
+                <Timer size={10} className="text-emerald-400" /> High-Efficiency Protocol
+              </div>
+              <h2 className="text-4xl font-black tracking-tight leading-none">Synthesize content in <span className="text-emerald-300">&lt; 30 seconds.</span></h2>
               <p className="text-indigo-100 leading-relaxed font-medium">
-                Select a curriculum asset to begin standards-aligned synthesis. Your current plan allows for <span className="font-bold">{user.queriesLimit - user.queriesUsed}</span> more generations this period.
+                Select a curriculum asset to begin standards-aligned synthesis. Experience instant pedagogical output grounded in your library.
               </p>
               <div className="pt-2 flex items-center gap-4">
-                 <div className="px-6 py-3 bg-white text-indigo-950 rounded-2xl font-black text-sm shadow-xl hover:scale-105 transition-all cursor-pointer">Explore Neural Tools</div>
+                 <div className="px-6 py-3 bg-white text-indigo-950 rounded-2xl font-black text-sm shadow-xl hover:scale-105 transition-all cursor-pointer">Start 30s Synthesis</div>
               </div>
             </div>
           </section>

@@ -6,7 +6,7 @@ import {
   Bot, FileText, Copy, ArrowRight,
   MessageSquare, FileEdit, Zap, X,
   ShieldCheck, Library, Image as ImageIcon,
-  Tags, ChevronLeft, Download
+  Tags, ChevronLeft, Download, Timer, Target
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -147,18 +147,44 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
             </div>
           </div>
-          <button onClick={() => setIsSliderOpen(true)} className="flex items-center gap-3 px-8 py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:shadow-xl transition-all cursor-pointer">
-            <Library size={18} /> Context Settings
-          </button>
+          
+          {/* Benefit Node for Funnel Optimization */}
+          <div className="hidden lg:flex items-center gap-4 px-6 py-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 rounded-3xl shadow-sm">
+             <div className="p-2 bg-emerald-500 text-white rounded-xl"><Timer size={18} /></div>
+             <div>
+                <p className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 tracking-widest">Speed Metric</p>
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">&lt; 30s Generation</p>
+             </div>
+          </div>
         </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {toolDefinitions.map((tool) => (
             <button key={tool.id} onClick={() => setActiveTool(tool.id)} className={`p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border transition-all text-left flex flex-col gap-4 md:gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500`}>
               <div className={`w-12 h-12 md:w-14 md:h-14 ${tool.color} rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-lg`}><tool.icon size={24} /></div>
               <div><h3 className="font-bold text-lg md:text-xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3><p className="text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-1 font-medium leading-relaxed">{tool.desc}</p></div>
-              <div className="flex justify-end opacity-0 group-hover:opacity-100 transition-opacity"><ArrowRight size={20} className="text-indigo-600" /></div>
+              <div className="flex items-center justify-between mt-auto">
+                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Zap size={10} /> Instant Start
+                 </span>
+                 <ArrowRight size={20} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
+              </div>
             </button>
           ))}
+        </div>
+
+        <div className="mt-16 p-8 bg-slate-900 rounded-[3rem] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
+           <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 opacity-10 rounded-full blur-[80px]" />
+           <div className="flex items-center gap-6 relative z-10">
+              <div className="p-4 bg-white/10 rounded-2xl"><Target size={32} className="text-indigo-400" /></div>
+              <div>
+                 <h4 className="text-lg font-black uppercase tracking-tight">Aligned Accuracy</h4>
+                 <p className="text-sm text-slate-400 font-medium italic">Validated against {documents.length} curriculum nodes.</p>
+              </div>
+           </div>
+           <button onClick={() => setIsSliderOpen(true)} className="px-8 py-4 bg-white text-indigo-950 rounded-2xl font-black text-xs uppercase tracking-widest hover:scale-105 transition-all active:scale-95 relative z-10">
+              Switch Context
+           </button>
         </div>
       </div>
     );

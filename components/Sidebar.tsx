@@ -52,8 +52,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Curriculum Vault', icon: FileText },
+    { id: 'tools', label: 'Neural Tools', icon: Wrench }, // Moved up for direct funnel optimization
     { id: 'tracker', label: 'Progress Tracker', icon: ClipboardCheck },
-    { id: 'tools', label: 'Neural Tools', icon: Wrench },
     { id: 'pricing', label: 'Pricing Tiers', icon: CreditCard },
   ];
 
