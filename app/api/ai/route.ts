@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { callGemini } from '../../../lib/ai/providers/gemini';
+import { synthesize } from '../../../lib/ai/synthesizer-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,38 +20,45 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { task, toolType, userInput, brain, priorityDocumentId, message } = body;
     
-    // 1. NEURAL VISUAL NODE (Dedicated Image Synthesis)
+    // 1. NEURAL VISUAL NODE (Hybrid Synthesis)
     if (task === 'generate-visual' || toolType === 'visual-aid') {
       const { data: profile } = await anonClient.from('profiles').select('plan, role').eq('id', user.id).single();
       
       const role = profile?.role?.toLowerCase() || '';
       const plan = profile?.plan?.toLowerCase() || '';
+      const isDev = role === 'app_admin';
+      const isPro = plan === 'enterprise' || plan === 'pro';
       
-      const isAuthorized = role === 'app_admin' || role === 'enterprise_admin' || plan === 'enterprise' || plan === 'pro';
-      
-      if (!isAuthorized) {
-        return NextResponse.json({ 
-          error: "Visual Node Restricted. Access requires a Pro or Enterprise identity node." 
-        }, { status: 403 });
+      // ADMIN/PRO: High-Fidelity Pixel Synthesis (Gemini 2.5 Flash Image)
+      if (isDev || isPro) {
+        const visualPrompt = `Generate a high-fidelity, professional pedagogical diagram for: ${userInput}. 
+        REQUIREMENTS:
+        - Educational textbook style.
+        - Clean labels and structures.
+        - High contrast, academic palette.`;
+        
+        const result = await callGemini(visualPrompt, [], "", false, [], true);
+        
+        if (result.imageUrl) {
+          return NextResponse.json({ 
+            imageUrl: result.imageUrl,
+            content: `![Pedagogical Diagram](${result.imageUrl})\n\n*Synthesis Node: gemini-2.5-flash-image | Logic anchored to instructional visual standards.*`
+          });
+        }
       }
 
-      const visualPrompt = `Generate a high-fidelity, professional educational diagram for: ${userInput}. 
-      REQUIREMENTS:
-      - Clean, labeled structures.
-      - Academic pedagogical style (suitable for textbooks).
-      - Flat design with high contrast.
-      - Grounding Subject: ${toolType}.`;
-      
-      // Call Gemini with forceImageModel set to true
-      const result = await callGemini(visualPrompt, [], "", false, [], true);
-      
-      if (!result.imageUrl) {
-        throw new Error("Neural vision node failed to synthesize pixels.");
-      }
+      // FREE TIER FALLBACK: Neural SVG Synthesis (Groq/SambaNova)
+      const svgPrompt = `Create a professional SVG-based pedagogical diagram for: ${userInput}.
+      RULES:
+      1. Output ONLY the SVG code wrapped in a markdown code block.
+      2. Use a clean academic style with readable labels.
+      3. Ensure the SVG is responsive (width="100%").
+      4. Avoid complex gradients; keep it flat and pedagogical.`;
 
-      return NextResponse.json({ 
-        imageUrl: result.imageUrl,
-        content: `![Pedagogical Diagram](${result.imageUrl})\n\n*Synthesis Node: gemini-2.5-flash-image | Logic anchored to instructional visual standards.*`
+      const svgResult = await synthesize(svgPrompt, [], false, [], 'groq', 'You are a pedagogical SVG architect.');
+      
+      return NextResponse.json({
+        content: `${svgResult.text}\n\n*Synthesis Node: ${svgResult.provider} (SVG Mode) | Vector visual optimized for classroom display.*`
       });
     }
 
@@ -61,19 +69,11 @@ export async function POST(req: NextRequest) {
     if (task === 'generate-tool') {
       promptText = `COMMAND: Generate a high-fidelity ${toolType?.replace('-', ' ')}.\n\n` +
                    `INPUT PARAMETERS: ${userInput}\n\n` +
-                   `CRITICAL: Locate the most relevant Standard or SLO in the vault matching this input and anchor all synthesis to it.`;
+                   `CRITICAL: Locate relevant Standard or SLO in vault matching this input.`;
     }
 
     const { text, provider, metadata } = await generateAIResponse(
-      promptText, 
-      body.history || [], 
-      user.id, 
-      supabase, 
-      body.adaptiveContext, 
-      undefined, 
-      toolType, 
-      brain?.masterPrompt, 
-      priorityDocumentId || body.priorityDocumentId
+      promptText, body.history || [], user.id, supabase, body.adaptiveContext, undefined, toolType, brain?.masterPrompt, priorityDocumentId
     );
 
     const encoder = new TextEncoder();
