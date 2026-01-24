@@ -11,17 +11,16 @@ export const getCredentials = () => {
   return { url, key };
 };
 
-// Helper to get the correct redirect URL for OAuth
+// Helper to get the correct redirect URL for OAuth - ensuring absolute consistency
 export const getURL = () => {
   let url =
-    process?.env?.NEXT_PUBLIC_SITE_URL ?? // Set this to your Vercel URL in env vars
-    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? // Automatically set by Vercel
-    'http://localhost:3000/';
+    process?.env?.NEXT_PUBLIC_SITE_URL ?? 
+    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 
+    (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
   
-  // Make sure to include `https://` when not localhost.
+  // Clean the URL to be a base origin only
   url = url.includes('http') ? url : `https://${url}`;
-  // Make sure to include a trailing `/`.
-  url = url.charAt(url.length - 1) === '/' ? url : `${url}/`;
+  url = url.endsWith('/') ? url.slice(0, -1) : url;
   return url;
 };
 
@@ -39,10 +38,11 @@ export const getSupabaseClient = (): SupabaseClient => {
   
   supabaseInstance = createClient(url, key, {
     auth: { 
-      persistSession: !isServer, 
-      autoRefreshToken: !isServer, 
-      detectSessionInUrl: !isServer, 
-      flowType: 'pkce' 
+      persistSession: true, // Always persist for better mobile/desktop transition
+      autoRefreshToken: true, 
+      detectSessionInUrl: true, 
+      flowType: 'pkce',
+      storageKey: 'edunexus-auth-node' // Use unique key for robustness
     },
   });
   return supabaseInstance;

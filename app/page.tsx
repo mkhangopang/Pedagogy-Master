@@ -43,7 +43,6 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
-    // Background fetch - Non-blocking
     getSupabaseHealth().then(setHealthStatus);
     
     getOrCreateProfile(userId, email).then(profile => {
@@ -91,21 +90,31 @@ export default function App() {
 
     paymentService.init();
     
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-      setSession(initialSession);
-      if (initialSession) {
-        fetchAppData(initialSession.user.id, initialSession.user.email);
+    // Attempt to recover existing session immediately on mount
+    const initializeAuth = async () => {
+      const { data: { session: existingSession } } = await supabase.auth.getSession();
+      
+      if (existingSession) {
+        setSession(existingSession);
+        fetchAppData(existingSession.user.id, existingSession.user.email);
         setCurrentView('dashboard');
       }
+      
+      // Stop the loading screen once we've checked local storage
       setIsAuthResolving(false);
-    });
+    };
+
+    initializeAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
-      setSession(currentSession);
-      if (currentSession && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
-        fetchAppData(currentSession.user.id, currentSession.user.email);
-        setCurrentView('dashboard');
+      if (currentSession) {
+        setSession(currentSession);
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          fetchAppData(currentSession.user.id, currentSession.user.email);
+          setCurrentView('dashboard');
+        }
       } else if (event === 'SIGNED_OUT') {
+        setSession(null);
         setCurrentView('landing');
       }
       setIsAuthResolving(false);
@@ -133,7 +142,6 @@ export default function App() {
     return <Landing onStart={() => setCurrentView('login')} />;
   }
 
-  // Safety fallback for empty profile during initial sync
   const safeProfile = userProfile || {
     id: session.user.id, email: session.user.email || '', name: session.user.email?.split('@')[0] || 'Educator',
     role: UserRole.TEACHER, plan: SubscriptionPlan.FREE, queriesUsed: 0, queriesLimit: 30,
