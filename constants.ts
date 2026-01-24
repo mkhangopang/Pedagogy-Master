@@ -8,23 +8,23 @@ export const BLOOM_LEVELS = [
 ];
 
 /**
- * PRODUCTION INFRASTRUCTURE CONSTRAINTS (v88.0)
- * Logic for page ranges and permanent vault anchoring.
+ * PRODUCTION INFRASTRUCTURE CONSTRAINTS (v89.0)
+ * Updated Policy: Deletion rights granted to all tiers for library optimization.
  */
 export const ROLE_LIMITS = {
   [SubscriptionPlan.FREE]: { 
     docs: 2, 
     maxPages: 20,
-    canDelete: false,
+    canDelete: true,
     price: "$0", 
-    features: ["2 Document Permanent Vault", "Max 20 Pages/Doc", "Standard AI Synthesis"] 
+    features: ["2 Document Active Vault", "Max 20 Pages/Doc", "Standard AI Synthesis", "Library Management"] 
   },
   [SubscriptionPlan.PRO]: { 
     docs: 10, 
     maxPages: 50,
-    canDelete: false,
+    canDelete: true,
     price: "$19", 
-    features: ["10 Document Permanent Vault", "Max 50 Pages/Doc", "Advanced Gemini Engine"] 
+    features: ["10 Document Active Vault", "Max 50 Pages/Doc", "Advanced Gemini Engine", "Library Management"] 
   },
   [SubscriptionPlan.ENTERPRISE]: { 
     docs: 200, // SME Tier Logic

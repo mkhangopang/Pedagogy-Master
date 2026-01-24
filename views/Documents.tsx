@@ -30,14 +30,13 @@ const Documents: React.FC<DocumentsProps> = ({
 }) => {
   const [showUploader, setShowUploader] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [indexingId, setIndexingId] = useState<string | null>(null);
   const [readingDoc, setReadingDoc] = useState<Document | null>(null);
   
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
   const limitReached = documents.length >= limits.docs;
   
-  // Strict Deletion Policy
-  const canDelete = userProfile.role === UserRole.APP_ADMIN || limits.canDelete;
+  // Policy: All users can delete their own documents. Admins can delete anything.
+  const canDelete = true; 
 
   useEffect(() => {
     const processingDocs = documents.filter(d => d.status === 'processing');
@@ -69,13 +68,27 @@ const Documents: React.FC<DocumentsProps> = ({
   }, [documents, onUpdateDocument]);
 
   const handleDelete = async (id: string) => {
-    if (!canDelete) {
-      alert(`PERMANENT VAULT: Your tier does not permit document erasure to ensure pedagogical consistency.`);
-      return;
-    }
-    if (window.confirm('Erase this curriculum asset permanently?')) {
+    if (window.confirm('Erase this curriculum asset permanently? This will remove all associated vector data and free up storage.')) {
       setDeletingId(id);
-      try { await onDeleteDocument(id); } finally { setDeletingId(null); }
+      try { 
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch('/api/docs/delete', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ id })
+        });
+        
+        if (response.ok) {
+          await onDeleteDocument(id);
+        } else {
+          const err = await response.json();
+          alert(`Deletion failed: ${err.error}`);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally { 
+        setDeletingId(null); 
+      }
     }
   };
 
@@ -120,40 +133,61 @@ const Documents: React.FC<DocumentsProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {documents.map(doc => {
-          const publicUrl = doc.storageType === 'r2' && doc.filePath ? getR2PublicUrl(doc.filePath) : null;
           const isProcessing = doc.status === 'processing';
           const isReady = doc.status === 'ready' || doc.status === 'completed';
+          const isFailed = doc.status === 'failed';
 
           return (
             <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group">
                <div className="flex justify-between items-start mb-6">
-                  <div className={`p-5 rounded-[2rem] transition-all ${isProcessing ? 'bg-slate-100 animate-pulse text-slate-400' : 'bg-slate-50 dark:bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'}`}>
+                  <div className={`p-5 rounded-[2rem] transition-all ${
+                    isProcessing ? 'bg-slate-100 animate-pulse text-slate-400' : 
+                    isFailed ? 'bg-rose-50 text-rose-400' :
+                    'bg-slate-50 dark:bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
+                  }`}>
                     {isProcessing ? <BrainCircuit size={32} className="animate-spin" /> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
-                    {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full"><BookOpen size={16} /></button>}
-                    {canDelete ? (
-                      <button onClick={() => handleDelete(doc.id)} className="p-2.5 bg-rose-50 text-rose-500 rounded-full opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={16} /></button>
-                    ) : (
-                      <div className="p-2.5 bg-slate-50 text-slate-400 rounded-full cursor-not-allowed" title="Permanent Vault"><Lock size={16} /></div>
-                    )}
+                    {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform"><BookOpen size={16} /></button>}
+                    <button 
+                      onClick={() => handleDelete(doc.id)} 
+                      disabled={deletingId === doc.id}
+                      className="p-2.5 bg-rose-50 text-rose-500 rounded-full opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50"
+                    >
+                      {deletingId === doc.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                    </button>
                   </div>
                </div>
                
                <div className="space-y-4">
                  <h3 className="font-bold text-slate-900 dark:text-white truncate text-lg uppercase tracking-tight">{doc.name}</h3>
                  <div className="flex flex-wrap gap-2">
-                    {isReady ? <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Neural Anchored</span> : <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
+                    {isReady && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Neural Anchored</span>}
+                    {isProcessing && <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
+                    {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><X size={10}/> Extraction Failed</span>}
                     <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full text-[9px] font-bold uppercase">{doc.gradeLevel}</span>
                  </div>
-                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed italic">{doc.documentSummary || "Intelligence extraction in progress..."}</p>
+                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed italic">
+                   {isFailed ? "This asset encountered a neural bottleneck. Please delete and retry with a cleaner document." : (doc.documentSummary || "Intelligence extraction in progress...")}
+                 </p>
                </div>
             </div>
           );
         })}
+
+        {documents.length === 0 && (
+          <div className="col-span-full py-40 text-center border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[4rem] opacity-30">
+            <FileText size={64} className="mx-auto mb-6 text-slate-300" />
+            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Your Neural Vault is Empty</p>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+const X = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+);
 
 export default Documents;

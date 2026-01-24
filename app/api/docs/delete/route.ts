@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET } from '../../../../lib/r2';
@@ -16,24 +15,16 @@ export async function DELETE(request: NextRequest) {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: 'Doc ID required' }, { status: 400 });
 
-    // 1. Fetch user profile to check plan/role
+    // 1. Fetch user profile
     const { data: profile } = await anonClient
       .from('profiles')
-      .select('role, plan')
+      .select('role')
       .eq('id', user.id)
       .single();
 
     const isAdmin = profile?.role === 'app_admin';
-    const isFreeTier = profile?.plan === 'free';
-
-    // Free tier lockout
-    if (isFreeTier && !isAdmin) {
-      return NextResponse.json({ error: 'Tier Restriction: Free educators cannot delete curriculum assets.' }, { status: 403 });
-    }
 
     // 2. Fetch document metadata
-    // Admins can bypass the user_id check if they are managing the system, 
-    // but typically they are managing their own assets in the UI.
     const query = anonClient.from('documents').select('*').eq('id', id);
     if (!isAdmin) {
       query.eq('user_id', user.id);
@@ -43,7 +34,7 @@ export async function DELETE(request: NextRequest) {
 
     if (fetchError || !doc) return NextResponse.json({ error: 'Document not found or unauthorized.' }, { status: 404 });
 
-    // 3. Physical File Deletion
+    // 3. Physical File Deletion (Cloudflare R2)
     if (doc.storage_type === 'r2' && r2Client) {
       try {
         await r2Client.send(new DeleteObjectCommand({
@@ -53,12 +44,13 @@ export async function DELETE(request: NextRequest) {
       } catch (err) {
         console.error("R2 Physical Delete Failed:", err);
       }
-    } else {
-      // Supabase storage delete
-      await anonClient.storage.from('documents').remove([doc.file_path]);
     }
 
-    // 4. Database record deletion
+    // 4. Vector Chunk Deletion (Supabase Vector Store)
+    // Cascading delete should handle this if foreign keys are set, but we'll be explicit
+    await anonClient.from('document_chunks').delete().eq('document_id', id);
+
+    // 5. Database record deletion
     const { error: deleteError } = await anonClient
       .from('documents')
       .delete()
@@ -66,7 +58,7 @@ export async function DELETE(request: NextRequest) {
 
     if (deleteError) throw deleteError;
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: 'Neural node purged successfully.' });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
