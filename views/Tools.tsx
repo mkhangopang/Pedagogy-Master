@@ -54,7 +54,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   }, [messages, isGenerating]);
 
   const toggleDocContext = async (docId: string) => {
-    // Optimistic UI update for immediate responsiveness
+    // Immediate local state update for snappy UI
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -69,8 +69,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       if (target?.isSelected) {
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
-      // Close slider after selection for smoother flow
-      setTimeout(() => setIsSliderOpen(false), 300);
+      // Delayed close for smooth feel
+      setTimeout(() => setIsSliderOpen(false), 200);
     } catch (e) {
       console.error("Context sync error:", e);
       setLocalDocs(documents); // Revert on failure
@@ -127,10 +127,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   if (!activeTool) {
     return (
-      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500">
+      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
           <div className="flex items-center gap-4 md:gap-6">
-            <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl"><Zap size={24} className="md:size-8" /></div>
+            <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={24} className="md:size-8" /></div>
             <div className="min-w-0">
               <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase truncate">Synthesis Hub</h1>
               <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2 overflow-hidden">
@@ -150,7 +150,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
           <button 
             onClick={() => setIsSliderOpen(true)} 
-            className="flex items-center justify-center gap-3 px-6 md:px-8 py-3 md:py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:shadow-xl transition-all shadow-sm active:scale-95"
+            type="button"
+            className="relative z-20 flex items-center justify-center gap-3 px-6 md:px-8 py-3 md:py-4 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:shadow-xl transition-all shadow-sm active:scale-95 cursor-pointer"
           >
             <Library size={18} /> Context Settings
           </button>
@@ -187,13 +188,13 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         {/* Logs Panel */}
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] lg:w-[480px] shrink-0`}>
           <div className="px-4 md:px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
-             <div className="flex items-center gap-3">
+             <div className="flex items-center gap-2 md:gap-3">
                <button 
                  onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent('');}} 
-                 className="p-1.5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-500 transition-all"
-                 title="Back to Tools"
+                 className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 transition-all flex items-center justify-center active:scale-90"
+                 title="Back to Grid"
                >
-                 <ChevronLeft size={20}/>
+                 <ChevronLeft size={22}/>
                </button>
                <div className="flex items-center gap-2">
                  <MessageSquare size={14} className="text-slate-400" />
@@ -215,8 +216,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
         </div>
 
-        {/* Canvas Panel */}
-        <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'}`}>
+        {/* Canvas Panel - FIXED FOR MOBILE EDGES */}
+        <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden`}>
            <div className="px-6 md:px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2 md:gap-3"><FileEdit size={18} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Active Artifact</span></div>
               <div className="flex items-center gap-2">
@@ -229,10 +230,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 </button>
               </div>
            </div>
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-5 sm:p-10 md:p-16 lg:p-20 rounded-3xl md:rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full">
+           
+           <div className="flex-1 overflow-y-auto custom-scrollbar p-3 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
+              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-4 sm:p-10 md:p-16 lg:p-20 rounded-3xl md:rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full overflow-x-hidden">
                 {canvasContent ? (
-                  <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 overflow-hidden break-words px-1" 
+                  <div className="prose dark:prose-invert max-w-full text-[13px] md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 break-words overflow-x-hidden" 
                     dangerouslySetInnerHTML={{ __html: marked.parse(canvasContent.split('--- Synthesis by Node:')[0]) }} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-20 md:py-40 text-center opacity-30">
