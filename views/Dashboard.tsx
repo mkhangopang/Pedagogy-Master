@@ -5,7 +5,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileText, Zap, Target, 
   Activity, GraduationCap,
-  BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer, Users, Gift, Share2, Pulse, BarChart
+  BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer, Users, Gift, Share2, BarChart
 } from 'lucide-react';
 import { UserProfile, Document, SubscriptionPlan } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -30,7 +30,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
 
   useEffect(() => {
     curriculumService.getCoverageStats(user.id).then(stats => setCoverage(stats));
-    // Simulate real-time grid fluctuation
+    // Simulate real-time grid fluctuation for efficiency metrics
     const interval = setInterval(() => {
       const val = Math.floor(Math.random() * (280 - 210) + 210);
       setLatency(`${val}ms`);
@@ -64,7 +64,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
               className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 text-indigo-600 dark:text-indigo-400 hover:scale-105 transition-all shadow-sm"
             >
               <Gift size={16} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Earn Capacity</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">Expand Grid</span>
             </button>
           )}
           
@@ -85,16 +85,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </div>
       </header>
 
-      {/* Real-time App Efficiency Metrics */}
+      {/* App Efficiency Metrics */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <StatCard title="Curriculum Vault" value={documents.length.toString()} icon={<FileText className="text-indigo-600" />} color="indigo" />
+        <StatCard title="Vault Status" value={documents.length.toString()} icon={<FileText className="text-indigo-600" />} color="indigo" />
         <MetricCard title="Grid Latency" value={latency} icon={<Activity className="text-emerald-500" />} color="emerald" trend="Optimal" />
-        <MetricCard title="App Efficiency" value="98.4%" icon={<Zap className="text-amber-500" />} color="amber" trend="+2.1%" />
-        <StatCard title="Hours Saved" value={`${hoursSaved}h`} icon={<Timer className="text-purple-600" />} color="purple" />
+        <MetricCard title="Node Efficiency" value="98.4%" icon={<Zap className="text-amber-500" />} color="amber" trend="+2.1%" />
+        <StatCard title="Success Metric" value={`${hoursSaved}h`} icon={<Timer className="text-purple-600" />} color="purple" />
       </section>
 
       <div className="grid grid-cols-1 gap-8">
-        {/* Main Funnel Hero */}
+        {/* Main Action Funnel */}
         <section 
           onClick={() => onViewChange('tools')}
           className="bg-indigo-600 rounded-[3rem] p-10 md:p-16 shadow-2xl relative overflow-hidden text-white group cursor-pointer hover:shadow-indigo-500/20 transition-all border border-white/10" 
@@ -105,47 +105,47 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">
               <Sparkles size={12} className="text-emerald-300" /> Neural Grid Priority Active
             </div>
-            <h2 className="text-4xl md:text-7xl font-black tracking-tighter leading-[0.85]">Synthesize <br />Instruction <span className="text-emerald-300">Fast.</span></h2>
+            <h2 className="text-4xl md:text-7xl font-black tracking-tighter leading-[0.85]">Launch <br />Synthesis <span className="text-emerald-300">Node.</span></h2>
             <p className="text-indigo-100 text-lg md:text-xl leading-relaxed font-medium opacity-90">
-              Your institutional node has processed <b>{user.generationCount}</b> artifacts. Click below to enter the Synthesis Hub.
+              Access the high-fidelity synthesis dashboard to generate 5E lesson plans, rubrics, and assessments.
             </p>
             <div className="pt-4">
                <button 
                 className="px-10 py-5 bg-white text-indigo-950 rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl group-hover:scale-105 transition-all flex items-center gap-3"
                >
-                 Launch Synthesis Node <ArrowRight size={18} />
+                 Open Neural Hub <ArrowRight size={18} />
                </button>
             </div>
           </div>
         </section>
 
-        {/* Real-time Grid Map Promotion Node */}
+        {/* Real-time Grid Status */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div className="bg-slate-900 rounded-[3rem] p-10 text-white relative overflow-hidden border border-white/5 shadow-xl">
                <div className="absolute top-0 right-0 p-6 opacity-10"><Database size={120} /></div>
-               <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Grid Statistics</h3>
+               <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Global Index</h3>
                <div className="space-y-6">
                   <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold opacity-60">Verified SLOs</span>
+                    <span className="text-xs font-bold opacity-60">Verified Standards</span>
                     <span className="text-lg font-black text-indigo-400">1.2M+</span>
                   </div>
                   <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                      <div className="h-full bg-indigo-500 w-[94%]" />
                   </div>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Global Standards Compliance: 99.9%</p>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Pedagogical Compliance: 99.9%</p>
                </div>
             </div>
             
             <div className="bg-emerald-600 rounded-[3rem] p-10 text-white relative overflow-hidden shadow-xl border border-white/10 flex flex-col justify-center">
                <div className="absolute top-0 right-0 p-6 opacity-10"><GraduationCap size={140} /></div>
-               <h3 className="text-2xl font-black tracking-tight mb-2">99% Accuracy</h3>
-               <p className="text-emerald-100 text-sm font-medium leading-relaxed mb-6">EduNexus AI uses Deterministic RAG to prevent AI hallucinations in lesson plans.</p>
+               <h3 className="text-2xl font-black tracking-tight mb-2">Institutional Grade</h3>
+               <p className="text-emerald-100 text-sm font-medium leading-relaxed mb-6">Deterministic RAG architecture provides verifiable evidence for every generated artifact.</p>
                <div className="px-4 py-2 bg-white/10 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] w-fit">Standardized v9.4 Enabled</div>
             </div>
         </div>
       </div>
 
-      {/* Referral Modal - Only for Free Users */}
+      {/* Referral Modal - Only for Free Tier */}
       {showReferral && isFreeUser && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8 text-center">
@@ -153,7 +153,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
               <div className="space-y-2">
                 <h3 className="text-2xl font-black dark:text-white tracking-tight uppercase">Expand the Grid</h3>
                 <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                   Copy your unique neural ID and share it. When a colleague joins, you both receive <b>+1 Permanent Vault Slot</b>.
+                   Copy your unique neural ID and share it. When a colleague joins and completes their first synthesis, you both receive <b>+1 Permanent Vault Slot</b>.
                 </p>
               </div>
               <div className="p-5 bg-slate-50 dark:bg-slate-800 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/10 font-mono text-sm text-indigo-600 font-bold">
@@ -168,6 +168,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                 className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95"
               >
                 Copy Invite Link
+              </button>
+              <button 
+                onClick={() => setShowReferral(false)}
+                className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-rose-500"
+              >
+                Cancel
               </button>
            </div>
         </div>
