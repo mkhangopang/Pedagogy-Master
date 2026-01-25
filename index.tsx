@@ -1,16 +1,25 @@
+
 /**
- * NEURAL INITIALIZATION LAYER (v8.0)
- * Optimized for Public Repository Safety.
+ * NEURAL INITIALIZATION LAYER (v8.1)
+ * Optimized for Public Repository Safety and Browser ESM Runtime.
  */
 if (typeof window !== 'undefined') {
   const win = window as any;
   win.process = win.process || { env: {} };
   
+  // Safe extraction to prevent ReferenceErrors during boot
+  let envSource: any = {};
+  try {
+    envSource = process.env;
+  } catch (e) {
+    envSource = {};
+  }
+
   // SECURE SCOPING: Only map public-prefixed infrastructure nodes
   const publicVars = {
-    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_R2_PUBLIC_URL: process.env.NEXT_PUBLIC_R2_PUBLIC_URL
+    NEXT_PUBLIC_SUPABASE_URL: envSource.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: envSource.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_R2_PUBLIC_URL: envSource.NEXT_PUBLIC_R2_PUBLIC_URL
   };
 
   Object.entries(publicVars).forEach(([k, v]) => {
@@ -29,8 +38,8 @@ if (typeof window !== 'undefined') {
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './app/page';
-import RootLayout from './app/layout';
+import App from './app/page.tsx';
+import RootLayout from './app/layout.tsx';
 
 const container = document.getElementById('root');
 if (container) {

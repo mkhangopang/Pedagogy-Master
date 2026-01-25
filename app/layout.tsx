@@ -1,15 +1,16 @@
+'use client';
+
 import React from 'react';
 import HydrationBoundary from '../components/HydrationBoundary';
 import './globals.css';
 
 /**
- * RootLayout (v6.0)
- * Wraps the app in a HydrationBoundary to prevent server/client UI mismatches.
+ * RootLayout (v6.1)
+ * Optimized for Client-Side Bootstrapping via index.tsx
  */
 export default function RootLayout({
   children,
 }: {
-  // Changed children to be optional to avoid hydration prop issues in certain environments
   children?: React.ReactNode;
 }) {
   return (
