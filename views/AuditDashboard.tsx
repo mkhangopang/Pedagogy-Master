@@ -1,11 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ShieldCheck, Zap, Globe, FileJson, 
   BarChart3, Target, Lock, Cpu, 
   ArrowRight, Download, Server, CheckCircle2,
-  AlertTriangle, Network, Scale
+  AlertTriangle, Network, Scale, Code2, Key, Webhook, Box, Copy, Check
 } from 'lucide-react';
 import { UserProfile } from '../types';
 
@@ -14,16 +14,31 @@ interface AuditDashboardProps {
 }
 
 const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
+  const [copied, setCopied] = useState(false);
+  const demoApiKey = `nx_live_${user.id.substring(0, 8)}_enterprise_alpha`;
+
   const auditData = {
     score: 96,
     status: "Production Validated",
-    version: "v63.0 Neural Grid",
+    version: "v64.0 Neural Grid",
     compliance: ["GDPR Ready", "SOC2 Framework", "Sovereign Cloud Support"],
     ragMetrics: {
       matchPrecision: "99.8%",
       latency: "420ms",
       vectorDims: "768D (text-embedding-004)"
     }
+  };
+
+  const apiEndpoints = [
+    { method: 'POST', path: '/api/v1/curriculum/ingest', desc: 'Neural PDF-to-JSON Mapping' },
+    { method: 'POST', path: '/api/v1/pedagogy/synthesize', desc: 'High-Fidelity Artifact Gen' },
+    { method: 'POST', path: '/api/v1/audit/alignment', desc: 'Deterministic SLO Verification' }
+  ];
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(demoApiKey);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -42,7 +57,25 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
         </button>
       </header>
 
-      {/* High-Level Score Cards */}
+      {/* API Key Credentials Node */}
+      <div className="bg-emerald-600 p-8 rounded-[3rem] text-white shadow-2xl relative overflow-hidden group">
+         <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform"><Key size={120} /></div>
+         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2">
+               <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80">Institutional Access Key</p>
+               <h3 className="text-2xl font-black font-mono tracking-tight">{demoApiKey}</h3>
+               <p className="text-xs font-medium text-emerald-100">Use this key in the X-API-Key header to authenticate external requests.</p>
+            </div>
+            <button 
+              onClick={handleCopy}
+              className="px-6 py-3 bg-white text-emerald-700 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all"
+            >
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+              {copied ? 'Copied' : 'Copy Token'}
+            </button>
+         </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm relative overflow-hidden">
            <div className="absolute top-0 right-0 p-8 opacity-5 text-indigo-600"><Scale size={120} /></div>
@@ -111,39 +144,37 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
            </div>
         </section>
 
-        {/* Global Strategy Matrix */}
-        <section className="bg-indigo-600 p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
-           <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
-           <h3 className="text-lg font-black uppercase tracking-tight mb-8 flex items-center gap-3 relative z-10">
-             <Target size={20} className="text-emerald-400" /> Strategic Value Matrix
-           </h3>
-           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 relative z-10">
-              <div className="p-6 bg-white/10 rounded-[2rem] border border-white/10 group hover:bg-white/20 transition-all cursor-default">
-                 <h4 className="font-black text-sm uppercase mb-2">Acquisition Path</h4>
-                 <p className="text-xs text-indigo-100 leading-relaxed font-medium">Valuable as a 'Neural Layer' for Noon, Maqsad, or Alef Education to automate content creation for millions.</p>
+        {/* API Gateway Sandbox (Strategic B2B Feature) */}
+        <section className="bg-[#111] p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden border border-white/5">
+           <div className="flex items-center justify-between mb-8 relative z-10">
+              <h3 className="text-lg font-black uppercase tracking-tight flex items-center gap-3">
+                <Webhook size={20} className="text-emerald-400" /> Developer Gateway
+              </h3>
+              <span className="px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-full text-[9px] font-black uppercase tracking-widest border border-emerald-500/20">API Ready</span>
+           </div>
+           <div className="space-y-4 relative z-10">
+              <p className="text-xs text-slate-400 font-medium leading-relaxed">External EdTech nodes (Noon, Moodle, Alef) can query your neural engine via REST. Example integration headers:</p>
+              <div className="bg-black/60 rounded-2xl p-5 border border-white/5 font-mono text-[10px] space-y-2">
+                 <p className="text-indigo-400">POST /api/v1/pedagogy/synthesize</p>
+                 <p className="text-slate-500">X-API-Key: {demoApiKey}</p>
+                 <p className="text-slate-500">Content-Type: application/json</p>
               </div>
-              <div className="p-6 bg-white/10 rounded-[2rem] border border-white/10 group hover:bg-white/20 transition-all cursor-default">
-                 <h4 className="font-black text-sm uppercase mb-2">Ministries (B2G)</h4>
-                 <p className="text-xs text-indigo-100 leading-relaxed font-medium">Positioned for KSA MoE/UAE Madariss as a 'Sovereign AI' that respects national curriculum standards.</p>
-              </div>
-              <div className="p-6 bg-white/10 rounded-[2rem] border border-white/10 group hover:bg-white/20 transition-all cursor-default">
-                 <h4 className="font-black text-sm uppercase mb-2">Humanitarian Path</h4>
-                 <p className="text-xs text-indigo-100 leading-relaxed font-medium">Alignment with SDG 4 for UNESCO/UNICEF. Rapidly localizes curriculum for developing regions.</p>
-              </div>
-              <div className="p-6 bg-white/10 rounded-[2rem] border border-white/10 group hover:bg-white/20 transition-all cursor-default">
-                 <h4 className="font-black text-sm uppercase mb-2">Institutional SaaS</h4>
-                 <p className="text-xs text-indigo-100 leading-relaxed font-medium">B2B licensing for GEMS/City School. Centralizes quality control across 500+ global campuses.</p>
+              <div className="grid grid-cols-1 gap-2 pt-4">
+                 {apiEndpoints.map((api, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl border border-white/5 group hover:bg-white/10 transition-all">
+                       <div className="flex items-center gap-3">
+                          <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${api.method === 'POST' ? 'bg-indigo-500' : 'bg-emerald-500'}`}>{api.method}</span>
+                          <span className="text-[10px] font-bold text-slate-300">{api.path}</span>
+                       </div>
+                       <span className="text-[9px] text-slate-500 group-hover:text-slate-300 transition-colors italic">{api.desc}</span>
+                    </div>
+                 ))}
               </div>
            </div>
+           <button className="mt-8 w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl transition-all flex items-center justify-center gap-2">
+              <Code2 size={14} /> View Developer SDK
+           </button>
         </section>
-      </div>
-
-      <div className="bg-amber-50 dark:bg-amber-950/20 p-8 rounded-[2.5rem] border border-amber-100 dark:border-amber-900/30 flex items-center gap-6">
-         <div className="p-4 bg-amber-500 rounded-2xl text-white shadow-lg"><AlertTriangle size={24} /></div>
-         <div>
-            <h4 className="text-lg font-black text-amber-800 dark:text-amber-400 uppercase tracking-tight">Audit Recommendation</h4>
-            <p className="text-sm text-amber-700 dark:text-amber-500 font-medium">To maximize acquisition value, focus on 'Data Residency' features for the Saudi market. Institutional buyers prioritize where bits are physically stored.</p>
-         </div>
       </div>
     </div>
   );
