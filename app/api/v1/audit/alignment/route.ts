@@ -1,6 +1,5 @@
-
 import { NextRequest, NextResponse } from 'next/server';
-import { validateApiKey } from '../../../../lib/auth/api-guard';
+import { validateApiKey } from '@/lib/auth/api-guard';
 import { GoogleGenAI, Type } from '@google/genai';
 
 export const runtime = 'nodejs';

@@ -1,12 +1,11 @@
-
 import { NextRequest, NextResponse } from 'next/server';
-import { validateApiKey } from '../../../../lib/auth/api-guard';
+import { validateApiKey } from '@/lib/auth/api-guard';
 import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
 
 /**
- * ENDPOINT: GET /v1/pedagogy/synthesize
+ * ENDPOINT: POST /v1/pedagogy/synthesize
  * PURPOSE: Allows external platforms to generate standards-aligned content.
  */
 export async function POST(req: NextRequest) {
