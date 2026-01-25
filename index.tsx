@@ -1,7 +1,8 @@
 
 /**
- * NEURAL INITIALIZATION LAYER (v8.1)
+ * NEURAL INITIALIZATION LAYER (v8.2)
  * Optimized for Public Repository Safety and Browser ESM Runtime.
+ * Synchronized with Next.js 15.x Compiler Requirements.
  */
 if (typeof window !== 'undefined') {
   const win = window as any;
@@ -38,8 +39,8 @@ if (typeof window !== 'undefined') {
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './app/page.tsx';
-import RootLayout from './app/layout.tsx';
+import App from './app/page';
+import RootLayout from './app/layout';
 
 const container = document.getElementById('root');
 if (container) {
