@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -43,7 +44,6 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
-    // Fire all requests in parallel for maximum performance
     getSupabaseHealth().then(setHealthStatus);
     
     getOrCreateProfile(userId, email).then(profile => {
@@ -91,18 +91,14 @@ export default function App() {
 
     paymentService.init();
     
-    // ATOMIC AUTH BOOT SEQUENCE
     const initializeAuth = async () => {
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
         setSession(existingSession);
-        // Background fetch app data to not block the main UI render
         fetchAppData(existingSession.user.id, existingSession.user.email);
         setCurrentView('dashboard');
       }
-      
-      // Immediately drop the loading screen as soon as session status is known
       setIsAuthResolving(false);
     };
 
@@ -173,7 +169,7 @@ export default function App() {
           <div className="max-w-6xl mx-auto w-full">
             <Suspense fallback={<div className="flex justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
               {(() => {
-                const props = { user: safeProfile, documents, onProfileUpdate: setUserProfile, health: healthStatus as any, onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true) };
+                const props = { user: safeProfile, documents, onProfileUpdate: setUserProfile, health: healthStatus as any, onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true), onViewChange: setCurrentView };
                 switch (currentView) {
                   case 'dashboard': return <Dashboard {...props} />;
                   case 'documents': return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => { fetchAppData(safeProfile.id, safeProfile.email); }} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={isActuallyConnected} />;
