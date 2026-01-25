@@ -36,9 +36,14 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    const text = response.text;
+    if (!text) {
+      return NextResponse.json({ error: 'Neural engine failed to synthesize the artifact.' }, { status: 500 });
+    }
+
     return NextResponse.json({
       success: true,
-      artifact: response.text,
+      artifact: text,
       metadata: {
         node: 'edunexus-neural-v1',
         model: 'gemini-3-pro',

@@ -46,9 +46,14 @@ export async function POST(req: NextRequest) {
       }
     });
 
-    return NextResponse.json(JSON.parse(response.text));
+    const text = response.text;
+    if (!text) {
+      return NextResponse.json({ error: 'Neural engine failed to produce a valid response.' }, { status: 500 });
+    }
+
+    return NextResponse.json(JSON.parse(text));
 
   } catch (error: any) {
-    return NextResponse.json({ error: 'Audit Engine Failure' }, { status: 500 });
+    return NextResponse.json({ error: 'Audit Engine Failure', message: error.message }, { status: 500 });
   }
 }
