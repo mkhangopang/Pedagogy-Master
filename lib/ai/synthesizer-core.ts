@@ -11,8 +11,8 @@ import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
 /**
- * NEURAL PROVIDER CONFIGURATION (v45.0)
- * Integrated with full neural grid models.
+ * NEURAL PROVIDER CONFIGURATION (v46.0)
+ * Updated with Tiered Reasoning & Failover Capacity.
  */
 export const getProvidersConfig = (): ProviderConfig[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled() },
@@ -34,20 +34,9 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * STRATEGIC SPECIALIZATION (v3.0)
- * DYNAMIC THROTTLING: Simple tasks are routed to high-throughput nodes (Cerebras/Groq)
- * to preserve Gemini token budgets for complex pedagogical synthesis.
+ * NEURAL GRID SYNTHESIZER
+ * Implements intelligent load balancing across the multi-model architecture.
  */
-export const MODEL_SPECIALIZATION: Record<string, string> = {
-  'lookup': 'cerebras', 
-  'teaching': 'sambanova', 
-  'lesson_plan': 'gemini', 
-  'assessment': 'gemini', 
-  'differentiation': 'gemini',
-  'slo-tagger': 'deepseek',
-  'general': 'groq', 
-};
-
 export async function synthesize(
   prompt: string,
   history: any[],
@@ -59,35 +48,32 @@ export async function synthesize(
   return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any }>(async () => {
     const currentProviders = getProvidersConfig();
     
-    // AUDIT RECOMMENDATION: DYNAMIC PROVIDER THROTTLING
-    // Reorder providers based on health and specialization
+    // Sort providers based on preference and availability
     const sortedProviders = [...currentProviders]
       .filter(p => p.enabled)
       .sort((a, b) => {
-        // Priority 1: Match preferred or specialized model
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
         
-        // Priority 2: Use high-throughput fallbacks for general chat
-        if (!preferredProvider) {
-          const highThroughput = ['cerebras', 'sambanova', 'groq'];
-          if (highThroughput.includes(a.name) && !highThroughput.includes(b.name)) return -1;
-          if (!highThroughput.includes(a.name) && highThroughput.includes(b.name)) return 1;
-        }
+        // High-throughput fallbacks for general reliability
+        const highThroughput = ['cerebras', 'sambanova', 'groq'];
+        if (highThroughput.includes(a.name) && !highThroughput.includes(b.name)) return -1;
+        if (!highThroughput.includes(a.name) && highThroughput.includes(b.name)) return 1;
+        
         return 0;
       });
 
     for (const config of sortedProviders) {
+      // Local Throttling Check
       if (!await rateLimiter.canMakeRequest(config.name, config)) {
-        console.warn(`⚠️ [Throttling] Node ${config.name} reached capacity. Routing to next grid segment.`);
+        console.warn(`⚠️ [Throttling] Node ${config.name} saturated locally.`);
         continue;
       }
       
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
+        const timeout = config.name === 'gemini' ? 95000 : 45000; 
         
-        // Increased timeout resilience for deeper reasoning models
-        const timeout = config.name === 'gemini' ? 90000 : 45000; 
         const resultPromise = (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts);
         
         const response = await Promise.race([
@@ -100,15 +86,20 @@ export async function synthesize(
         }
         
         return { 
-          text: response.text, 
+          text: response.text || "Synthesis interrupted.", 
           provider: config.name, 
           groundingMetadata: response.groundingMetadata 
         };
       } catch (e: any) { 
         console.error(`❌ Node failure: ${config.name} | ${e.message}`); 
-        // Transparently fall through to next provider in the sorted list
+        // Automatic failover: The loop continues to the next available provider in sortedProviders
+        const isHardSaturated = e.message?.includes('429') || e.message?.includes('RESOURCE_EXHAUSTED');
+        if (isHardSaturated) {
+          console.warn(`🚀 [Grid Failover] Node ${config.name} exhausted. Migrating task to alternate node.`);
+        }
       }
     }
-    throw new Error("NEURAL GRID EXHAUSTED: All synthesis nodes are currently saturated or unreachable. Increase provider coverage in Environment Variables.");
+    
+    throw new Error("NEURAL GRID EXHAUSTED: All nodes busy or saturated. Please retry in 15 seconds.");
   });
 }

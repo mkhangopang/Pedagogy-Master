@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v31.3)
- * Optimized for multimodal pixel synthesis.
+ * HIGH-FIDELITY GEMINI ADAPTER (v32.0)
+ * Optimized for Multimodal synthesis and Search Grounding.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -25,7 +25,6 @@ export async function callGemini(
         }
       });
 
-      // GUIDELINE: Iterate through all parts to find the inlineData image bytes.
       if (response.candidates && response.candidates.length > 0) {
         const parts = response.candidates[0].content?.parts || [];
         for (const part of parts) {
@@ -34,7 +33,7 @@ export async function callGemini(
           }
         }
       }
-      throw new Error("Neural vision node failed to synthesize image bytes.");
+      throw new Error("Neural vision node failure.");
     }
 
     // STANDARD TEXT/REASONING MODEL
@@ -43,6 +42,7 @@ export async function callGemini(
                          fullPrompt.includes('RUBRIC') ||
                          fullPrompt.length > 8000;
     
+    // Use Flash for high throughput, Pro for deep reasoning
     const modelName = isComplexTask ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
 
     const contents: any[] = [];
@@ -67,7 +67,12 @@ export async function callGemini(
       thinkingConfig: isComplexTask ? { thinkingBudget: 4000 } : { thinkingBudget: 0 }
     };
 
-    if (modelName === 'gemini-3-pro-preview' && (fullPrompt.includes('research') || fullPrompt.includes('latest'))) {
+    // ENABLE SEARCH GROUNDING for Visual Aids or Research
+    const needsSearch = fullPrompt.includes('RESOURCE PROTOCOL') || 
+                        fullPrompt.includes('research') || 
+                        fullPrompt.includes('clickable links');
+                        
+    if (needsSearch) {
       config.tools = [{ googleSearch: {} }];
     }
 

@@ -9,21 +9,24 @@ function parseAIError(errorData: any): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
   const lowerMsg = msg.toLowerCase();
   
-  if (lowerMsg.includes('429') || lowerMsg.includes('resource_exhausted') || lowerMsg.includes('saturated')) {
+  // Generic Multi-Provider Saturation Detection
+  if (
+    lowerMsg.includes('429') || 
+    lowerMsg.includes('resource_exhausted') || 
+    lowerMsg.includes('saturated') ||
+    lowerMsg.includes('too many requests') ||
+    lowerMsg.includes('limit reached')
+  ) {
     globalCooldownUntil = Date.now() + 15000; // 15s lock
-    return "Neural Grid Saturated: All processing nodes are busy. This usually happens during peak academic hours. Please wait 15 seconds.";
+    return "Neural Grid Saturated: All processing nodes for this task are busy. This usually happens during peak academic hours. Please wait 15 seconds.";
   }
   
-  if (lowerMsg.includes('timeout') || lowerMsg.includes('link lost') || lowerMsg.includes('deadline')) {
-    return "Handshake Interrupted: The synthesis node took too long to analyze the document. Retrying often switches to a faster node automatically.";
+  if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('interrupted')) {
+    return "Handshake Interrupted: The current node took too long. Retrying will automatically route you to a faster grid segment.";
   }
 
-  if (lowerMsg.includes('disconnected') || lowerMsg.includes('exhausted')) {
-    return "Grid Offline: All available AI nodes are currently disconnected or at capacity. Please try again in a few minutes.";
-  }
-
-  if (lowerMsg.includes('auth') || lowerMsg.includes('unauthorized')) {
-    return "Security Violation: Your session has expired. Please sign in again.";
+  if (lowerMsg.includes('auth') || lowerMsg.includes('unauthorized') || lowerMsg.includes('session')) {
+    return "Security Violation: Your session has expired. Please refresh the app.";
   }
 
   return msg || "Synthesis interrupted by cloud gateway. Please retry.";
@@ -53,7 +56,7 @@ export const geminiService = {
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
         task: 'generate-visual',
-        toolType,
+        toolType: 'visual-aid',
         userInput,
         brain,
         priorityDocumentId
@@ -61,8 +64,8 @@ export const geminiService = {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || "Visual node failure");
+      const errorData = await response.json().catch(() => ({ error: "Visual node failure" }));
+      throw new Error(parseAIError(errorData));
     }
 
     return await response.json();
@@ -96,7 +99,7 @@ export const geminiService = {
           message,
           history,
           priorityDocumentId,
-          adaptiveContext // Pass context for personalized chat
+          adaptiveContext
         })
       });
 
@@ -121,7 +124,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: ${parseAIError("The synthesis gateway is temporarily unreachable. Try again.")}`;
+      yield `AI Alert: Synthesis gateway unreachable. Verify your connection.`;
     }
   },
 
@@ -178,7 +181,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: ${parseAIError("Heavy curriculum analysis caused a timeout. Try a shorter segment.")}`;
+      yield `AI Alert: Heavy curriculum analysis caused a bottleneck. Switch to a smaller asset segment.`;
     }
   }
 };
