@@ -1,8 +1,10 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { callGemini } from '../../../lib/ai/providers/gemini';
 import { synthesize } from '../../../lib/ai/synthesizer-core';
+import { GoogleGenAI } from "@google/genai";
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,52 +22,34 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { task, toolType, userInput, brain, priorityDocumentId, message } = body;
     
-    // 1. NEURAL VISUAL NODE (Hybrid Synthesis)
+    // 1. NEURAL VISUAL CONTEXT NODE (Deep Resource Grounding)
     if (task === 'generate-visual' || toolType === 'visual-aid') {
-      // Robust Profile Check
-      const { data: profile } = await anonClient.from('profiles').select('plan, role').eq('id', user.id).single();
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      const role = (profile?.role || '').toLowerCase();
-      const plan = (profile?.plan || '').toLowerCase();
+      const searchPrompt = `SYSTEM COMMAND: Locate high-fidelity educational visuals for the pedagogical context: "${userInput}".
       
-      // Expand access to Enterprise Admins and Pro/Enterprise Plans
-      const isAdmin = role === 'app_admin' || role === 'enterprise_admin';
-      const isPremiumPlan = plan === 'enterprise' || plan === 'pro';
-      
-      // ADMIN/PREMIUM: High-Fidelity Pixel Synthesis (Gemini 2.5 Flash Image)
-      if (isAdmin || isPremiumPlan) {
-        try {
-          const visualPrompt = `Generate a professional, high-fidelity pedagogical diagram for: ${userInput}. 
-          STYLE REQUIREMENTS:
-          - Textbook illustration style (clean and academic).
-          - Labeled parts with clear arrows.
-          - High contrast, bright educational colors.
-          - White background for classroom visibility.`;
-          
-          const result = await callGemini(visualPrompt, [], "You are a professional educational illustrator.", false, [], true);
-          
-          if (result.imageUrl) {
-            return NextResponse.json({ 
-              imageUrl: result.imageUrl,
-              content: `![Pedagogical Diagram](${result.imageUrl})\n\n*Synthesis Node: gemini-2.5-flash-image | High-fidelity pixel rendering for ${plan} node.*`
-            });
-          }
-        } catch (geminiError) {
-          console.error("Gemini Visual Node failed, attempting SVG fallback...", geminiError);
+      STRICT REQUIREMENTS:
+      1. Source ONLY from Creative Commons or free-to-use platforms: Pexels, Unsplash, Pixabay, or Wikimedia Commons.
+      2. Provide 3-5 verified direct URLs to images, diagrams, or archival media.
+      3. For each link, explain EXACTLY how it supports the Student Learning Objective (SLO).
+      4. Format as a clean instructional resource list.
+      5. Include a brief "Teacher's Guide" note on utilizing these visuals in a slide deck or classroom activity.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: [{ role: 'user', parts: [{ text: searchPrompt }] }],
+        config: {
+          tools: [{ googleSearch: {} }],
+          temperature: 0.1,
+          thinkingConfig: { thinkingBudget: 1500 }
         }
-      }
+      });
 
-      // FALLBACK: Neural SVG Synthesis (Groq/SambaNova)
-      const svgPrompt = `Create a professional SVG-based pedagogical diagram for: ${userInput}.
-      RULES:
-      1. Output ONLY the SVG code wrapped in a markdown code block.
-      2. Use a clean academic style with readable labels.
-      3. Ensure the SVG is responsive (width="100%").`;
+      const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const sources = grounding.map((c: any) => c.web).filter(Boolean);
 
-      const svgResult = await synthesize(svgPrompt, [], false, [], 'groq', 'You are a pedagogical SVG architect.');
-      
-      return NextResponse.json({
-        content: `${svgResult.text}\n\n*Synthesis Node: ${svgResult.provider} (SVG Mode) | Vector visual optimized for classroom display.*`
+      return NextResponse.json({ 
+        content: `## 🎨 Visual Context: ${userInput}\n\n${response.text}\n\n### 🌐 Source Nodes Verified:\n${sources.map((s: any) => `- [${s.title}](${s.uri})`).join('\n')}\n\n*Synthesis Node: gemini-3-pro | Visual Context Engine v2.1 (Live Search)*`
       });
     }
 

@@ -78,7 +78,7 @@
   @apply bg-slate-200 dark:bg-slate-800 rounded-full hover:bg-indigo-500 transition-colors;
 }
 
-/* Prose Refinements */
+/* Prose Refinements & Responsive Table Fix */
 .prose {
   @apply text-slate-600 dark:text-slate-400 leading-relaxed;
 }
@@ -97,4 +97,17 @@
 
 .prose li {
   @apply pl-6 relative before:content-[''] before:absolute before:left-0 before:top-2.5 before:w-1.5 before:h-1.5 before:bg-indigo-600 before:rounded-full;
+}
+
+/* FIX: Table Overflow in Artifact Canvas */
+.artifact-canvas-container table {
+  @apply w-full border-collapse my-8 block overflow-x-auto;
+}
+
+.artifact-canvas-container th {
+  @apply px-4 py-3 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white font-black text-xs uppercase border border-slate-200 dark:border-white/10;
+}
+
+.artifact-canvas-container td {
+  @apply px-4 py-3 text-sm border border-slate-100 dark:border-white/5;
 }

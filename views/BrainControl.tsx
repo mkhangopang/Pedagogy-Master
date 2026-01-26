@@ -1,5 +1,5 @@
 
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v74.0)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v76.0)
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
@@ -23,19 +23,19 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isIndexing, setIsIndexing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // OpenAI SCALING INSIGHTS: Incorporated Safety Timeouts & Connection Guards
-  const masterSchemaSql = `-- EDUNEXUS AI: SCALED PRODUCTION INFRASTRUCTURE v80.1
--- INSIGHTS BY OPENAI: Preventing database saturation and vicious retry cycles.
+  // EDUNEXUS AI: Master Production Schema (v82.0)
+  const masterSchemaSql = `-- EDUNEXUS AI: SCALED PRODUCTION INFRASTRUCTURE v82.0
+-- UPDATED: Multi-Model Resource Hub Support
 
--- 1. GLOBAL SAFETY TUNING
-SET statement_timeout = '30s'; -- Kill long-running synthesis queries
-SET idle_in_transaction_session_timeout = '60s'; -- Auto-purge abandoned transactions
-SET lock_timeout = '10s'; -- Prevent table locks from blocking the grid
+-- 1. GLOBAL SAFETY TUNING (OpenAI/Scale Standard)
+SET statement_timeout = '30s'; 
+SET idle_in_transaction_session_timeout = '60s';
+SET lock_timeout = '10s';
 
--- 2. EXTENSIONS & STORAGE
+-- 2. CORE EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 3. IDENTITY NODES (OFFLOADING READS)
+-- 3. IDENTITY NODES (Multi-Region Ready)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
@@ -43,13 +43,14 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     plan TEXT NOT NULL DEFAULT 'free',
     queries_used INTEGER DEFAULT 0,
     queries_limit INTEGER DEFAULT 30,
+    generation_count INTEGER DEFAULT 0,
     success_rate DOUBLE PRECISION DEFAULT 0.0,
-    tenant_config JSONB DEFAULT '{"brand_name": "EduNexus AI"}'::JSONB,
+    tenant_config JSONB DEFAULT '{"brand_name": "EduNexus AI", "primary_color": "#4f46e5"}'::JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. CURRICULUM VAULT (RAG INFRA)
+-- 4. NEURAL VAULT (Curriculum RAG)
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -59,19 +60,52 @@ CREATE TABLE IF NOT EXISTS public.documents (
     extracted_text TEXT,
     file_path TEXT,
     storage_type TEXT DEFAULT 'r2',
+    curriculum_name TEXT,
+    authority TEXT,
+    subject TEXT,
+    grade_level TEXT,
+    version_year TEXT,
+    generated_json JSONB,
+    is_selected BOOLEAN DEFAULT false,
+    is_approved BOOLEAN DEFAULT true,
+    document_summary TEXT,
+    difficulty_level TEXT,
+    gemini_metadata JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. RLS SECURITY (MANDATORY ISOLATION)
+-- 5. VECTOR CHUNKS (Neural Grid)
+CREATE TABLE IF NOT EXISTS public.document_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
+    chunk_text TEXT NOT NULL,
+    embedding vector(768),
+    slo_codes TEXT[],
+    chunk_index INTEGER,
+    metadata JSONB,
+    grade_levels TEXT[],
+    topics TEXT[],
+    unit_name TEXT,
+    difficulty TEXT,
+    bloom_levels TEXT[]
+);
+
+-- 6. RLS SECURITY (MANDATORY)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Isolated profile access" ON public.profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Isolated asset access" ON public.documents FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Isolated asset access" ON public.documents FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "Isolated chunk access" ON public.document_chunks FOR SELECT USING (
+  EXISTS (SELECT 1 FROM public.documents WHERE id = document_chunks.document_id AND user_id = auth.uid())
+);
 
--- 6. INDEX SAFETY
--- Always use CREATE INDEX CONCURRENTLY in production to prevent primary outages.
--- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_docs_user ON public.documents(user_id);
+-- 7. PERFORMANCE INDEXING
+CREATE INDEX IF NOT EXISTS idx_docs_user ON public.documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id);
+-- HNSW Vector Index (Requires pgvector)
+-- CREATE INDEX ON document_chunks USING hnsw (embedding vector_cosine_ops);
 `;
 
   const copyToClipboard = (text: string, id: string) => {

@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -6,7 +7,7 @@ import {
   Bot, FileText, Copy, ArrowRight,
   MessageSquare, FileEdit, Zap, X,
   ShieldCheck, Library, Image as ImageIcon,
-  Tags, ChevronLeft, Download, Timer, Target
+  Tags, ChevronLeft, Download, Timer, Target, Globe
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -81,14 +82,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       onQuery();
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
-      if (effectiveTool === 'visual-aid') {
-        const result = await geminiService.generateVisualAid(userInput, effectiveTool, brain, user, activeDoc?.id);
-        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: result.content } : m));
-        setCanvasContent(result.content);
-        await adaptiveService.captureGeneration(user.id, effectiveTool, result.content, { tool: effectiveTool, visual: true });
-        return;
-      }
-      
       const stream = geminiService.generatePedagogicalToolStream(effectiveTool, userInput, { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, brain, user, activeDoc?.id );
       let fullContent = '';
       for await (const chunk of stream) {
@@ -104,33 +97,22 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     } finally { setIsGenerating(false); }
   };
 
-  // Helper to render Canvas with SVG support
   const renderArtifact = () => {
     const mainContent = canvasContent.split('--- Synthesis Node:')[0].trim();
-    
-    // Detect SVG block
-    const svgMatch = mainContent.match(/```xml\s*([\s\S]*?<svg[\s\S]*?<\/svg>[\s\S]*?)```/) || 
-                     mainContent.match(/```svg\s*([\s\S]*?<svg[\s\S]*?<\/svg>[\s\S]*?)```/) ||
-                     mainContent.match(/(<svg[\s\S]*?<\/svg>)/);
-
-    if (svgMatch && activeTool === 'visual-aid') {
-      const svgCode = svgMatch[1];
-      return (
-        <div className="flex flex-col items-center gap-8 py-10">
-          <div className="w-full bg-slate-50 dark:bg-white/5 p-6 md:p-12 rounded-[2.5rem] border border-slate-100 dark:border-white/5 flex items-center justify-center shadow-inner" dangerouslySetInnerHTML={{ __html: svgCode }} />
-          <p className="text-xs text-slate-500 font-medium italic px-6 text-center leading-relaxed">Neural Vector Diagram synthesized from pedagogical instructions.</p>
-        </div>
-      );
-    }
-
-    return <div dangerouslySetInnerHTML={{ __html: marked.parse(mainContent) }} />;
+    // Wrap in artifact-canvas-container to enable the overflow-x-auto defined in CSS
+    return (
+      <div className="artifact-canvas-container">
+        <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 break-words" 
+             dangerouslySetInnerHTML={{ __html: marked.parse(mainContent) }} />
+      </div>
+    );
   };
 
   const toolDefinitions = [
     { id: 'lesson-plan', name: 'Lesson Plan', icon: BookOpen, desc: '5E Instructional Flow', color: 'bg-indigo-600' },
     { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Standards-aligned MCQ/CRQ', color: 'bg-emerald-600' },
     { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Bloom-scaled Criteria', color: 'bg-amber-600' },
-    { id: 'visual-aid', name: 'Visual Aid', icon: ImageIcon, desc: 'SVG or Pixel Synthesis', color: 'bg-rose-600' },
+    { id: 'visual-aid', name: 'Visual Hub', icon: Globe, desc: 'CC Resource Retrieval', color: 'bg-rose-600' },
     { id: 'slo-tagger', name: 'SLO Tagger', icon: Tags, desc: 'Bloom-scaled Metadata Extraction', color: 'bg-cyan-600' },
   ];
 
@@ -138,7 +120,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
-          <div className="flex items-center gap-4 md:gap-6">
+          <div className="flex items-center gap-4 md:gap-6 text-left">
             <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={24} className="md:size-8" /></div>
             <div className="min-w-0">
               <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase truncate">Synthesis Hub</h1>
@@ -148,7 +130,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
             </div>
           </div>
           
-          {/* Benefit Node for Funnel Optimization */}
           <div className="hidden lg:flex items-center gap-4 px-6 py-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 rounded-3xl shadow-sm">
              <div className="p-2 bg-emerald-500 text-white rounded-xl"><Timer size={18} /></div>
              <div>
@@ -160,7 +141,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {toolDefinitions.map((tool) => (
-            <button key={tool.id} onClick={() => setActiveTool(tool.id)} className={`p-6 md:p-8 rounded-[2.5rem] md:rounded-[3rem] border transition-all text-left flex flex-col gap-4 md:gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500`}>
+            <button key={tool.id} onClick={() => setActiveTool(tool.id)} className={`p-6 md:p-8 rounded-[2rem] md:rounded-[3rem] border transition-all text-left flex flex-col gap-4 md:gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500`}>
               <div className={`w-12 h-12 md:w-14 md:h-14 ${tool.color} rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-lg`}><tool.icon size={24} /></div>
               <div><h3 className="font-bold text-lg md:text-xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3><p className="text-slate-500 dark:text-slate-400 text-xs md:text-sm mt-1 font-medium leading-relaxed">{tool.desc}</p></div>
               <div className="flex items-center justify-between mt-auto">
@@ -173,11 +154,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           ))}
         </div>
 
-        <div className="mt-16 p-8 bg-slate-900 rounded-[3rem] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
+        <div className="mt-16 p-8 bg-slate-900 rounded-[2.5rem] md:rounded-[3rem] text-white flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl relative overflow-hidden">
            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 opacity-10 rounded-full blur-[80px]" />
            <div className="flex items-center gap-6 relative z-10">
               <div className="p-4 bg-white/10 rounded-2xl"><Target size={32} className="text-indigo-400" /></div>
-              <div>
+              <div className="text-left">
                  <h4 className="text-lg font-black uppercase tracking-tight">Aligned Accuracy</h4>
                  <p className="text-sm text-slate-400 font-medium italic">Validated against {documents.length} curriculum nodes.</p>
               </div>
@@ -230,26 +211,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
            </div>
            
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-10 md:p-16 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full">
+           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
+              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 rounded-[2rem] md:rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 min-h-full overflow-x-hidden">
                 {canvasContent ? (
-                  <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 break-words">
-                    {renderArtifact()}
-                    {activeTool === 'visual-aid' && canvasContent.includes('data:image') && (
-                       <div className="mt-8 pt-8 border-t dark:border-white/5 flex justify-center">
-                          <button onClick={() => {
-                            const match = canvasContent.match(/src="([^"]+)"/) || canvasContent.match(/\((data:image\/[^)]+)\)/);
-                            const url = match ? match[1] : null;
-                            if (url) {
-                              const link = document.createElement('a');
-                              link.href = url;
-                              link.download = `EduNexus_Visual_${Date.now()}.png`;
-                              link.click();
-                            }
-                          }} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-lg hover:bg-indigo-700 transition-all"><Download size={14} /> Download Diagram</button>
-                       </div>
-                    )}
-                  </div>
+                  renderArtifact()
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-40 text-center opacity-30">
                     <FileText size={48} className="mb-6 text-slate-300" /><h2 className="text-lg font-bold text-slate-300 uppercase tracking-widest">Awaiting Synthesis</h2>
@@ -265,7 +230,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[500]" onClick={() => setIsSliderOpen(false)} />
           <div className="fixed top-0 right-0 h-full w-full max-w-sm bg-white dark:bg-[#0d0d0d] z-[510] shadow-2xl animate-in slide-in-from-right duration-500 flex flex-col border-l border-slate-200 dark:border-white/5">
             <div className="p-8 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
-              <div><h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Active Context</h2><p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1">Curriculum Library</p></div>
+              <div className="text-left">
+                <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Active Context</h2>
+                <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest mt-1">Curriculum Library</p>
+              </div>
               <button onClick={() => setIsSliderOpen(false)} className="p-3 text-slate-400 hover:text-slate-900 transition-all hover:rotate-90"><X size={24}/></button>
             </div>
             <div className="flex-1 overflow-y-auto p-6 custom-scrollbar relative">
