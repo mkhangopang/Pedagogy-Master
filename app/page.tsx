@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -92,14 +91,21 @@ export default function App() {
     paymentService.init();
     
     const initializeAuth = async () => {
+      // PKCE and Mode switching can take a moment to re-read storage
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
         setSession(existingSession);
         fetchAppData(existingSession.user.id, existingSession.user.email);
         setCurrentView('dashboard');
+        setIsAuthResolving(false);
+      } else {
+        // Wait briefly for the auth change listener to potentially find a session 
+        // that getSession might have missed during a rapid re-init
+        setTimeout(() => {
+          setIsAuthResolving(false);
+        }, 1000);
       }
-      setIsAuthResolving(false);
     };
 
     initializeAuth();
@@ -107,18 +113,22 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
       if (currentSession) {
         setSession(currentSession);
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
           fetchAppData(currentSession.user.id, currentSession.user.email);
-          setCurrentView('dashboard');
+          if (currentView === 'landing' || currentView === 'login') {
+            setCurrentView('dashboard');
+          }
+          setIsAuthResolving(false);
         }
       } else if (event === 'SIGNED_OUT') {
         setSession(null);
         setCurrentView('landing');
+        setIsAuthResolving(false);
       }
     });
 
     return () => subscription?.unsubscribe();
-  }, [fetchAppData]);
+  }, [fetchAppData, currentView]);
 
   if (isAuthResolving) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-center animate-in fade-in duration-300">

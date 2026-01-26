@@ -13,15 +13,10 @@ export const getCredentials = () => {
 
 // Helper to get the correct redirect URL for OAuth - ensuring absolute consistency
 export const getURL = () => {
-  let url =
-    process?.env?.NEXT_PUBLIC_SITE_URL ?? 
-    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 
-    (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000');
-  
-  // Clean the URL to be a base origin only
-  url = url.includes('http') ? url : `https://${url}`;
-  url = url.endsWith('/') ? url.slice(0, -1) : url;
-  return url;
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 };
 
 export const isSupabaseConfigured = (): boolean => {
@@ -36,14 +31,14 @@ export const getSupabaseClient = (): SupabaseClient => {
   
   const isServer = typeof window === 'undefined';
   
-  // Use a stable, standard storage key that mobile browsers are less likely to partition
+  // Use standard localStorage with a stable key to maximize cross-mode persistence
   supabaseInstance = createClient(url, key, {
     auth: { 
       persistSession: true,
       autoRefreshToken: true, 
       detectSessionInUrl: true, 
       flowType: 'pkce',
-      storageKey: 'edunexus_auth_token_v1',
+      storageKey: 'sb-edunexus-auth-token',
       storage: !isServer ? window.localStorage : undefined
     },
   });
