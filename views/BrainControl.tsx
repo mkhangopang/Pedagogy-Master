@@ -1,5 +1,5 @@
 
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v76.0)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v85.0)
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
@@ -20,22 +20,18 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [dbStatus, setDbStatus] = useState<{table: string, exists: boolean | null}[]>([]);
   const [ragHealth, setRagHealth] = useState<any>(null);
   const [isChecking, setIsChecking] = useState(false);
-  const [isIndexing, setIsIndexing] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // EDUNEXUS AI: Master Production Schema (v82.0)
-  const masterSchemaSql = `-- EDUNEXUS AI: SCALED PRODUCTION INFRASTRUCTURE v82.0
--- UPDATED: Multi-Model Resource Hub Support
+  // EDUNEXUS AI: Master Production Schema (v85.0)
+  const masterSchemaSql = `-- EDUNEXUS AI: SCALED PRODUCTION INFRASTRUCTURE v85.0
+-- UPDATED: Congestion Mitigation & Multimodal Routing
 
--- 1. GLOBAL SAFETY TUNING (OpenAI/Scale Standard)
+-- 1. GLOBAL SAFETY TUNING (Strict Session Caps)
 SET statement_timeout = '30s'; 
 SET idle_in_transaction_session_timeout = '60s';
 SET lock_timeout = '10s';
 
--- 2. CORE EXTENSIONS
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- 3. IDENTITY NODES (Multi-Region Ready)
+-- 2. IDENTITY NODES (Isolation Layer)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
@@ -45,12 +41,12 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     queries_limit INTEGER DEFAULT 30,
     generation_count INTEGER DEFAULT 0,
     success_rate DOUBLE PRECISION DEFAULT 0.0,
-    tenant_config JSONB DEFAULT '{"brand_name": "EduNexus AI", "primary_color": "#4f46e5"}'::JSONB,
+    tenant_config JSONB DEFAULT '{"brand_name": "EduNexus AI", "throughput_tier": "optimal"}'::JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. NEURAL VAULT (Curriculum RAG)
+-- 3. NEURAL VAULT (Standardized Curricula)
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -60,52 +56,31 @@ CREATE TABLE IF NOT EXISTS public.documents (
     extracted_text TEXT,
     file_path TEXT,
     storage_type TEXT DEFAULT 'r2',
-    curriculum_name TEXT,
-    authority TEXT,
     subject TEXT,
     grade_level TEXT,
-    version_year TEXT,
-    generated_json JSONB,
     is_selected BOOLEAN DEFAULT false,
-    is_approved BOOLEAN DEFAULT true,
-    document_summary TEXT,
-    difficulty_level TEXT,
-    gemini_metadata JSONB,
+    gemini_metadata JSONB, -- Stores Visual Hub Grounding cache
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. VECTOR CHUNKS (Neural Grid)
+-- 4. VECTOR CLUSTERS
 CREATE TABLE IF NOT EXISTS public.document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     chunk_text TEXT NOT NULL,
     embedding vector(768),
     slo_codes TEXT[],
-    chunk_index INTEGER,
-    metadata JSONB,
-    grade_levels TEXT[],
-    topics TEXT[],
-    unit_name TEXT,
-    difficulty TEXT,
-    bloom_levels TEXT[]
+    metadata JSONB
 );
 
--- 6. RLS SECURITY (MANDATORY)
+-- 5. RLS SECURITY (MANDATORY)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Isolated profile access" ON public.profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Isolated asset access" ON public.documents FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Isolated chunk access" ON public.document_chunks FOR SELECT USING (
-  EXISTS (SELECT 1 FROM public.documents WHERE id = document_chunks.document_id AND user_id = auth.uid())
-);
-
--- 7. PERFORMANCE INDEXING
+-- 6. INDEX OPTIMIZATION
 CREATE INDEX IF NOT EXISTS idx_docs_user ON public.documents(user_id);
-CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id);
--- HNSW Vector Index (Requires pgvector)
--- CREATE INDEX ON document_chunks USING hnsw (embedding vector_cosine_ops);
+-- HNSW Vector Index (Manual Deployment Recommended via Admin Panel)
 `;
 
   const copyToClipboard = (text: string, id: string) => {
@@ -148,25 +123,25 @@ CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id)
     try {
       await supabase.from('neural_brain').insert([{ master_prompt: formData.masterPrompt, version: formData.version + 1, is_active: true }]);
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
-      alert("Logic deployed to all synthesis nodes.");
+      alert("Logic deployed. Version " + (formData.version + 1) + " active.");
     } catch (err: any) { alert("Deployment error."); } finally { setIsSaving(false); }
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 px-2">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 px-2 text-left">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-slate-900 dark:text-white">
-        <div>
-          <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight">
-            <ShieldCheck className="text-indigo-600" /> Brain Control
+        <div className="space-y-1">
+          <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
+            <ShieldCheck className="text-indigo-600" /> Infrastructure Node
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic mt-1">Infrastructure Isolation & Behavior Node</p>
+          <p className="text-slate-500 text-xs font-medium italic">V85.0 Master Deployment Hub</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner overflow-x-auto">
           {[
-            { id: 'logic', label: 'Logic' },
-            { id: 'schema', label: 'SQL Tuning' },
-            { id: 'infra', label: 'Stack' },
-            { id: 'rag', label: 'Vectors' }
+            { id: 'logic', label: 'Instruction' },
+            { id: 'schema', label: 'Architecture' },
+            { id: 'infra', label: 'Connectivity' },
+            { id: 'rag', label: 'Vector Health' }
           ].map(tab => (
             <button 
               key={tab.id}
@@ -182,25 +157,25 @@ CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id)
       {activeTab === 'logic' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-sm space-y-6">
-            <h2 className="text-lg font-bold flex items-center gap-2 dark:text-white"><Terminal size={18} className="text-indigo-500" /> Behavioral Grid (v{formData.version})</h2>
+            <h2 className="text-lg font-bold flex items-center gap-2 dark:text-white"><Terminal size={18} className="text-indigo-500" /> Behavioral Master Prompt</h2>
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
               className="w-full h-80 p-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl font-mono text-[10px] leading-relaxed shadow-inner resize-none"
             />
             <button onClick={handleSave} disabled={isSaving} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-              {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Deploy Logic
+              {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Commit Logic v{formData.version + 1}
             </button>
           </div>
           <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] flex flex-col justify-center shadow-2xl relative overflow-hidden">
              <div className="absolute top-0 right-0 p-8 opacity-5"><Cpu size={150} /></div>
-             <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> OpenAI Postgres Insights</h3>
+             <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> Load Balancing Intel</h3>
              <p className="text-slate-400 text-xs leading-relaxed mb-6">
-                EduNexus AI utilizes OpenAI's scaled architecture patterns: offloading reads to replicas, aggressive query timeouts, and persistent connection pooling via PgBouncer.
+                EduNexus AI utilizes tiered reasoning routing. Visual resources are mapped to Flash-3 (2,000 RPM capacity) while complex pedagogical extractions are reserved for Pro-3 (60 RPM capacity) to ensure 99.9% grid availability.
              </p>
              <div className="grid grid-cols-2 gap-3 relative z-10">
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5"><p className="text-[8px] font-bold text-slate-500 uppercase">Timeout</p><p className="text-xs font-bold text-indigo-400">30s Locked</p></div>
-                <div className="p-4 bg-white/5 rounded-xl border border-white/5"><p className="text-[8px] font-bold text-slate-500 uppercase">Isolation</p><p className="text-xs font-bold text-indigo-400">RLS Active</p></div>
+                <div className="p-4 bg-white/5 rounded-xl border border-white/5"><p className="text-[8px] font-bold text-slate-500 uppercase">Resource Hub</p><p className="text-xs font-bold text-emerald-400">Flash-3 Active</p></div>
+                <div className="p-4 bg-white/5 rounded-xl border border-white/5"><p className="text-[8px] font-bold text-slate-500 uppercase">Synthesis Engine</p><p className="text-xs font-bold text-indigo-400">Pro-3 Standby</p></div>
              </div>
           </div>
         </div>
@@ -212,7 +187,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id)
               <div className="p-8 border-b border-white/5 flex items-center justify-between">
                  <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-600 rounded-xl text-white"><FileCode size={20} /></div>
-                    <div><h3 className="text-white font-black uppercase tracking-tight">Scaled SQL Architecture</h3><p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Optimized for Supabase/Postgres</p></div>
+                    <h3 className="text-white font-black uppercase tracking-tight">Institutional Schema v85.0</h3>
                  </div>
                  <button onClick={() => copyToClipboard(masterSchemaSql, 'schema')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all">
                     {copiedId === 'schema' ? <Check size={12}/> : <Copy size={12}/>} Copy SQL
@@ -226,16 +201,15 @@ CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id)
            </div>
            <div className="p-6 bg-amber-50 dark:bg-amber-950/20 rounded-2xl border border-amber-100 dark:border-amber-900/30 flex items-center gap-4">
               <ShieldAlert className="text-amber-500" size={24} />
-              <p className="text-xs text-amber-800 dark:text-amber-400 font-medium"><b>Safety First:</b> OpenAI Scaling Rule #7 - Always enforce <code>idle_in_transaction_session_timeout</code> to prevent dead-locks in collaborative pedagogical environments.</p>
+              <p className="text-xs text-amber-800 dark:text-amber-400 font-medium"><b>Safety First:</b> Ensure <code>googleSearch</code> tools are only invoked via the Visual Context task to maintain institutional token budgets.</p>
            </div>
         </div>
       )}
 
       {activeTab === 'infra' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm">
-            <div className="flex items-center justify-between mb-8">
-               <h2 className="text-lg font-bold flex items-center gap-3 dark:text-white"><Database size={20} className="text-indigo-600" /> Data Plane Audit</h2>
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm space-y-8">
+            <div className="flex items-center justify-between">
+               <h2 className="text-lg font-bold flex items-center gap-3 dark:text-white"><Database size={20} className="text-indigo-600" /> Data Plane Nodes</h2>
                <button onClick={checkHealth} className="p-2.5 bg-slate-100 dark:bg-slate-800 rounded-xl">{isChecking ? <RefreshCw className="animate-spin" size={18}/> : <RefreshCw size={18}/>}</button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -243,33 +217,27 @@ CREATE INDEX IF NOT EXISTS idx_chunks_doc ON public.document_chunks(document_id)
                 <div key={idx} className={`p-4 rounded-2xl border flex flex-col gap-2 transition-all ${item.exists ? 'bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900 text-emerald-700' : 'bg-rose-50 dark:bg-rose-950/20 border-rose-100 dark:border-rose-900 text-rose-700'}`}>
                   <span className="text-[8px] font-black uppercase tracking-widest truncate">{item.table}</span>
                   {item.exists ? <CheckCircle2 size={18} /> : <ShieldAlert size={18} />}
-                  <span className="font-bold text-[10px]">{item.exists ? 'READY' : 'FAULT'}</span>
+                  <span className="font-bold text-[10px]">{item.exists ? 'CONNECTED' : 'FAULT'}</span>
                 </div>
               ))}
             </div>
-          </div>
         </div>
       )}
 
       {activeTab === 'rag' && (
-        <div className="space-y-6">
-          <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-               <h2 className="text-lg font-bold flex items-center gap-3 dark:text-white"><Activity size={20} className="text-indigo-600" /> Vector Health</h2>
-               <div className="flex gap-2">
-                 <button onClick={fetchRagHealth} disabled={isChecking} className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100">{isChecking ? <RefreshCw className="animate-spin" size={16}/> : <Search size={16}/>}</button>
-               </div>
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm space-y-6">
+            <div className="flex items-center justify-between">
+               <h2 className="text-lg font-bold flex items-center gap-3 dark:text-white"><Activity size={20} className="text-indigo-600" /> Multi-Provider Vector Health</h2>
+               <button onClick={fetchRagHealth} disabled={isChecking} className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl hover:bg-slate-100">{isChecking ? <RefreshCw className="animate-spin" size={16}/> : <Search size={16}/>}</button>
             </div>
-
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <HealthCard label="Verified Chunks" value={ragHealth?.summary?.healthy} status="good" icon={<CheckCircle2 size={14} />} />
-              <HealthCard label="Orphaned Vectors" value={ragHealth?.summary?.orphanedChunks} status="warning" icon={<Database size={14} />} />
+              <HealthCard label="Verified Clusters" value={ragHealth?.summary?.healthy} status="good" icon={<CheckCircle2 size={14} />} />
+              <HealthCard label="Orphaned Chunks" value={ragHealth?.summary?.orphanedChunks} status="warning" icon={<Database size={14} />} />
               <div className={`p-4 rounded-2xl border flex flex-col gap-1 bg-indigo-50 border-indigo-100 text-indigo-700`}>
-                <span className="text-[8px] font-black uppercase tracking-widest opacity-60">Dimensions</span>
-                <div className="text-sm font-black flex items-center gap-2">text-embedding-004 | 768D</div>
+                <span className="text-[8px] font-black uppercase tracking-widest opacity-60">Grid Alignment</span>
+                <div className="text-sm font-black flex items-center gap-2">HNSW | text-embedding-004</div>
               </div>
             </div>
-          </div>
         </div>
       )}
     </div>
