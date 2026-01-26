@@ -1,15 +1,30 @@
 /**
- * NEURAL KV INTERFACE (v1.0)
+ * NEURAL KV INTERFACE (v2.0)
  * Unified storage for Rate Limits and Vector Caching.
- * Automatically upgrades to Upstash Redis if credentials exist.
+ * AUDIT IMPLEMENTATION: Cache Leasing to prevent thundering herds.
  */
 class KVStore {
   private memory = new Map<string, { value: any; expiry: number }>();
+  private leases = new Set<string>(); // Active fetch locks
   private redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   private redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
   private isRedisActive(): boolean {
     return !!(this.redisUrl && this.redisToken);
+  }
+
+  /**
+   * Acquire a temporary lease (lock) on a key to prevent redundant AI calls.
+   */
+  async acquireLease(key: string, timeoutMs: number = 5000): Promise<boolean> {
+    if (this.leases.has(key)) return false;
+    this.leases.add(key);
+    setTimeout(() => this.leases.delete(key), timeoutMs);
+    return true;
+  }
+
+  async releaseLease(key: string): Promise<void> {
+    this.leases.delete(key);
   }
 
   async get<T>(key: string): Promise<T | null> {

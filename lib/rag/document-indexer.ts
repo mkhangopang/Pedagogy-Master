@@ -47,8 +47,8 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v32.0)
- * Synchronizes curriculum content with normalized SLO IDs.
+ * WORLD-CLASS NEURAL INDEXER (v35.0)
+ * AUDIT OPTIMIZATION: Implemented Lazy Batch Indexing.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -91,10 +91,7 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number, unitName: string) {
-      // Priority 1: Extract from Header (Standard: S-08-C-03)
       const headerSloMatch = text.match(/^(?:#{1,4}\s+)?(?:Standard|SLO|Outcome)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/im);
-      
-      // Priority 2: Extract all codes within the block
       const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
       const codesSet = new Set<string>();
       
@@ -141,28 +138,36 @@ export async function indexDocumentForRAG(
        }
     }
 
-    const texts = processedChunks.map(c => c.text);
-    const embeddings = await generateEmbeddingsBatch(texts);
+    // AUDIT IMPLEMENTATION: BATCH LAZY PROCESSING
+    // Split into smaller batches to prevent Vercel 10s timeouts
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
+      const batch = processedChunks.slice(i, i + BATCH_SIZE);
+      const texts = batch.map(c => c.text);
+      const embeddings = await generateEmbeddingsBatch(texts);
 
-    const chunkRecords = processedChunks.map((chunk, i) => ({
-      document_id: documentId,
-      chunk_text: chunk.text,
-      embedding: embeddings[i],
-      slo_codes: chunk.sloCodes,
-      chunk_index: i,
-      metadata: chunk.metadata,
-      grade_levels: chunk.metadata.grade_levels,
-      topics: chunk.metadata.topics,
-      unit_name: chunk.metadata.unit_name,
-      difficulty: chunk.metadata.difficulty,
-      bloom_levels: chunk.metadata.bloom_levels
-    }));
+      const chunkRecords = batch.map((chunk, j) => ({
+        document_id: documentId,
+        chunk_text: chunk.text,
+        embedding: embeddings[j],
+        slo_codes: chunk.sloCodes,
+        chunk_index: i + j,
+        metadata: chunk.metadata,
+        grade_levels: chunk.metadata.grade_levels,
+        topics: chunk.metadata.topics,
+        unit_name: chunk.metadata.unit_name,
+        difficulty: chunk.metadata.difficulty,
+        bloom_levels: chunk.metadata.bloom_levels
+      }));
 
-    await supabase.from('document_chunks').delete().eq('document_id', documentId);
-    
-    if (chunkRecords.length > 0) {
+      if (i === 0) {
+        await supabase.from('document_chunks').delete().eq('document_id', documentId);
+      }
+      
       const { error: insertError } = await supabase.from('document_chunks').insert(chunkRecords);
       if (insertError) throw insertError;
+      
+      console.log(`🧩 [Indexer] Batch ${Math.floor(i/BATCH_SIZE) + 1} synced...`);
     }
 
     await supabase.from('documents').update({ 
@@ -170,9 +175,9 @@ export async function indexDocumentForRAG(
       rag_indexed: true 
     }).eq('id', documentId);
     
-    console.log(`✅ [Indexer] Ingestion complete: ${chunkRecords.length} normalized chunks for ${documentId}.`);
+    console.log(`✅ [Indexer] Full neural sync complete for ${documentId}.`);
 
-    return { success: true, chunkCount: chunkRecords.length };
+    return { success: true, chunkCount: processedChunks.length };
 
   } catch (error: any) {
     console.error("❌ [Indexer] Fatal Error:", error);

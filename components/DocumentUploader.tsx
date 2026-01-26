@@ -175,10 +175,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-1 w-full max-w-5xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[85vh] overflow-hidden">
         <div className="flex items-center justify-between p-6 border-b dark:border-white/5">
           <div className="flex items-center gap-4">
-            <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl"><ArrowLeft size={20}/></button>
+            <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl hover:bg-indigo-50 transition-colors"><ArrowLeft size={20}/></button>
             <div><h3 className="text-xl font-black dark:text-white uppercase tracking-tight">Vault Preview</h3><p className="text-xs text-slate-500">Tier: {userPlan.toUpperCase()} Node</p></div>
           </div>
-          <button onClick={onCancel} className="p-2 text-slate-400"><X size={24}/></button>
+          <button onClick={onCancel} className="p-2 text-slate-400 hover:text-rose-500"><X size={24}/></button>
         </div>
         <div className="flex-1 grid grid-cols-2 overflow-hidden">
           <div className="flex flex-col border-r dark:border-white/5">
@@ -211,6 +211,15 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-12 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 text-center relative overflow-hidden">
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-indigo-500 via-amber-500 to-indigo-500" />
       
+      {/* Back Button added to fix navigation gap */}
+      <button 
+        onClick={onCancel}
+        className="absolute top-8 left-8 p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"
+        title="Go Back"
+      >
+        <ArrowLeft size={20} />
+      </button>
+
       <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/20 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-indigo-600 shadow-xl"><ShieldCheck size={40}/></div>
       <h3 className="text-3xl font-black dark:text-white uppercase tracking-tight">Vault Ingestion</h3>
       <p className="text-slate-500 mt-2 mb-8 font-medium">Map curriculum nodes to your permanent library.</p>
