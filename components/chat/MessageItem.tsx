@@ -35,18 +35,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
   }, [content]);
 
   return (
-    <div className={`w-full animate-chat-turn mb-8 ${isAi ? 'bg-transparent' : ''}`}>
-      <div className={`flex flex-col gap-3 mx-auto max-w-full px-4 md:px-8`}>
+    <div className={`w-full animate-chat-turn mb-10 ${isAi ? 'bg-transparent' : ''}`}>
+      <div className={`flex flex-col gap-4 mx-auto max-w-full px-4 md:px-8`}>
         
         {/* Header: Persona Label */}
         <div className={`flex items-center gap-3 ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-lg border-2 ${
-            isAi ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-900 border-slate-700 text-white'
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xl border-2 transition-all ${
+            isAi 
+              ? 'bg-indigo-600 border-indigo-400 text-white' 
+              : 'bg-indigo-950 border-indigo-700 text-white'
           }`}>
             {isAi ? <Bot size={16} /> : <User size={16} />}
           </div>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
-            {isAi ? 'Pedagogy Master' : 'Educator'}
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">
+            {isAi ? 'Pedagogy Master' : 'Educator Node'}
           </span>
           {isAi && content && (
             <button onClick={handleCopy} className="p-1.5 text-slate-400 hover:text-indigo-600 transition-all">
@@ -57,19 +59,19 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
         
         {/* Message Bubble */}
         <div className={`w-full ${isAi ? '' : 'flex justify-end'}`}>
-          <div className={`relative ${
+          <div className={`relative transition-all duration-500 ${
             isAi 
               ? 'w-full text-slate-900 dark:text-slate-100' 
-              : 'bg-indigo-600 text-white px-6 py-4 rounded-[2rem] rounded-tr-none shadow-2xl max-w-[90%] md:max-w-[75%]'
+              : 'bg-indigo-700 text-white px-7 py-5 rounded-[2.5rem] rounded-tr-none shadow-2xl max-w-[95%] md:max-w-[80%] border border-white/10'
           }`}>
-            {/* Fix: Specifically ensuring high contrast for user message with absolute white text and no opacity */}
             {isAi ? (
               <div 
                 className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8]"
                 dangerouslySetInnerHTML={{ __html: renderedHtml }}
               />
             ) : (
-              <div className="text-sm md:text-[15px] font-extrabold leading-relaxed text-white !opacity-100 selection:bg-indigo-400">
+              /* HIGH CONTRAST USER TEXT: Explicitly bold, white, and no transparency */
+              <div className="text-sm md:text-[16px] font-black leading-relaxed text-white tracking-tight selection:bg-indigo-400">
                 {content}
               </div>
             )}
@@ -96,13 +98,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
           </div>
         </div>
 
-        {/* Footer: Contextual Metadata */}
-        <div className={`flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end opacity-60'}`}>
+        {/* Footer: Metadata */}
+        <div className={`flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end opacity-70'}`}>
           {isAi && (
             <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800/50 shadow-sm">
               <Sparkles size={8} />
-              {metadata?.isGrounded ? 'Standard Validated' : 'Neural Mode'}
-              {metadata?.imageUrl && <span className="ml-2 flex items-center gap-1"><Library size={8}/> Visual Aid</span>}
+              {metadata?.isGrounded ? 'Standard Anchored' : 'Neural Grid'}
+              {metadata?.gradeIsolation && <span className="ml-2 font-black text-indigo-500">Grade {metadata.gradeIsolation} Lock</span>}
             </div>
           )}
           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">

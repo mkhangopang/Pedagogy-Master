@@ -18,8 +18,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v41.0)
- * Optimized for Grade Isolation and SLO Target Locking.
+ * HIGH-PRECISION RAG RETRIEVER (v42.0)
+ * Optimized for Grade Isolation and Deterministic SLO Target Locking.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -41,9 +41,9 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // CRITICAL: Identify targeted grade from SLO code
+    // CRITICAL: Precise Metadata Targets
     const targetSLOs = parsed.sloCodes.length > 0 ? parsed.sloCodes : null;
-    const requestedGrade = targetSLOs ? extractGradeFromSLO(targetSLOs[0]) : null;
+    const requestedGrade = targetSLOs ? extractGradeFromSLO(targetSLOs[0]) : (parsed.grades.length > 0 ? parsed.grades[0] : null);
 
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
@@ -51,7 +51,7 @@ export async function retrieveRelevantChunks({
       match_count: matchCount,
       filter_document_ids: documentIds,
       filter_tags: targetSLOs, 
-      filter_grades: requestedGrade ? [requestedGrade] : (parsed.grades.length > 0 ? parsed.grades : null),
+      filter_grades: requestedGrade ? [requestedGrade] : null,
       filter_subjects: parsed.topics.length > 0 ? parsed.topics : null
     });
     
@@ -70,23 +70,24 @@ export async function retrieveRelevantChunks({
       document_id: d.document_id
     }));
 
-    // Post-Retrieval Verification: Strict Grade Lock
-    // If user explicitly asked for S8, we prune any S4 matches that vector search accidentally pulled.
-    if (requestedGrade) {
+    // CRITICAL FIX: POST-RETRIEVAL ISOLATION
+    // If a specific SLO was requested (e.g. S8A5), we MUST discard results that don't have it.
+    // This prevents s4 chunks from leaking into s8 queries.
+    if (targetSLOs && targetSLOs.length > 0) {
       processed = processed.filter(c => {
-        // If the chunk has explicit grade levels, check for match
-        if (c.grade_levels && c.grade_levels.length > 0) {
-          return c.grade_levels.includes(requestedGrade);
-        }
-        // Fallback: Check if chunk mentions the specific requested SLO code
-        if (targetSLOs && targetSLOs.length > 0) {
-           return c.slo_codes.some(code => targetSLOs.includes(code));
-        }
-        return true; 
+        return c.slo_codes.some((code: string) => targetSLOs.includes(code));
       });
     }
 
-    performanceMonitor.track('rag_retrieval_v41', performance.now() - start);
+    // Secondary Check: Strict Grade Lock
+    if (requestedGrade && processed.length > 0) {
+      processed = processed.filter(c => {
+        if (!c.grade_levels || c.grade_levels.length === 0) return true; // Keep context
+        return c.grade_levels.includes(requestedGrade);
+      });
+    }
+
+    performanceMonitor.track('rag_retrieval_v42', performance.now() - start);
     return processed.slice(0, 8); 
     
   } catch (err) {

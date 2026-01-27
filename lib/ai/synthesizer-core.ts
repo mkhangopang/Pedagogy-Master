@@ -11,8 +11,8 @@ import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
 /**
- * NEURAL PROVIDER CONFIGURATION (v46.1)
- * Optimized for Reasoning Accuracy & Throughput.
+ * NEURAL PROVIDER CONFIGURATION (v47.0)
+ * Optimized for Pedagogical Mastery and Multi-Agent Resilience.
  */
 export const getProvidersConfig = (): ProviderConfig[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled() },
@@ -33,8 +33,10 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * NEURAL GRID SYNTHESIZER (v42.1)
- * Implements intelligent model selection with support for multimodal output.
+ * NEURAL GRID SYNTHESIZER (v43.0)
+ * Logic Flow:
+ * 1. Prioritize Gemini for any standard-based or pedagogical reasoning.
+ * 2. Fallback to Cerebras/Groq for high-speed drafting if Gemini is busy.
  */
 export async function synthesize(
   prompt: string,
@@ -48,7 +50,10 @@ export async function synthesize(
     const currentProviders = getProvidersConfig();
     
     const isImageTask = systemInstruction.includes('IMAGE_GENERATION_MODE') || prompt.includes('GENERATE_VISUAL');
-    const effectivePreferred = isImageTask ? 'gemini' : preferredProvider;
+    
+    // DETERMINISTIC TASK ANALYSIS
+    const isPedagogyTask = prompt.includes('LESSON PLAN') || prompt.includes('SLO') || prompt.includes('PEDAGOGY') || prompt.includes('CURRICULUM');
+    const effectivePreferred = isImageTask ? 'gemini' : (isPedagogyTask ? 'gemini' : preferredProvider);
 
     const sortedProviders = [...currentProviders]
       .filter(p => p.enabled)
@@ -56,8 +61,8 @@ export async function synthesize(
         if (a.name === effectivePreferred) return -1;
         if (b.name === effectivePreferred) return 1;
         
-        const isComplex = prompt.includes('LESSON PLAN') || prompt.includes('VAULT') || prompt.includes('HARD_TARGET_ENFORCEMENT');
-        if (isComplex) {
+        // If preferred isn't specified, favor Gemini for complex standard matching
+        if (isPedagogyTask) {
           if (a.name === 'gemini') return -1;
           if (b.name === 'gemini') return 1;
         }
