@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { User, Bot, Copy, Check, Sparkles, Globe, ExternalLink } from 'lucide-react';
+import { User, Bot, Copy, Check, Sparkles, Globe, ExternalLink, Library } from 'lucide-react';
 import { marked } from 'marked';
 
 interface MessageItemProps {
@@ -18,7 +18,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    const cleanText = content.split('--- Synthesis by Node:')[0].trim();
+    const cleanText = content.split('--- Synthesis Node:')[0].trim();
     await navigator.clipboard.writeText(cleanText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -68,21 +68,24 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
             />
 
             {isAi && metadata?.sources?.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-slate-200 dark:border-white/10 space-y-3">
-                <p className="text-[10px] md:text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 flex items-center gap-2">
-                  <Globe size={10} className="text-indigo-500" /> Research Grounding
+              <div className="mt-8 pt-8 border-t border-slate-200 dark:border-white/10 space-y-4">
+                <p className="text-[10px] md:text-[11px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                  <Globe size={12} className="text-indigo-500" /> Grounded Teacher Pack
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {metadata.sources.map((source: any, i: number) => (
                     <a 
                       key={i} 
                       href={source.uri} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-black text-indigo-700 dark:text-indigo-300 hover:bg-indigo-600 hover:text-white transition-all shadow-md"
+                      className="group flex flex-col p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all hover:bg-indigo-600 hover:border-indigo-500 shadow-sm"
                     >
-                      {source.title.substring(0, 30)}...
-                      <ExternalLink size={10} />
+                      <span className="text-[10px] font-black text-slate-900 dark:text-white group-hover:text-white line-clamp-1 mb-1">{source.title}</span>
+                      <div className="flex items-center justify-between">
+                         <span className="text-[8px] font-bold text-slate-400 group-hover:text-indigo-100 truncate max-w-[80%]">{source.uri}</span>
+                         <ExternalLink size={10} className="text-slate-400 group-hover:text-white" />
+                      </div>
                     </a>
                   ))}
                 </div>
@@ -96,8 +99,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
           {isAi && (
             <div className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/40 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800/50 shadow-sm">
               <Sparkles size={8} className="text-indigo-500" />
-              {metadata?.isGrounded ? 'Institutional Context' : 'Neural Synthesis'}
-              {metadata?.gradeIsolation && <span className="ml-2 px-1.5 bg-indigo-600 text-white rounded text-[8px]">Grade {metadata.gradeIsolation} Lock</span>}
+              {metadata?.isGrounded ? 'Vault Anchored' : 'Neural Mode'}
+              {metadata?.gradeIsolation && <span className="ml-2 px-1.5 bg-indigo-600 text-white rounded-[4px] text-[7px] tracking-tight">Grade {metadata.gradeIsolation} Lock</span>}
             </div>
           )}
           <span className="text-[9px] md:text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest opacity-80">
