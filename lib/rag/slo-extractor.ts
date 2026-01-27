@@ -21,12 +21,13 @@ export function normalizeSLO(code: string): string {
 export function extractSLOCodes(query: string): string[] {
   if (!query) return [];
   
-  // Updated patterns to handle optional spaces between parts: S 8 C 3, S-08-A-03, etc.
+  // Updated patterns to handle optional spaces and mixed casing: S 8 C 3, S-08-A-03, s8 c4, etc.
   const patterns = [
     /S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
     /SLO[:\s]*S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
     /\b[A-Z]\s*\d{1,2}\s*[A-Z]\s*\d{1,2}\b/gi,
-    /\b[A-Z]\s*\d{1,2}\s*[A-Z]\b/gi
+    /\b[A-Z]\s*\d{1,2}\s*[A-Z]\b/gi,
+    /\bS\d{1,2}\s*[A-Z]\d{1,2}\b/gi // Matches S8 C4
   ];
   
   const matches: string[] = [];
@@ -35,7 +36,7 @@ export function extractSLOCodes(query: string): string[] {
     const found = query.match(pattern);
     if (found) {
       found.forEach(match => {
-        const raw = match.replace(/SLO[:\s]*/i, '');
+        const raw = match.replace(/SLO[:\s]*/i, '').trim();
         const normalized = normalizeSLO(raw);
         // Valid SLOs usually have at least one letter and one number
         if (normalized && normalized.length >= 3 && !matches.includes(normalized)) {

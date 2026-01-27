@@ -24,7 +24,7 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v40.0)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v41.0)
  * Logic for routing complex pedagogical extractions with multi-provider failover.
  */
 export async function generateAIResponse(
@@ -63,7 +63,7 @@ export async function generateAIResponse(
   const extractedSLOs = extractSLOCodes(userPrompt);
   const targetSLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
 
-  // 3. Precision RAG Retrieval (Optional for Visual Aid, Mandatory for others)
+  // 3. Precision RAG Retrieval
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     try {
@@ -97,13 +97,21 @@ export async function generateAIResponse(
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || documentIds[0])) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
-  // 5. Visual Aid Specific Prompting
+  // 5. Build Final Prompt with Target Enforcement
+  let targetEnforcement = "";
+  if (targetSLO) {
+    targetEnforcement = `\n🔴 HARD_TARGET_ENFORCEMENT: The teacher is specifically asking about standard [${targetSLO}]. 
+    If this standard exists in the <AUTHORITATIVE_VAULT> below, you MUST use its exact wording. 
+    DO NOT default to other standards like S-08-A-01 if they are not the requested code.\n`;
+  }
+
   let finalPrompt = `
 <AUTHORITATIVE_VAULT>
 ${vaultContent}
 </AUTHORITATIVE_VAULT>
 
 ${NUCLEAR_GROUNDING_DIRECTIVE}
+${targetEnforcement}
 
 ## TEACHER COMMAND:
 "${userPrompt}"
@@ -120,7 +128,6 @@ ${responseInstructions}`;
   }
 
   // 6. Dynamic Routing & Multi-Provider Synthesis
-  // Preferred Gemini for Visual/Complex tools, but ALLOW FAILOVER to Groq/Cerebras
   const isComplexTool = toolType && ['lesson-plan', 'assessment', 'rubric', 'slo-tagger', 'visual-aid'].includes(toolType);
   const preferredProvider = isComplexTool ? 'gemini' : undefined;
   
@@ -133,7 +140,6 @@ ${responseInstructions}`;
     customSystem || DEFAULT_MASTER_PROMPT
   );
   
-  // Extract grounding if available
   const sources = [
     ...(result.groundingMetadata?.groundingChunks?.map((c: any) => c.web).filter(Boolean) || []),
     ...(result.groundingMetadata?.groundingChunks?.map((c: any) => c.maps).filter(Boolean) || [])
