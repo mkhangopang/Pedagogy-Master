@@ -5,10 +5,11 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 import { generateCurriculumJson } from '../../../../lib/curriculum/json-generator';
+import { GoogleGenAI } from '@google/genai';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // 5 minutes for heavy curriculum processing
+export const maxDuration = 300; 
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,10 +21,26 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
     const body = await req.json();
-    const { name, sourceType, extractedText, board, subject, grade, version } = body;
+    const { name, sourceType, extractedText, board, subject, grade, version, previewOnly } = body;
 
     const supabase = getSupabaseServerClient(token);
     
+    // CASE: RAW TEXT CONVERSION (Fixing Ingestion)
+    if (sourceType === 'raw_text' || previewOnly) {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `Convert this raw curriculum text into high-fidelity markdown with sections for Metadata, Units, and SLOs. Use EXACT names if found.
+      FILE: ${name}
+      TEXT: ${extractedText.substring(0, 100000)}`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+      });
+
+      const markdown = response.text || "";
+      return NextResponse.json({ markdown });
+    }
+
     if (sourceType !== 'markdown' || !extractedText) {
       return NextResponse.json({ error: "High-fidelity Markdown source is mandatory." }, { status: 400 });
     }
@@ -70,15 +87,10 @@ export async function POST(req: NextRequest) {
     if (dbError) throw dbError;
 
     // 4. Critical Neural Synchronization
-    // We await this to ensure the serverless function doesn't kill the process
-    console.log(`📡 [Ingestion] Starting Neural Ingestion for asset: ${docData.id}`);
-    
     try {
       await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
-      console.log(`✅ [Ingestion] Neural sync successful for ${docData.id}`);
     } catch (indexError: any) {
       console.error(`❌ [Ingestion] Deep Audit Failed:`, indexError);
-      // Even if indexing fails, the file is saved. User can manually re-sync from UI.
       await supabase.from('documents').update({ status: 'failed' }).eq('id', docData.id);
     }
 

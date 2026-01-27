@@ -9,7 +9,6 @@ function parseAIError(errorData: any): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
   const lowerMsg = msg.toLowerCase();
   
-  // Generic Multi-Provider Saturation Detection
   if (
     lowerMsg.includes('429') || 
     lowerMsg.includes('resource_exhausted') || 
@@ -41,34 +40,6 @@ export const geminiService = {
   checkCooldown() {
     const remaining = Math.ceil((globalCooldownUntil - Date.now()) / 1000);
     return remaining > 0 ? remaining : 0;
-  },
-
-  async generateVisualAid(
-    userInput: string,
-    toolType: string,
-    brain: NeuralBrain,
-    user: UserProfile,
-    priorityDocumentId?: string
-  ): Promise<{ imageUrl: string, content: string }> {
-    const token = await this.getAuthToken();
-    const response = await fetch('/api/ai', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({
-        task: 'generate-visual',
-        toolType: 'visual-aid',
-        userInput,
-        brain,
-        priorityDocumentId
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: "Visual node failure" }));
-      throw new Error(parseAIError(errorData));
-    }
-
-    return await response.json();
   },
 
   async *chatWithDocumentStream(

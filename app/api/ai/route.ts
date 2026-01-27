@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v40.0)
- * Optimized for Multi-Provider Resilience and Multimodal Output.
+ * UNIFIED SYNTHESIS GATEWAY (v41.0)
+ * Optimized for speed and multi-provider resilience. 
+ * Redundant visual aid node removed.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -25,7 +26,6 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     
     const promptText = message || userInput || body.message;
-    const isVisualTask = task === 'generate-visual' || toolType === 'visual-aid';
 
     const { text, provider, metadata } = await generateAIResponse(
       promptText,
@@ -34,22 +34,12 @@ export async function POST(req: NextRequest) {
       supabase,
       adaptiveContext,
       undefined,
-      toolType || (task === 'generate-visual' ? 'visual-aid' : undefined),
+      toolType,
       brain?.masterPrompt,
       priorityDocumentId
     );
 
-    // 1. Visual Aid Flow (JSON Response)
-    if (isVisualTask) {
-      return NextResponse.json({
-        imageUrl: metadata?.imageUrl,
-        content: text,
-        provider,
-        metadata
-      });
-    }
-
-    // 2. Standard Synthesis Flow (Text Stream)
+    // Standard Synthesis Flow (Text Stream)
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
@@ -58,7 +48,7 @@ export async function POST(req: NextRequest) {
         const groundedNote = metadata?.isGrounded ? ` | Intelligence anchored to: ${metadata.sourceDocument}` : '';
         const sourceMeta = metadata?.sources ? `\n\n### 🌐 Research Nodes Found:\n${metadata.sources.map((s: any) => `- [${s.title}](${s.uri})`).join('\n')}` : '';
         
-        const footer = `${sourceMeta}\n\n---\n*Synthesis Node: ${provider}${groundedNote} | Grid Status: Resilient*`;
+        const footer = `${sourceMeta}\n\n---\n*Synthesis Node: ${provider}${groundedNote} | Grid Status: Ultra-Fast*`;
         controller.enqueue(encoder.encode(footer));
         controller.close();
       }

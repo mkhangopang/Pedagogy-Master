@@ -7,7 +7,6 @@ import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from '@google/genai';
 
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -54,12 +53,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const pdf = await loadingTask.promise;
         pageCount = pdf.numPages;
 
-        let allowedPages = 0;
+        let allowedPages = (limits as any).maxPages || 20;
         if (userPlan === SubscriptionPlan.ENTERPRISE) {
           const entLimits = limits as { maxPagesSME_1: number; maxPagesSME_2: number };
           allowedPages = docCount < 100 ? entLimits.maxPagesSME_1 : entLimits.maxPagesSME_2;
-        } else {
-          allowedPages = (limits as { maxPages: number }).maxPages;
         }
 
         if (pageCount > allowedPages) {
@@ -77,12 +74,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         fullText = result.value;
         pageCount = Math.ceil(fullText.split(/\s+/).length / 500);
         
-        let allowedPages = 0;
+        let allowedPages = (limits as any).maxPages || 20;
         if (userPlan === SubscriptionPlan.ENTERPRISE) {
           const entLimits = limits as { maxPagesSME_1: number; maxPagesSME_2: number };
           allowedPages = docCount < 100 ? entLimits.maxPagesSME_1 : entLimits.maxPagesSME_2;
-        } else {
-          allowedPages = (limits as { maxPages: number }).maxPages;
         }
 
         if (pageCount > allowedPages) {
@@ -96,55 +91,44 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     }
   };
 
-  const synthesizeMasterMarkdown = async (rawText: string, fileName: string) => {
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Convert this raw curriculum text into high-fidelity markdown with sections for Metadata, Units, and SLOs. FILE: ${fileName}\n\nTEXT: ${rawText.substring(0, 150000)}`;
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-      });
-      return response.text || "";
-    } catch (e: any) {
-      throw new Error(`AI Mapping Failed: ${e.message}`);
-    }
-  };
-
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, type: 'md' | 'pdf' | 'docx') => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setError(null);
     setIsProcessing(true);
-    setProcStage(`Analyzing Metadata...`);
+    setProcStage(`Connecting to extraction grid...`);
 
     try {
       if (type === 'md') {
         const text = await file.text();
-        const pages = Math.ceil(text.split(/\s+/).length / 500);
-        
-        let allowedPages = 0;
-        if (userPlan === SubscriptionPlan.ENTERPRISE) {
-          const entLimits = limits as { maxPagesSME_1: number; maxPagesSME_2: number };
-          allowedPages = docCount < 100 ? entLimits.maxPagesSME_1 : entLimits.maxPagesSME_2;
-        } else {
-          allowedPages = (limits as { maxPages: number }).maxPages;
-        }
-
-        if (pages > allowedPages) throw new Error(`Markdown length exceeds ${allowedPages} page equivalent.`);
-
         setDraftMarkdown(text);
         setMode('transition');
       } else {
+        const { text } = await extractRawTextAndPageCount(file, type);
+        setProcStage('Neural Handshake: Building curriculum context on server...');
+        
+        // FIX: Moving high-fidelity synthesis to server to fix client ingestion
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch('/api/docs/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ 
+            name: file.name, 
+            sourceType: 'raw_text', 
+            extractedText: text,
+            previewOnly: true
+          })
+        });
+        
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error);
+        
+        setDraftMarkdown(result.markdown);
         setMode('transition');
-        const { text, pages } = await extractRawTextAndPageCount(file, type);
-        setProcStage('Neural Ingestion: Standardizing curriculum grid...');
-        const masterMd = await synthesizeMasterMarkdown(text, file.name);
-        setDraftMarkdown(masterMd);
       }
     } catch (err: any) {
       setError(err.message);
-      setMode('selection');
     } finally {
       setIsProcessing(false);
       setProcStage('');
@@ -153,7 +137,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
   const handleFinalApproval = async () => {
     setIsProcessing(true);
-    setProcStage('Committing to Cloud Vault...');
+    setProcStage('Securing asset in permanent vault...');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const v = validateCurriculumMarkdown(draftMarkdown);
@@ -217,7 +201,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         <button 
           onClick={onCancel}
           className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm flex items-center gap-2"
-          title="Go Back"
         >
           <ArrowLeft size={20} />
           <span className="text-[10px] font-black uppercase">Cancel</span>
@@ -229,15 +212,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         <h3 className="text-2xl md:text-3xl font-black dark:text-white uppercase tracking-tight leading-none mb-2">Vault Ingestion</h3>
         <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Map curriculum nodes to your permanent library.</p>
         
-        <div className="mb-8 p-5 md:p-6 bg-amber-50 dark:bg-amber-950/20 border-2 border-amber-100 dark:border-amber-900/30 rounded-2xl md:rounded-[2rem] text-left flex gap-3 md:gap-4 items-start">
-           <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-1 md:size-6" />
-           <div>
-              <h4 className="text-[9px] md:text-xs font-black uppercase text-amber-700 tracking-widest mb-1">Permanent Ingestion Warning</h4>
-              <p className="text-[10px] md:text-[11px] text-amber-600 leading-relaxed font-medium">
-                 Indexed assets <b>cannot be deleted</b>. Upload <b>final</b> documents only.
-              </p>
-           </div>
-        </div>
+        {error && (
+          <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center">
+            <AlertCircle size={16} /> {error}
+          </div>
+        )}
 
         <div className="grid gap-3 md:gap-4">
           <input type="file" id="pdf-up" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(e, 'pdf')} />
@@ -249,11 +228,9 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <input type="file" id="docx-up" className="hidden" accept=".docx" onChange={(e) => handleFileUpload(e, 'docx')} />
           <label htmlFor="docx-up" className="p-4 md:p-6 border-2 border-dashed rounded-2xl md:rounded-3xl border-slate-200 dark:border-white/10 hover:border-emerald-500 cursor-pointer transition-all flex items-center gap-4">
              <div className="p-2 md:p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl"><FileCode size={20}/></div>
-             <div className="text-left min-w-0"><p className="font-bold dark:text-white text-sm md:text-base">Word / Markdown</p><p className="text-[9px] md:text-[10px] text-slate-400 truncate">Strict Structural Audit</p></div>
+             <div className="text-left min-w-0"><p className="font-bold dark:text-white text-sm md:text-base">Word Document</p><p className="text-[9px] md:text-[10px] text-slate-400 truncate">Strict Structural Audit</p></div>
           </label>
         </div>
-
-        <button onClick={onCancel} className="mt-8 text-[9px] md:text-[10px] font-black uppercase text-slate-400 tracking-widest hover:text-rose-600 transition-colors">Disconnect Ingestion Hub</button>
       </div>
       
       {isProcessing && (

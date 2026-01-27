@@ -24,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v43.0)
- * Optimized for SLO Isolation and Multi-Model Synergy including Visual Aids.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v44.0)
+ * Streamlined for maximum speed. Visual aid logic removed.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -58,7 +58,7 @@ export async function generateAIResponse(
     documentIds = [priorityDocumentId, ...documentIds];
   }
 
-  // 3. Retrieval
+  // 3. Retrieval (Performance Optimized)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     try {
@@ -66,7 +66,7 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: documentIds,
         supabase,
-        matchCount: 20
+        matchCount: 15 // Lowered match count for speed
       });
 
       if (isolatedGrade) {
@@ -91,21 +91,14 @@ export async function generateAIResponse(
       })
       .join('\n');
   } else if (activeDocs.length > 0) {
-    vaultContent = `[FALLBACK] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 6000)}`;
+    vaultContent = `[FALLBACK] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 5000)}`;
   }
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || documentIds[0])) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
-  // 5. Image Generation Detection
-  const isVisualAid = toolType === 'visual-aid' || userPrompt.toLowerCase().includes('generate a diagram') || userPrompt.toLowerCase().includes('show me a picture');
-  let effectiveSystem = customSystem || DEFAULT_MASTER_PROMPT;
-  if (isVisualAid) {
-    effectiveSystem += "\n[IMAGE_GENERATION_MODE: ON] Generate a high-quality pedagogical visual representing the concepts requested.";
-  }
-
-  // 6. Build Final Prompt
+  // 5. Build Final Prompt
   let targetEnforcement = "";
   if (targetSLO) {
     targetEnforcement = `\n🔴 CRITICAL_CONTEXT_LOCK: Requested [${targetSLO}]. MUST search vault for EXACT code.\n`;
@@ -125,17 +118,17 @@ ${targetEnforcement}
 ## EXECUTION PARAMETERS:
 ${responseInstructions}`;
 
-  // 7. Synthesis
-  const isComplexTool = ['lesson-plan', 'assessment', 'rubric', 'slo-tagger', 'visual-aid'].includes(toolType || '') || queryAnalysis.queryType === 'lesson_plan';
+  // 6. Synthesis
+  const isComplexTool = ['lesson-plan', 'assessment', 'rubric', 'slo-tagger'].includes(toolType || '') || queryAnalysis.queryType === 'lesson_plan';
   const preferredProvider = isComplexTool ? 'gemini' : undefined;
   
   const result = await synthesize(
     finalPrompt, 
-    history.slice(-6), 
+    history.slice(-4), // Reduced history for speed
     activeDocs.length > 0, 
     [], 
     preferredProvider,
-    effectiveSystem
+    customSystem || DEFAULT_MASTER_PROMPT
   );
   
   const sources = [
@@ -152,8 +145,7 @@ ${responseInstructions}`;
       sourceDocument: primaryDoc?.name || 'Global Library',
       extractedSLOs,
       sources: sources.length > 0 ? sources : undefined,
-      gradeIsolation: isolatedGrade,
-      imageUrl: result.imageUrl
+      gradeIsolation: isolatedGrade
     }
   };
 }
