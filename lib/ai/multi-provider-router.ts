@@ -4,7 +4,7 @@ import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { synthesize, getProvidersConfig } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
-import { extractSLOCodes } from '../rag/slo-extractor';
+import { extractSLOCodes, extractGradeFromSLO } from '../rag/slo-extractor';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
@@ -24,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v41.0)
- * Logic for routing complex pedagogical extractions with multi-provider failover.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v42.0)
+ * Optimized for SLO Isolation and Multi-Model Synergy.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -39,7 +39,12 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Context Scoping
+  // 1. Metadata Extraction (SLO & Grade Isolation)
+  const extractedSLOs = extractSLOCodes(userPrompt);
+  const targetSLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
+  const isolatedGrade = targetSLO ? extractGradeFromSLO(targetSLO) : null;
+
+  // 2. Context Scoping
   const { data: selectedDocs } = await supabase
     .from('documents')
     .select('id, name, rag_indexed, authority, subject, grade_level, version_year, extracted_text')
@@ -51,19 +56,9 @@ export async function generateAIResponse(
   
   if (priorityDocumentId && !documentIds.includes(priorityDocumentId)) {
     documentIds = [priorityDocumentId, ...documentIds];
-    const { data: priorityDocInfo } = await supabase
-      .from('documents')
-      .select('id, name, rag_indexed, authority, subject, grade_level, version_year, extracted_text')
-      .eq('id', priorityDocumentId)
-      .single();
-    if (priorityDocInfo) activeDocs.push(priorityDocInfo);
   }
-  
-  // 2. Metadata Extraction
-  const extractedSLOs = extractSLOCodes(userPrompt);
-  const targetSLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
 
-  // 3. Precision RAG Retrieval
+  // 3. Precision RAG Retrieval with Hard Grade Filtering
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     try {
@@ -71,8 +66,21 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: documentIds,
         supabase,
-        matchCount: toolType === 'visual-aid' ? 5 : 20 
+        matchCount: 20
       });
+
+      // ACCURACY FIX: Hard filter by grade if an SLO is detected
+      if (isolatedGrade) {
+        const initialCount = retrievedChunks.length;
+        retrievedChunks = retrievedChunks.filter(chunk => {
+          // Keep chunk if it mentions the target grade OR has no specific grade assigned (context chunks)
+          const chunkGrades = chunk.grade_levels || [];
+          return chunkGrades.length === 0 || chunkGrades.includes(isolatedGrade);
+        });
+        if (retrievedChunks.length < initialCount) {
+          console.log(`🛡️ [Isolation] Blocked ${initialCount - retrievedChunks.length} cross-grade chunks (Target Grade: ${isolatedGrade})`);
+        }
+      }
     } catch (err) {
       console.warn("⚠️ [Orchestrator] Vector Node Lag.");
     }
@@ -83,8 +91,8 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
-        const isExact = targetSLO && chunk.slo_codes.includes(targetSLO);
-        const tagLine = isExact ? " [!!! TARGET MATCH !!!]" : "";
+        const isExact = targetSLO && (chunk.slo_codes || []).includes(targetSLO);
+        const tagLine = isExact ? " [!!! PRIORITY TARGET MATCH !!!]" : "";
         return `[NODE_${i + 1}] (SOURCE: ${activeDocs.find(d => d.id === chunk.document_id)?.name || 'Library'})${tagLine}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
@@ -97,12 +105,13 @@ export async function generateAIResponse(
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || documentIds[0])) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
-  // 5. Build Final Prompt with Target Enforcement
+  // 5. Build Final Prompt with Strict Target Lock
   let targetEnforcement = "";
   if (targetSLO) {
-    targetEnforcement = `\n🔴 HARD_TARGET_ENFORCEMENT: The teacher is specifically asking about standard [${targetSLO}]. 
-    If this standard exists in the <AUTHORITATIVE_VAULT> below, you MUST use its exact wording. 
-    DO NOT default to other standards like S-08-A-01 if they are not the requested code.\n`;
+    targetEnforcement = `\n🔴 CRITICAL_CONTEXT_LOCK: The user is requesting standard [${targetSLO}]. 
+    You MUST search the <AUTHORITATIVE_VAULT> for this exact code. 
+    IF YOU FIND S-04-A-05 but user asked for S-08-A-05, DO NOT USE the S-04 content. 
+    State clearly if the specific Grade 8 standard is missing rather than defaulting to Grade 4.\n`;
   }
 
   let finalPrompt = `
@@ -119,16 +128,9 @@ ${targetEnforcement}
 ## EXECUTION PARAMETERS:
 ${responseInstructions}`;
 
-  if (toolType === 'visual-aid') {
-    finalPrompt += `\n\n### RESOURCE PROTOCOL:
-1. Locate 3-5 verified clickable links to Creative Commons images, diagrams, or archival media for this specific curriculum topic.
-2. Preferred sources: Unsplash, Pexels, Pixabay, Wikimedia Commons.
-3. For each link, explain how it supports the Student Learning Objective.
-4. If the model is not Gemini, provide high-quality resource nodes from internal training data that are known to be stable.`;
-  }
-
   // 6. Dynamic Routing & Multi-Provider Synthesis
-  const isComplexTool = toolType && ['lesson-plan', 'assessment', 'rubric', 'slo-tagger', 'visual-aid'].includes(toolType);
+  // ACCURACY FIX: Force reasoning-heavy models for complex pedagogical creation
+  const isComplexTool = ['lesson-plan', 'assessment', 'rubric', 'slo-tagger'].includes(toolType || '') || queryAnalysis.queryType === 'lesson_plan';
   const preferredProvider = isComplexTool ? 'gemini' : undefined;
   
   const result = await synthesize(
@@ -153,7 +155,8 @@ ${responseInstructions}`;
       isGrounded: activeDocs.length > 0,
       sourceDocument: primaryDoc?.name || 'Global Library',
       extractedSLOs,
-      sources: sources.length > 0 ? sources : undefined
+      sources: sources.length > 0 ? sources : undefined,
+      gradeIsolation: isolatedGrade
     }
   };
 }

@@ -1,8 +1,8 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Plus, Loader2 } from 'lucide-react';
+import { Send, Plus, Loader2 } from 'lucide-center';
+import { Send as SendIcon, Plus as PlusIcon, Loader2 as LoaderIcon } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -49,13 +49,13 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   return (
     <div className="w-full bg-gradient-to-t from-slate-50 dark:from-[#0a0a0a] via-slate-50 dark:via-[#0a0a0a] to-transparent pt-10 pb-6 px-4">
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-        <div className="relative flex items-end gap-2 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/10 rounded-[28px] p-2 pl-4 shadow-2xl focus-within:border-indigo-500/50 transition-all">
+        <div className="relative flex items-end gap-2 bg-white dark:bg-[#1a1a1a] border-2 border-slate-300 dark:border-white/20 rounded-[28px] p-2 pl-4 shadow-2xl focus-within:border-indigo-600 transition-all">
           <button
             type="button"
-            className="p-2 text-slate-400 hover:text-indigo-500 transition-colors mb-1"
+            className="p-2 text-slate-500 hover:text-indigo-600 transition-colors mb-1"
             title="Upload attachment"
           >
-            <Plus size={20} />
+            <PlusIcon size={20} />
           </button>
           
           <textarea
@@ -66,23 +66,23 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             placeholder={placeholder}
             disabled={disabled || isLoading}
             rows={1}
-            className="flex-1 bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 resize-none py-3 text-[15px] max-h-[160px] custom-scrollbar"
+            className="flex-1 bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 resize-none py-3 text-[16px] font-bold max-h-[160px] custom-scrollbar"
           />
           
           <button
             type="submit"
             disabled={!input.trim() || disabled || isLoading}
-            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all mb-1 mr-1 ${
+            className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all mb-1 mr-1 ${
               input.trim() && !isLoading 
-                ? 'bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 active:scale-90' 
+                ? 'bg-indigo-600 text-white shadow-xl hover:bg-indigo-700 active:scale-90' 
                 : 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-600'
             }`}
           >
-            {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
+            {isLoading ? <LoaderIcon size={20} className="animate-spin" /> : <SendIcon size={20} />}
           </button>
         </div>
-        <p className="text-[10px] text-center mt-3 text-slate-400 font-medium uppercase tracking-[0.1em]">
-          Powered by Pedagogy Master Multi-Provider Grid
+        <p className="text-[10px] text-center mt-4 text-slate-600 dark:text-slate-400 font-black uppercase tracking-[0.2em]">
+          Grid Isolation Active • Multi-Provider Logic v42.0
         </p>
       </form>
     </div>

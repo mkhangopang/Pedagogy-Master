@@ -11,8 +11,8 @@ import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
 /**
- * NEURAL PROVIDER CONFIGURATION (v46.0)
- * Updated with Tiered Reasoning & Failover Capacity.
+ * NEURAL PROVIDER CONFIGURATION (v46.1)
+ * Optimized for Reasoning Accuracy & Throughput.
  */
 export const getProvidersConfig = (): ProviderConfig[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled() },
@@ -20,7 +20,6 @@ export const getProvidersConfig = (): ProviderConfig[] => [
   { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY },
   { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY },
   { name: 'sambanova', rpm: 100, rpd: 10000, enabled: !!process.env.SAMBANOVA_API_KEY },
-  { name: 'openrouter', rpm: 10, rpd: 1000, enabled: !!process.env.OPENROUTER_API_KEY },
 ];
 
 export const PROVIDER_FUNCTIONS = {
@@ -34,8 +33,8 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * NEURAL GRID SYNTHESIZER
- * Implements intelligent load balancing across the multi-model architecture.
+ * NEURAL GRID SYNTHESIZER (v42.0)
+ * Implements intelligent model selection: Gemini for Accuracy, Others for Speed.
  */
 export async function synthesize(
   prompt: string,
@@ -48,14 +47,24 @@ export async function synthesize(
   return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any }>(async () => {
     const currentProviders = getProvidersConfig();
     
-    // Sort providers based on preference and availability
+    // Sort logic: 
+    // 1. If preferredProvider is requested (e.g. Gemini for Lesson Plans), it goes first.
+    // 2. High-reasoning (Gemini) is prioritized for document-grounded complex tasks.
+    // 3. High-throughput fallbacks handle general conversational needs.
     const sortedProviders = [...currentProviders]
       .filter(p => p.enabled)
       .sort((a, b) => {
         if (a.name === preferredProvider) return -1;
         if (b.name === preferredProvider) return 1;
         
-        // High-throughput fallbacks for general reliability
+        // Priority for Accuracy in Curriculum Tasks
+        const isComplex = prompt.includes('LESSON PLAN') || prompt.includes('VAULT');
+        if (isComplex) {
+          if (a.name === 'gemini') return -1;
+          if (b.name === 'gemini') return 1;
+        }
+        
+        // Fallback speed sort
         const highThroughput = ['cerebras', 'sambanova', 'groq'];
         if (highThroughput.includes(a.name) && !highThroughput.includes(b.name)) return -1;
         if (!highThroughput.includes(a.name) && highThroughput.includes(b.name)) return 1;
@@ -64,11 +73,7 @@ export async function synthesize(
       });
 
     for (const config of sortedProviders) {
-      // Local Throttling Check
-      if (!await rateLimiter.canMakeRequest(config.name, config)) {
-        console.warn(`⚠️ [Throttling] Node ${config.name} saturated locally.`);
-        continue;
-      }
+      if (!await rateLimiter.canMakeRequest(config.name, config)) continue;
       
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
@@ -92,14 +97,10 @@ export async function synthesize(
         };
       } catch (e: any) { 
         console.error(`❌ Node failure: ${config.name} | ${e.message}`); 
-        // Automatic failover: The loop continues to the next available provider in sortedProviders
-        const isHardSaturated = e.message?.includes('429') || e.message?.includes('RESOURCE_EXHAUSTED');
-        if (isHardSaturated) {
-          console.warn(`🚀 [Grid Failover] Node ${config.name} exhausted. Migrating task to alternate node.`);
-        }
+        // Failover logic triggers the next provider in the loop
       }
     }
     
-    throw new Error("NEURAL GRID EXHAUSTED: All nodes busy or saturated. Please retry in 15 seconds.");
+    throw new Error("NEURAL GRID EXHAUSTED: Please retry in 15 seconds.");
   });
 }

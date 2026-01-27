@@ -16,18 +16,29 @@ export function normalizeSLO(code: string): string {
 }
 
 /**
+ * Extracts the grade level from a normalized SLO code (e.g., S08A05 -> 8).
+ */
+export function extractGradeFromSLO(normalizedCode: string): string | null {
+  const match = normalizedCode.match(/[A-Z]+(\d{2})/i);
+  if (match) {
+    return parseInt(match[1], 10).toString();
+  }
+  return null;
+}
+
+/**
  * Extracts and normalizes SLO codes from text with space-resilient patterns.
  */
 export function extractSLOCodes(query: string): string[] {
   if (!query) return [];
   
-  // Updated patterns to handle optional spaces and mixed casing: S 8 C 3, S-08-A-03, s8 c4, etc.
+  // Patterns to handle optional spaces and mixed casing: S 8 C 3, S-08-A-03, s8 c4, etc.
   const patterns = [
     /S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
     /SLO[:\s]*S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
     /\b[A-Z]\s*\d{1,2}\s*[A-Z]\s*\d{1,2}\b/gi,
     /\b[A-Z]\s*\d{1,2}\s*[A-Z]\b/gi,
-    /\bS\d{1,2}\s*[A-Z]\d{1,2}\b/gi // Matches S8 C4
+    /\bS\d{1,2}\s*[A-Z]\d{1,2}\b/gi
   ];
   
   const matches: string[] = [];
@@ -38,7 +49,6 @@ export function extractSLOCodes(query: string): string[] {
       found.forEach(match => {
         const raw = match.replace(/SLO[:\s]*/i, '').trim();
         const normalized = normalizeSLO(raw);
-        // Valid SLOs usually have at least one letter and one number
         if (normalized && normalized.length >= 3 && !matches.includes(normalized)) {
           matches.push(normalized);
         }
