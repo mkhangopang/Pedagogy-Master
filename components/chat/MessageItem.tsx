@@ -35,75 +35,77 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
   }, [content]);
 
   return (
-    <div className={`w-full animate-chat-turn mb-6 md:mb-10 ${isAi ? 'bg-transparent' : ''}`}>
-      <div className={`flex flex-col gap-3 md:gap-4 mx-auto max-w-full px-4 md:px-8`}>
+    <div className={`w-full animate-chat-turn mb-8 ${isAi ? 'bg-transparent' : ''}`}>
+      <div className={`flex flex-col gap-3 mx-auto max-w-full px-4 md:px-8`}>
         
-        {/* Header: Identity & Actions */}
+        {/* Header: Persona Label */}
         <div className={`flex items-center gap-3 ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
-          <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center shrink-0 shadow-md border-2 ${
-            isAi ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-300 border-slate-400 dark:bg-slate-700 dark:border-slate-600 text-slate-900 dark:text-white'
+          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-lg border-2 ${
+            isAi ? 'bg-indigo-600 border-indigo-400 text-white' : 'bg-slate-900 border-slate-700 text-white'
           }`}>
-            {isAi ? <Bot size={14} className="md:size-4" /> : <User size={14} className="md:size-4" />}
+            {isAi ? <Bot size={16} /> : <User size={16} />}
           </div>
-          <span className="text-[10px] md:text-[11px] font-black uppercase tracking-[0.2em] text-slate-800 dark:text-slate-200">
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">
             {isAi ? 'Pedagogy Master' : 'Educator'}
           </span>
           {isAi && content && (
-            <button onClick={handleCopy} className="p-1.5 text-slate-500 hover:text-indigo-600 transition-all ml-1 hidden xs:block">
-              {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
+            <button onClick={handleCopy} className="p-1.5 text-slate-400 hover:text-indigo-600 transition-all">
+              {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
             </button>
           )}
         </div>
         
-        {/* Content Node */}
-        <div className={`w-full overflow-hidden ${isAi ? '' : 'flex justify-end'}`}>
-          <div className={`relative break-words ${
+        {/* Message Bubble */}
+        <div className={`w-full ${isAi ? '' : 'flex justify-end'}`}>
+          <div className={`relative ${
             isAi 
               ? 'w-full text-slate-900 dark:text-slate-100' 
-              : 'bg-indigo-600 text-white px-5 md:px-7 py-4 rounded-[2rem] rounded-tr-none shadow-2xl max-w-[95%] md:max-w-[85%]'
+              : 'bg-indigo-600 text-white px-6 py-4 rounded-[2rem] rounded-tr-none shadow-2xl max-w-[90%] md:max-w-[75%]'
           }`}>
-            <div 
-              className={`prose dark:prose-invert max-w-full text-sm md:text-[16px] font-semibold leading-relaxed md:leading-[1.8] ${isAi ? '' : 'text-white'}`}
-              dangerouslySetInnerHTML={{ __html: renderedHtml }}
-            />
+            {/* Fix: Specifically ensuring high contrast for user message by avoiding generic prose class for user text */}
+            {isAi ? (
+              <div 
+                className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8]"
+                dangerouslySetInnerHTML={{ __html: renderedHtml }}
+              />
+            ) : (
+              <div className="text-sm md:text-[15px] font-bold leading-relaxed text-white">
+                {content}
+              </div>
+            )}
 
             {isAi && metadata?.sources?.length > 0 && (
-              <div className="mt-8 pt-8 border-t border-slate-200 dark:border-white/10 space-y-4">
-                <p className="text-[10px] md:text-[11px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
-                  <Globe size={12} className="text-indigo-500" /> Grounded Teacher Pack
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {metadata.sources.map((source: any, i: number) => (
-                    <a 
-                      key={i} 
-                      href={source.uri} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="group flex flex-col p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all hover:bg-indigo-600 hover:border-indigo-500 shadow-sm"
-                    >
-                      <span className="text-[10px] font-black text-slate-900 dark:text-white group-hover:text-white line-clamp-1 mb-1">{source.title}</span>
-                      <div className="flex items-center justify-between">
-                         <span className="text-[8px] font-bold text-slate-400 group-hover:text-indigo-100 truncate max-w-[80%]">{source.uri}</span>
-                         <ExternalLink size={10} className="text-slate-400 group-hover:text-white" />
-                      </div>
-                    </a>
-                  ))}
-                </div>
+              <div className="mt-8 pt-8 border-t border-slate-200 dark:border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {metadata.sources.map((source: any, i: number) => (
+                  <a 
+                    key={i} 
+                    href={source.uri} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex flex-col p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all hover:bg-indigo-600 group"
+                  >
+                    <span className="text-[10px] font-black text-slate-900 dark:text-white group-hover:text-white line-clamp-1 mb-1 uppercase tracking-tight">{source.title}</span>
+                    <div className="flex items-center justify-between">
+                       <span className="text-[8px] font-bold text-slate-400 group-hover:text-indigo-100 truncate max-w-[85%]">{source.uri}</span>
+                       <ExternalLink size={10} className="text-slate-400 group-hover:text-white" />
+                    </div>
+                  </a>
+                ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* Footer: Metadata */}
-        <div className={`flex items-center gap-3 px-1 ${isAi ? 'justify-start' : 'justify-end'}`}>
+        {/* Footer: Contextual Metadata */}
+        <div className={`flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end opacity-60'}`}>
           {isAi && (
-            <div className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/40 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800/50 shadow-sm">
-              <Sparkles size={8} className="text-indigo-500" />
-              {metadata?.isGrounded ? 'Vault Anchored' : 'Neural Mode'}
-              {metadata?.gradeIsolation && <span className="ml-2 px-1.5 bg-indigo-600 text-white rounded-[4px] text-[7px] tracking-tight">Grade {metadata.gradeIsolation} Lock</span>}
+            <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800/50 shadow-sm">
+              <Sparkles size={8} />
+              {metadata?.isGrounded ? 'Standard Validated' : 'Neural Mode'}
+              {metadata?.imageUrl && <span className="ml-2 flex items-center gap-1"><Library size={8}/> Visual Aid</span>}
             </div>
           )}
-          <span className="text-[9px] md:text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest opacity-80">
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
             {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>

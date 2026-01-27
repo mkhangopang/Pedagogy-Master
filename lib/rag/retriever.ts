@@ -18,73 +18,14 @@ export interface RetrievedChunk {
 }
 
 /**
- * NEURAL RE-RANKER (v5.0)
- * Implements "Hard-Match" filtering for curriculum standards.
- */
-async function reRankChunks(query: string, candidates: RetrievedChunk[], targetSLOs: string[]): Promise<RetrievedChunk[]> {
-  if (candidates.length === 0) return [];
-  
-  // STRATEGY: If target SLOs are extracted from the query, 
-  // we MUST ensure those chunks appear first and other similar standards are suppressed.
-  if (targetSLOs.length > 0) {
-    const exactMatches = candidates.filter(c => 
-      c.slo_codes.some(code => targetSLOs.includes(code))
-    );
-
-    if (exactMatches.length > 0) {
-      console.log(`🎯 [Re-ranker] Found ${exactMatches.length} exact standard matches. Prioritizing.`);
-      // Return exact matches first, then fill remaining slots with semantic matches 
-      // that are NOT different SLO codes (to avoid cross-talk).
-      const relevantNonSlo = candidates.filter(c => 
-        !exactMatches.includes(c) && 
-        (c.slo_codes.length === 0 || c.slo_codes.some(code => targetSLOs.includes(code)))
-      );
-      
-      return [...exactMatches, ...relevantNonSlo].slice(0, 7);
-    }
-  }
-
-  // Fallback to standard re-ranking for general queries
-  if (candidates.length <= 3) return candidates;
-
-  const start = performance.now();
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const chunkOptions = candidates.map((c, i) => `[ID:${i}] ${c.chunk_text.substring(0, 400)}`).join('\n\n');
-    
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Rank the most relevant curriculum chunks.
-      QUERY: "${query}"
-      TARGETS: ${targetSLOs.join(', ') || 'General Concept'}
-      
-      CANDIDATES:
-      ${chunkOptions}
-      
-      Return top 5 IDs comma-separated.`,
-    });
-
-    const selectedIds = response.text?.match(/\d+/g)?.map(Number) || [];
-    const topChunks = selectedIds
-      .map(id => candidates[id])
-      .filter(Boolean)
-      .slice(0, 5);
-
-    performanceMonitor.track('semantic_re_rank', performance.now() - start);
-    return topChunks.length > 0 ? topChunks : candidates.slice(0, 5);
-  } catch (e) {
-    return candidates.slice(0, 5);
-  }
-}
-
-/**
- * HIGH-PRECISION RAG RETRIEVER (v35.0)
+ * HIGH-PRECISION RAG RETRIEVER (v40.0)
+ * Optimized for SLO Isolation and Multi-Model synergy.
  */
 export async function retrieveRelevantChunks({
   query,
   documentIds,
   supabase,
-  matchCount = 25 
+  matchCount = 20 
 }: {
   query: string;
   documentIds: string[];
@@ -100,19 +41,23 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
+    // CRITICAL: Precise SLO Target Lock
+    // If user asked for S8A5, we MUST tell the database to strictly filter by that tag.
+    const targetSLOs = parsed.sloCodes.length > 0 ? parsed.sloCodes : null;
+
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
       match_count: matchCount,
       filter_document_ids: documentIds,
-      filter_tags: parsed.sloCodes.length > 0 ? parsed.sloCodes : null,
+      filter_tags: targetSLOs, // Strictly filter by SLO if detected
       filter_grades: parsed.grades.length > 0 ? parsed.grades : null,
       filter_subjects: parsed.topics.length > 0 ? parsed.topics : null
     });
     
     if (error) throw error;
     
-    const processed = (chunks as any[] || []).map((d: any) => ({
+    let processed = (chunks as any[] || []).map((d: any) => ({
       chunk_id: d.chunk_id,
       chunk_text: d.chunk_text,
       slo_codes: d.slo_codes || [],
@@ -125,13 +70,21 @@ export async function retrieveRelevantChunks({
       document_id: d.document_id
     }));
 
-    const finalResults = await reRankChunks(query, processed, parsed.sloCodes);
-    
-    performanceMonitor.track('rag_retrieval_full_pipeline', performance.now() - start);
-    return finalResults;
+    // Post-Retrieval Verification: Eliminate Cross-Talk
+    // If targetSLOs exist, remove any chunk that explicitly mentions a DIFFERENT SLO
+    // This stops S8 queries from showing S4 content.
+    if (targetSLOs && targetSLOs.length > 0) {
+      processed = processed.filter(c => {
+        if (c.slo_codes.length === 0) return true; // Keep general context
+        return c.slo_codes.some(code => targetSLOs.includes(code));
+      });
+    }
+
+    performanceMonitor.track('rag_retrieval_v40', performance.now() - start);
+    return processed.slice(0, 7); // Return top 7 most precise segments
     
   } catch (err) {
-    console.error('❌ [Retriever] Fault:', err);
+    console.error('❌ [Retriever] High Precision Failure:', err);
     return [];
   }
 }

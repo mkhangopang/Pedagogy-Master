@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v33.0)
- * Optimized for Multimodal synthesis and Search Grounding.
+ * WORLD-CLASS GEMINI ADAPTER (v40.0)
+ * Optimized for Pedagogy Master Logic.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -15,7 +15,7 @@ export async function callGemini(
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // IMAGE MODEL SELECTION (Nano Banana Node)
+    // IMAGE SYNTHESIS NODE
     if (forceImageModel || systemInstruction.includes('IMAGE_GENERATION_MODE')) {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
@@ -25,72 +25,51 @@ export async function callGemini(
         }
       });
 
-      if (response.candidates && response.candidates.length > 0) {
-        const parts = response.candidates[0].content?.parts || [];
-        for (const part of parts) {
-          if (part.inlineData) {
-            return { 
-              imageUrl: `data:image/png;base64,${part.inlineData.data}`,
-              text: "Visual artifact synthesized successfully."
-            };
-          }
-        }
+      const part = response.candidates[0].content.parts.find(p => p.inlineData);
+      if (part?.inlineData) {
+        return { 
+          imageUrl: `data:image/png;base64,${part.inlineData.data}`,
+          text: "Visual synthesis complete."
+        };
       }
-      throw new Error("Neural vision node failure.");
+      throw new Error("Vision node failed to produce data.");
     }
 
-    // STANDARD TEXT/REASONING MODEL
-    const isComplexTask = fullPrompt.includes('LESSON PLAN') || 
-                         fullPrompt.includes('ASSESSMENT') || 
-                         fullPrompt.includes('RUBRIC') ||
-                         fullPrompt.length > 8000;
-    
-    const modelName = isComplexTask ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+    // PEDAGOGICAL REASONING NODE
+    const isComplex = fullPrompt.includes('LESSON PLAN') || fullPrompt.length > 6000;
+    const model = isComplex ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
 
     const contents: any[] = [];
-    // Map history to correct roles
-    history.slice(-6).forEach(h => {
+    history.slice(-4).forEach(h => {
       contents.push({
         role: h.role === 'user' ? 'user' : 'model',
         parts: [{ text: h.content }]
       });
     });
 
-    const currentParts: any[] = [];
+    const parts: any[] = [];
     if (docParts && docParts.length > 0) {
-      docParts.forEach(part => { if (part.inlineData) currentParts.push(part); });
+      docParts.forEach(p => { if (p.inlineData) parts.push(p); });
     }
-    currentParts.push({ text: fullPrompt });
-    contents.push({ role: 'user', parts: currentParts });
-
-    const config: any = {
-      systemInstruction: systemInstruction || "You are a world-class pedagogical assistant.",
-      temperature: hasDocuments ? 0.1 : 0.7,
-      maxOutputTokens: isComplexTask ? 8192 : 4096,
-      thinkingConfig: isComplexTask ? { thinkingBudget: 4000 } : { thinkingBudget: 0 }
-    };
-
-    // ENABLE SEARCH GROUNDING for Visual Aids or Research
-    const needsSearch = fullPrompt.includes('RESOURCE PROTOCOL') || 
-                        fullPrompt.includes('research') || 
-                        fullPrompt.includes('clickable links');
-                        
-    if (needsSearch) {
-      config.tools = [{ googleSearch: {} }];
-    }
+    parts.push({ text: fullPrompt });
+    contents.push({ role: 'user', parts });
 
     const response = await ai.models.generateContent({
-      model: modelName,
+      model,
       contents,
-      config
+      config: {
+        systemInstruction: systemInstruction || "You are a world-class pedagogy master.",
+        temperature: hasDocuments ? 0.15 : 0.7,
+        thinkingConfig: isComplex ? { thinkingBudget: 4000 } : { thinkingBudget: 0 }
+      }
     });
 
     return { 
-      text: response.text || "Synthesis interrupted.",
+      text: response.text,
       groundingMetadata: response.candidates?.[0]?.groundingMetadata 
     };
   } catch (error: any) {
-    console.error("❌ [Gemini Node] Error:", error.message);
+    console.error("❌ [Gemini Grid Error]:", error.message);
     throw error;
   }
 }
