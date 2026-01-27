@@ -1,4 +1,4 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v86.0)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v87.0)
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
@@ -21,20 +21,24 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isChecking, setIsChecking] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // EDUNEXUS AI: Optimized Production Schema (v86.0)
+  // EDUNEXUS AI: Optimized Production Schema (v87.0)
   // Logic: Relentless optimization before horizontal scaling.
-  const masterSchemaSql = `-- EDUNEXUS AI: OPTIMIZED INFRASTRUCTURE v86.0
+  // FIX: Added 'DROP VIEW IF EXISTS ... CASCADE' to prevent dependency lock errors (42P16).
+  const masterSchemaSql = `-- EDUNEXUS AI: OPTIMIZED INFRASTRUCTURE v87.0
 -- TARGET: Supabase Free Tier (500MB / 60 Connections)
 
--- 0. PERFORMANCE MONITORING EXTENSIONS
+-- 0. DEPENDENCY CLEANUP (Prevents 42P16: cannot drop columns from view)
+DROP VIEW IF EXISTS public.rag_health_report CASCADE;
+
+-- 1. PERFORMANCE MONITORING EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 1. GLOBAL SAFETY TUNING (Prevents Connection Exhaustion)
+-- 2. GLOBAL SAFETY TUNING (Prevents Connection Exhaustion)
 ALTER DATABASE postgres SET statement_timeout = '30s';
 ALTER DATABASE postgres SET idle_in_transaction_session_timeout = '60s';
 
--- 2. IDENTITY NODES
+-- 3. IDENTITY NODES
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT UNIQUE NOT NULL,
@@ -49,7 +53,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. NEURAL VAULT (Optimized with Composite Indices)
+-- 4. NEURAL VAULT (Optimized with Composite Indices)
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -68,7 +72,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
 -- OPTIMIZATION: Index for rapid context retrieval
 CREATE INDEX IF NOT EXISTS idx_docs_user_selected ON public.documents(user_id, is_selected);
 
--- 4. VECTOR CLUSTERS (Optimized for Standard-Specific RAG)
+-- 5. VECTOR CLUSTERS (Optimized for Standard-Specific RAG)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -84,19 +88,29 @@ CREATE INDEX IF NOT EXISTS idx_chunks_slo_gin ON public.document_chunks USING GI
 -- OPTIMIZATION: Foreign Key Index for cascade deletes
 CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON public.document_chunks(document_id);
 
--- 5. RLS SECURITY (Simplified for Performance)
+-- 6. RLS SECURITY (Simplified for Performance)
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.document_chunks ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "User Profile Access" ON public.profiles FOR ALL USING (auth.uid() = id);
-CREATE POLICY "User Document Access" ON public.documents FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "User Chunk Access" ON public.document_chunks FOR SELECT USING (
-  EXISTS (SELECT 1 FROM public.documents WHERE id = document_id AND user_id = auth.uid())
-);
+-- Idempotent Policy Creation
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'User Profile Access') THEN
+        CREATE POLICY "User Profile Access" ON public.profiles FOR ALL USING (auth.uid() = id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'User Document Access') THEN
+        CREATE POLICY "User Document Access" ON public.documents FOR ALL USING (auth.uid() = user_id);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'User Chunk Access') THEN
+        CREATE POLICY "User Chunk Access" ON public.document_chunks FOR SELECT USING (
+          EXISTS (SELECT 1 FROM public.documents WHERE id = document_id AND user_id = auth.uid())
+        );
+    END IF;
+END $$;
 
--- 6. MONITORING VIEW (Aggregated Coverage)
-CREATE OR REPLACE VIEW public.rag_health_report AS
+-- 7. MONITORING VIEW (Aggregated Coverage - Recreated here)
+CREATE VIEW public.rag_health_report AS
 SELECT 
     d.id as doc_id,
     d.name,
@@ -161,7 +175,7 @@ GROUP BY d.id, d.name;
           <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
             <ShieldCheck className="text-indigo-600" /> Infrastructure Node
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic">V86.0 Performance Optimized</p>
+          <p className="text-slate-500 text-xs font-medium italic">V87.0 Performance Optimized</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner overflow-x-auto">
           {[
@@ -198,8 +212,8 @@ GROUP BY d.id, d.name;
              <div className="absolute top-0 right-0 p-8 opacity-5"><Cpu size={150} /></div>
              <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> Free Tier Optimization</h3>
              <p className="text-slate-400 text-xs leading-relaxed mb-6 italic">
-                "Relentless optimization beat premature scaling." - Applied Protocol v86.0. <br /><br />
-                We have enabled GIN indices on your SLO database and enforced global connection timeouts to maximize the 60-connection pool.
+                "Relentless optimization beat premature scaling." - Applied Protocol v87.0. <br /><br />
+                The schema now includes CASCADE cleanup to prevent column drop errors when updating dependencies.
              </p>
              <div className="grid grid-cols-2 gap-3 relative z-10">
                 <div className="p-4 bg-white/5 rounded-xl border border-white/5"><p className="text-[8px] font-bold text-slate-500 uppercase">Sequential Scans</p><p className="text-xs font-bold text-emerald-400">Eliminated</p></div>
@@ -215,7 +229,7 @@ GROUP BY d.id, d.name;
               <div className="p-8 border-b border-white/5 flex items-center justify-between">
                  <div className="flex items-center gap-3">
                     <div className="p-2 bg-indigo-600 rounded-xl text-white"><FileCode size={20} /></div>
-                    <h3 className="text-white font-black uppercase tracking-tight">Institutional Schema v86.0</h3>
+                    <h3 className="text-white font-black uppercase tracking-tight">Institutional Schema v87.0</h3>
                  </div>
                  <button onClick={() => copyToClipboard(masterSchemaSql, 'schema')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all">
                     {copiedId === 'schema' ? <Check size={12}/> : <Copy size={12}/>} Copy SQL
@@ -229,7 +243,7 @@ GROUP BY d.id, d.name;
            </div>
            <div className="p-6 bg-emerald-50 dark:bg-emerald-950/20 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex items-center gap-4">
               <HeartPulse className="text-emerald-500" size={24} />
-              <p className="text-xs text-emerald-800 dark:text-emerald-400 font-medium"><b>Optimization Active:</b> High-fidelity GIN indices deployed. These prevent full table scans when filtering by curriculum standards.</p>
+              <p className="text-xs text-emerald-800 dark:text-emerald-400 font-medium"><b>Optimization Active:</b> Dependency safety enabled. The schema can now be re-run even if views exist, ensuring smooth updates to the neural grid.</p>
            </div>
         </div>
       )}
