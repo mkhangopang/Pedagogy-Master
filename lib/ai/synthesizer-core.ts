@@ -33,8 +33,8 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * NEURAL GRID SYNTHESIZER (v42.0)
- * Implements intelligent model selection: Gemini for Accuracy, Others for Speed.
+ * NEURAL GRID SYNTHESIZER (v42.1)
+ * Implements intelligent model selection with support for multimodal output.
  */
 export async function synthesize(
   prompt: string,
@@ -43,28 +43,25 @@ export async function synthesize(
   docParts: any[] = [],
   preferredProvider?: string,
   systemInstruction: string = DEFAULT_MASTER_PROMPT
-): Promise<{ text: string; provider: string; groundingMetadata?: any }> {
-  return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any }>(async () => {
+): Promise<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }> {
+  return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }>(async () => {
     const currentProviders = getProvidersConfig();
     
-    // Sort logic: 
-    // 1. If preferredProvider is requested (e.g. Gemini for Lesson Plans), it goes first.
-    // 2. High-reasoning (Gemini) is prioritized for document-grounded complex tasks.
-    // 3. High-throughput fallbacks handle general conversational needs.
+    const isImageTask = systemInstruction.includes('IMAGE_GENERATION_MODE') || prompt.includes('GENERATE_VISUAL');
+    const effectivePreferred = isImageTask ? 'gemini' : preferredProvider;
+
     const sortedProviders = [...currentProviders]
       .filter(p => p.enabled)
       .sort((a, b) => {
-        if (a.name === preferredProvider) return -1;
-        if (b.name === preferredProvider) return 1;
+        if (a.name === effectivePreferred) return -1;
+        if (b.name === effectivePreferred) return 1;
         
-        // Priority for Accuracy in Curriculum Tasks
         const isComplex = prompt.includes('LESSON PLAN') || prompt.includes('VAULT') || prompt.includes('HARD_TARGET_ENFORCEMENT');
         if (isComplex) {
           if (a.name === 'gemini') return -1;
           if (b.name === 'gemini') return 1;
         }
         
-        // Fallback speed sort
         const highThroughput = ['cerebras', 'sambanova', 'groq'];
         if (highThroughput.includes(a.name) && !highThroughput.includes(b.name)) return -1;
         if (!highThroughput.includes(a.name) && highThroughput.includes(b.name)) return 1;
@@ -79,7 +76,7 @@ export async function synthesize(
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         const timeout = config.name === 'gemini' ? 95000 : 45000; 
         
-        const resultPromise = (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts);
+        const resultPromise = (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts, isImageTask);
         
         const response = await Promise.race([
           resultPromise,
@@ -91,13 +88,13 @@ export async function synthesize(
         }
         
         return { 
-          text: response.text || "Synthesis interrupted.", 
+          text: response.text || "Synthesis complete.", 
           provider: config.name, 
-          groundingMetadata: response.groundingMetadata 
+          groundingMetadata: response.groundingMetadata,
+          imageUrl: response.imageUrl
         };
       } catch (e: any) { 
         console.error(`❌ Node failure: ${config.name} | ${e.message}`); 
-        // Failover logic triggers the next provider in the loop
       }
     }
     

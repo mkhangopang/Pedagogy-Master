@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -31,6 +30,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [messages, setMessages] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [canvasContent, setCanvasContent] = useState<string>('');
+  const [canvasImage, setCanvasImage] = useState<string | null>(null);
   const [mobileActiveTab, setMobileActiveTab] = useState<'logs' | 'artifact'>('logs');
   
   const [isSliderOpen, setIsSliderOpen] = useState(false);
@@ -71,6 +71,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     
     const effectiveTool = activeTool || 'general-chat';
     setIsGenerating(true);
+    setCanvasImage(null);
     const aiMsgId = crypto.randomUUID();
     
     setMessages(prev => [...prev, 
@@ -82,16 +83,28 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       onQuery();
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
-      const stream = geminiService.generatePedagogicalToolStream(effectiveTool, userInput, { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, brain, user, activeDoc?.id );
-      let fullContent = '';
-      for await (const chunk of stream) {
-        if (chunk) {
-          fullContent += chunk;
-          setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
-          setCanvasContent(fullContent); 
+      // Detect if it's a visual task which returns non-streaming JSON
+      if (effectiveTool === 'visual-aid') {
+        const result = await geminiService.generateVisualAid(userInput, effectiveTool, brain, user, activeDoc?.id);
+        setCanvasContent(result.content);
+        setCanvasImage(result.imageUrl);
+        setMessages(prev => prev.map(m => m.id === aiMsgId ? { 
+          ...m, 
+          content: result.content, 
+          metadata: { imageUrl: result.imageUrl } 
+        } : m));
+      } else {
+        const stream = geminiService.generatePedagogicalToolStream(effectiveTool, userInput, { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, brain, user, activeDoc?.id );
+        let fullContent = '';
+        for await (const chunk of stream) {
+          if (chunk) {
+            fullContent += chunk;
+            setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
+            setCanvasContent(fullContent); 
+          }
         }
+        await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id });
       }
-      await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id });
     } catch (err: any) {
       setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m));
     } finally { setIsGenerating(false); }
@@ -99,9 +112,17 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   const renderArtifact = () => {
     const mainContent = canvasContent.split('--- Synthesis Node:')[0].trim();
-    // Wrap in artifact-canvas-container to enable the overflow-x-auto defined in CSS
     return (
       <div className="artifact-canvas-container">
+        {canvasImage && (
+          <div className="mb-8 rounded-[2rem] overflow-hidden border border-slate-200 dark:border-white/10 shadow-xl group">
+             <img src={canvasImage} alt="Synthesized Visual" className="w-full h-auto object-cover group-hover:scale-[1.02] transition-transform duration-700" />
+             <div className="p-4 bg-slate-50 dark:bg-white/5 border-t dark:border-white/5 flex justify-between items-center">
+                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest flex items-center gap-2"><ImageIcon size={14}/> Neural Visual Node</span>
+                <a href={canvasImage} download={`visual_${Date.now()}.png`} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"><Download size={14}/></a>
+             </div>
+          </div>
+        )}
         <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] animate-in fade-in duration-500 break-words" 
              dangerouslySetInnerHTML={{ __html: marked.parse(mainContent) }} />
       </div>
@@ -112,7 +133,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     { id: 'lesson-plan', name: 'Lesson Plan', icon: BookOpen, desc: '5E Instructional Flow', color: 'bg-indigo-600' },
     { id: 'assessment', name: 'Assessment', icon: ClipboardCheck, desc: 'Standards-aligned MCQ/CRQ', color: 'bg-emerald-600' },
     { id: 'rubric', name: 'Rubric', icon: Layers, desc: 'Bloom-scaled Criteria', color: 'bg-amber-600' },
-    { id: 'visual-aid', name: 'Visual Hub', icon: Globe, desc: 'CC Resource Retrieval', color: 'bg-rose-600' },
+    { id: 'visual-aid', name: 'Visual Hub', icon: Globe, desc: 'Neural Image Synthesis', color: 'bg-rose-600' },
     { id: 'slo-tagger', name: 'SLO Tagger', icon: Tags, desc: 'Bloom-scaled Metadata Extraction', color: 'bg-cyan-600' },
   ];
 
@@ -186,13 +207,13 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] shrink-0`}>
           <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
              <div className="flex items-center gap-3">
-               <button onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent('');}} className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 transition-all"><ChevronLeft size={22}/></button>
+               <button onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent(''); setCanvasImage(null);}} className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 transition-all"><ChevronLeft size={22}/></button>
                <div className="flex items-center gap-2"><MessageSquare size={14} className="text-slate-400" /><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Logs</span></div>
              </div>
              <button onClick={() => setIsSliderOpen(true)} className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg"><Library size={18} /></button>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar py-6 space-y-2">
-            {messages.map((m) => (<MessageItem key={m.id} id={m.id} role={m.role} content={m.content} timestamp={m.timestamp} />))}
+            {messages.map((m) => (<MessageItem key={m.id} id={m.id} role={m.role} content={m.content} timestamp={m.timestamp} metadata={m.metadata} />))}
             {isGenerating && <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-indigo-500" /></div>}
           </div>
           <div className="p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d]">

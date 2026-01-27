@@ -24,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v42.0)
- * Optimized for SLO Isolation and Multi-Model Synergy.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v43.0)
+ * Optimized for SLO Isolation and Multi-Model Synergy including Visual Aids.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -39,7 +39,7 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Metadata Extraction (SLO & Grade Isolation)
+  // 1. Metadata Extraction
   const extractedSLOs = extractSLOCodes(userPrompt);
   const targetSLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
   const isolatedGrade = targetSLO ? extractGradeFromSLO(targetSLO) : null;
@@ -58,7 +58,7 @@ export async function generateAIResponse(
     documentIds = [priorityDocumentId, ...documentIds];
   }
 
-  // 3. Precision RAG Retrieval with Hard Grade Filtering
+  // 3. Retrieval
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     try {
@@ -69,24 +69,18 @@ export async function generateAIResponse(
         matchCount: 20
       });
 
-      // ACCURACY FIX: Hard filter by grade if an SLO is detected
       if (isolatedGrade) {
-        const initialCount = retrievedChunks.length;
         retrievedChunks = retrievedChunks.filter(chunk => {
-          // Keep chunk if it mentions the target grade OR has no specific grade assigned (context chunks)
           const chunkGrades = chunk.grade_levels || [];
           return chunkGrades.length === 0 || chunkGrades.includes(isolatedGrade);
         });
-        if (retrievedChunks.length < initialCount) {
-          console.log(`🛡️ [Isolation] Blocked ${initialCount - retrievedChunks.length} cross-grade chunks (Target Grade: ${isolatedGrade})`);
-        }
       }
     } catch (err) {
       console.warn("⚠️ [Orchestrator] Vector Node Lag.");
     }
   }
   
-  // 4. Authoritative Vault Construction
+  // 4. Vault Construction
   let vaultContent = "";
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
@@ -97,21 +91,24 @@ export async function generateAIResponse(
       })
       .join('\n');
   } else if (activeDocs.length > 0) {
-    const primary = activeDocs[0];
-    vaultContent = `[FALLBACK] (SOURCE: ${primary.name})\n${primary.extracted_text?.substring(0, 6000)}`;
+    vaultContent = `[FALLBACK] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 6000)}`;
   }
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || documentIds[0])) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
-  // 5. Build Final Prompt with Strict Target Lock
+  // 5. Image Generation Detection
+  const isVisualAid = toolType === 'visual-aid' || userPrompt.toLowerCase().includes('generate a diagram') || userPrompt.toLowerCase().includes('show me a picture');
+  let effectiveSystem = customSystem || DEFAULT_MASTER_PROMPT;
+  if (isVisualAid) {
+    effectiveSystem += "\n[IMAGE_GENERATION_MODE: ON] Generate a high-quality pedagogical visual representing the concepts requested.";
+  }
+
+  // 6. Build Final Prompt
   let targetEnforcement = "";
   if (targetSLO) {
-    targetEnforcement = `\n🔴 CRITICAL_CONTEXT_LOCK: The user is requesting standard [${targetSLO}]. 
-    You MUST search the <AUTHORITATIVE_VAULT> for this exact code. 
-    IF YOU FIND S-04-A-05 but user asked for S-08-A-05, DO NOT USE the S-04 content. 
-    State clearly if the specific Grade 8 standard is missing rather than defaulting to Grade 4.\n`;
+    targetEnforcement = `\n🔴 CRITICAL_CONTEXT_LOCK: Requested [${targetSLO}]. MUST search vault for EXACT code.\n`;
   }
 
   let finalPrompt = `
@@ -128,9 +125,8 @@ ${targetEnforcement}
 ## EXECUTION PARAMETERS:
 ${responseInstructions}`;
 
-  // 6. Dynamic Routing & Multi-Provider Synthesis
-  // ACCURACY FIX: Force reasoning-heavy models for complex pedagogical creation
-  const isComplexTool = ['lesson-plan', 'assessment', 'rubric', 'slo-tagger'].includes(toolType || '') || queryAnalysis.queryType === 'lesson_plan';
+  // 7. Synthesis
+  const isComplexTool = ['lesson-plan', 'assessment', 'rubric', 'slo-tagger', 'visual-aid'].includes(toolType || '') || queryAnalysis.queryType === 'lesson_plan';
   const preferredProvider = isComplexTool ? 'gemini' : undefined;
   
   const result = await synthesize(
@@ -139,7 +135,7 @@ ${responseInstructions}`;
     activeDocs.length > 0, 
     [], 
     preferredProvider,
-    customSystem || DEFAULT_MASTER_PROMPT
+    effectiveSystem
   );
   
   const sources = [
@@ -156,7 +152,8 @@ ${responseInstructions}`;
       sourceDocument: primaryDoc?.name || 'Global Library',
       extractedSLOs,
       sources: sources.length > 0 ? sources : undefined,
-      gradeIsolation: isolatedGrade
+      gradeIsolation: isolatedGrade,
+      imageUrl: result.imageUrl
     }
   };
 }

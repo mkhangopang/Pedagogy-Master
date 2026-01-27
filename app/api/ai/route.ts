@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v39.0)
- * Optimized for Multi-Provider Resilience.
+ * UNIFIED SYNTHESIS GATEWAY (v40.0)
+ * Optimized for Multi-Provider Resilience and Multimodal Output.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -24,9 +24,8 @@ export async function POST(req: NextRequest) {
     
     const supabase = getSupabaseServerClient(token);
     
-    // Unified Routing: All tasks (including Visual Aids) now benefit from the Multi-Provider Grid
     const promptText = message || userInput || body.message;
-    const effectiveTool = toolType || (task === 'generate-visual' ? 'visual-aid' : undefined);
+    const isVisualTask = task === 'generate-visual' || toolType === 'visual-aid';
 
     const { text, provider, metadata } = await generateAIResponse(
       promptText,
@@ -35,12 +34,22 @@ export async function POST(req: NextRequest) {
       supabase,
       adaptiveContext,
       undefined,
-      effectiveTool,
+      toolType || (task === 'generate-visual' ? 'visual-aid' : undefined),
       brain?.masterPrompt,
       priorityDocumentId
     );
 
-    // Stream Response
+    // 1. Visual Aid Flow (JSON Response)
+    if (isVisualTask) {
+      return NextResponse.json({
+        imageUrl: metadata?.imageUrl,
+        content: text,
+        provider,
+        metadata
+      });
+    }
+
+    // 2. Standard Synthesis Flow (Text Stream)
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {

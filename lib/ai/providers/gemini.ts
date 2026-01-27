@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * HIGH-FIDELITY GEMINI ADAPTER (v32.0)
+ * HIGH-FIDELITY GEMINI ADAPTER (v33.0)
  * Optimized for Multimodal synthesis and Search Grounding.
  */
 export async function callGemini(
@@ -16,7 +16,7 @@ export async function callGemini(
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     // IMAGE MODEL SELECTION (Nano Banana Node)
-    if (forceImageModel) {
+    if (forceImageModel || systemInstruction.includes('IMAGE_GENERATION_MODE')) {
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
@@ -29,7 +29,10 @@ export async function callGemini(
         const parts = response.candidates[0].content?.parts || [];
         for (const part of parts) {
           if (part.inlineData) {
-            return { imageUrl: `data:image/png;base64,${part.inlineData.data}` };
+            return { 
+              imageUrl: `data:image/png;base64,${part.inlineData.data}`,
+              text: "Visual artifact synthesized successfully."
+            };
           }
         }
       }
@@ -42,10 +45,10 @@ export async function callGemini(
                          fullPrompt.includes('RUBRIC') ||
                          fullPrompt.length > 8000;
     
-    // Use Flash for high throughput, Pro for deep reasoning
     const modelName = isComplexTask ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
 
     const contents: any[] = [];
+    // Map history to correct roles
     history.slice(-6).forEach(h => {
       contents.push({
         role: h.role === 'user' ? 'user' : 'model',
