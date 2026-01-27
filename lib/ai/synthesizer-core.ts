@@ -58,7 +58,7 @@ export async function synthesize(
         if (b.name === preferredProvider) return 1;
         
         // Priority for Accuracy in Curriculum Tasks
-        const isComplex = prompt.includes('LESSON PLAN') || prompt.includes('VAULT');
+        const isComplex = prompt.includes('LESSON PLAN') || prompt.includes('VAULT') || prompt.includes('HARD_TARGET_ENFORCEMENT');
         if (isComplex) {
           if (a.name === 'gemini') return -1;
           if (b.name === 'gemini') return 1;

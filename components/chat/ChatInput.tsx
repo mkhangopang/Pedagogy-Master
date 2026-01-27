@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Plus, Loader2 } from 'lucide-center';
 import { Send as SendIcon, Plus as PlusIcon, Loader2 as LoaderIcon } from 'lucide-react';
 
 interface ChatInputProps {
