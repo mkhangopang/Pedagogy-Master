@@ -9,7 +9,7 @@ export function normalizeSLO(code: string): string {
   if (!parts) return code.toUpperCase().replace(/[^A-Z0-9]/g, '');
   
   return parts.map(p => {
-    // Zero-pad numbers to 2 digits (8 -> 08)
+    // Zero-pad numbers to 2 digits (8 -> 08) to ensure lexicographical and filtering precision
     if (/^\d+$/.test(p)) {
       const num = parseInt(p, 10);
       return num < 10 ? `0${num}` : p;
@@ -31,6 +31,7 @@ export function extractGradeFromSLO(normalizedCode: string): string | null {
 
 /**
  * Extracts and normalizes SLO codes from text with strict standard boundaries.
+ * Optimized for Pakistan Curriculum (Sindh, Federal) and International Standards.
  */
 export function extractSLOCodes(query: string): string[] {
   if (!query) return [];

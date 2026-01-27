@@ -11,7 +11,7 @@ import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
 /**
- * NEURAL PROVIDER CONFIGURATION (v47.0)
+ * NEURAL PROVIDER CONFIGURATION (v48.0)
  * Optimized for Pedagogical Mastery and Multi-Agent Resilience.
  */
 export const getProvidersConfig = (): ProviderConfig[] => [
@@ -33,10 +33,10 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * NEURAL GRID SYNTHESIZER (v43.0)
+ * NEURAL GRID SYNTHESIZER (v44.0)
  * Logic Flow:
- * 1. Prioritize Gemini for any standard-based or pedagogical reasoning.
- * 2. Fallback to Cerebras/Groq for high-speed drafting if Gemini is busy.
+ * 1. Prioritize Gemini for any standard-based or pedagogical reasoning (SLO/Lesson Plan).
+ * 2. Fallback to Cerebras/Groq for high-speed drafting if Gemini node is saturated.
  */
 export async function synthesize(
   prompt: string,
@@ -53,6 +53,8 @@ export async function synthesize(
     
     // DETERMINISTIC TASK ANALYSIS
     const isPedagogyTask = prompt.includes('LESSON PLAN') || prompt.includes('SLO') || prompt.includes('PEDAGOGY') || prompt.includes('CURRICULUM');
+    
+    // Gemini 3 Pro is the gold standard for Pedagogy
     const effectivePreferred = isImageTask ? 'gemini' : (isPedagogyTask ? 'gemini' : preferredProvider);
 
     const sortedProviders = [...currentProviders]
@@ -61,12 +63,13 @@ export async function synthesize(
         if (a.name === effectivePreferred) return -1;
         if (b.name === effectivePreferred) return 1;
         
-        // If preferred isn't specified, favor Gemini for complex standard matching
+        // If it's a pedagogy task and Gemini isn't specifically blocked, move it to top
         if (isPedagogyTask) {
           if (a.name === 'gemini') return -1;
           if (b.name === 'gemini') return 1;
         }
         
+        // Secondary priority: Speed
         const highThroughput = ['cerebras', 'sambanova', 'groq'];
         if (highThroughput.includes(a.name) && !highThroughput.includes(b.name)) return -1;
         if (!highThroughput.includes(a.name) && highThroughput.includes(b.name)) return 1;
@@ -79,6 +82,7 @@ export async function synthesize(
       
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
+        // Adaptive timeout: Give Gemini more time for deep reasoning
         const timeout = config.name === 'gemini' ? 95000 : 45000; 
         
         const resultPromise = (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts, isImageTask);
@@ -100,9 +104,10 @@ export async function synthesize(
         };
       } catch (e: any) { 
         console.error(`❌ Node failure: ${config.name} | ${e.message}`); 
+        // Fallthrough to next provider in the sorted list
       }
     }
     
-    throw new Error("NEURAL GRID EXHAUSTED: Please retry in 15 seconds.");
+    throw new Error("NEURAL GRID EXHAUSTED: Multi-provider failover unsuccessful. Please retry in 15 seconds.");
   });
 }

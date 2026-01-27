@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * WORLD-CLASS GEMINI ADAPTER (v41.0)
- * Optimized for Pedagogy Master Logic with strict null-safety.
+ * WORLD-CLASS GEMINI ADAPTER (v42.0)
+ * Optimized for Pedagogy Master Logic with strict null-safety and high-fidelity reasoning.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -38,10 +38,11 @@ export async function callGemini(
     }
 
     // PEDAGOGICAL REASONING NODE
-    const isComplex = fullPrompt.includes('LESSON PLAN') || fullPrompt.length > 6000;
+    const isComplex = fullPrompt.includes('LESSON PLAN') || fullPrompt.length > 5000;
     const model = isComplex ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
 
     const contents: any[] = [];
+    // Include minimal relevant history
     history.slice(-4).forEach(h => {
       contents.push({
         role: h.role === 'user' ? 'user' : 'model',
@@ -50,6 +51,7 @@ export async function callGemini(
     });
 
     const parts: any[] = [];
+    // Inject document snippets if provided
     if (docParts && docParts.length > 0) {
       docParts.forEach(p => { if (p.inlineData) parts.push(p); });
     }
@@ -61,7 +63,8 @@ export async function callGemini(
       contents,
       config: {
         systemInstruction: systemInstruction || "You are a world-class pedagogy master.",
-        temperature: hasDocuments ? 0.15 : 0.7,
+        temperature: hasDocuments ? 0.1 : 0.7,
+        // High thinking budget for complex lesson plan architecture
         thinkingConfig: isComplex ? { thinkingBudget: 4000 } : { thinkingBudget: 0 }
       }
     });

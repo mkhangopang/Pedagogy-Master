@@ -41,10 +41,11 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // CRITICAL: Precise Metadata Targets
+    // CRITICAL: Identify targeted grade from SLO code to prevent cross-grade hallucinations
     const targetSLOs = parsed.sloCodes.length > 0 ? parsed.sloCodes : null;
     const requestedGrade = targetSLOs ? extractGradeFromSLO(targetSLOs[0]) : (parsed.grades.length > 0 ? parsed.grades[0] : null);
 
+    // Initial search with metadata hints
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -70,9 +71,8 @@ export async function retrieveRelevantChunks({
       document_id: d.document_id
     }));
 
-    // CRITICAL FIX: POST-RETRIEVAL ISOLATION
-    // If a specific SLO was requested (e.g. S8A5), we MUST discard results that don't have it.
-    // This prevents s4 chunks from leaking into s8 queries.
+    // POST-RETRIEVAL ISOLATION (CHATGPT-LEVEL PRECISION)
+    // If a specific SLO was requested (e.g. S8A5), we MUST discard results that don't match the SLO or Grade.
     if (targetSLOs && targetSLOs.length > 0) {
       processed = processed.filter(c => {
         return c.slo_codes.some((code: string) => targetSLOs.includes(code));
@@ -82,12 +82,13 @@ export async function retrieveRelevantChunks({
     // Secondary Check: Strict Grade Lock
     if (requestedGrade && processed.length > 0) {
       processed = processed.filter(c => {
-        if (!c.grade_levels || c.grade_levels.length === 0) return true; // Keep context
+        if (!c.grade_levels || c.grade_levels.length === 0) return true; // Keep general pedagogical context
         return c.grade_levels.includes(requestedGrade);
       });
     }
 
     performanceMonitor.track('rag_retrieval_v42', performance.now() - start);
+    // Return the top 8 most precise segments
     return processed.slice(0, 8); 
     
   } catch (err) {

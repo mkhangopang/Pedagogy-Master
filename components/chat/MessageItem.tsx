@@ -64,6 +64,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
               ? 'w-full text-slate-900 dark:text-slate-100' 
               : 'bg-indigo-700 text-white px-7 py-5 rounded-[2.5rem] rounded-tr-none shadow-2xl max-w-[95%] md:max-w-[80%] border border-white/10'
           }`}>
+            {/* Fix: Specifically ensuring high contrast for user message with absolute white text and no opacity */}
             {isAi ? (
               <div 
                 className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8]"
