@@ -62,14 +62,14 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
               ? 'w-full text-slate-900 dark:text-slate-100' 
               : 'bg-indigo-600 text-white px-6 py-4 rounded-[2rem] rounded-tr-none shadow-2xl max-w-[90%] md:max-w-[75%]'
           }`}>
-            {/* Fix: Specifically ensuring high contrast for user message by avoiding generic prose class for user text */}
+            {/* Fix: Specifically ensuring high contrast for user message with absolute white text and no opacity */}
             {isAi ? (
               <div 
                 className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8]"
                 dangerouslySetInnerHTML={{ __html: renderedHtml }}
               />
             ) : (
-              <div className="text-sm md:text-[15px] font-bold leading-relaxed text-white">
+              <div className="text-sm md:text-[15px] font-extrabold leading-relaxed text-white !opacity-100 selection:bg-indigo-400">
                 {content}
               </div>
             )}

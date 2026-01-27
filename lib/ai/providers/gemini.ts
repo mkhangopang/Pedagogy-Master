@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * WORLD-CLASS GEMINI ADAPTER (v40.0)
- * Optimized for Pedagogy Master Logic.
+ * WORLD-CLASS GEMINI ADAPTER (v41.0)
+ * Optimized for Pedagogy Master Logic with strict null-safety.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -25,7 +25,9 @@ export async function callGemini(
         }
       });
 
-      const part = response.candidates[0].content.parts.find(p => p.inlineData);
+      const candidate = response.candidates?.[0];
+      const part = candidate?.content?.parts?.find(p => p.inlineData);
+      
       if (part?.inlineData) {
         return { 
           imageUrl: `data:image/png;base64,${part.inlineData.data}`,
@@ -64,9 +66,13 @@ export async function callGemini(
       }
     });
 
+    if (!response.candidates?.[0]) {
+      throw new Error("Neural response was empty. Grid segment reset required.");
+    }
+
     return { 
-      text: response.text,
-      groundingMetadata: response.candidates?.[0]?.groundingMetadata 
+      text: response.text || "Synthesis complete.",
+      groundingMetadata: response.candidates[0].groundingMetadata 
     };
   } catch (error: any) {
     console.error("❌ [Gemini Grid Error]:", error.message);

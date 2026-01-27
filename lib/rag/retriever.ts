@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 import { parseUserQuery } from './query-parser';
 import { performanceMonitor } from '../monitoring/performance';
-import { GoogleGenAI } from '@google/genai';
+import { extractGradeFromSLO } from './slo-extractor';
 
 export interface RetrievedChunk {
   chunk_id: string;
@@ -18,8 +18,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v40.0)
- * Optimized for SLO Isolation and Multi-Model synergy.
+ * HIGH-PRECISION RAG RETRIEVER (v41.0)
+ * Optimized for Grade Isolation and SLO Target Locking.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -41,17 +41,17 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // CRITICAL: Precise SLO Target Lock
-    // If user asked for S8A5, we MUST tell the database to strictly filter by that tag.
+    // CRITICAL: Identify targeted grade from SLO code
     const targetSLOs = parsed.sloCodes.length > 0 ? parsed.sloCodes : null;
+    const requestedGrade = targetSLOs ? extractGradeFromSLO(targetSLOs[0]) : null;
 
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
       match_count: matchCount,
       filter_document_ids: documentIds,
-      filter_tags: targetSLOs, // Strictly filter by SLO if detected
-      filter_grades: parsed.grades.length > 0 ? parsed.grades : null,
+      filter_tags: targetSLOs, 
+      filter_grades: requestedGrade ? [requestedGrade] : (parsed.grades.length > 0 ? parsed.grades : null),
       filter_subjects: parsed.topics.length > 0 ? parsed.topics : null
     });
     
@@ -70,18 +70,24 @@ export async function retrieveRelevantChunks({
       document_id: d.document_id
     }));
 
-    // Post-Retrieval Verification: Eliminate Cross-Talk
-    // If targetSLOs exist, remove any chunk that explicitly mentions a DIFFERENT SLO
-    // This stops S8 queries from showing S4 content.
-    if (targetSLOs && targetSLOs.length > 0) {
+    // Post-Retrieval Verification: Strict Grade Lock
+    // If user explicitly asked for S8, we prune any S4 matches that vector search accidentally pulled.
+    if (requestedGrade) {
       processed = processed.filter(c => {
-        if (c.slo_codes.length === 0) return true; // Keep general context
-        return c.slo_codes.some(code => targetSLOs.includes(code));
+        // If the chunk has explicit grade levels, check for match
+        if (c.grade_levels && c.grade_levels.length > 0) {
+          return c.grade_levels.includes(requestedGrade);
+        }
+        // Fallback: Check if chunk mentions the specific requested SLO code
+        if (targetSLOs && targetSLOs.length > 0) {
+           return c.slo_codes.some(code => targetSLOs.includes(code));
+        }
+        return true; 
       });
     }
 
-    performanceMonitor.track('rag_retrieval_v40', performance.now() - start);
-    return processed.slice(0, 7); // Return top 7 most precise segments
+    performanceMonitor.track('rag_retrieval_v41', performance.now() - start);
+    return processed.slice(0, 8); 
     
   } catch (err) {
     console.error('❌ [Retriever] High Precision Failure:', err);

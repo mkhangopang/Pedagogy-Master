@@ -1,5 +1,5 @@
 /**
- * NEURAL SLO NORMALIZER (v3.0)
+ * NEURAL SLO NORMALIZER (v4.0)
  * Converts various formats (S8A3, S-08-A-03, s8c3, S 8 C 3) into a canonical ID (S08A03).
  */
 export function normalizeSLO(code: string): string {
@@ -35,11 +35,12 @@ export function extractGradeFromSLO(normalizedCode: string): string | null {
 export function extractSLOCodes(query: string): string[] {
   if (!query) return [];
   
-  // Strict pedagogical patterns: S8A5, S 08 A 05, etc.
+  // Patterns for various curriculum codes: S8A5, S 08 A 05, S-04-A-01, etc.
   const patterns = [
     /S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
     /SLO[:\s]*S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
-    /\b[A-Z]{1,2}\s*\d{1,2}\s*[A-Z]\s*\d{1,2}\b/gi
+    /\b[A-Z]{1,2}\s*\d{1,2}\s*[A-Z]\s*\d{1,2}\b/gi,
+    /\bS\d{1,2}[A-Z]\d{1,2}\b/gi
   ];
   
   const matches: string[] = [];
