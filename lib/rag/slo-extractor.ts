@@ -1,18 +1,23 @@
 /**
- * NEURAL SLO NORMALIZER (v5.0)
- * Converts various formats (S8A3, S-08-A-03, s8c3, S 8 C 3) into a canonical ID (S08C03).
+ * NEURAL SLO NORMALIZER (v6.0)
+ * Optimized for complex multi-segmented codes: S-08-B-34 -> S08B34
  */
 export function normalizeSLO(code: string): string {
   if (!code) return '';
-  // Extract alphabetic and numeric components, ignoring spaces/punctuation
-  // This handles S-08-C-05 by capturing S, 08, C, 05
-  const parts = code.toUpperCase().match(/([A-Z]+)|(\d+)/g);
-  if (!parts) return code.toUpperCase().replace(/[^A-Z0-9]/g, '');
   
+  // 1. Remove all noise but keep letters and numbers
+  // This handles S-08-B-34 by preserving the character order
+  const cleaned = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  
+  // 2. Identify the segments (Letters and Numbers)
+  const parts = code.toUpperCase().match(/([A-Z]+)|(\d+)/g);
+  if (!parts) return cleaned;
+  
+  // 3. Canonical Reconstruction with Zero-Padding
   return parts.map(p => {
-    // Zero-pad numbers to 2 digits (8 -> 08) to ensure lexicographical and filtering precision
     if (/^\d+$/.test(p)) {
       const num = parseInt(p, 10);
+      // Ensure 2-digit padding for grade/sequence numbers (8 -> 08)
       return num < 10 && p.length === 1 ? `0${num}` : p;
     }
     return p;
@@ -20,11 +25,11 @@ export function normalizeSLO(code: string): string {
 }
 
 /**
- * Extracts the grade level from a normalized SLO code (e.g., S08A05 -> 8).
+ * Extracts the grade level from a normalized SLO code (e.g., S08B34 -> 8).
  */
 export function extractGradeFromSLO(normalizedCode: string): string | null {
-  // Matches the first numeric group in a canonical code
-  const match = normalizedCode.match(/[A-Z]*(\d{2})/i);
+  // Matches the first numeric sequence which usually represents the grade in Pakistan standards
+  const match = normalizedCode.match(/[A-Z]+(\d{2})/i);
   if (match) {
     const grade = parseInt(match[1], 10);
     return grade.toString();
@@ -33,19 +38,23 @@ export function extractGradeFromSLO(normalizedCode: string): string | null {
 }
 
 /**
- * Extracts and normalizes SLO codes from text with strict standard boundaries.
- * Optimized for Pakistan Curriculum (Sindh, Federal) and International Standards.
+ * STRATEGIC SLO EXTRACTOR (v6.0)
+ * Identifies curriculum codes within user queries with high precision.
  */
 export function extractSLOCodes(query: string): string[] {
   if (!query) return [];
   
-  // Patterns for various curriculum codes: S8A5, S 08 A 05, S-04-A-01, S-08-C-05, etc.
+  // Sophisticated regex patterns for varied international and local formats
   const patterns = [
-    /S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
-    /SLO[:\s]*S\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
-    /\b[A-Z]{1,2}\s*\d{1,2}\s*[A-Z]\s*\d{1,2}\b/gi,
+    // Standard segment format (S-08-B-34, S-04-A-01)
+    /[A-Z]\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\s*-?\s*\d{1,2}/gi,
+    // Two segment format (S8A3, S 08 05)
+    /[A-Z]\s*-?\s*\d{1,2}\s*-?\s*[A-Z]\d{1,2}/gi,
+    // Bare numeric segments with prefix
+    /\bSLO[:\s]*[A-Z0-9\.-]{3,15}\b/gi,
+    // Raw standard IDs
     /\bS\d{1,2}[A-Z]\d{1,2}\b/gi,
-    /\bS-?\d{1,2}-?[A-Z]-?\d{1,2}\b/gi // Specific dash support
+    /\bS-?\d{1,2}-?[A-Z]-?\d{1,2}\b/gi
   ];
   
   const matches: string[] = [];
@@ -56,6 +65,7 @@ export function extractSLOCodes(query: string): string[] {
       found.forEach(match => {
         const raw = match.replace(/SLO[:\s]*/i, '').trim();
         const normalized = normalizeSLO(raw);
+        // Minimum length 3 (e.g., S81) to avoid false positives
         if (normalized && normalized.length >= 3 && !matches.includes(normalized)) {
           matches.push(normalized);
         }

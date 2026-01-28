@@ -24,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v47.0)
- * Optimized for Depth RAG and Strict Grade-to-SLO Mapping.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v48.0)
+ * Optimized for Multi-Segmented SLO IDs and Atomic Retrieval.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -70,17 +70,10 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: documentIds,
         supabase,
-        matchCount: 40 
+        matchCount: 50 // Increased depth for better coverage
       });
-
-      if (isolatedGrade) {
-        retrievedChunks = retrievedChunks.filter(chunk => {
-          const chunkGrades = chunk.grade_levels || [];
-          return chunkGrades.length === 0 || chunkGrades.includes(isolatedGrade);
-        });
-      }
     } catch (err) {
-      console.warn("⚠️ [Orchestrator] Retrieval Error.");
+      console.warn("⚠️ [Orchestrator] Retrieval Engine Error.");
     }
   }
   
@@ -89,34 +82,36 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
-        const isExact = targetSLO && (chunk.slo_codes || []).includes(targetSLO);
-        const tagLine = isExact ? " [!!! PRIORITY TARGET MATCH !!!]" : "";
-        return `[NODE_${i + 1}] (SOURCE: ${activeDocs.find(d => d.id === chunk.document_id)?.name || 'Library'})${tagLine}\n${chunk.chunk_text}\n---`;
+        // High fidelity flagging for AI prioritization
+        const matchTag = chunk.is_exact_match ? " [!!! PRIORITY_TARGET_MATCH: USE THIS DEFINITION !!!]" : "";
+        const sourceName = activeDocs.find(d => d.id === chunk.document_id)?.name || 'Linked Library';
+        return `[NODE_${i + 1}] (SOURCE: ${sourceName})${matchTag}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   } else if (activeDocs.length > 0 && isCurriculumEnabled) {
-    vaultContent = `[FALLBACK] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 5000)}`;
+    vaultContent = `[FALLBACK_RAW] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 8000)}`;
   }
 
-  // 5. Mode Injections
+  // 5. Instruction Synthesis
   let globalInstruction = "";
   if (isGlobalEnabled) {
-    globalInstruction = `\n### 🌐 GLOBAL PEDAGOGY AUGMENTATION (ACTIVE)\nIntegrate global leading practices from Finland, Singapore, and Japan while adhering to the standard's core cognitive requirement.\n`;
+    globalInstruction = `\n### 🌐 GLOBAL PEDAGOGY AUGMENTATION (ACTIVE)\nIntegrate global best practices (Finland, Singapore, Japan) while adhering strictly to the local standard's cognitive depth.\n`;
   }
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || (documentIds.length > 0 ? documentIds[0] : null))) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
-  // 6. TARGET ENFORCEMENT (FIX: Prevent "Assumed" Grade 4 answers)
+  // 6. TARGET ENFORCEMENT (V5.0: Strict Definition Lock)
   let targetEnforcement = "";
   if (targetSLO && isCurriculumEnabled) {
     targetEnforcement = `
-🔴 CRITICAL_CONTEXT_LOCK: User requested objective [${targetSLO}]. 
-- SEARCH vault for [${targetSLO}] or Grade ${isolatedGrade || 'Any'} content.
-- DO NOT use Grade IV standards for a Grade VIII query.
-- If [${targetSLO}] is NOT in the <AUTHORITATIVE_VAULT> provided above, EXPLICITLY state: "Objective ${targetSLO} was not found in the currently linked asset." 
-- DO NOT guess or substitute with similar standards from other grades.
+🔴 CRITICAL_CONTEXT_LOCK: User requested synthesis for objective [${targetSLO}]. 
+- Locate the chunk marked [PRIORITY_TARGET_MATCH] in the <AUTHORITATIVE_VAULT>.
+- USE THAT TEXT as the definition of ${targetSLO}.
+- DO NOT use Grade IV descriptions if you see "S08" or "Grade 8" in the target code.
+- If the vault contains electromagnetic doorbell/speaker info for ${targetSLO}, DO NOT mention water pollution.
+- IF NO MATCH FOUND: Explicitly state "Objective ${targetSLO} not found in current vault."
 `;
   }
 
@@ -135,7 +130,7 @@ ${globalInstruction}
 ## EXECUTION PARAMETERS:
 ${responseInstructions}`;
 
-  const isComplexTask = targetSLO || toolType === 'lesson-plan' || userPrompt.length > 200;
+  const isComplexTask = targetSLO || toolType === 'lesson-plan' || userPrompt.length > 300;
   const preferredProvider = isComplexTask ? 'gemini' : undefined;
   
   const result = await synthesize(

@@ -16,7 +16,7 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
     'photosynthesis', 'energy', 'force', 'cells', 'ecosystem', 'matter', 
     'water cycle', 'weather', 'space', 'electricity', 'human body', 
     'plants', 'animals', 'chemistry', 'physics', 'biology', 'gravity',
-    'natural resources', 'environment', 'solids', 'liquids', 'gases', 'dna'
+    'natural resources', 'environment', 'solids', 'liquids', 'gases', 'dna', 'magnetism', 'electromagnet'
   ];
   const topics = commonTopics.filter(t => text.toLowerCase().includes(t));
 
@@ -47,8 +47,8 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v35.0)
- * AUDIT OPTIMIZATION: Implemented Lazy Batch Indexing.
+ * WORLD-CLASS NEURAL INDEXER (v36.0)
+ * Optimized for multi-segmented Pakistani SLO formats.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -61,7 +61,7 @@ export async function indexDocumentForRAG(
   }
 
   try {
-    console.log(`📡 [Indexer] Syncing and Normalizing Document ${documentId}...`);
+    console.log(`📡 [Indexer] Ingesting Node: ${documentId}...`);
     
     await supabase.from('documents').update({ 
       status: 'processing', 
@@ -71,17 +71,19 @@ export async function indexDocumentForRAG(
     const processedChunks: { text: string; sloCodes: string[]; metadata: any }[] = [];
     let currentUnitName = "General Context";
 
+    // Split by logical sections: Units or SLO markers
     const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|SLO:))/gim);
     
     blocks.forEach((block, index) => {
       let trimmed = block.trim();
-      if (trimmed.length < 20) return;
+      if (trimmed.length < 15) return;
 
       const unitMatch = trimmed.match(/^(?:#{1,4}\s+)?(?:Unit|Chapter|Section|Module)\s*[:\s]*([^:\n]+)/im);
       if (unitMatch) currentUnitName = unitMatch[1].trim();
 
-      if (trimmed.length > 3000) {
-        const subblocks = trimmed.match(/.{1,2500}(\s|$)/g) || [trimmed];
+      // Chunk size optimization for context preservation
+      if (trimmed.length > 2500) {
+        const subblocks = trimmed.match(/.{1,2000}(\s|$)/g) || [trimmed];
         subblocks.forEach((sb, si) => {
            processedChunks.push(processBlock(sb, index + si, currentUnitName));
         });
@@ -91,15 +93,10 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number, unitName: string) {
-      const headerSloMatch = text.match(/^(?:#{1,4}\s+)?(?:Standard|SLO|Outcome)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/im);
-      const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{2,15})/gi;
+      // Catch SLO codes with multiple dash segments (S-08-B-34)
+      const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{3,15})/gi;
       const codesSet = new Set<string>();
       
-      if (headerSloMatch) {
-        const hNorm = normalizeSLO(headerSloMatch[1]);
-        if (hNorm) codesSet.add(hNorm);
-      }
-
       let match;
       while ((match = sloRegex.exec(text)) !== null) {
         const normalized = normalizeSLO(match[1]);
@@ -117,13 +114,14 @@ export async function indexDocumentForRAG(
         sloCodes: codes,
         metadata: {
           ...pedagogicalMeta,
-          section_title: titleMatch ? titleMatch[1].substring(0, 50).trim() : "General Context",
+          section_title: titleMatch ? titleMatch[1].substring(0, 50).trim() : unitName,
           chunk_index: index,
           timestamp: new Date().toISOString()
         }
       };
     }
 
+    // Fallback if no structured blocks detected
     if (processedChunks.length === 0) {
        const words = content.split(/\s+/);
        for (let i = 0; i < words.length; i += 300) {
@@ -138,9 +136,8 @@ export async function indexDocumentForRAG(
        }
     }
 
-    // AUDIT IMPLEMENTATION: BATCH LAZY PROCESSING
-    // Split into smaller batches to prevent Vercel 10s timeouts
-    const BATCH_SIZE = 10;
+    // Batch Upload to Supabase to prevent Gateway Timeouts
+    const BATCH_SIZE = 15;
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const texts = batch.map(c => c.text);
@@ -160,14 +157,13 @@ export async function indexDocumentForRAG(
         bloom_levels: chunk.metadata.bloom_levels
       }));
 
+      // On first batch, clear existing chunks for this specific document
       if (i === 0) {
         await supabase.from('document_chunks').delete().eq('document_id', documentId);
       }
       
       const { error: insertError } = await supabase.from('document_chunks').insert(chunkRecords);
       if (insertError) throw insertError;
-      
-      console.log(`🧩 [Indexer] Batch ${Math.floor(i/BATCH_SIZE) + 1} synced...`);
     }
 
     await supabase.from('documents').update({ 
@@ -175,12 +171,10 @@ export async function indexDocumentForRAG(
       rag_indexed: true 
     }).eq('id', documentId);
     
-    console.log(`✅ [Indexer] Full neural sync complete for ${documentId}.`);
-
     return { success: true, chunkCount: processedChunks.length };
 
   } catch (error: any) {
-    console.error("❌ [Indexer] Fatal Error:", error);
+    console.error("❌ [Indexer] Neural Fail:", error);
     await supabase.from('documents').update({ status: 'failed', rag_indexed: false }).eq('id', documentId);
     throw error;
   }
