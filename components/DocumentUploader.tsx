@@ -106,7 +106,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         setMode('transition');
       } else {
         const { text } = await extractRawTextAndPageCount(file, type);
-        setProcStage('Neural Handshake: Building curriculum context on server...');
+        setProcStage('Neural Synthesis: Structuring raw data into high-fidelity markdown...');
         
         const { data: { session } } = await supabase.auth.getSession();
         const response = await fetch('/api/docs/upload', {
@@ -136,7 +136,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
   const handleFinalApproval = async () => {
     setIsProcessing(true);
-    setProcStage('Securing asset in permanent vault...');
+    setProcStage('Committing validated nodes to permanent vault...');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const v = validateCurriculumMarkdown(draftMarkdown);
@@ -176,7 +176,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <div className="flex flex-col overflow-hidden h-full">
              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 flex items-center gap-3 border-b dark:border-white/5 shrink-0">
                 <Sparkles size={12} className="text-emerald-600" />
-                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Rendered Alignment View</span>
+                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Neural Cleanup Result</span>
              </div>
              <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert h-full max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           </div>
@@ -187,14 +187,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                <div className="flex items-center gap-4 text-amber-600">
                  <AlertTriangle size={20} className="shrink-0" />
                  <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.1em] leading-relaxed">
-                    By committing to the vault, this asset will be permanently indexed into the vector grid. 
-                    <br />Deletion is only possible via node administration.
+                    By committing to the vault, this cleaned intelligence will be permanently indexed into the vector grid. 
+                    <br />Deletion is restricted for successful standard-aligned nodes.
                  </p>
                </div>
              )}
            </div>
            <button onClick={handleFinalApproval} disabled={isProcessing || !draftMarkdown} className="w-full md:w-auto px-12 py-5 bg-indigo-600 text-white rounded-[2rem] font-black shadow-2xl flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50 transition-all uppercase text-xs tracking-widest">
-             {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Database size={20}/>} Secure Node to Vault
+             {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Database size={20}/>} Sync Cleaned Asset
            </button>
         </div>
       </div>
@@ -218,7 +218,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
       <div className="p-8 md:p-12 pt-4 text-center overflow-y-auto custom-scrollbar flex-1">
         <h3 className="text-2xl md:text-3xl font-black dark:text-white uppercase tracking-tight leading-none mb-2">Vault Ingestion</h3>
-        <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Map curriculum nodes to your permanent library.</p>
+        <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Store curriculum blobs in R2 and metadata in Supabase.</p>
         
         {error && (
           <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center">
@@ -230,13 +230,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <input type="file" id="pdf-up" className="hidden" accept=".pdf" onChange={(e) => handleFileUpload(e, 'pdf')} />
           <label htmlFor="pdf-up" className="p-4 md:p-6 border-2 border-dashed rounded-2xl md:rounded-3xl border-slate-200 dark:border-white/10 hover:border-indigo-500 cursor-pointer transition-all flex items-center gap-4">
              <div className="p-2 md:p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl"><FileText size={20}/></div>
-             <div className="text-left min-w-0"><p className="font-bold dark:text-white text-sm md:text-base">PDF Document</p><p className="text-[9px] md:text-[10px] text-slate-400 truncate">Locked Ingestion Node</p></div>
+             <div className="text-left min-w-0"><p className="font-bold dark:text-white text-sm md:text-base">PDF Document</p><p className="text-[9px] md:text-[10px] text-slate-400 truncate">Multimodal Neural Mapping</p></div>
           </label>
           
           <input type="file" id="docx-up" className="hidden" accept=".docx" onChange={(e) => handleFileUpload(e, 'docx')} />
           <label htmlFor="docx-up" className="p-4 md:p-6 border-2 border-dashed rounded-2xl md:rounded-3xl border-slate-200 dark:border-white/10 hover:border-emerald-500 cursor-pointer transition-all flex items-center gap-4">
              <div className="p-2 md:p-3 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 rounded-xl"><FileCode size={20}/></div>
-             <div className="text-left min-w-0"><p className="font-bold dark:text-white text-sm md:text-base">Word Document</p><p className="text-[9px] md:text-[10px] text-slate-400 truncate">Strict Structural Audit</p></div>
+             <div className="text-left min-w-0"><p className="font-bold dark:text-white text-sm md:text-base">Word Document</p><p className="text-[9px] md:text-[10px] text-slate-400 truncate">Deep Structural Extraction</p></div>
           </label>
         </div>
       </div>
@@ -244,7 +244,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       {isProcessing && (
         <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center z-50 animate-in fade-in p-6">
           <Loader2 className="animate-spin text-indigo-600 mb-4 w-10 h-10 md:w-12 md:h-12" />
-          <p className="text-base md:text-lg font-black text-indigo-600 uppercase tracking-widest">Neural Mapping...</p>
+          <p className="text-base md:text-lg font-black text-indigo-600 uppercase tracking-widest">Brain Handshake...</p>
           <p className="text-[10px] md:text-xs font-bold text-slate-400 mt-2 text-center">{procStage}</p>
         </div>
       )}
