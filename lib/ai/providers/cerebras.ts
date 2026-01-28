@@ -7,15 +7,11 @@ export async function callCerebras(
   const apiKey = process.env.CEREBRAS_API_KEY;
   if (!apiKey) throw new Error('CEREBRAS_API_KEY missing');
 
-  // Using the 70B model for higher reasoning quality if possible, falling back to 8B internally by Cerebras
-  const modelName = 'llama3.1-70b';
-
-  const finalSystem = hasDocuments 
-    ? "STRICT_ASSET_MODE: Use only provided curriculum documents. No bold headings. Temp 0.0."
-    : systemInstruction;
+  // fallback to llama3.1-8b if 70b isn't working for the tier
+  const modelName = 'llama3.1-8b';
 
   const messages = [
-    { role: 'system', content: finalSystem },
+    { role: 'system', content: systemInstruction },
     ...history.slice(-2).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
     { role: 'user', content: fullPrompt }
   ];
@@ -26,16 +22,15 @@ export async function callCerebras(
     body: JSON.stringify({ 
       model: modelName,
       messages, 
-      temperature: hasDocuments ? 0.0 : 0.7,
-      max_tokens: 4096
+      temperature: 0.1,
+      max_tokens: 2048
     })
   });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Cerebras Node Failure: ${res.status} - ${err.error?.message || 'Bad Request'}`);
+    throw new Error(`Cerebras segment fault: ${res.status}`);
   }
   
   const data = await res.json();
-  return data.choices[0].message.content;
+  return data.choices[0].message.content || "";
 }
