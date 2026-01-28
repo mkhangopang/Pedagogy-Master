@@ -8,6 +8,15 @@ import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
 import { supabase } from '../lib/supabase';
 
+import * as mammoth from 'mammoth';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js Worker
+if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  const version = '4.4.168';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
+}
+
 interface DocumentUploaderProps {
   userId: string;
   userPlan: SubscriptionPlan;
@@ -34,45 +43,71 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     }
   }, [draftMarkdown]);
 
+  const extractLocalText = async (file: File): Promise<string> => {
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const arrayBuffer = await file.arrayBuffer();
+
+    if (extension === 'pdf') {
+      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+      const pdf = await loadingTask.promise;
+      let fullText = '';
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        setProcStage(`Extracting Page ${i} of ${pdf.numPages}...`);
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        fullText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
+      }
+      return fullText;
+    } else if (extension === 'docx') {
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      return result.value;
+    } else {
+      return new TextDecoder().decode(arrayBuffer);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Client-side pre-flight check for Vercel 4.5MB limit
-    if (file.size > 4.5 * 1024 * 1024) {
-      setError(`FILE TOO LARGE: The neural node has a 4.5MB intake limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Please split the curriculum into units or compress the PDF.`);
-      return;
-    }
-
     setError(null);
     setIsProcessing(true);
-    setProcStage(`Streaming asset to Neural Node...`);
+    setProcStage(`Initializing Local Extraction...`);
 
     try {
+      // 1. EXTRACT TEXT LOCALLY (Maximizes Capacity & Bypasses Payload Limits)
+      const rawText = await extractLocalText(file);
+      
+      if (!rawText || rawText.trim().length < 50) {
+        throw new Error("Extraction failed: Document appears empty or is an image-only PDF.");
+      }
+
+      setProcStage(`Neural Synthesis: Mapping ${rawText.length.toLocaleString()} characters...`);
+
       const { data: { session } } = await supabase.auth.getSession();
       
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      setProcStage('Engaging Neural Vision: This may take a minute for complex curriculum grids...');
-      
+      // 2. SEND RAW TEXT FOR NEURAL CLEANING (Gemini 3 Pro)
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` },
-        body: formData
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${session?.access_token}` 
+        },
+        body: JSON.stringify({ 
+          name: file.name, 
+          sourceType: 'raw_text', 
+          extractedText: rawText,
+          previewOnly: true
+        })
       });
       
-      // Robust response handling to prevent "Unexpected token 'R'" errors
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
-        if (response.status === 413) {
-          throw new Error("Payload Too Large: The document exceeds the neural intake limit after processing. Try a smaller segment.");
-        }
-        if (response.status === 504) {
-          throw new Error("Gateway Timeout: The neural mapping took too long. This usually happens with 100+ page documents.");
-        }
         const text = await response.text();
-        console.error("Non-JSON Error Response:", text);
+        if (text.includes("Request Entity Too Large")) {
+          throw new Error("Vercel Limit: The extracted text is too large for the neural gateway. Try a shorter segment.");
+        }
         throw new Error(`Cloud Node Error: ${response.status} ${response.statusText}`);
       }
 
@@ -83,7 +118,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setMode('transition');
     } catch (err: any) {
       setError(err.message === 'Failed to fetch' 
-        ? "Network Error: Could not reach the synthesis node. Check your internet connection." 
+        ? "Network Error: Synthesis node unreachable." 
         : err.message);
     } finally {
       setIsProcessing(false);
@@ -214,7 +249,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         
         <p className="mt-10 text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">
-           Maximum Intake Limit: 4.5MB
+           Maximum Capacity: High-Fidelity Extraction Node
         </p>
       </div>
       

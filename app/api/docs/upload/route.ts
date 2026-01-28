@@ -12,8 +12,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * HIGH-FIDELITY NEURAL INGESTION GATEWAY (v75.0)
- * Optimized for Sindh 2024 & Complex Educational Grids.
+ * HIGH-CAPACITY NEURAL INGESTION GATEWAY (v80.0)
+ * Optimized for Raw Text Ingestion -> AI Structuring -> R2 Vaulting.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -27,70 +27,59 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     const contentType = req.headers.get('content-type') || '';
 
-    // Handle Metadata vs File Streams
+    // Handle Metadata/Text Ingestion
     if (contentType.includes('application/json')) {
-      const { name, sourceType, extractedText, board, subject, grade, version } = await req.json();
+      const body = await req.json();
+      const { name, sourceType, extractedText, board, subject, grade, version, previewOnly } = body;
       
-      // Stage 2: Commit final structured MD to vault
-      if (sourceType === 'markdown') {
+      // PHASE 1: Neural Synthesis (Raw Text -> Structured MD)
+      if (sourceType === 'raw_text' && previewOnly) {
+        console.log(`🧠 [Ingestion] Synthesizing high-fidelity mapping for: ${name}`);
+        
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const model = 'gemini-3-pro-preview';
+
+        const prompt = `You are a world-class curriculum data architect. 
+        TASK: Convert this raw, extracted text into standardised PEDAGOGICAL MARKDOWN.
+        
+        STRUCTURE RULES:
+        1. Start with '# Curriculum Metadata' listing Board, Subject, Grade, and Version.
+        2. Organise by 'DOMAIN', 'STANDARD', 'BENCHMARK'.
+        3. Use EXACT SLO format: "- SLO:CODE: Verbatim Description".
+        4. Preserve all instructional tables and grids as markdown tables.
+        5. Output ONLY the resulting markdown.
+        
+        RAW INPUT:
+        ${extractedText.substring(0, 150000)}`;
+
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: { 
+            temperature: 0.1,
+            thinkingConfig: { thinkingBudget: 4000 }
+          }
+        });
+
+        const markdown = response.text;
+        if (!markdown) throw new Error("Neural synthesis returned empty buffer.");
+
+        return NextResponse.json({ markdown });
+      }
+
+      // PHASE 2: Permanent Commit (MD -> R2 -> Supabase)
+      if (sourceType === 'markdown' && extractedText) {
         return await commitToVault(user.id, name, extractedText, { board, subject, grade, version }, supabase);
       }
-      return NextResponse.json({ error: "Invalid protocol node." }, { status: 400 });
+
+      return NextResponse.json({ error: "Invalid ingestion protocol." }, { status: 400 });
     }
 
-    // Stage 1: Native Neural Extraction (Raw File -> Structured MD)
-    const formData = await req.formData();
-    const file = formData.get('file') as File;
-    if (!file) return NextResponse.json({ error: "No asset stream detected." }, { status: 400 });
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const base64Data = buffer.toString('base64');
-    
-    console.log(`🧠 [Ingestion] Engaging Neural Vision for: ${file.name} (${file.size} bytes)`);
-
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const model = 'gemini-3-pro-preview'; // Pro for high-stakes curriculum grids
-
-    const response = await ai.models.generateContent({
-      model,
-      contents: [{
-        role: 'user',
-        parts: [
-          {
-            inlineData: {
-              data: base64Data,
-              mimeType: file.type || 'application/pdf'
-            }
-          },
-          {
-            text: `You are a high-fidelity curriculum data architect. 
-            TASK: Map this entire document into standardized PEDAGOGICAL MARKDOWN.
-            
-            STRUCTURE REQUIREMENTS:
-            1. Create a '# Curriculum Metadata' section with Board, Subject, Grade, and Version.
-            2. Identify every DOMAIN, STANDARD, and BENCHMARK.
-            3. Use the EXACT SLO format: "- SLO:CODE: Verbatim Description".
-            4. If there are Grids (like page 20-100), convert them into structured sections, NOT just text blocks.
-            5. Retain all instructional context. Do not summarize; MAP.
-            
-            Output ONLY the markdown content.`
-          }
-        ]
-      }],
-      config: { 
-        temperature: 0.1,
-        thinkingConfig: { thinkingBudget: 4000 }
-      }
-    });
-
-    const markdown = response.text;
-    if (!markdown) throw new Error("Neural node failed to return extraction mapping.");
-
-    return NextResponse.json({ markdown });
+    return NextResponse.json({ error: "Unsupported payload format." }, { status: 400 });
 
   } catch (error: any) {
-    console.error("❌ [Ingestion Fault]:", error);
-    return NextResponse.json({ error: error.message || "Synthesis interrupted." }, { status: 500 });
+    console.error("❌ [Ingestion Fatal]:", error);
+    return NextResponse.json({ error: error.message || "Synthesis grid interrupted." }, { status: 500 });
   }
 }
 
@@ -99,7 +88,7 @@ async function commitToVault(userId: string, name: string, md: string, metadata:
   
   if (!isR2Configured() || !r2Client) throw new Error("Storage node unreachable.");
 
-  // 1. Persistent Storage (R2)
+  // 1. Persistent Blob Storage (R2)
   await r2Client.send(new PutObjectCommand({
     Bucket: R2_BUCKET,
     Key: filePath,
@@ -107,13 +96,13 @@ async function commitToVault(userId: string, name: string, md: string, metadata:
     ContentType: 'text/markdown',
   }));
 
-  // 2. Metadata Extraction
+  // 2. Metadata Extraction from Cleaned MD
   const generatedJson = generateCurriculumJson(md);
 
-  // 3. Update active status
+  // 3. Selection Reset
   await supabase.from('documents').update({ is_selected: false }).eq('user_id', userId);
 
-  // 4. DB Record
+  // 4. DB Record Ingestion
   const { data: docData, error: dbError } = await supabase.from('documents').insert({
     user_id: userId,
     name,
@@ -133,11 +122,11 @@ async function commitToVault(userId: string, name: string, md: string, metadata:
 
   if (dbError) throw dbError;
 
-  // 5. Indexing (Non-blocking retry)
+  // 5. Neural Indexing (Sync)
   try {
     await indexDocumentForRAG(docData.id, md, filePath, supabase);
   } catch (e) {
-    console.error("Vector sync delayed:", e);
+    console.error("Vector sync fault:", e);
   }
 
   return NextResponse.json({ success: true, id: docData.id });
