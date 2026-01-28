@@ -4,7 +4,6 @@ import { performanceMonitor } from "../monitoring/performance";
 
 /**
  * NEURAL TEXT SANITIZER
- * Ensures input strings are optimized for vectorization.
  */
 function sanitizeText(text: string): string {
   if (!text) return " ";
@@ -15,63 +14,76 @@ function sanitizeText(text: string): string {
 }
 
 /**
- * VECTOR SYNTHESIS ENGINE (v27.0)
- * MODEL: text-embedding-004 (768 dimensions)
- * Implements strict dimension enforcement to match PostgreSQL HNSW.
+ * SINGLE VECTOR SYNTHESIS
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const start = performance.now();
-  const cleanText = sanitizeText(text);
+  const results = await generateEmbeddingsBatch([text]);
+  return results[0];
+}
 
-  // 1. Persistent Cache Check
-  const cached = await embeddingCache.get(cleanText);
-  if (cached) {
-    performanceMonitor.track('embedding_cache_hit', performance.now() - start);
-    return cached;
+/**
+ * BATCH VECTOR SYNTHESIS (v30.0 - ULTRA-FAST)
+ * Uses native batchEmbedContents to saturate the neural pipeline efficiently.
+ */
+export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
+  const start = performance.now();
+  const sanitizedTexts = texts.map(t => sanitizeText(t));
+  const finalResults: number[][] = new Array(texts.length).fill(null);
+  const uncachedIndices: number[] = [];
+  const uncachedTexts: string[] = [];
+
+  // 1. Resolve from Persistent Cache
+  for (let i = 0; i < sanitizedTexts.length; i++) {
+    const cached = await embeddingCache.get(sanitizedTexts[i]);
+    if (cached) {
+      finalResults[i] = cached;
+    } else {
+      uncachedIndices.push(i);
+      uncachedTexts.push(sanitizedTexts[i]);
+    }
+  }
+
+  if (uncachedTexts.length === 0) {
+    performanceMonitor.track('embedding_batch_cache_full_hit', performance.now() - start);
+    return finalResults as number[][];
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    const response = await ai.models.embedContent({
-      model: "text-embedding-004", 
-      contents: [{ parts: [{ text: cleanText }] }] 
+    // Using native batch API for maximum throughput
+    const response = await ai.models.batchEmbedContents({
+      model: "text-embedding-004",
+      requests: uncachedTexts.map(text => ({
+        model: "models/text-embedding-004",
+        content: { parts: [{ text }] }
+      }))
     });
 
-    const vector = response.embeddings?.[0]?.values;
+    const embeddings = response.embeddings || [];
 
-    if (!vector || vector.length === 0) {
-      throw new Error("Invalid vector values returned.");
+    for (let i = 0; i < embeddings.length; i++) {
+      const vector = embeddings[i].values;
+      const originalIndex = uncachedIndices[i];
+      
+      // Strict Dimension Enforcement (768)
+      let finalVector: number[];
+      if (vector.length === 768) finalVector = vector;
+      else if (vector.length < 768) finalVector = [...vector, ...new Array(768 - vector.length).fill(0)];
+      else finalVector = vector.slice(0, 768);
+
+      finalResults[originalIndex] = finalVector;
+      
+      // Commit back to cache (fire and forget)
+      embeddingCache.set(uncachedTexts[i], finalVector).catch(() => {});
     }
 
-    // STRICT DIMENSION ENFORCEMENT (Must be 768)
-    let finalVector: number[];
-    if (vector.length === 768) {
-      finalVector = vector;
-    } else if (vector.length < 768) {
-      console.warn(`[Embedding] Zero-padding vector from ${vector.length} to 768.`);
-      finalVector = [...vector, ...new Array(768 - vector.length).fill(0)];
-    } else {
-      console.warn(`[Embedding] Truncating vector from ${vector.length} to 768.`);
-      finalVector = vector.slice(0, 768);
-    }
+    performanceMonitor.track('embedding_batch_api_call', performance.now() - start, { count: uncachedTexts.length });
     
-    // 2. Commit to Persistent Cache
-    await embeddingCache.set(cleanText, finalVector);
-    
-    performanceMonitor.track('embedding_api_call', performance.now() - start);
-    return finalVector;
+    // Fill any missing results with zeros to prevent hang
+    return finalResults.map(r => r || new Array(768).fill(0));
   } catch (error: any) {
-    console.error('❌ [Embedding Node] Fatal:', error.message);
-    // Return zeros rather than crashing, to allow RAG to proceed with FTS fallback
-    return new Array(768).fill(0);
+    console.error('❌ [Batch Embedding] Critical Fault:', error.message);
+    return finalResults.map(r => r || new Array(768).fill(0));
   }
-}
-
-/**
- * BATCH VECTOR SYNTHESIS
- */
-export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
-  const results = await Promise.all(texts.map(t => generateEmbedding(t)));
-  return results;
 }
