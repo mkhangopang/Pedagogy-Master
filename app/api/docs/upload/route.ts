@@ -25,21 +25,22 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     
-    // CASE: RAW TEXT CONVERSION (Resilient Failover Implementation)
+    // CASE: RAW TEXT CONVERSION (Failover Resilience Active)
     if (sourceType === 'raw_text' || previewOnly) {
+      // We pass the full text; synthesize() now handles provider-specific truncation
       const conversionPrompt = `Convert this raw curriculum text into high-fidelity markdown with sections for Metadata, Units, and SLOs. 
       Use EXACT names if found. Ensure SLOs follow the format: "- SLO: CODE: Description".
       
       FILE: ${name}
-      TEXT: ${extractedText.substring(0, 80000)}`;
+      RAW CONTENT TO STRUCTURE:
+      ${extractedText}`;
 
-      // Use the unified synthesizer which handles 429 failovers automatically
       const result = await synthesize(
         conversionPrompt,
         [],
         false,
         [],
-        'gemini', // Try Gemini first for quality
+        'gemini', 
         "You are a curriculum data engineer. Structure the input into clean markdown."
       );
 
@@ -107,6 +108,8 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error("❌ [Upload Route] Ingestion Fatal:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Return a cleaner error message instead of raw JSON
+    const cleanMessage = error.message?.includes('429') ? 'AI Quota Saturated. Fallback node pending.' : error.message;
+    return NextResponse.json({ error: cleanMessage }, { status: 500 });
   }
 }
