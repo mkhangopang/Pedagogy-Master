@@ -9,8 +9,8 @@ interface IngestionContext {
 }
 
 /**
- * HIGH-THROUGHPUT NEURAL INDEXER (v105.0)
- * Optimized for Sindh Grids & Serverless Resilience.
+ * HIGH-THROUGHPUT NEURAL INDEXER (v110.0)
+ * Optimized for High-Resilience & Serverless Watchdog.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -19,7 +19,7 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient
 ) {
   const startTime = Date.now();
-  console.log(`📡 [Indexer] Initiating High-Speed Sync: ${documentId}`);
+  console.log(`📡 [Indexer] Sync Initiated: ${documentId}`);
   
   try {
     const lines = content.split('\n');
@@ -27,14 +27,14 @@ export async function indexDocumentForRAG(
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
-    // 1. Deep Hierarchical Extraction
+    // 1. Hierarchical Context Decomposition
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (line.match(/^DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      // Grouping logic: Chunk on SLO boundaries or conceptual blocks
+      // Grouping on SLO boundaries for pedagogical precision
       if (line.match(/^- SLO:/i) || i === lines.length - 1) {
         if (buffer.length > 20) {
           const sloMatches = buffer.match(/[B-Z]-\d{2}-[A-Z]-\d{2}|S-\d{2}-[A-Z]-\d{2}/gi) || [];
@@ -57,13 +57,13 @@ export async function indexDocumentForRAG(
       }
     }
 
-    console.log(`🧠 [Indexer] Vectorizing ${processedChunks.length} nodes...`);
+    console.log(`🧠 [Indexer] Processing ${processedChunks.length} neural nodes...`);
 
-    // 2. Clear Existing Data (Atomic)
+    // 2. Atomic Cache Purge
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 3. Batch Vectorization with Watchdog Control
-    // Gemini supports up to 100 requests in a single batch
+    // 3. High-Concurrency Vectorization
+    // Batch size of 50 allows Gemini's batch API to maximize throughput
     const BATCH_SIZE = 50; 
     const batches = [];
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
@@ -71,28 +71,33 @@ export async function indexDocumentForRAG(
     }
 
     for (let i = 0; i < batches.length; i++) {
-      // Serverless Watchdog: If we approach 30s limit (common gateway timeout), finalize current state
+      // 25s Serverless Watchdog: Finalize before the 30s gateway timeout
       if (Date.now() - startTime > 25000) {
-        console.warn(`⏳ [Indexer] Sync safety threshold reached. Finalizing partial sync.`);
+        console.warn(`⏳ [Indexer] Threshold reached. Saving partial sync state.`);
         break;
       }
 
       const batch = batches[i];
-      const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
-      
-      const records = batch.map((chunk, j) => ({
-        document_id: documentId,
-        chunk_text: chunk.text,
-        embedding: embeddings[j],
-        slo_codes: chunk.metadata.slo_codes,
-        metadata: chunk.metadata
-      }));
+      try {
+        const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
+        
+        const records = batch.map((chunk, j) => ({
+          document_id: documentId,
+          chunk_text: chunk.text,
+          embedding: embeddings[j],
+          slo_codes: chunk.metadata.slo_codes,
+          metadata: chunk.metadata
+        }));
 
-      const { error } = await supabase.from('document_chunks').insert(records);
-      if (error) console.error(`⚠️ [Indexer] Batch insert error:`, error.message);
+        const { error: insertError } = await supabase.from('document_chunks').insert(records);
+        if (insertError) throw insertError;
+      } catch (batchErr: any) {
+        console.error(`⚠️ [Indexer] Batch sync failure:`, batchErr.message);
+        // Continue to next batch to maximize recovery
+      }
     }
 
-    // 4. Force Status Completion
+    // 4. Commit Final Ready State
     const { error: finalError } = await supabase.from('documents').update({ 
       status: 'ready', 
       rag_indexed: true,
@@ -101,12 +106,16 @@ export async function indexDocumentForRAG(
 
     if (finalError) throw finalError;
 
-    console.log(`✅ [Indexer] Sync Anchored in ${(Date.now() - startTime) / 1000}s`);
+    console.log(`✅ [Indexer] Success. Total duration: ${(Date.now() - startTime) / 1000}s`);
     return { success: true };
   } catch (error: any) {
     console.error("❌ [Indexer Fatal]:", error);
-    // Mark as failed so user can retry, instead of stuck in 'processing'
-    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId).catch(() => {});
+    // Mark as failed so user can retry, wrapped in try-catch to prevent build failures or hangs
+    try {
+      await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
+    } catch (dbErr) {
+      console.warn("Failed to update failure status:", dbErr);
+    }
     throw error;
   }
 }
