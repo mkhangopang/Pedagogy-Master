@@ -3,37 +3,29 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { normalizeSLO } from './slo-extractor';
 
 /**
- * DEEP PEDAGOGICAL METADATA EXTRACTOR
- * Identifies Grade Spans (e.g., Grade IV-VIII) in documents.
+ * PEDAGOGICAL METADATA EXTRACTOR
  */
-function extractBlockMetadata(text: string, sloCodes: string[]) {
+function extractBlockMetadata(text: string) {
   const grades = new Set<string>();
   
-  // Pattern: "Grade IV-VIII" or "Grade 4"
-  const gradeMatches = text.match(/(?:Grade|Class|Level)\s*([IVXLCDM\d\-\s,]+)/gi);
+  // 1. Extract Grade Numbers (4, 5, 6, 7, 8)
+  const gradeMatches = text.match(/(?:Grade|Class|Level|S-)\s*(\d{1,2})/gi);
   if (gradeMatches) {
     gradeMatches.forEach(m => {
-      const span = m.replace(/(?:Grade|Class|Level)\s*/i, '');
-      // Handle Roman Numerals and Spans (IV-VIII)
-      const romanMap: any = { 'IV': '4', 'V': '5', 'VI': '6', 'VII': '7', 'VIII': '8' };
-      Object.keys(romanMap).forEach(key => {
-        if (span.includes(key)) grades.add(romanMap[key]);
-      });
-      // Handle digits
-      const digits = span.match(/\d+/g);
-      if (digits) digits.forEach(d => grades.add(d));
+      const num = m.match(/\d+/);
+      if (num) grades.add(parseInt(num[0], 10).toString());
     });
   }
 
-  // Also infer grade from specific SLO code prefix (S-07 -> Grade 7)
-  sloCodes.forEach(code => {
-    const match = code.match(/S-(\d{2})/);
-    if (match) grades.add(parseInt(match[1], 10).toString());
-  });
+  // 2. Identify SLO Codes in the chunk
+  const sloPattern = /S-\d{1,2}-[A-Z]-\d{1,2}/gi;
+  const sloMatches = text.match(sloPattern) || [];
+  const normalizedSLOs = sloMatches.map(c => normalizeSLO(c));
 
   return {
     grade_levels: Array.from(grades),
-    is_slo_definition: text.includes('SLO:') || text.includes('S-')
+    slo_codes: normalizedSLOs,
+    is_slo_definition: text.includes('SLO:')
   };
 }
 
@@ -44,30 +36,27 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient
 ) {
   try {
-    console.log(`📡 [Neural Indexer] Synced Doc ID: ${documentId}`);
+    console.log(`📡 [Neural Indexer] Atomic Sync for Doc: ${documentId}`);
     
-    // Split by Markdown Headers (Units, Chapters, Standards)
-    const blocks = content.split(/(?=^#+\s+|^Standard:|^SLO:)/gim);
+    // CRITICAL: Split by SLO marker so every objective is its own searchable node
+    const blocks = content.split(/(?=- SLO:)/g);
     const processedChunks: any[] = [];
 
     blocks.forEach((block, index) => {
       const text = block.trim();
-      if (text.length < 20) return;
+      if (text.length < 10) return;
 
-      // Aggressive SLO Extraction from highlight format "SLO: S-07-B-44"
-      const sloMatches = text.match(/S-\d{2}-[A-Z]-\d{2}/gi) || [];
-      const normalizedCodes = Array.from(new Set(sloMatches.map(c => c.toUpperCase())));
-      
-      const meta = extractBlockMetadata(text, normalizedCodes);
+      const meta = extractBlockMetadata(text);
       
       processedChunks.push({
         text,
-        sloCodes: normalizedCodes,
+        sloCodes: meta.slo_codes,
         metadata: { ...meta, chunk_index: index }
       });
     });
 
-    const BATCH_SIZE = 10;
+    // Batch process embeddings to stay within rate limits
+    const BATCH_SIZE = 15;
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -76,19 +65,22 @@ export async function indexDocumentForRAG(
         document_id: documentId,
         chunk_text: chunk.text,
         embedding: embeddings[j],
-        slo_codes: chunk.sloCodes,
+        slo_codes: chunk.sloCodes, // This is the ' overlaps ' target
         grade_levels: chunk.metadata.grade_levels,
         metadata: chunk.metadata
       }));
 
+      // On first batch, clear old indices for this doc
       if (i === 0) await supabase.from('document_chunks').delete().eq('document_id', documentId);
-      await supabase.from('document_chunks').insert(records);
+      
+      const { error } = await supabase.from('document_chunks').insert(records);
+      if (error) throw error;
     }
 
     await supabase.from('documents').update({ status: 'ready', rag_indexed: true }).eq('id', documentId);
     return { success: true };
   } catch (error) {
-    console.error("Indexer Fault:", error);
+    console.error("Indexer Fatal Error:", error);
     throw error;
   }
 }
