@@ -57,8 +57,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             <PlusIcon size={20} />
           </button>
           
+          <label htmlFor="ai-chat-input" className="sr-only">Ask AI anything about pedagogy or curriculum</label>
           <textarea
             ref={textareaRef}
+            id="ai-chat-input"
+            name="ai-chat-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -66,6 +69,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             disabled={disabled || isLoading}
             rows={1}
             className="flex-1 bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 resize-none py-3 text-[16px] font-bold max-h-[160px] custom-scrollbar"
+            aria-label="Pedagogy Master Query Input"
           />
           
           <button
@@ -76,6 +80,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 ? 'bg-indigo-600 text-white shadow-xl hover:bg-indigo-700 active:scale-90' 
                 : 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-600'
             }`}
+            aria-label="Send Query"
           >
             {isLoading ? <LoaderIcon size={20} className="animate-spin" /> : <SendIcon size={20} />}
           </button>

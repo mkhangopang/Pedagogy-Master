@@ -9,7 +9,7 @@ interface LoginProps {
 
 type AuthView = 'login' | 'signup' | 'forgot-password' | 'signup-success' | 'reset-sent';
 
-const Login: React.FC<LoginProps> = ({ onBack }) => {
+const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
   const [view, setView] = useState<AuthView>('login');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -38,13 +38,14 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
 
     try {
       if (view === 'login') {
-        const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
         if (authError) {
            if (authError.message.includes('Email not confirmed')) {
              throw new Error("Verification Pending: Check your inbox or adjust Supabase Auth settings.");
            }
            throw authError;
         }
+        if (data.session) onSession(data.session);
       } else if (view === 'signup') {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
         const { data, error: authError } = await supabase.auth.signUp({ 
@@ -145,6 +146,7 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
           </div>
 
           <button 
+            type="button"
             onClick={handleGoogleLogin}
             disabled={googleLoading || loading}
             className="w-full py-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white rounded-xl font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
@@ -171,26 +173,44 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
           
           <form onSubmit={handleAuth} className="space-y-4">
             <div className="hidden" aria-hidden="true">
-              <input type="text" value={honeypot} onChange={e => setHoneypot(e.target.value)} tabIndex={-1} autoComplete="off" />
+              <input type="text" id="hp-auth" name="hp-auth" value={honeypot} onChange={e => setHoneypot(e.target.value)} tabIndex={-1} autoComplete="off" />
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-semibold text-slate-600 dark:text-slate-400 ml-1">Email Address</label>
+              <label htmlFor="auth-email" className="text-sm font-semibold text-slate-600 dark:text-slate-400 ml-1">Email Address</label>
               <div className="relative">
                 <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm" placeholder="name@school.edu" required />
+                <input 
+                  type="email" 
+                  id="auth-email"
+                  name="email"
+                  value={email} 
+                  onChange={(e) => setEmail(e.target.value)} 
+                  className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm" 
+                  placeholder="name@school.edu" 
+                  required 
+                />
               </div>
             </div>
 
             {view !== 'forgot-password' && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between ml-1">
-                  <label className="text-sm font-semibold text-slate-600 dark:text-slate-400">Password</label>
+                  <label htmlFor="auth-password" className="text-sm font-semibold text-slate-600 dark:text-slate-400">Password</label>
                   {view === 'login' && <button type="button" onClick={() => setView('forgot-password')} className="text-[11px] font-bold text-indigo-600 hover:underline">Forgot?</button>}
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm" placeholder="••••••••" required />
+                  <input 
+                    type="password" 
+                    id="auth-password"
+                    name="password"
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm" 
+                    placeholder="••••••••" 
+                    required 
+                  />
                 </div>
               </div>
             )}

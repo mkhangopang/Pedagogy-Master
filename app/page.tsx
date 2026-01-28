@@ -115,6 +115,7 @@ export default function App() {
     paymentService.init();
     
     const initializeAuth = async () => {
+      // 1. Decisively check for session before rendering login state
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
@@ -123,9 +124,11 @@ export default function App() {
         setCurrentView('dashboard');
         setIsAuthResolving(false);
       } else {
+        // If no session, allow the auth listener to fire once before assuming logged-out
+        // This handles cases where recovery happens slightly after getSession
         setTimeout(() => {
           setIsAuthResolving(false);
-        }, 1000);
+        }, 300);
       }
     };
 
@@ -166,7 +169,7 @@ export default function App() {
   );
   
   if (!session) {
-    if (currentView === 'login') return <Login onSession={() => setCurrentView('dashboard')} onBack={() => setCurrentView('landing')} />;
+    if (currentView === 'login') return <Login onSession={(s) => setSession(s)} onBack={() => setCurrentView('landing')} />;
     return <Landing onStart={() => setCurrentView('login')} />;
   }
 
