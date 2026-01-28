@@ -24,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v46.0)
- * Optimized for Depth RAG and Global Pedagogy Insights.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v47.0)
+ * Optimized for Depth RAG and Strict Grade-to-SLO Mapping.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -70,7 +70,7 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: documentIds,
         supabase,
-        matchCount: 40 // Broad scan to find granular SLOs at the bottom of files
+        matchCount: 40 
       });
 
       if (isolatedGrade) {
@@ -80,7 +80,7 @@ export async function generateAIResponse(
         });
       }
     } catch (err) {
-      console.warn("⚠️ [Orchestrator] Vector Node Lag.");
+      console.warn("⚠️ [Orchestrator] Retrieval Error.");
     }
   }
   
@@ -98,28 +98,26 @@ export async function generateAIResponse(
     vaultContent = `[FALLBACK] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 5000)}`;
   }
 
-  // 5. Global Resource Injection (Strategic Pedagogy Node)
+  // 5. Mode Injections
   let globalInstruction = "";
   if (isGlobalEnabled) {
-    globalInstruction = `
-### 🌐 GLOBAL PEDAGOGY AUGMENTATION (PRO MODE)
-Integrate instructional strategies from world-leading education systems:
-- **Singapore Math**: Concrete-Pictorial-Abstract (CPA) sequences.
-- **Finland/Sweden**: Phenomenon-based learning and student-led inquiry.
-- **Japan**: "Lesson Study" style meticulous instructional flow and observation-ready prompts.
-- **USA/UK**: Explicit Instruction (Rosenshine's Principles) and UDL-based differentiation.
-- **Norway/EU**: High emphasis on cross-curricular synthesis and real-world application.
-Blend these insights into the output while respecting the local curriculum standards if selected.
-`;
+    globalInstruction = `\n### 🌐 GLOBAL PEDAGOGY AUGMENTATION (ACTIVE)\nIntegrate global leading practices from Finland, Singapore, and Japan while adhering to the standard's core cognitive requirement.\n`;
   }
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || (documentIds.length > 0 ? documentIds[0] : null))) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
+  // 6. TARGET ENFORCEMENT (FIX: Prevent "Assumed" Grade 4 answers)
   let targetEnforcement = "";
   if (targetSLO && isCurriculumEnabled) {
-    targetEnforcement = `\n🔴 CRITICAL_CONTEXT_LOCK: Requested [${targetSLO}]. MUST search vault for EXACT code.\n`;
+    targetEnforcement = `
+🔴 CRITICAL_CONTEXT_LOCK: User requested objective [${targetSLO}]. 
+- SEARCH vault for [${targetSLO}] or Grade ${isolatedGrade || 'Any'} content.
+- DO NOT use Grade IV standards for a Grade VIII query.
+- If [${targetSLO}] is NOT in the <AUTHORITATIVE_VAULT> provided above, EXPLICITLY state: "Objective ${targetSLO} was not found in the currently linked asset." 
+- DO NOT guess or substitute with similar standards from other grades.
+`;
   }
 
   let finalPrompt = `
@@ -127,7 +125,7 @@ Blend these insights into the output while respecting the local curriculum stand
 ${vaultContent}
 </AUTHORITATIVE_VAULT>
 
-${isCurriculumEnabled ? NUCLEAR_GROUNDING_DIRECTIVE : '⚠️ VAULT BYPASSED: Using General Knowledge/Global Strategies only.'}
+${isCurriculumEnabled ? NUCLEAR_GROUNDING_DIRECTIVE : '⚠️ VAULT BYPASSED: Using General Knowledge.'}
 ${targetEnforcement}
 ${globalInstruction}
 
@@ -137,7 +135,6 @@ ${globalInstruction}
 ## EXECUTION PARAMETERS:
 ${responseInstructions}`;
 
-  // 6. Synthesis
   const isComplexTask = targetSLO || toolType === 'lesson-plan' || userPrompt.length > 200;
   const preferredProvider = isComplexTask ? 'gemini' : undefined;
   

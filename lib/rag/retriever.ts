@@ -18,14 +18,14 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v44.0)
- * Optimized for Depth Scanning and Strict Objective Anchoring.
+ * HIGH-PRECISION RAG RETRIEVER (v45.0)
+ * Implements Tag-First priority search to prevent semantic crowding.
  */
 export async function retrieveRelevantChunks({
   query,
   documentIds,
   supabase,
-  matchCount = 40 // Increased for greater depth (prevents burying bottom SLOs like S8C3)
+  matchCount = 40
 }: {
   query: string;
   documentIds: string[];
@@ -47,7 +47,20 @@ export async function retrieveRelevantChunks({
       ? extractGradeFromSLO(targetSLOCodes[0]) 
       : (parsed.grades.length > 0 ? parsed.grades[0] : null);
 
-    // Initial BROAD hybrid search
+    // 1. ATOMIC SEARCH: Explicit search for chunks containing normalized tags
+    // This bypasses vector similarity to ensure exact SLO matches are found
+    let exactResults: any[] = [];
+    if (targetSLOCodes.length > 0) {
+      const { data: tagged } = await supabase
+        .from('document_chunks')
+        .select('*')
+        .in('document_id', documentIds)
+        .contains('slo_codes', targetSLOCodes)
+        .limit(10);
+      if (tagged) exactResults = tagged;
+    }
+
+    // 2. HYBRID SEARCH: Semantic fallback
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -61,47 +74,56 @@ export async function retrieveRelevantChunks({
     if (error) throw error;
     
     let processed = (chunks as any[] || []).map((d: any) => ({
-      chunk_id: d.chunk_id,
+      chunk_id: d.chunk_id || d.id,
       chunk_text: d.chunk_text,
       slo_codes: d.slo_codes || [],
       page_number: d.metadata?.page_number,
-      section_title: d.metadata?.section_title,
-      combined_score: d.combined_score,
+      section_title: d.metadata?.section_title || d.unit_name,
+      combined_score: d.combined_score || 0.9,
       grade_levels: d.grade_levels || [],
       topics: d.topics || [],
       bloom_levels: d.bloom_levels || [],
       document_id: d.document_id
     }));
 
-    // NEURAL ANCHORING (FIX: Explicitly search for exact matches in results)
-    if (targetSLOCodes.length > 0) {
-      // Step A: Separate exact matches to the top
-      const exactMatches = processed.filter(c => 
-        c.slo_codes.some((code: string) => targetSLOCodes.includes(normalizeSLO(code)))
-      );
+    // Merge exact results at the top if not already present
+    if (exactResults.length > 0) {
+      const exactProcessed = exactResults.map(d => ({
+        chunk_id: d.id,
+        chunk_text: d.chunk_text,
+        slo_codes: d.slo_codes || [],
+        page_number: d.metadata?.page_number,
+        section_title: d.metadata?.section_title || d.unit_name,
+        combined_score: 1.0, // Forced priority
+        grade_levels: d.grade_levels || [],
+        topics: d.topics || [],
+        bloom_levels: d.bloom_levels || [],
+        document_id: d.document_id
+      }));
       
-      // Step B: If we found exact matches, make them priority context
-      if (exactMatches.length > 0) {
-        const others = processed.filter(c => !exactMatches.includes(c));
-        processed = [...exactMatches, ...others];
-      }
+      const existingIds = new Set(processed.map(p => p.chunk_id));
+      const uniqueExact = exactProcessed.filter(ep => !existingIds.has(ep.chunk_id));
+      processed = [...uniqueExact, ...processed];
     }
 
-    // Secondary Check: Strict Grade Lock (Prevents Grade 4 bleeding into Grade 8)
+    // 3. GRADE LOCKING: Strict exclusion of mismatching grades
     if (requestedGrade && processed.length > 0) {
       processed = processed.filter(c => {
-        if (!c.grade_levels || c.grade_levels.length === 0) return true;
-        return c.grade_levels.includes(requestedGrade);
+        // If chunk has grade labels, it MUST match the requested grade
+        if (c.grade_levels && c.grade_levels.length > 0) {
+          return c.grade_levels.includes(requestedGrade);
+        }
+        // If it mentions the code directly in text, keep it regardless of metadata
+        const normalizedInText = targetSLOCodes.some(code => c.chunk_text.replace(/[^A-Z0-9]/gi, '').includes(code));
+        return normalizedInText;
       });
     }
 
-    performanceMonitor.track('rag_retrieval_v44', performance.now() - start);
-    
-    // Provide AI with more context chunks (up to 15) for deeper reasoning
+    performanceMonitor.track('rag_retrieval_v45', performance.now() - start);
     return processed.slice(0, 15); 
     
   } catch (err) {
-    console.error('❌ [Retriever] Precision Failure:', err);
+    console.error('❌ [Retriever] Fault:', err);
     return [];
   }
 }
