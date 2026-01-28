@@ -24,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v44.0)
- * Streamlined for maximum speed. Visual aid logic removed.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v45.0)
+ * Optimized for Depth RAG and Global Pedagogy Insights.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -44,6 +44,10 @@ export async function generateAIResponse(
   const targetSLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
   const isolatedGrade = targetSLO ? extractGradeFromSLO(targetSLO) : null;
 
+  // New: Check for mode flags in userPrompt (passed from Tools.tsx)
+  const isGlobalEnabled = userPrompt.includes('GLOBAL_RESOURCES_MODE: ACTIVE');
+  const isCurriculumEnabled = userPrompt.includes('CURRICULUM_MODE: ACTIVE');
+
   // 2. Context Scoping
   const { data: selectedDocs } = await supabase
     .from('documents')
@@ -52,13 +56,13 @@ export async function generateAIResponse(
     .eq('is_selected', true); 
   
   const activeDocs = selectedDocs || [];
-  let documentIds = activeDocs.map(d => d.id) || [];
+  let documentIds = isCurriculumEnabled ? (activeDocs.map(d => d.id) || []) : [];
   
-  if (priorityDocumentId && !documentIds.includes(priorityDocumentId)) {
+  if (priorityDocumentId && isCurriculumEnabled && !documentIds.includes(priorityDocumentId)) {
     documentIds = [priorityDocumentId, ...documentIds];
   }
 
-  // 3. Retrieval (Performance Optimized)
+  // 3. Retrieval (Performance Optimized for Depth)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     try {
@@ -66,7 +70,7 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: documentIds,
         supabase,
-        matchCount: 15 // Lowered match count for speed
+        matchCount: 40 // Broad scan for deep SLOs
       });
 
       if (isolatedGrade) {
@@ -90,17 +94,31 @@ export async function generateAIResponse(
         return `[NODE_${i + 1}] (SOURCE: ${activeDocs.find(d => d.id === chunk.document_id)?.name || 'Library'})${tagLine}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
-  } else if (activeDocs.length > 0) {
+  } else if (activeDocs.length > 0 && isCurriculumEnabled) {
     vaultContent = `[FALLBACK] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 5000)}`;
   }
 
+  // 5. Global Resource Injection
+  let globalInstruction = "";
+  if (isGlobalEnabled) {
+    globalInstruction = `
+### 🌐 GLOBAL PEDAGOGY EXTENSION (PRO NODE)
+Augment synthesis with high-impact strategies from:
+- **Singapore Math**: Concrete-Pictorial-Abstract (CPA) approach.
+- **Finland/Sweden**: Phenomenon-based learning and student autonomy.
+- **Japan**: "Lesson Study" collaborative inquiry.
+- **USA/UK**: Evidence-based differentiation and UDL.
+- **Norway/EU**: Outdoor and project-based cross-curricular integration.
+Blend these global "best-in-class" practices with the local curriculum standards where appropriate.
+`;
+  }
+
   const queryAnalysis = analyzeUserQuery(userPrompt);
-  const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || documentIds[0])) || activeDocs[0];
+  const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || (documentIds.length > 0 ? documentIds[0] : null))) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
-  // 5. Build Final Prompt
   let targetEnforcement = "";
-  if (targetSLO) {
+  if (targetSLO && isCurriculumEnabled) {
     targetEnforcement = `\n🔴 CRITICAL_CONTEXT_LOCK: Requested [${targetSLO}]. MUST search vault for EXACT code.\n`;
   }
 
@@ -109,8 +127,9 @@ export async function generateAIResponse(
 ${vaultContent}
 </AUTHORITATIVE_VAULT>
 
-${NUCLEAR_GROUNDING_DIRECTIVE}
+${isCurriculumEnabled ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
 ${targetEnforcement}
+${globalInstruction}
 
 ## TEACHER COMMAND:
 "${userPrompt}"
@@ -124,8 +143,8 @@ ${responseInstructions}`;
   
   const result = await synthesize(
     finalPrompt, 
-    history.slice(-4), // Reduced history for speed
-    activeDocs.length > 0, 
+    history.slice(-4), 
+    retrievedChunks.length > 0, 
     [], 
     preferredProvider,
     customSystem || DEFAULT_MASTER_PROMPT
@@ -141,7 +160,8 @@ ${responseInstructions}`;
     provider: result.provider,
     metadata: {
       chunksUsed: retrievedChunks.length,
-      isGrounded: activeDocs.length > 0,
+      isGrounded: isCurriculumEnabled && retrievedChunks.length > 0,
+      isGlobal: isGlobalEnabled,
       sourceDocument: primaryDoc?.name || 'Global Library',
       extractedSLOs,
       sources: sources.length > 0 ? sources : undefined,

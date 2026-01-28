@@ -18,14 +18,14 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v42.0)
- * Optimized for Grade Isolation and Deterministic SLO Target Locking.
+ * HIGH-PRECISION RAG RETRIEVER (v43.0)
+ * Optimized for Depth and Standard Locking.
  */
 export async function retrieveRelevantChunks({
   query,
   documentIds,
   supabase,
-  matchCount = 20 
+  matchCount = 40 // Increased for greater depth into large curriculum files
 }: {
   query: string;
   documentIds: string[];
@@ -45,7 +45,7 @@ export async function retrieveRelevantChunks({
     const targetSLOs = parsed.sloCodes.length > 0 ? parsed.sloCodes : null;
     const requestedGrade = targetSLOs ? extractGradeFromSLO(targetSLOs[0]) : (parsed.grades.length > 0 ? parsed.grades[0] : null);
 
-    // Initial search with metadata hints
+    // Initial hybrid search with higher match count to ensure "S8 C3" at the bottom isn't buried
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -71,8 +71,7 @@ export async function retrieveRelevantChunks({
       document_id: d.document_id
     }));
 
-    // POST-RETRIEVAL ISOLATION (CHATGPT-LEVEL PRECISION)
-    // If a specific SLO was requested (e.g. S8A5), we MUST discard results that don't match the SLO or Grade.
+    // POST-RETRIEVAL ISOLATION (CHALLENGE: If S8A7 is easier than S8C3, strict filtering wins)
     if (targetSLOs && targetSLOs.length > 0) {
       processed = processed.filter(c => {
         return c.slo_codes.some((code: string) => targetSLOs.includes(code));
@@ -82,14 +81,14 @@ export async function retrieveRelevantChunks({
     // Secondary Check: Strict Grade Lock
     if (requestedGrade && processed.length > 0) {
       processed = processed.filter(c => {
-        if (!c.grade_levels || c.grade_levels.length === 0) return true; // Keep general pedagogical context
+        if (!c.grade_levels || c.grade_levels.length === 0) return true;
         return c.grade_levels.includes(requestedGrade);
       });
     }
 
-    performanceMonitor.track('rag_retrieval_v42', performance.now() - start);
-    // Return the top 8 most precise segments
-    return processed.slice(0, 8); 
+    performanceMonitor.track('rag_retrieval_v43', performance.now() - start);
+    // Return top 12 precise segments instead of 8 to give AI more context depth
+    return processed.slice(0, 12); 
     
   } catch (err) {
     console.error('❌ [Retriever] High Precision Failure:', err);

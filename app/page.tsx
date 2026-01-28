@@ -42,6 +42,29 @@ export default function App() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
+  // Persistence: Initial Theme Sync
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
+    if (savedTheme) {
+      setTheme(savedTheme);
+      if (savedTheme === 'dark') document.documentElement.classList.add('dark');
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark');
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    localStorage.setItem('theme', newTheme);
+    if (newTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  };
+
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
     getSupabaseHealth().then(setHealthStatus);
     
@@ -91,7 +114,6 @@ export default function App() {
     paymentService.init();
     
     const initializeAuth = async () => {
-      // PKCE and Mode switching can take a moment to re-read storage
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
@@ -100,8 +122,6 @@ export default function App() {
         setCurrentView('dashboard');
         setIsAuthResolving(false);
       } else {
-        // Wait briefly for the auth change listener to potentially find a session 
-        // that getSession might have missed during a rapid re-init
         setTimeout(() => {
           setIsAuthResolving(false);
         }, 1000);
@@ -161,7 +181,7 @@ export default function App() {
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
       {isSidebarOpen && <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
       <div className={`fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'} ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} onClose={() => setIsSidebarOpen(false)} theme={theme} toggleTheme={() => setTheme(t => t === 'light' ? 'dark' : 'light')} />
+        <Sidebar currentView={currentView} onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} onClose={() => setIsSidebarOpen(false)} theme={theme} toggleTheme={toggleTheme} />
       </div>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {safeProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}

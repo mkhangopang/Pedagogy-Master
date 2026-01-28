@@ -7,11 +7,11 @@ import {
   MessageSquare, FileEdit, Zap, X,
   ShieldCheck, Library,
   Tags, ChevronLeft, Download, Timer, Target, Globe, Compass, PenTool, SearchCode,
-  Activity
+  Activity, BookMarked, Globe2, Crown
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
-import { NeuralBrain, Document, UserProfile } from '../types';
+import { NeuralBrain, Document, UserProfile, SubscriptionPlan } from '../types';
 import { ChatInput } from '../components/chat/ChatInput';
 import { MessageItem } from '../components/chat/MessageItem';
 import { DocumentSelector } from '../components/chat/DocumentSelector';
@@ -36,12 +36,17 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [canvasContent, setCanvasContent] = useState<string>('');
   const [mobileActiveTab, setMobileActiveTab] = useState<'logs' | 'artifact'>('logs');
   
+  // New Toggles
+  const [isCurriculumEnabled, setIsCurriculumEnabled] = useState(true);
+  const [isGlobalEnabled, setIsGlobalEnabled] = useState(false);
+  
   const [isSliderOpen, setIsSliderOpen] = useState(false);
   const [localDocs, setLocalDocs] = useState<Document[]>(documents);
   const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
+  const isPro = user.plan !== SubscriptionPlan.FREE;
 
   useEffect(() => {
     setLocalDocs(documents);
@@ -82,13 +87,25 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       onQuery();
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
-      const personaPrompt = persona === 'creative' 
-        ? `[CREATIVE_MODE: ON] Use highly engaging, active learning strategies. \n${userInput}`
-        : persona === 'auditor'
-        ? `[AUDIT_MODE: ON] Strictly focus on standards alignment and assessment rigor. \n${userInput}`
-        : userInput;
+      const personaPrompt = `
+[CONTEXT_MODES]
+CURRICULUM_MODE: ${isCurriculumEnabled ? 'ACTIVE' : 'INACTIVE'}
+GLOBAL_RESOURCES_MODE: ${isGlobalEnabled ? 'ACTIVE' : 'INACTIVE'}
 
-      const stream = geminiService.generatePedagogicalToolStream(effectiveTool, personaPrompt, { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, brain, user, activeDoc?.id );
+[PERSONA_OVERLAY]
+${persona === 'creative' ? '[CREATIVE_MODE: ON] Use highly engaging, active learning strategies.' : persona === 'auditor' ? '[AUDIT_MODE: ON] Strictly focus on standards alignment and assessment rigor.' : ''}
+
+USER_QUERY: ${userInput}`;
+
+      const stream = geminiService.generatePedagogicalToolStream(
+        effectiveTool, 
+        personaPrompt, 
+        { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, 
+        brain, 
+        user, 
+        isCurriculumEnabled ? activeDoc?.id : undefined // Only send context if local toggle is ON
+      );
+      
       let fullContent = '';
       for await (const chunk of stream) {
         if (chunk) {
@@ -97,7 +114,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           setCanvasContent(fullContent); 
         }
       }
-      await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id, persona });
+      await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled });
     } catch (err: any) {
       setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m));
     } finally { setIsGenerating(false); }
@@ -113,27 +130,50 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
           <div className="flex items-center gap-4 md:gap-6 text-left">
             <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={24} className="md:size-8" /></div>
             <div className="min-w-0">
               <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase truncate">Synthesis Hub</h1>
               <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2 overflow-hidden">
-                {activeDoc ? <><ShieldCheck size={14} className="text-emerald-500 shrink-0" /><span className="truncate">Context Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} className="shrink-0" /><span className="truncate">General Pedagogical Reasoning Active.</span></>}
+                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500 shrink-0" /><span className="truncate">Vault Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} className="shrink-0" /><span className="truncate">Autonomous Neural Synthesis Mode.</span></>}
               </div>
             </div>
           </div>
           
-          <button 
-            onClick={() => setIsSliderOpen(true)}
-            className="flex items-center gap-4 px-6 py-4 bg-white dark:bg-slate-900 border border-indigo-200 dark:border-indigo-900/50 rounded-3xl shadow-lg hover:scale-105 transition-all group"
-          >
-             <div className="p-2 bg-indigo-600 text-white rounded-xl group-hover:rotate-12 transition-transform"><Library size={20} /></div>
-             <div className="text-left">
-                <p className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Select Context</p>
-                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Curriculum Assets</p>
-             </div>
-          </button>
+          {/* Advanced Context Controls */}
+          <div className="bg-white dark:bg-[#111] p-3 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-xl flex flex-col sm:flex-row gap-2">
+            <button 
+              onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)}
+              className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
+            >
+              <BookMarked size={16} />
+              <div className="text-left">
+                <p className="text-[8px] font-black uppercase leading-none mb-0.5">Curriculum</p>
+                <p className="text-[10px] font-bold">Local Vault</p>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => isPro ? setIsGlobalEnabled(!isGlobalEnabled) : alert("GLOBAL PEDAGOGY: Requires Pro Node Identity.")}
+              className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border relative ${isGlobalEnabled ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
+            >
+              {!isPro && <Crown size={10} className="absolute -top-1 -right-1 text-amber-500 bg-white rounded-full p-0.5 shadow-sm" />}
+              <Globe2 size={16} />
+              <div className="text-left">
+                <p className="text-[8px] font-black uppercase leading-none mb-0.5">Global</p>
+                <p className="text-[10px] font-bold">Creative Node</p>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => setIsSliderOpen(true)}
+              className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 rounded-full transition-all ml-2"
+              title="Select Document"
+            >
+              <Library size={20} />
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 md:gap-8">
@@ -143,7 +183,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               <div><h3 className="font-black text-xl md:text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3><p className="text-slate-500 dark:text-slate-400 text-sm md:text-base mt-2 font-medium leading-relaxed">{tool.desc}</p></div>
               <div className="flex items-center justify-between mt-auto">
                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1">
-                    <Sparkles size={10} /> Fast Generation Active
+                    <Sparkles size={10} /> {isGlobalEnabled ? 'Multi-Style Synthesis' : 'Standard Synthesis'}
                  </span>
                  <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
               </div>
@@ -194,12 +234,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Authoring Canvas</span>
               </div>
               <div className="flex items-center gap-3">
-                <button 
-                  onClick={() => setIsSliderOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-800 rounded-xl hover:bg-indigo-100 transition-all text-[9px] font-black uppercase tracking-widest"
-                >
-                  <Library size={12}/> {activeDoc ? 'Switch Context' : 'Select Context'}
-                </button>
+                <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl mr-2">
+                  <button onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)} className={`p-1.5 rounded-lg transition-all ${isCurriculumEnabled ? 'bg-white dark:bg-white/10 text-indigo-600 shadow-sm' : 'text-slate-400'}`} title="Curriculum Focus"><BookMarked size={14}/></button>
+                  <button onClick={() => setIsGlobalEnabled(!isGlobalEnabled)} className={`p-1.5 rounded-lg transition-all ${isGlobalEnabled ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`} title="Global Insights"><Globe2 size={14}/></button>
+                </div>
                 <div className="w-px h-4 bg-slate-200 dark:bg-white/10 mx-1" />
                 <button onClick={() => {
                   const cleanText = canvasContent.split('--- Synthesis Node:')[0].trim();

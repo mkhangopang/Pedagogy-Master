@@ -108,7 +108,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const { text } = await extractRawTextAndPageCount(file, type);
         setProcStage('Neural Handshake: Building curriculum context on server...');
         
-        // FIX: Moving high-fidelity synthesis to server to fix client ingestion
         const { data: { session } } = await supabase.auth.getSession();
         const response = await fetch('/api/docs/upload', {
           method: 'POST',
@@ -158,7 +157,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
   if (mode === 'transition') {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-5xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] md:h-[85vh] overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] overflow-hidden">
         <div className="flex items-center justify-between p-4 md:p-6 border-b dark:border-white/5">
           <div className="flex items-center gap-3 md:gap-4">
             <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 transition-all"><ArrowLeft size={20}/></button>
@@ -166,15 +165,15 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           </div>
           <button onClick={onCancel} className="p-2 text-slate-400 hover:text-rose-500"><X size={24}/></button>
         </div>
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden">
-          <div className="flex flex-col border-b md:border-b-0 md:border-r dark:border-white/5 h-1/2 md:h-full">
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden h-full">
+          <div className="flex flex-col border-b md:border-b-0 md:border-r dark:border-white/5 overflow-hidden">
             <div className="p-3 md:p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
               <Lock size={12} className="text-indigo-600" />
               <span className="text-[9px] md:text-[10px] font-black uppercase text-indigo-600">Editable Buffer Node</span>
             </div>
             <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-6 md:p-8 bg-slate-50/50 dark:bg-black/20 font-mono text-[10px] md:text-[11px] outline-none resize-none custom-scrollbar" placeholder="Neural buffer empty..." />
           </div>
-          <div className="p-6 md:p-8 overflow-y-auto custom-scrollbar prose dark:prose-invert h-1/2 md:h-full" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          <div className="p-6 md:p-8 overflow-y-auto custom-scrollbar prose dark:prose-invert h-full" dangerouslySetInnerHTML={{ __html: previewHtml }} />
         </div>
         <div className="p-6 md:p-8 bg-slate-50 dark:bg-slate-900/50 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-0 shrink-0">
            <div className="max-w-md w-full">
@@ -210,7 +209,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
       <div className="p-8 md:p-12 pt-4 text-center overflow-y-auto custom-scrollbar flex-1">
         <h3 className="text-2xl md:text-3xl font-black dark:text-white uppercase tracking-tight leading-none mb-2">Vault Ingestion</h3>
-        <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Map curriculum nodes to your permanent library.</p>
+        <p className="text-slate-500 mb-8 font-medium text-xs md:sm">Map curriculum nodes to your permanent library.</p>
         
         {error && (
           <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center">
