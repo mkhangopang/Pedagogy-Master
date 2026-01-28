@@ -25,7 +25,7 @@ export async function retrieveRelevantChunks({
   query,
   documentIds,
   supabase,
-  matchCount = 40 // Increased for greater depth into large curriculum files
+  matchCount = 40 // Increased for greater depth into large curriculum files (ensures S8 C3 bottom hits aren't lost)
 }: {
   query: string;
   documentIds: string[];
@@ -45,7 +45,7 @@ export async function retrieveRelevantChunks({
     const targetSLOs = parsed.sloCodes.length > 0 ? parsed.sloCodes : null;
     const requestedGrade = targetSLOs ? extractGradeFromSLO(targetSLOs[0]) : (parsed.grades.length > 0 ? parsed.grades[0] : null);
 
-    // Initial hybrid search with higher match count to ensure "S8 C3" at the bottom isn't buried
+    // Initial hybrid search with higher match count to ensure granular items aren't buried
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -71,14 +71,14 @@ export async function retrieveRelevantChunks({
       document_id: d.document_id
     }));
 
-    // POST-RETRIEVAL ISOLATION (CHALLENGE: If S8A7 is easier than S8C3, strict filtering wins)
+    // POST-RETRIEVAL ISOLATION (CHALLENGE: Strict filtering ensures exact standard match)
     if (targetSLOs && targetSLOs.length > 0) {
       processed = processed.filter(c => {
         return c.slo_codes.some((code: string) => targetSLOs.includes(code));
       });
     }
 
-    // Secondary Check: Strict Grade Lock
+    // Secondary Check: Strict Grade Lock to prevent bleed from grade 4 into grade 8 queries
     if (requestedGrade && processed.length > 0) {
       processed = processed.filter(c => {
         if (!c.grade_levels || c.grade_levels.length === 0) return true;

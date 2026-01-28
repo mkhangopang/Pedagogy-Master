@@ -44,7 +44,7 @@ export async function generateAIResponse(
   const targetSLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
   const isolatedGrade = targetSLO ? extractGradeFromSLO(targetSLO) : null;
 
-  // New: Check for mode flags in userPrompt (passed from Tools.tsx)
+  // Detect mode flags from enhanced Tools.tsx prompt prefix
   const isGlobalEnabled = userPrompt.includes('GLOBAL_RESOURCES_MODE: ACTIVE');
   const isCurriculumEnabled = userPrompt.includes('CURRICULUM_MODE: ACTIVE');
 
@@ -62,7 +62,7 @@ export async function generateAIResponse(
     documentIds = [priorityDocumentId, ...documentIds];
   }
 
-  // 3. Retrieval (Performance Optimized for Depth)
+  // 3. Retrieval (Performance Optimized for Depth Scanning)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     try {
@@ -70,7 +70,7 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: documentIds,
         supabase,
-        matchCount: 40 // Broad scan for deep SLOs
+        matchCount: 40 // Broad scan to find granular SLOs at the bottom of files
       });
 
       if (isolatedGrade) {
@@ -98,18 +98,18 @@ export async function generateAIResponse(
     vaultContent = `[FALLBACK] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 5000)}`;
   }
 
-  // 5. Global Resource Injection
+  // 5. Global Resource Injection (Strategic Pedagogy Node)
   let globalInstruction = "";
   if (isGlobalEnabled) {
     globalInstruction = `
-### 🌐 GLOBAL PEDAGOGY EXTENSION (PRO NODE)
-Augment synthesis with high-impact strategies from:
-- **Singapore Math**: Concrete-Pictorial-Abstract (CPA) approach.
-- **Finland/Sweden**: Phenomenon-based learning and student autonomy.
-- **Japan**: "Lesson Study" collaborative inquiry.
-- **USA/UK**: Evidence-based differentiation and UDL.
-- **Norway/EU**: Outdoor and project-based cross-curricular integration.
-Blend these global "best-in-class" practices with the local curriculum standards where appropriate.
+### 🌐 GLOBAL PEDAGOGY AUGMENTATION (PRO MODE)
+Integrate instructional strategies from world-leading education systems:
+- **Singapore Math**: Concrete-Pictorial-Abstract (CPA) sequences.
+- **Finland/Sweden**: Phenomenon-based learning and student-led inquiry.
+- **Japan**: "Lesson Study" style meticulous instructional flow and observation-ready prompts.
+- **USA/UK**: Explicit Instruction (Rosenshine's Principles) and UDL-based differentiation.
+- **Norway/EU**: High emphasis on cross-curricular synthesis and real-world application.
+Blend these insights into the output while respecting the local curriculum standards if selected.
 `;
   }
 
@@ -127,7 +127,7 @@ Blend these global "best-in-class" practices with the local curriculum standards
 ${vaultContent}
 </AUTHORITATIVE_VAULT>
 
-${isCurriculumEnabled ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
+${isCurriculumEnabled ? NUCLEAR_GROUNDING_DIRECTIVE : '⚠️ VAULT BYPASSED: Using General Knowledge/Global Strategies only.'}
 ${targetEnforcement}
 ${globalInstruction}
 

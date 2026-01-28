@@ -36,7 +36,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [canvasContent, setCanvasContent] = useState<string>('');
   const [mobileActiveTab, setMobileActiveTab] = useState<'logs' | 'artifact'>('logs');
   
-  // New Toggles
+  // Dual Perspective State
   const [isCurriculumEnabled, setIsCurriculumEnabled] = useState(true);
   const [isGlobalEnabled, setIsGlobalEnabled] = useState(false);
   
@@ -87,6 +87,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       onQuery();
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
+      // Injecting strictly formatted mode flags for the synthesizer orchestrator
       const personaPrompt = `
 [CONTEXT_MODES]
 CURRICULUM_MODE: ${isCurriculumEnabled ? 'ACTIVE' : 'INACTIVE'}
@@ -103,7 +104,7 @@ USER_QUERY: ${userInput}`;
         { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, 
         brain, 
         user, 
-        isCurriculumEnabled ? activeDoc?.id : undefined // Only send context if local toggle is ON
+        isCurriculumEnabled ? activeDoc?.id : undefined 
       );
       
       let fullContent = '';
@@ -136,40 +137,40 @@ USER_QUERY: ${userInput}`;
             <div className="min-w-0">
               <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase truncate">Synthesis Hub</h1>
               <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2 overflow-hidden">
-                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500 shrink-0" /><span className="truncate">Vault Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} className="shrink-0" /><span className="truncate">Autonomous Neural Synthesis Mode.</span></>}
+                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500 shrink-0" /><span className="truncate">Vault Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} className="shrink-0" /><span className="truncate">Autonomous Creative Synthesis Mode.</span></>}
               </div>
             </div>
           </div>
           
-          {/* Advanced Context Controls */}
-          <div className="bg-white dark:bg-[#111] p-3 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-xl flex flex-col sm:flex-row gap-2">
+          {/* Neural Perspective Controls */}
+          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex flex-col sm:flex-row items-center gap-2">
             <button 
               onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)}
               className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
             >
               <BookMarked size={16} />
               <div className="text-left">
-                <p className="text-[8px] font-black uppercase leading-none mb-0.5">Curriculum</p>
+                <p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Curriculum</p>
                 <p className="text-[10px] font-bold">Local Vault</p>
               </div>
             </button>
 
             <button 
-              onClick={() => isPro ? setIsGlobalEnabled(!isGlobalEnabled) : alert("GLOBAL PEDAGOGY: Requires Pro Node Identity.")}
+              onClick={() => isPro ? setIsGlobalEnabled(!isGlobalEnabled) : alert("PRO UPGRADE REQUIRED: Access best-in-class pedagogy from Finland, Singapore, and Japan.")}
               className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border relative ${isGlobalEnabled ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
             >
               {!isPro && <Crown size={10} className="absolute -top-1 -right-1 text-amber-500 bg-white rounded-full p-0.5 shadow-sm" />}
               <Globe2 size={16} />
               <div className="text-left">
-                <p className="text-[8px] font-black uppercase leading-none mb-0.5">Global</p>
+                <p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Global</p>
                 <p className="text-[10px] font-bold">Creative Node</p>
               </div>
             </button>
 
             <button 
               onClick={() => setIsSliderOpen(true)}
-              className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 rounded-full transition-all ml-2"
-              title="Select Document"
+              className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 rounded-full transition-all ml-1 shadow-inner"
+              title="Select Document Context"
             >
               <Library size={20} />
             </button>
@@ -183,7 +184,7 @@ USER_QUERY: ${userInput}`;
               <div><h3 className="font-black text-xl md:text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3><p className="text-slate-500 dark:text-slate-400 text-sm md:text-base mt-2 font-medium leading-relaxed">{tool.desc}</p></div>
               <div className="flex items-center justify-between mt-auto">
                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1">
-                    <Sparkles size={10} /> {isGlobalEnabled ? 'Multi-Style Synthesis' : 'Standard Synthesis'}
+                    <Sparkles size={10} /> {isGlobalEnabled ? 'Global Augmentation Active' : 'Vault Anchored'}
                  </span>
                  <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
               </div>
@@ -236,7 +237,7 @@ USER_QUERY: ${userInput}`;
               <div className="flex items-center gap-3">
                 <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-xl mr-2">
                   <button onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)} className={`p-1.5 rounded-lg transition-all ${isCurriculumEnabled ? 'bg-white dark:bg-white/10 text-indigo-600 shadow-sm' : 'text-slate-400'}`} title="Curriculum Focus"><BookMarked size={14}/></button>
-                  <button onClick={() => setIsGlobalEnabled(!isGlobalEnabled)} className={`p-1.5 rounded-lg transition-all ${isGlobalEnabled ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`} title="Global Insights"><Globe2 size={14}/></button>
+                  <button onClick={() => setIsGlobalEnabled(!isGlobalEnabled)} className={`p-1.5 rounded-lg transition-all ${isGlobalEnabled ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`} title="Global Best Practices"><Globe2 size={14}/></button>
                 </div>
                 <div className="w-px h-4 bg-slate-200 dark:bg-white/10 mx-1" />
                 <button onClick={() => {

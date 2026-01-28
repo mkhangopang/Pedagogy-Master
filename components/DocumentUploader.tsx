@@ -160,32 +160,41 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] overflow-hidden">
         <div className="flex items-center justify-between p-4 md:p-6 border-b dark:border-white/5">
           <div className="flex items-center gap-3 md:gap-4">
-            <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 transition-all"><ArrowLeft size={20}/></button>
-            <div className="min-w-0"><h3 className="text-sm md:text-xl font-black dark:text-white uppercase tracking-tight truncate">Vault Preview</h3><p className="text-[10px] text-slate-500">Tier: {userPlan.toUpperCase()} Node</p></div>
+            <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 transition-all shadow-sm"><ArrowLeft size={20}/></button>
+            <div className="min-w-0"><h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight truncate">Institutional Vault Preview</h3><p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Tier: {userPlan.toUpperCase()} Node</p></div>
           </div>
-          <button onClick={onCancel} className="p-2 text-slate-400 hover:text-rose-500"><X size={24}/></button>
+          <button onClick={onCancel} className="p-3 text-slate-400 hover:text-rose-500 transition-colors"><X size={28}/></button>
         </div>
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden h-full">
           <div className="flex flex-col border-b md:border-b-0 md:border-r dark:border-white/5 overflow-hidden">
-            <div className="p-3 md:p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
+            <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
               <Lock size={12} className="text-indigo-600" />
-              <span className="text-[9px] md:text-[10px] font-black uppercase text-indigo-600">Editable Buffer Node</span>
+              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Editable Source Node</span>
             </div>
-            <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-6 md:p-8 bg-slate-50/50 dark:bg-black/20 font-mono text-[10px] md:text-[11px] outline-none resize-none custom-scrollbar" placeholder="Neural buffer empty..." />
+            <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-8 md:p-12 bg-slate-50/50 dark:bg-black/20 font-mono text-[11px] md:text-[13px] outline-none resize-none custom-scrollbar leading-relaxed" placeholder="Neural buffer empty..." />
           </div>
-          <div className="p-6 md:p-8 overflow-y-auto custom-scrollbar prose dark:prose-invert h-full" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          <div className="flex flex-col overflow-hidden h-full">
+             <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 flex items-center gap-3 border-b dark:border-white/5 shrink-0">
+                <Sparkles size={12} className="text-emerald-600" />
+                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Rendered Alignment View</span>
+             </div>
+             <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert h-full max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          </div>
         </div>
-        <div className="p-6 md:p-8 bg-slate-50 dark:bg-slate-900/50 flex flex-col md:flex-row items-center justify-between gap-4 md:gap-0 shrink-0">
-           <div className="max-w-md w-full">
-             {error ? <p className="text-xs font-bold text-rose-600 flex gap-2"><AlertCircle size={14}/> {error}</p> : (
-               <div className="flex items-center gap-3 text-amber-600">
-                 <AlertTriangle size={14} className="shrink-0" />
-                 <p className="text-[8px] md:text-[10px] font-black uppercase tracking-tight">Proceeding will lock this asset permanently to your {userPlan} node.</p>
+        <div className="p-6 md:p-10 bg-slate-50 dark:bg-slate-900/50 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-0 shrink-0 border-t dark:border-white/5">
+           <div className="max-w-2xl w-full">
+             {error ? <p className="text-xs font-black text-rose-600 flex gap-2 uppercase tracking-wide"><AlertCircle size={14}/> {error}</p> : (
+               <div className="flex items-center gap-4 text-amber-600">
+                 <AlertTriangle size={20} className="shrink-0" />
+                 <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.1em] leading-relaxed">
+                    By committing to the vault, this asset will be permanently indexed into the vector grid. 
+                    <br />Deletion is only possible via node administration.
+                 </p>
                </div>
              )}
            </div>
-           <button onClick={handleFinalApproval} disabled={isProcessing || !draftMarkdown} className="w-full md:w-auto px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-xl flex items-center justify-center gap-2 hover:bg-indigo-700 active:scale-95 disabled:opacity-50">
-             {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Database size={20}/>} Commit to Vault
+           <button onClick={handleFinalApproval} disabled={isProcessing || !draftMarkdown} className="w-full md:w-auto px-12 py-5 bg-indigo-600 text-white rounded-[2rem] font-black shadow-2xl flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50 transition-all uppercase text-xs tracking-widest">
+             {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Database size={20}/>} Secure Node to Vault
            </button>
         </div>
       </div>
@@ -209,7 +218,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
       <div className="p-8 md:p-12 pt-4 text-center overflow-y-auto custom-scrollbar flex-1">
         <h3 className="text-2xl md:text-3xl font-black dark:text-white uppercase tracking-tight leading-none mb-2">Vault Ingestion</h3>
-        <p className="text-slate-500 mb-8 font-medium text-xs md:sm">Map curriculum nodes to your permanent library.</p>
+        <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Map curriculum nodes to your permanent library.</p>
         
         {error && (
           <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center">
