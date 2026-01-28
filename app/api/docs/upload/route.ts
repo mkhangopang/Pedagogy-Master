@@ -12,8 +12,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * HIGH-FIDELITY NEURAL INGESTION GATEWAY (v90.0)
- * Orchestrates multiple AI models (Gemini, ChatGPT, DeepSeek, Groq) to finish document mapping.
+ * ARCHITECTURAL SINDH INGESTION GATEWAY (v95.0)
+ * Specialized for the 2024 Progression Grid (Grades 9-12).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -31,76 +31,68 @@ export async function POST(req: NextRequest) {
       const body = await req.json();
       const { name, sourceType, extractedText, board, subject, grade, version, previewOnly } = body;
       
-      // PHASE 1: Neural Synthesis (Raw Text -> Structured PEDAGOGICAL MARKDOWN)
       if (sourceType === 'raw_text' && previewOnly) {
-        console.log(`🧠 [Ingestion] Orchestrating Multi-Model Synthesis for: ${name}`);
+        console.log(`🧠 [Ingestion] Executing Deep Mapping for: ${name}`);
         
-        const systemInstruction = `You are a world-class curriculum data architect specializing in Sindh Board and International Standards.
-        TASK: Convert messy OCR/extracted text into perfectly structured PEDAGOGICAL MARKDOWN.
+        const systemInstruction = `You are the Lead Curriculum Architect for the Sindh Education Department.
+        TASK: Parse this Biology Curriculum (IX-XII) into a neat, high-fidelity PEDAGOGICAL MARKDOWN.
         
-        CRITICAL RULES:
-        1. IDENTITY: Start with '# Curriculum Metadata' listing Board, Subject, Grade, and Version.
-        2. HIERARCHY: Use DOMAIN, STANDARD, and BENCHMARK headers.
-        3. SLO VERBATIM: Extract every Student Learning Objective (SLO) code and description EXACTLY as written.
-           - FORMAT: "- SLO:[CODE]: [Verbatim Description]"
-           - Example: "- SLO:S-04-A-01: Identify and describe basic parts of a plant."
-        4. GRIDS: If the source contains tables/grids, convert them into Markdown tables.
-        5. NO SUMMARIES: Do not skip content. Map the entire source.
-        6. NO CONVERSATION: Output ONLY markdown.`;
+        STRUCTURE LOGIC (SINDH 2024 SPECIFIC):
+        1. HIERARCHY: Level 1 = DOMAIN [LETTER] (e.g., DOMAIN B: MOLECULAR BIOLOGY).
+        2. LEVEL 2 = Standard (Verbatim).
+        3. LEVEL 3 = Benchmark (Numbered).
+        4. SLO CODES: These are the core. Format them EXACTLY as:
+           "- SLO:B-09-A-01: Description"
+           "- SLO:B-10-A-02: Description"
+           Note: B=Biology, 09/10/11/12=Grade, Letter=Domain, Number=Objective.
         
-        const prompt = `Convert this raw curriculum text into high-fidelity pedagogical markdown.
+        GRID PROCESSING:
+        - The source contains 'Progression Grids' where Grades IX, X, XI, and XII are columns.
+        - You MUST split these columns into separate sections or clearly labeled blocks.
+        - Ensure every SLO code is extracted. Do NOT summarize or skip any code.
         
-        SOURCE INPUT:
-        ${extractedText.substring(0, 120000)}`;
+        OUTPUT RULES:
+        - Start with '# Curriculum Metadata' (Board: Sindh, Subject: Biology, Grade: IX-XII, Version: 2024).
+        - Use ONLY Markdown. No chat, no intro.`;
+        
+        const prompt = `Synthesize this raw curriculum text into the Sindh Standardized Markdown Grid.
+        
+        RAW INPUT STREAM:
+        ${extractedText.substring(0, 150000)}`;
 
-        // Attempt orchestration with automatic failover handled in synthesizer-core
-        // Logic will try Gemini Pro -> OpenAI GPT-4o -> DeepSeek R1 -> Groq
         const { text, provider } = await synthesize(
           prompt,
           [],
           false,
           [],
-          'gemini', // Start with Gemini but allow core to hop
+          'gemini', 
           systemInstruction
         );
 
-        // Quality Guard: Check for SLO presence
-        const sloCount = (text.match(/- SLO:/g) || []).length;
-        console.log(`✅ [Orchestrator] ${provider} produced mapping with ${sloCount} detected SLOs.`);
-
-        if (sloCount < 3 && extractedText.length > 5000) {
-          console.warn(`⚠️ [Quality Warning] Detected low SLO count from ${provider}. Retrying with OpenAI...`);
-          const retry = await synthesize(prompt, [], false, [], 'openai', systemInstruction);
-          return NextResponse.json({ markdown: retry.text, provider: `openai_retry_${retry.provider}` });
-        }
+        // Quality check for Sindh-specific codes
+        const codeDensity = (text.match(/SLO:B-/g) || []).length;
+        console.log(`📡 [Ingestion] Generated via ${provider}. SLO Code Density: ${codeDensity}`);
 
         return NextResponse.json({ markdown: text, provider });
       }
 
-      // PHASE 2: Permanent Commit (MD -> R2 -> Vector DB)
       if (sourceType === 'markdown' && extractedText) {
         return await commitToVault(user.id, name, extractedText, { board, subject, grade, version }, supabase);
       }
       return NextResponse.json({ error: "Invalid protocol node." }, { status: 400 });
     }
 
-    return NextResponse.json({ error: "Protocol Error: Ingestion requires JSON streams." }, { status: 400 });
-
+    return NextResponse.json({ error: "Protocol Error." }, { status: 400 });
   } catch (error: any) {
-    console.error("❌ [Ingestion Critical Fault]:", error);
-    const isRateLimit = error.message?.includes('429') || error.message?.includes('quota');
-    return NextResponse.json({ 
-      error: isRateLimit ? "Neural Grid Saturated. Please retry document mapping in 60s." : (error.message || "Synthesis grid exception.")
-    }, { status: isRateLimit ? 429 : 500 });
+    console.error("❌ [Ingestion Fault]:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
 async function commitToVault(userId: string, name: string, md: string, metadata: any, supabase: any) {
   const filePath = `curricula/${userId}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
-  
-  if (!isR2Configured() || !r2Client) throw new Error("Storage Infrastructure Offline.");
+  if (!isR2Configured() || !r2Client) throw new Error("Storage Offline.");
 
-  // 1. Persistent Artifact Storage
   await r2Client.send(new PutObjectCommand({
     Bucket: R2_BUCKET,
     Key: filePath,
@@ -108,13 +100,9 @@ async function commitToVault(userId: string, name: string, md: string, metadata:
     ContentType: 'text/markdown',
   }));
 
-  // 2. Metadata Node Generation
   const generatedJson = generateCurriculumJson(md);
-
-  // 3. Document Status Selection
   await supabase.from('documents').update({ is_selected: false }).eq('user_id', userId);
 
-  // 4. Atomic Database Record
   const { data: docData, error: dbError } = await supabase.from('documents').insert({
     user_id: userId,
     name,
@@ -123,9 +111,9 @@ async function commitToVault(userId: string, name: string, md: string, metadata:
     extracted_text: md,
     file_path: filePath,
     storage_type: 'r2',
-    authority: metadata.board || generatedJson.metadata?.board || 'General',
-    subject: metadata.subject || generatedJson.metadata?.subject || 'General',
-    grade_level: metadata.grade || generatedJson.metadata?.grade || 'Auto',
+    authority: metadata.board || generatedJson.metadata?.board || 'Sindh',
+    subject: metadata.subject || generatedJson.metadata?.subject || 'Biology',
+    grade_level: metadata.grade || generatedJson.metadata?.grade || 'IX-XII',
     version_year: metadata.version || generatedJson.metadata?.version || '2024',
     generated_json: generatedJson,
     is_selected: true,
@@ -134,11 +122,10 @@ async function commitToVault(userId: string, name: string, md: string, metadata:
 
   if (dbError) throw dbError;
 
-  // 5. Background Neural Indexing
   try {
     await indexDocumentForRAG(docData.id, md, filePath, supabase);
   } catch (e) {
-    console.error("Vector synchronization delayed:", e);
+    console.error("Indexing error:", e);
   }
 
   return NextResponse.json({ success: true, id: docData.id });

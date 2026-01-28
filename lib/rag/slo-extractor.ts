@@ -1,62 +1,69 @@
 /**
- * NEURAL SLO NORMALIZER (v11.0)
- * Optimized for Sindh Curriculum Multi-Format Matching.
+ * NEURAL SLO NORMALIZER (v12.0)
+ * Optimized for Sindh Curriculum 2024 Multi-Format Matching (B-09-A-01).
  */
 export function normalizeSLO(code: string): string {
   if (!code) return '';
   
-  // Extract segments: [S, 04, A, 01]
-  const segments = code.toUpperCase().match(/([A-Z])|(\d+)/g);
-  if (!segments || segments.length < 2) return code.toUpperCase();
-
-  let grade = '';
-  let domain = 'A';
-  let number = '';
-
-  if (segments[0] === 'S') {
-    grade = segments[1].padStart(2, '0');
-    // Pattern: S-04-A-01
-    if (segments[2] && isNaN(parseInt(segments[2]))) {
-      domain = segments[2];
-      number = segments[3] ? segments[3].padStart(2, '0') : '01';
-    } else {
-      // Pattern: S-04-01 (Domain omitted)
-      number = segments[2] ? segments[2].padStart(2, '0') : '01';
-    }
+  // Pattern: B-09-A-01 (Biology, Grade 9, Domain A, SLO 1)
+  const sindhMatch = code.toUpperCase().match(/([A-Z])-?(\d{1,2})-?([A-Z])-?(\d{1,2})/);
+  if (sindhMatch) {
+    const subject = sindhMatch[1];
+    const grade = sindhMatch[2].padStart(2, '0');
+    const domain = sindhMatch[3];
+    const num = sindhMatch[4].padStart(2, '0');
+    return `${subject}-${grade}-${domain}-${num}`;
   }
 
-  return `S-${grade}-${domain}-${number}`;
+  // Fallback for legacy S-04-A-01
+  const legacyMatch = code.toUpperCase().match(/S-?(\d{1,2})-?([A-Z])-?(\d{1,2})/);
+  if (legacyMatch) {
+    const grade = legacyMatch[1].padStart(2, '0');
+    const domain = legacyMatch[2];
+    const num = legacyMatch[3].padStart(2, '0');
+    return `S-${grade}-${domain}-${num}`;
+  }
+
+  return code.toUpperCase().replace(/\s+/g, '-');
 }
 
 /**
  * STRATEGIC SLO EXTRACTOR
  * Returns an array of variants for a single SLO to maximize DB hit rate.
+ * Specifically tuned for the Sindh 2024 Progression Grid.
  */
 export function extractSLOCodes(query: string): string[] {
   if (!query) return [];
   
-  // Regex to catch S-04-A-01, s4a1, S4-A-1, etc.
-  const pattern = /S\s*-?\s*(\d{1,2})\s*-?\s*([A-Z])\s*-?\s*(\d{1,2})/gi;
   const matches = new Set<string>();
   
-  const found = query.matchAll(pattern);
-  for (const match of found) {
+  // 1. Target Sindh 2024 Format: B-09-A-01
+  const pattern2024 = /([B-Z])\s*-?\s*(\d{1,2})\s*-?\s*([A-Z])\s*-?\s*(\d{1,2})/gi;
+  const found2024 = query.matchAll(pattern2024);
+  for (const match of found2024) {
+    const subject = match[1].toUpperCase();
+    const grade = match[2].padStart(2, '0');
+    const domain = match[3].toUpperCase();
+    const num = match[4].padStart(2, '0');
+    
+    matches.add(`${subject}-${grade}-${domain}-${num}`);
+    matches.add(`${subject}${parseInt(grade)}${domain}${parseInt(num)}`);
+  }
+
+  // 2. Target Legacy/Shorthand: S8a5, SLO 8.1.1
+  const patternLegacy = /S\s*-?\s*(\d{1,2})\s*-?\s*([A-Z])\s*-?\s*(\d{1,2})/gi;
+  const foundLegacy = query.matchAll(patternLegacy);
+  for (const match of foundLegacy) {
     const grade = match[1].padStart(2, '0');
     const domain = match[2].toUpperCase();
     const num = match[3].padStart(2, '0');
-    
-    // Store multiple variants in the search set
-    const canonical = `S-${grade}-${domain}-${num}`;
-    const shorthand = `S${parseInt(grade)}${domain}${parseInt(num)}`.toUpperCase();
-    
-    matches.add(canonical);
-    matches.add(shorthand);
+    matches.add(`S-${grade}-${domain}-${num}`);
   }
   
   return Array.from(matches);
 }
 
 export function extractGradeFromSLO(normalizedCode: string): string | null {
-  const match = normalizedCode.match(/S-(\d{2})/);
+  const match = normalizedCode.match(/[A-Z]-(\d{2})/);
   return match ? parseInt(match[1], 10).toString() : null;
 }

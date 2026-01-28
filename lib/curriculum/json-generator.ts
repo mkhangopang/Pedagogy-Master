@@ -1,7 +1,7 @@
 /**
- * DEEP HIERARCHICAL CURRICULUM GENERATOR (v7.0)
- * Optimized for Sindh 2024 & International Standard Layouts.
- * Logic: Domain -> Standard -> Benchmark -> SLO
+ * DEEP HIERARCHICAL CURRICULUM GENERATOR (v8.0)
+ * Specialized for Sindh Progression Grids (Grades IX-XII).
+ * Logic: Domain -> Standard -> Benchmark -> SLO (with Grade Attribution)
  */
 export function generateCurriculumJson(markdown: string) {
   const lines = markdown.split('\n');
@@ -36,8 +36,8 @@ export function generateCurriculumJson(markdown: string) {
       return;
     }
 
-    // 2. STANDARD IDENTIFICATION (e.g., "Standard: Students should be able to:")
-    const standardMatch = trimmed.match(/^(?:#+\s*)?Standard:\s*(.+)/i);
+    // 2. STANDARD IDENTIFICATION
+    const standardMatch = trimmed.match(/^(?:#{2,4}\s*)?Standard:\s*(.+)/i);
     if (standardMatch && currentDomain) {
       currentStandard = {
         description: standardMatch[1].trim(),
@@ -47,8 +47,8 @@ export function generateCurriculumJson(markdown: string) {
       return;
     }
 
-    // 3. BENCHMARK IDENTIFICATION (e.g., "Benchmark 1: Critically analyze...")
-    const benchmarkMatch = trimmed.match(/^(?:#+\s*)?Benchmark\s+(\d+):\s*(.+)/i);
+    // 3. BENCHMARK IDENTIFICATION
+    const benchmarkMatch = trimmed.match(/^(?:#{3,5}\s*)?Benchmark\s+(\d+):\s*(.+)/i);
     if (benchmarkMatch && currentStandard) {
       currentBenchmark = {
         index: benchmarkMatch[1],
@@ -60,24 +60,38 @@ export function generateCurriculumJson(markdown: string) {
       return;
     }
 
-    // 4. SLO EXTRACTION (e.g., "- SLO:B-09-A-01: Concept of biology")
-    const sloMatch = trimmed.match(/^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/i);
+    // 4. SINDH SLO EXTRACTION (e.g., "- SLO:B-09-A-01: Description")
+    const sloMatch = trimmed.match(/^- SLO\s*[:\s]*([A-Z]-\d{2}-[A-Z]-\d{2})[:\s]*(.+)/i);
     if (sloMatch && currentBenchmark) {
+      const code = sloMatch[1].trim();
+      const grade = code.split('-')[1]; // Extracts "09" from "B-09-A-01"
+      
       currentBenchmark.slos.push({
-        code: sloMatch[1].trim(),
-        text: sloMatch[2].trim()
+        code: code,
+        text: sloMatch[2].trim(),
+        grade: grade
       });
       result.totalSLOs++;
       return;
     }
 
-    // Metadata capture for the document root
+    // 5. LEGACY SLO EXTRACTION
+    const legacySloMatch = trimmed.match(/^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/i);
+    if (legacySloMatch && currentBenchmark && !sloMatch) {
+      currentBenchmark.slos.push({
+        code: legacySloMatch[1].trim(),
+        text: legacySloMatch[2].trim()
+      });
+      result.totalSLOs++;
+      return;
+    }
+
+    // Metadata capture
     if (trimmed.startsWith('Board:')) result.metadata.board = trimmed.split(':')[1].trim();
     if (trimmed.startsWith('Subject:')) result.metadata.subject = trimmed.split(':')[1].trim();
     if (trimmed.startsWith('Grade:')) result.metadata.grade = trimmed.split(':')[1].trim();
   });
 
-  // Final push
   if (currentDomain) result.domains.push(currentDomain);
 
   return result;
