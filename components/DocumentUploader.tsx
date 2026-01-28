@@ -38,6 +38,12 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Client-side pre-flight check for Vercel 4.5MB limit
+    if (file.size > 4.5 * 1024 * 1024) {
+      setError(`FILE TOO LARGE: The neural node has a 4.5MB intake limit. Your file is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Please split the curriculum into units or compress the PDF.`);
+      return;
+    }
+
     setError(null);
     setIsProcessing(true);
     setProcStage(`Streaming asset to Neural Node...`);
@@ -56,6 +62,20 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         body: formData
       });
       
+      // Robust response handling to prevent "Unexpected token 'R'" errors
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        if (response.status === 413) {
+          throw new Error("Payload Too Large: The document exceeds the neural intake limit after processing. Try a smaller segment.");
+        }
+        if (response.status === 504) {
+          throw new Error("Gateway Timeout: The neural mapping took too long. This usually happens with 100+ page documents.");
+        }
+        const text = await response.text();
+        console.error("Non-JSON Error Response:", text);
+        throw new Error(`Cloud Node Error: ${response.status} ${response.statusText}`);
+      }
+
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'The neural node rejected the asset.');
       
@@ -63,7 +83,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setMode('transition');
     } catch (err: any) {
       setError(err.message === 'Failed to fetch' 
-        ? "Network Timeout: The curriculum is large and took over 60s. Try a smaller segment or check your connectivity." 
+        ? "Network Error: Could not reach the synthesis node. Check your internet connection." 
         : err.message);
     } finally {
       setIsProcessing(false);
@@ -92,8 +112,12 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         })
       });
       
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Sync failed.' }));
+        throw new Error(errorData.error);
+      }
+      
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error);
       onComplete(result);
     } catch (err: any) {
       setError(err.message);
@@ -136,7 +160,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
              {error ? <p className="text-xs font-black text-rose-600 flex gap-2 uppercase tracking-wide"><AlertCircle size={14}/> {error}</p> : (
                <div className="flex items-center gap-4 text-amber-600">
                  <AlertTriangle size={20} className="shrink-0" />
-                 <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.1em] leading-relaxed">
+                 <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.1em] font-sans leading-relaxed">
                     Review the mapping above. Once committed, this asset becomes a permanent context node in the curriculum grid.
                  </p>
                </div>
@@ -189,8 +213,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           </label>
         </div>
         
-        <p className="mt-10 text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em]">
-           Powered by Multi-Provider Neural Mapping Grid
+        <p className="mt-10 text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">
+           Maximum Intake Limit: 4.5MB
         </p>
       </div>
       
