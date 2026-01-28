@@ -40,6 +40,7 @@ const Documents: React.FC<DocumentsProps> = ({
     const processingDocs = documents.filter(d => d.status === 'processing');
     if (processingDocs.length === 0) return;
 
+    // Faster polling (3s) for the optimized indexing pipeline
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from('documents')
@@ -60,7 +61,7 @@ const Documents: React.FC<DocumentsProps> = ({
           }
         });
       }
-    }, 5000);
+    }, 3000);
 
     return () => clearInterval(interval);
   }, [documents, onUpdateDocument]);

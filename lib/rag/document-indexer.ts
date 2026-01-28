@@ -11,6 +11,10 @@ interface IngestionContext {
   benchmark?: string;
 }
 
+/**
+ * CONCURRENCY-CONTROLLED INDEXER (v98.0)
+ * Uses parallel streams to saturate the neural grid and speed up sync.
+ */
 export async function indexDocumentForRAG(
   documentId: string,
   content: string,
@@ -18,27 +22,24 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient
 ) {
   try {
-    console.log(`📡 [Neural Indexer] Commencing Deep Hierarchical Audit: ${documentId}`);
+    console.log(`📡 [Neural Indexer] Starting Optimized Sync: ${documentId}`);
     
     const lines = content.split('\n');
     const processedChunks: any[] = [];
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
-    // Iterate lines to maintain hierarchical state during chunking
+    // 1. Hierarchical Decomposition
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      
-      // Update Context Markers
       if (line.match(/^DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      // When we hit a new SLO, or every 10 lines of general text, create a chunk
       if (line.match(/^- SLO:/i) || i === lines.length - 1) {
-        if (buffer.length > 50) {
-          const sloMatches = buffer.match(/S-\d{1,2}-[A-Z]-\d{1,2}/gi) || [];
-          const normalizedSLOs = sloMatches.map(c => normalizeSLO(c));
+        if (buffer.length > 30) {
+          const sloMatches = buffer.match(/[B-Z]-\d{2}-[A-Z]-\d{2}|S-\d{2}-[A-Z]-\d{2}/gi) || [];
+          const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
 
           processedChunks.push({
             text: buffer.trim(),
@@ -46,7 +47,8 @@ export async function indexDocumentForRAG(
               ...currentCtx,
               slo_codes: normalizedSLOs,
               is_slo_definition: buffer.includes('- SLO:'),
-              chunk_index: processedChunks.length
+              chunk_index: processedChunks.length,
+              source_path: filePath
             }
           });
         }
@@ -56,32 +58,56 @@ export async function indexDocumentForRAG(
       }
     }
 
-    console.log(`🧠 [Neural Indexer] Vectorizing ${processedChunks.length} curriculum nodes...`);
+    console.log(`🧠 [Neural Indexer] Vectorizing ${processedChunks.length} nodes in high-concurrency mode...`);
 
-    // Batch Vectorization (Optimized for Grid Performance)
-    const BATCH_SIZE = 12;
+    // 2. Clear stale nodes efficiently
+    await supabase.from('document_chunks').delete().eq('document_id', documentId);
+
+    // 3. Parallel Batch Processing (Optimized for Throughput)
+    const BATCH_SIZE = 15;
+    const CONCURRENCY_LIMIT = 5;
+    const batches = [];
+    
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      const batch = processedChunks.slice(i, i + BATCH_SIZE);
-      const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
-
-      const records = batch.map((chunk, j) => ({
-        document_id: documentId,
-        chunk_text: chunk.text,
-        embedding: embeddings[j],
-        slo_codes: chunk.metadata.slo_codes,
-        metadata: chunk.metadata
-      }));
-
-      if (i === 0) await supabase.from('document_chunks').delete().eq('document_id', documentId);
-      
-      const { error } = await supabase.from('document_chunks').insert(records);
-      if (error) throw error;
+      batches.push(processedChunks.slice(i, i + BATCH_SIZE));
     }
 
-    await supabase.from('documents').update({ status: 'ready', rag_indexed: true }).eq('id', documentId);
+    // Process batches with controlled concurrency
+    for (let i = 0; i < batches.length; i += CONCURRENCY_LIMIT) {
+      const currentBatchPool = batches.slice(i, i + CONCURRENCY_LIMIT);
+      
+      await Promise.all(currentBatchPool.map(async (batch) => {
+        const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
+        
+        const records = batch.map((chunk, j) => ({
+          document_id: documentId,
+          chunk_text: chunk.text,
+          embedding: embeddings[j],
+          slo_codes: chunk.metadata.slo_codes,
+          metadata: chunk.metadata
+        }));
+
+        const { error } = await supabase.from('document_chunks').insert(records);
+        if (error) throw error;
+      }));
+      
+      // Update progress heart-beat
+      const progress = Math.min(100, Math.round(((i + CONCURRENCY_LIMIT) / batches.length) * 100));
+      console.log(`⏳ [Indexer] Sync Progress: ${progress}%`);
+    }
+
+    // 4. Final Verification
+    await supabase.from('documents').update({ 
+      status: 'ready', 
+      rag_indexed: true,
+      updated_at: new Date().toISOString()
+    }).eq('id', documentId);
+
+    console.log(`✅ [Indexer] Sync Complete for ${documentId}`);
     return { success: true };
-  } catch (error) {
-    console.error("❌ [Indexer Fault]:", error);
+  } catch (error: any) {
+    console.error("❌ [Indexer Critical Error]:", error);
+    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
     throw error;
   }
 }
