@@ -157,7 +157,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
   if (mode === 'transition') {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] overflow-hidden text-left">
         <div className="flex items-center justify-between p-4 md:p-6 border-b dark:border-white/5">
           <div className="flex items-center gap-3 md:gap-4">
             <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 transition-all shadow-sm"><ArrowLeft size={20}/></button>
@@ -202,7 +202,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 overflow-hidden h-fit max-h-[92vh] flex flex-col">
+    <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 overflow-hidden h-fit max-h-[92vh] flex flex-col text-left">
       <div className="h-1 bg-gradient-to-r from-indigo-500 via-amber-500 to-indigo-500 shrink-0" />
       
       <div className="flex items-center justify-between p-6 pb-2 shrink-0">
@@ -221,7 +221,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Map curriculum nodes to your permanent library.</p>
         
         {error && (
-          <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-900/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center">
+          <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center">
             <AlertCircle size={16} /> {error}
           </div>
         )}

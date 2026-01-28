@@ -130,9 +130,9 @@ USER_QUERY: ${userInput}`;
 
   if (!activeTool) {
     return (
-      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10">
+      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
-          <div className="flex items-center gap-4 md:gap-6 text-left">
+          <div className="flex items-center gap-4 md:gap-6">
             <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={24} className="md:size-8" /></div>
             <div className="min-w-0">
               <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase truncate">Synthesis Hub</h1>
@@ -142,7 +142,7 @@ USER_QUERY: ${userInput}`;
             </div>
           </div>
           
-          {/* Neural Perspective Controls */}
+          {/* PERSPECTIVE CONTROL PANEL */}
           <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex flex-col sm:flex-row items-center gap-2">
             <button 
               onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)}

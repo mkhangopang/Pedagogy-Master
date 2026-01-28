@@ -24,7 +24,7 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v45.0)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v46.0)
  * Optimized for Depth RAG and Global Pedagogy Insights.
  */
 export async function generateAIResponse(
@@ -138,8 +138,8 @@ ${globalInstruction}
 ${responseInstructions}`;
 
   // 6. Synthesis
-  const isComplexTool = ['lesson-plan', 'assessment', 'rubric', 'slo-tagger'].includes(toolType || '') || queryAnalysis.queryType === 'lesson_plan';
-  const preferredProvider = isComplexTool ? 'gemini' : undefined;
+  const isComplexTask = targetSLO || toolType === 'lesson-plan' || userPrompt.length > 200;
+  const preferredProvider = isComplexTask ? 'gemini' : undefined;
   
   const result = await synthesize(
     finalPrompt, 

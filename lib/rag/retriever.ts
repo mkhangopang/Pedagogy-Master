@@ -2,7 +2,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 import { parseUserQuery } from './query-parser';
 import { performanceMonitor } from '../monitoring/performance';
-import { extractGradeFromSLO } from './slo-extractor';
+import { extractGradeFromSLO, normalizeSLO } from './slo-extractor';
 
 export interface RetrievedChunk {
   chunk_id: string;
@@ -18,14 +18,14 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v43.0)
- * Optimized for Depth and Standard Locking.
+ * HIGH-PRECISION RAG RETRIEVER (v44.0)
+ * Optimized for Depth Scanning and Strict Objective Anchoring.
  */
 export async function retrieveRelevantChunks({
   query,
   documentIds,
   supabase,
-  matchCount = 40 // Increased for greater depth into large curriculum files (ensures S8 C3 bottom hits aren't lost)
+  matchCount = 40 // Increased for greater depth (prevents burying bottom SLOs like S8C3)
 }: {
   query: string;
   documentIds: string[];
@@ -41,17 +41,19 @@ export async function retrieveRelevantChunks({
     
     if (!queryEmbedding || queryEmbedding.length !== 768) return [];
 
-    // CRITICAL: Identify targeted grade from SLO code to prevent cross-grade hallucinations
-    const targetSLOs = parsed.sloCodes.length > 0 ? parsed.sloCodes : null;
-    const requestedGrade = targetSLOs ? extractGradeFromSLO(targetSLOs[0]) : (parsed.grades.length > 0 ? parsed.grades[0] : null);
+    // CRITICAL: Precise Extraction
+    const targetSLOCodes = parsed.sloCodes.length > 0 ? parsed.sloCodes : [];
+    const requestedGrade = targetSLOCodes.length > 0 
+      ? extractGradeFromSLO(targetSLOCodes[0]) 
+      : (parsed.grades.length > 0 ? parsed.grades[0] : null);
 
-    // Initial hybrid search with higher match count to ensure granular items aren't buried
+    // Initial BROAD hybrid search
     const { data: chunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
-      match_count: matchCount,
+      match_count: matchCount, 
       filter_document_ids: documentIds,
-      filter_tags: targetSLOs, 
+      filter_tags: targetSLOCodes.length > 0 ? targetSLOCodes : null, 
       filter_grades: requestedGrade ? [requestedGrade] : null,
       filter_subjects: parsed.topics.length > 0 ? parsed.topics : null
     });
@@ -71,14 +73,21 @@ export async function retrieveRelevantChunks({
       document_id: d.document_id
     }));
 
-    // POST-RETRIEVAL ISOLATION (CHALLENGE: Strict filtering ensures exact standard match)
-    if (targetSLOs && targetSLOs.length > 0) {
-      processed = processed.filter(c => {
-        return c.slo_codes.some((code: string) => targetSLOs.includes(code));
-      });
+    // NEURAL ANCHORING (FIX: Explicitly search for exact matches in results)
+    if (targetSLOCodes.length > 0) {
+      // Step A: Separate exact matches to the top
+      const exactMatches = processed.filter(c => 
+        c.slo_codes.some((code: string) => targetSLOCodes.includes(normalizeSLO(code)))
+      );
+      
+      // Step B: If we found exact matches, make them priority context
+      if (exactMatches.length > 0) {
+        const others = processed.filter(c => !exactMatches.includes(c));
+        processed = [...exactMatches, ...others];
+      }
     }
 
-    // Secondary Check: Strict Grade Lock to prevent bleed from grade 4 into grade 8 queries
+    // Secondary Check: Strict Grade Lock (Prevents Grade 4 bleeding into Grade 8)
     if (requestedGrade && processed.length > 0) {
       processed = processed.filter(c => {
         if (!c.grade_levels || c.grade_levels.length === 0) return true;
@@ -86,12 +95,13 @@ export async function retrieveRelevantChunks({
       });
     }
 
-    performanceMonitor.track('rag_retrieval_v43', performance.now() - start);
-    // Return top 12 precise segments instead of 8 to give AI more context depth
-    return processed.slice(0, 12); 
+    performanceMonitor.track('rag_retrieval_v44', performance.now() - start);
+    
+    // Provide AI with more context chunks (up to 15) for deeper reasoning
+    return processed.slice(0, 15); 
     
   } catch (err) {
-    console.error('❌ [Retriever] High Precision Failure:', err);
+    console.error('❌ [Retriever] Precision Failure:', err);
     return [];
   }
 }

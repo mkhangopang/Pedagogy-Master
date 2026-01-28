@@ -42,7 +42,7 @@ export default function App() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  // Persistence: Initial Theme Sync
+  // Persistence: Initial Theme Sync (FIX: No reset on refresh)
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
     if (savedTheme) {
@@ -115,7 +115,6 @@ export default function App() {
     paymentService.init();
     
     const initializeAuth = async () => {
-      // 1. Decisively check for session before rendering login state
       const { data: { session: existingSession } } = await supabase.auth.getSession();
       
       if (existingSession) {
@@ -124,11 +123,9 @@ export default function App() {
         setCurrentView('dashboard');
         setIsAuthResolving(false);
       } else {
-        // If no session, allow the auth listener to fire once before assuming logged-out
-        // This handles cases where recovery happens slightly after getSession
         setTimeout(() => {
           setIsAuthResolving(false);
-        }, 300);
+        }, 500); // Allow slight buffer for PKCE recovery
       }
     };
 
