@@ -24,8 +24,8 @@ export async function getProviderStatus() {
 }
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v48.0)
- * Optimized for Multi-Segmented SLO IDs and Atomic Retrieval.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v49.0)
+ * Optimized for Grade-Locked RAG and Multi-Segmented Standard IDs.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -62,7 +62,7 @@ export async function generateAIResponse(
     documentIds = [priorityDocumentId, ...documentIds];
   }
 
-  // 3. Retrieval (Performance Optimized for Depth Scanning)
+  // 3. Retrieval (High Fidelity Depth Scan)
   let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     try {
@@ -70,10 +70,10 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: documentIds,
         supabase,
-        matchCount: 50 // Increased depth for better coverage
+        matchCount: 60 // Maximize coverage to find correct grade level
       });
     } catch (err) {
-      console.warn("⚠️ [Orchestrator] Retrieval Engine Error.");
+      console.warn("⚠️ [Orchestrator] Retrieval Pipeline Error.");
     }
   }
   
@@ -82,36 +82,40 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
-        // High fidelity flagging for AI prioritization
-        const matchTag = chunk.is_exact_match ? " [!!! PRIORITY_TARGET_MATCH: USE THIS DEFINITION !!!]" : "";
-        const sourceName = activeDocs.find(d => d.id === chunk.document_id)?.name || 'Linked Library';
-        return `[NODE_${i + 1}] (SOURCE: ${sourceName})${matchTag}\n${chunk.chunk_text}\n---`;
+        // AI Guidance Flags
+        const matchTag = chunk.is_exact_match ? " [!!! PRIORITY_TARGET_MATCH !!!]" : "";
+        const gradeTag = chunk.grade_levels && chunk.grade_levels.length > 0 
+          ? ` [GRADE_TAG: ${chunk.grade_levels.join(',')}]` 
+          : "";
+        const sourceName = activeDocs.find(d => d.id === chunk.document_id)?.name || 'Library Node';
+        
+        return `[NODE_${i + 1}] (SOURCE: ${sourceName})${matchTag}${gradeTag}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   } else if (activeDocs.length > 0 && isCurriculumEnabled) {
-    vaultContent = `[FALLBACK_RAW] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 8000)}`;
+    // Fallback: If RAG index returned nothing but document is selected, use raw text slice
+    vaultContent = `[FALLBACK_INDEX_FAILURE] (SOURCE: ${activeDocs[0].name})\n${activeDocs[0].extracted_text?.substring(0, 10000)}`;
   }
 
-  // 5. Instruction Synthesis
+  // 5. Context Injections
   let globalInstruction = "";
   if (isGlobalEnabled) {
-    globalInstruction = `\n### 🌐 GLOBAL PEDAGOGY AUGMENTATION (ACTIVE)\nIntegrate global best practices (Finland, Singapore, Japan) while adhering strictly to the local standard's cognitive depth.\n`;
+    globalInstruction = `\n### 🌐 GLOBAL PEDAGOGY AUGMENTATION (PRO)\nIntegrate instructional flow from leading international systems while strictly mapping to the local cognitive requirement.\n`;
   }
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const primaryDoc = activeDocs.find(d => d.id === (priorityDocumentId || (documentIds.length > 0 ? documentIds[0] : null))) || activeDocs[0];
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, primaryDoc);
 
-  // 6. TARGET ENFORCEMENT (V5.0: Strict Definition Lock)
+  // 6. TARGET & GRADE ENFORCEMENT (V6.0: Strict Logical Guard)
   let targetEnforcement = "";
   if (targetSLO && isCurriculumEnabled) {
     targetEnforcement = `
-🔴 CRITICAL_CONTEXT_LOCK: User requested synthesis for objective [${targetSLO}]. 
-- Locate the chunk marked [PRIORITY_TARGET_MATCH] in the <AUTHORITATIVE_VAULT>.
-- USE THAT TEXT as the definition of ${targetSLO}.
-- DO NOT use Grade IV descriptions if you see "S08" or "Grade 8" in the target code.
-- If the vault contains electromagnetic doorbell/speaker info for ${targetSLO}, DO NOT mention water pollution.
-- IF NO MATCH FOUND: Explicitly state "Objective ${targetSLO} not found in current vault."
+🔴 CRITICAL_CONTEXT_LOCK: User requested Synthesis for [${targetSLO}] (Grade ${isolatedGrade || 'Any'}).
+- VERIFY: If the target code contains "S08", do NOT use content marked as "Grade 4" or "Grade IV".
+- ANCHOR: Locate the [PRIORITY_TARGET_MATCH] chunk in the vault. That is your ONLY definition of ${targetSLO}.
+- If you find Grade 4 content about "Water Pollution" but the user asked for a Grade 8 code, DISCARD the Grade 4 info.
+- IF NO GRADE ${isolatedGrade || ''} MATCH FOUND: State clearly that the requested grade context is missing.
 `;
   }
 
@@ -120,7 +124,7 @@ export async function generateAIResponse(
 ${vaultContent}
 </AUTHORITATIVE_VAULT>
 
-${isCurriculumEnabled ? NUCLEAR_GROUNDING_DIRECTIVE : '⚠️ VAULT BYPASSED: Using General Knowledge.'}
+${isCurriculumEnabled ? NUCLEAR_GROUNDING_DIRECTIVE : '⚠️ VAULT BYPASSED: General Mode.'}
 ${targetEnforcement}
 ${globalInstruction}
 
@@ -131,7 +135,7 @@ ${globalInstruction}
 ${responseInstructions}`;
 
   const isComplexTask = targetSLO || toolType === 'lesson-plan' || userPrompt.length > 300;
-  const preferredProvider = isComplexTask ? 'gemini' : undefined;
+  const preferredProvider = 'gemini'; // Force Gemini for high-fidelity curriculum mapping
   
   const result = await synthesize(
     finalPrompt, 
@@ -152,9 +156,9 @@ ${responseInstructions}`;
     provider: result.provider,
     metadata: {
       chunksUsed: retrievedChunks.length,
-      isGrounded: isCurriculumEnabled && retrievedChunks.length > 0,
+      isGrounded: isCurriculumEnabled && (retrievedChunks.length > 0 || vaultContent.includes('FALLBACK')),
       isGlobal: isGlobalEnabled,
-      sourceDocument: primaryDoc?.name || 'Global Library',
+      sourceDocument: primaryDoc?.name || 'Global Grid',
       extractedSLOs,
       sources: sources.length > 0 ? sources : undefined,
       gradeIsolation: isolatedGrade

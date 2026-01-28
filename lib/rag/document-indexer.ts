@@ -3,20 +3,44 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { normalizeSLO } from './slo-extractor';
 
 /**
- * PEDAGOGICAL METADATA EXTRACTOR
+ * PEDAGOGICAL METADATA EXTRACTOR (v37.0)
+ * Scans content for Grade and Topic alignment with high priority.
  */
 function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: string) {
   const grades = new Set<string>();
+  
+  // 1. Direct Grade Mention Scan (e.g., "Grade VIII", "Grade 8", "Class 4")
+  const gradeKeywords = text.match(/(?:Grade|Class|Level)\s*(IV|V|VI|VII|VIII|IX|X|\d{1,2})/gi);
+  if (gradeKeywords) {
+    gradeKeywords.forEach(gk => {
+      const val = gk.replace(/(?:Grade|Class|Level)\s*/i, '').toUpperCase();
+      const romanMap: any = { 'IV': '4', 'V': '5', 'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10' };
+      if (romanMap[val]) grades.add(romanMap[val]);
+      else if (!isNaN(parseInt(val))) grades.add(parseInt(val).toString());
+    });
+  }
+
+  // 2. Inheritance from SLO codes
   sloCodes.forEach(code => {
-    const match = code.match(/S(\d{2})/i); 
+    const match = code.match(/[A-Z](\d{2})/i); 
     if (match) grades.add(parseInt(match[1], 10).toString());
   });
+
+  // 3. Inheritance from Unit Name (Critical for context blocks)
+  const unitGradeMatch = unitName.match(/(?:Grade|Class|Level)\s*(IV|V|VI|VII|VIII|IX|X|\d{1,2})/i);
+  if (unitGradeMatch) {
+    const val = unitGradeMatch[1].toUpperCase();
+    const romanMap: any = { 'IV': '4', 'V': '5', 'VI': '6', 'VII': '7', 'VIII': '8', 'IX': '9', 'X': '10' };
+    if (romanMap[val]) grades.add(romanMap[val]);
+    else if (!isNaN(parseInt(val))) grades.add(parseInt(val).toString());
+  }
   
   const commonTopics = [
     'photosynthesis', 'energy', 'force', 'cells', 'ecosystem', 'matter', 
     'water cycle', 'weather', 'space', 'electricity', 'human body', 
     'plants', 'animals', 'chemistry', 'physics', 'biology', 'gravity',
-    'natural resources', 'environment', 'solids', 'liquids', 'gases', 'dna', 'magnetism', 'electromagnet'
+    'natural resources', 'environment', 'solids', 'liquids', 'gases', 'dna', 
+    'magnetism', 'electromagnet', 'pollution', 'water', 'acid', 'base'
   ];
   const topics = commonTopics.filter(t => text.toLowerCase().includes(t));
 
@@ -33,22 +57,18 @@ function extractPedagogicalMetadata(text: string, sloCodes: string[], unitName: 
     .filter(([_, verbs]) => verbs.some(v => new RegExp(`\\b${v}\\b`, 'i').test(text)))
     .map(([level]) => level);
 
-  let difficulty = 'Medium';
-  if (detectedBloom.includes('Create') || detectedBloom.includes('Evaluate')) difficulty = 'High';
-  else if (detectedBloom.includes('Remember') && detectedBloom.length === 1) difficulty = 'Low';
-
   return {
     grade_levels: Array.from(grades),
     topics: topics,
     bloom_levels: detectedBloom,
-    difficulty,
+    difficulty: detectedBloom.includes('Create') ? 'High' : 'Medium',
     unit_name: unitName
   };
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v36.0)
- * Optimized for multi-segmented Pakistani SLO formats.
+ * WORLD-CLASS NEURAL INDEXER (v37.0)
+ * Optimized for multi-segmented Pakistani SLO formats and Grade isolation.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -71,17 +91,16 @@ export async function indexDocumentForRAG(
     const processedChunks: { text: string; sloCodes: string[]; metadata: any }[] = [];
     let currentUnitName = "General Context";
 
-    // Split by logical sections: Units or SLO markers
-    const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|SLO:))/gim);
+    // Split by logical sections: Units or Domain headers
+    const blocks = content.split(/(?=^(?:#{1,4}\s+)?(?:Standard:|Unit|Chapter|Section|Domain|Grade|SLO:))/gim);
     
     blocks.forEach((block, index) => {
       let trimmed = block.trim();
       if (trimmed.length < 15) return;
 
-      const unitMatch = trimmed.match(/^(?:#{1,4}\s+)?(?:Unit|Chapter|Section|Module)\s*[:\s]*([^:\n]+)/im);
-      if (unitMatch) currentUnitName = unitMatch[1].trim();
+      const unitMatch = trimmed.match(/^(?:#{1,4}\s+)?(?:Unit|Chapter|Section|Module|Domain|Grade)\s*[:\s]*([^:\n]+)/im);
+      if (unitMatch) currentUnitName = unitMatch[0].trim();
 
-      // Chunk size optimization for context preservation
       if (trimmed.length > 2500) {
         const subblocks = trimmed.match(/.{1,2000}(\s|$)/g) || [trimmed];
         subblocks.forEach((sb, si) => {
@@ -93,8 +112,8 @@ export async function indexDocumentForRAG(
     });
 
     function processBlock(text: string, index: number, unitName: string) {
-      // Catch SLO codes with multiple dash segments (S-08-B-34)
-      const sloRegex = /(?:Standard|SLO|Outcome|Objective)\s*[:\s]+(?:SLO\s*[:\s]+)?([A-Z0-9\.-]{3,15})/gi;
+      // Find all variants of SLO codes in the text block
+      const sloRegex = /(?:SLO|Outcome|Objective)\s*[:\s]*([A-Z0-9\.-]{3,15})/gi;
       const codesSet = new Set<string>();
       
       let match;
@@ -114,7 +133,7 @@ export async function indexDocumentForRAG(
         sloCodes: codes,
         metadata: {
           ...pedagogicalMeta,
-          section_title: titleMatch ? titleMatch[1].substring(0, 50).trim() : unitName,
+          section_title: titleMatch ? titleMatch[1].substring(0, 100).trim() : unitName,
           chunk_index: index,
           timestamp: new Date().toISOString()
         }
@@ -130,14 +149,14 @@ export async function indexDocumentForRAG(
            processedChunks.push({ 
              text: slice, 
              sloCodes: [], 
-             metadata: { ...extractPedagogicalMetadata(slice, [], "Sliding Window"), section_title: "Sliding Window", chunk_index: processedChunks.length } 
+             metadata: { ...extractPedagogicalMetadata(slice, [], "Fallback"), section_title: "General Section", chunk_index: processedChunks.length } 
            });
          }
        }
     }
 
-    // Batch Upload to Supabase to prevent Gateway Timeouts
-    const BATCH_SIZE = 15;
+    // Batch insertion for performance
+    const BATCH_SIZE = 20;
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const texts = batch.map(c => c.text);
@@ -157,7 +176,6 @@ export async function indexDocumentForRAG(
         bloom_levels: chunk.metadata.bloom_levels
       }));
 
-      // On first batch, clear existing chunks for this specific document
       if (i === 0) {
         await supabase.from('document_chunks').delete().eq('document_id', documentId);
       }
@@ -166,11 +184,7 @@ export async function indexDocumentForRAG(
       if (insertError) throw insertError;
     }
 
-    await supabase.from('documents').update({ 
-      status: 'ready', 
-      rag_indexed: true 
-    }).eq('id', documentId);
-    
+    await supabase.from('documents').update({ status: 'ready', rag_indexed: true }).eq('id', documentId);
     return { success: true, chunkCount: processedChunks.length };
 
   } catch (error: any) {

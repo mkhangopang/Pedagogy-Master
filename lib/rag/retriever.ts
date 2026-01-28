@@ -15,13 +15,13 @@ export interface RetrievedChunk {
   topics?: string[];
   bloom_levels?: string[];
   document_id?: string;
-  is_exact_match?: boolean; // New flag for orchestrator awareness
+  is_exact_match?: boolean;
 }
 
 /**
- * HIGH-PRECISION RAG RETRIEVER (v46.0)
+ * HIGH-PRECISION RAG RETRIEVER (v47.0)
  * Stage 1: Atomic Tag Matching
- * Stage 2: Semantic Hybrid Fallback
+ * Stage 2: Strict Grade-Isolated Hybrid Search
  */
 export async function retrieveRelevantChunks({
   query,
@@ -50,14 +50,13 @@ export async function retrieveRelevantChunks({
       : (parsed.grades.length > 0 ? parsed.grades[0] : null);
 
     // 2. STAGE 1: HARD KEYWORD MATCH (Highest Fidelity)
-    // We look for chunks that EXPLICITLY contain the normalized SLO codes in their metadata tags.
     let exactResults: any[] = [];
     if (targetSLOCodes.length > 0) {
       const { data: tagged } = await supabase
         .from('document_chunks')
         .select('*')
         .in('document_id', documentIds)
-        .overlap('slo_codes', targetSLOCodes)
+        .overlaps('slo_codes', targetSLOCodes)
         .limit(10);
       
       if (tagged) {
@@ -65,7 +64,7 @@ export async function retrieveRelevantChunks({
       }
     }
 
-    // 3. STAGE 2: SEMANTIC HYBRID SEARCH
+    // 3. STAGE 2: SEMANTIC HYBRID SEARCH WITH GRADE LOCK
     const { data: hybridChunks, error } = await supabase.rpc('hybrid_search_chunks_v3', {
       query_text: query,
       query_embedding: queryEmbedding,
@@ -93,7 +92,6 @@ export async function retrieveRelevantChunks({
     }));
 
     // 4. SYNTHESIS & DEDUPLICATION
-    // Prepend Hard Matches to the front of the list
     if (exactResults.length > 0) {
       const exactProcessed = exactResults.map(d => ({
         chunk_id: d.id,
@@ -101,7 +99,7 @@ export async function retrieveRelevantChunks({
         slo_codes: d.slo_codes || [],
         page_number: d.metadata?.page_number,
         section_title: d.metadata?.section_title || d.unit_name,
-        combined_score: 1.0, // Force priority
+        combined_score: 1.0,
         grade_levels: d.grade_levels || [],
         topics: d.topics || [],
         bloom_levels: d.bloom_levels || [],
@@ -114,21 +112,30 @@ export async function retrieveRelevantChunks({
       processed = [...uniqueExact, ...processed];
     }
 
-    // 5. GRADE ISOLATION (Critical to prevent Grade 4 bleeding into Grade 8)
+    // 5. CRITICAL GRADE ISOLATION (Vercel Fix)
+    // If a grade was identified (e.g., Grade 8), we MUST exclude chunks from other grades
+    // this prevents the "Water Pollution" (G4) from showing up for "Electromagnets" (G8)
     if (requestedGrade && processed.length > 0) {
-      processed = processed.filter(c => {
-        const matchesGrade = c.grade_levels?.includes(requestedGrade);
-        const matchesTagExactly = c.is_exact_match;
-        return matchesGrade || matchesTagExactly;
+      const gradeFiltered = processed.filter(c => {
+        // If chunk has grade labels, it must match
+        if (c.grade_levels && c.grade_levels.length > 0) {
+          return c.grade_levels.includes(requestedGrade);
+        }
+        // If it's a hard SLO tag match, keep it
+        return c.is_exact_match;
       });
+      
+      // Only use the grade-filtered set if we didn't lose everything
+      if (gradeFiltered.length > 0) {
+        processed = gradeFiltered;
+      }
     }
 
-    performanceMonitor.track('rag_retrieval_v46', performance.now() - start);
-    // Return top 15 highest fidelity chunks for context
+    performanceMonitor.track('rag_retrieval_v47', performance.now() - start);
     return processed.slice(0, 15); 
     
   } catch (err) {
-    console.error('❌ [Retriever] Fault State:', err);
+    console.error('❌ [Retriever] High Fidelity Retrieval Fault:', err);
     return [];
   }
 }
