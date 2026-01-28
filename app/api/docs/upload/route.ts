@@ -5,7 +5,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 import { generateCurriculumJson } from '../../../../lib/curriculum/json-generator';
-import { GoogleGenAI } from '@google/genai';
+import { synthesize } from '../../../../lib/ai/synthesizer-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,20 +25,25 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     
-    // CASE: RAW TEXT CONVERSION (Fixing Ingestion)
+    // CASE: RAW TEXT CONVERSION (Resilient Failover Implementation)
     if (sourceType === 'raw_text' || previewOnly) {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Convert this raw curriculum text into high-fidelity markdown with sections for Metadata, Units, and SLOs. Use EXACT names if found.
+      const conversionPrompt = `Convert this raw curriculum text into high-fidelity markdown with sections for Metadata, Units, and SLOs. 
+      Use EXACT names if found. Ensure SLOs follow the format: "- SLO: CODE: Description".
+      
       FILE: ${name}
-      TEXT: ${extractedText.substring(0, 100000)}`;
+      TEXT: ${extractedText.substring(0, 80000)}`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-      });
+      // Use the unified synthesizer which handles 429 failovers automatically
+      const result = await synthesize(
+        conversionPrompt,
+        [],
+        false,
+        [],
+        'gemini', // Try Gemini first for quality
+        "You are a curriculum data engineer. Structure the input into clean markdown."
+      );
 
-      const markdown = response.text || "";
-      return NextResponse.json({ markdown });
+      return NextResponse.json({ markdown: result.text });
     }
 
     if (sourceType !== 'markdown' || !extractedText) {
