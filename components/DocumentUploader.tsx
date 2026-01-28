@@ -11,7 +11,6 @@ import { supabase } from '../lib/supabase';
 import * as mammoth from 'mammoth';
 import * as pdfjsLib from 'pdfjs-dist';
 
-// Configure PDF.js Worker
 if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   const version = '4.4.168';
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
@@ -51,7 +50,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       let fullText = '';
-      
       for (let i = 1; i <= pdf.numPages; i++) {
         setProcStage(`Extracting Page ${i} of ${pdf.numPages}...`);
         const page = await pdf.getPage(i);
@@ -76,50 +74,34 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     setProcStage(`Initializing Local Extraction...`);
 
     try {
-      // 1. EXTRACT TEXT LOCALLY (Maximizes Capacity & Bypasses Payload Limits)
       const rawText = await extractLocalText(file);
-      
-      if (!rawText || rawText.trim().length < 50) {
-        throw new Error("Extraction failed: Document appears empty or is an image-only PDF.");
-      }
+      if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty or image-only.");
 
-      setProcStage(`Neural Synthesis: Mapping ${rawText.length.toLocaleString()} characters...`);
-
+      setProcStage(`Neural Mapping: Engaging the grid...`);
       const { data: { session } } = await supabase.auth.getSession();
       
-      // 2. SEND RAW TEXT FOR NEURAL CLEANING (Gemini 3 Pro)
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${session?.access_token}` 
-        },
-        body: JSON.stringify({ 
-          name: file.name, 
-          sourceType: 'raw_text', 
-          extractedText: rawText,
-          previewOnly: true
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ name: file.name, sourceType: 'raw_text', extractedText: rawText, previewOnly: true })
       });
       
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
-        if (text.includes("Request Entity Too Large")) {
-          throw new Error("Vercel Limit: The extracted text is too large for the neural gateway. Try a shorter segment.");
-        }
-        throw new Error(`Cloud Node Error: ${response.status} ${response.statusText}`);
+        throw new Error(text.includes("413") ? "File too large for mapping." : "Gateway Busy. Please try again.");
       }
 
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'The neural node rejected the asset.');
+      if (!response.ok) {
+        if (response.status === 429) throw new Error("Neural Grid Saturated: All models are currently at quota. Please wait 60s.");
+        throw new Error(result.error || 'The neural node rejected the asset.');
+      }
       
       setDraftMarkdown(result.markdown);
       setMode('transition');
     } catch (err: any) {
-      setError(err.message === 'Failed to fetch' 
-        ? "Network Error: Synthesis node unreachable." 
-        : err.message);
+      setError(err.message);
     } finally {
       setIsProcessing(false);
       setProcStage('');
@@ -132,38 +114,24 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const v = validateCurriculumMarkdown(draftMarkdown);
-      
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${session?.access_token}` 
-        },
-        body: JSON.stringify({ 
-          name: "Curriculum_Asset_" + Date.now(), 
-          sourceType: 'markdown', 
-          extractedText: draftMarkdown, 
-          ...v.metadata 
-        })
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ name: "Curriculum_" + Date.now(), sourceType: 'markdown', extractedText: draftMarkdown, ...v.metadata })
       });
-      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Sync failed.' }));
         throw new Error(errorData.error);
       }
-      
-      const result = await response.json();
-      onComplete(result);
+      onComplete(await response.json());
     } catch (err: any) {
       setError(err.message);
-    } finally { 
-      setIsProcessing(false); 
-    }
+    } finally { setIsProcessing(false); }
   };
 
   if (mode === 'transition') {
     return (
-      <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] overflow-hidden text-left">
+      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] md:rounded-[3rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] overflow-hidden text-left">
         <div className="flex items-center justify-between p-4 md:p-6 border-b dark:border-white/5 shrink-0">
           <div className="flex items-center gap-3 md:gap-4 min-w-0">
             <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 transition-all shadow-sm shrink-0"><ArrowLeft size={20}/></button>
@@ -184,7 +152,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           </div>
           <div className="flex flex-col overflow-hidden h-full">
              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 flex items-center gap-3 border-b dark:border-white/5 shrink-0">
-                <Sparkles size={12} className="text-emerald-600" />
                 <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Rendered Preview</span>
              </div>
              <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert h-full max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
@@ -196,7 +163,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                <div className="flex items-center gap-4 text-amber-600">
                  <AlertTriangle size={20} className="shrink-0" />
                  <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.1em] font-sans leading-relaxed">
-                    Review the mapping above. Once committed, this asset becomes a permanent context node in the curriculum grid.
+                    Once committed, this asset becomes a permanent context node in your grid.
                  </p>
                </div>
              )}
@@ -210,65 +177,26 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   }
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-3xl md:rounded-[3rem] p-0 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 overflow-hidden h-fit max-h-[92vh] flex flex-col text-left">
+    <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] md:rounded-[3rem] p-0 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 overflow-hidden h-fit max-h-[92vh] flex flex-col text-left">
       <div className="h-1 bg-gradient-to-r from-indigo-500 via-amber-500 to-indigo-500 shrink-0" />
-      
       <div className="flex items-center justify-between p-6 pb-2 shrink-0">
-        <button 
-          onClick={onCancel}
-          className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm flex items-center gap-2"
-        >
-          <ArrowLeft size={20} />
-          <span className="text-[10px] font-black uppercase tracking-tight">Return</span>
-        </button>
-        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl shadow-inner"><ShieldCheck size={20}/></div>
+        <button onClick={onCancel} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-2xl text-slate-400 hover:text-indigo-600 flex items-center gap-2"><ArrowLeft size={20}/></button>
+        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl"><ShieldCheck size={20}/></div>
       </div>
-
       <div className="p-8 md:p-12 pt-4 text-center overflow-y-auto custom-scrollbar flex-1">
-        <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-white shadow-2xl">
-          <UploadCloud size={40} />
-        </div>
+        <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6 text-white shadow-2xl"><UploadCloud size={40} /></div>
         <h3 className="text-2xl md:text-3xl font-black dark:text-white uppercase tracking-tight leading-none mb-2">Vault Ingestion</h3>
-        <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Upload curriculum PDFs/DOCX for deep structural extraction.</p>
-        
-        {error && (
-          <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center leading-relaxed">
-            <AlertCircle size={16} className="shrink-0" /> {error}
-          </div>
-        )}
-
-        <div className="grid gap-3 md:gap-4">
-          <input type="file" id="asset-up" className="hidden" accept=".pdf,.docx,.txt,.md" onChange={handleFileUpload} />
-          <label htmlFor="asset-up" className="p-8 md:p-10 border-2 border-dashed rounded-[2.5rem] md:rounded-[3rem] border-slate-200 dark:border-white/10 hover:border-indigo-500 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 cursor-pointer transition-all flex flex-col items-center gap-6 group">
-             <div className="p-4 bg-white dark:bg-slate-800 border dark:border-white/5 rounded-2xl text-slate-400 group-hover:text-indigo-600 group-hover:scale-110 transition-all shadow-sm"><FileText size={32}/></div>
-             <div className="text-center">
-                <p className="font-black dark:text-white text-lg uppercase tracking-tight">Select Document</p>
-                <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">PDF • DOCX • MARKDOWN</p>
-             </div>
+        <p className="text-slate-500 mb-8 font-medium text-xs md:text-sm">Upload curriculum PDFs for deep structural mapping.</p>
+        {error && <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center leading-relaxed"><AlertCircle size={16} className="shrink-0" /> {error}</div>}
+        <div className="grid gap-3">
+          <input type="file" id="asset-up" className="hidden" accept=".pdf,.docx,.md" onChange={handleFileUpload} />
+          <label htmlFor="asset-up" className="p-8 md:p-10 border-2 border-dashed rounded-[2.5rem] md:rounded-[3rem] border-slate-200 dark:border-white/10 hover:border-indigo-500 hover:bg-indigo-50/30 cursor-pointer transition-all flex flex-col items-center gap-6 group">
+             <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-all shadow-sm"><FileText size={32}/></div>
+             <div className="text-center"><p className="font-black dark:text-white text-lg uppercase tracking-tight">Select Document</p><p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">PDF • DOCX • MARKDOWN</p></div>
           </label>
         </div>
-        
-        <p className="mt-10 text-[9px] text-slate-400 font-black uppercase tracking-[0.2em]">
-           Maximum Capacity: High-Fidelity Extraction Node
-        </p>
       </div>
-      
-      {isProcessing && (
-        <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center z-50 animate-in fade-in p-10 text-center">
-          <div className="relative mb-8">
-            <Loader2 className="animate-spin text-indigo-600 w-16 h-16" />
-            <BrainCircuit size={24} className="absolute inset-0 m-auto text-indigo-400" />
-          </div>
-          <p className="text-xl md:text-2xl font-black text-indigo-600 uppercase tracking-tighter leading-none mb-4">Neural Handshake In Progress</p>
-          <div className="max-w-xs mx-auto">
-            <p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest leading-relaxed">
-              {procStage}
-              <br />
-              <span className="opacity-40 italic mt-2 block">Do not refresh during deep mapping.</span>
-            </p>
-          </div>
-        </div>
-      )}
+      {isProcessing && <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center z-50 animate-in fade-in p-10 text-center"><div className="relative mb-8"><Loader2 className="animate-spin text-indigo-600 w-16 h-16" /><BrainCircuit size={24} className="absolute inset-0 m-auto text-indigo-400" /></div><p className="text-xl md:text-2xl font-black text-indigo-600 uppercase tracking-tighter leading-none mb-4">Neural Handshake In Progress</p><div className="max-w-xs mx-auto"><p className="text-[10px] md:text-xs font-bold text-slate-500 uppercase tracking-widest leading-relaxed">{procStage}</p></div></div>}
     </div>
   );
 }
