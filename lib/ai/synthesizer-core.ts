@@ -5,37 +5,37 @@ import { callDeepSeek } from './providers/deepseek';
 import { callCerebras } from './providers/cerebras';
 import { callSambaNova } from './providers/sambanova';
 import { callHyperbolic } from './providers/hyperbolic';
+import { callOpenAI } from './providers/openai';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
 /**
- * NEURAL PROVIDER CONFIGURATION (v54.0)
- * Logic: Gemini (Preferred) -> Cerebras (Flash) -> Groq (Resilient) -> SambaNova (Turbo)
+ * NEURAL PROVIDER GRID (v60.0)
+ * Tier 1: Gemini 3 Pro, GPT-4o, DeepSeek R1 (Reasoning)
+ * Tier 2: Groq, Cerebras, SambaNova (Inference Speed)
  */
 export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: number })[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled(), contextCharLimit: 1000000 },
-  { name: 'cerebras', rpm: 120, rpd: 15000, enabled: !!process.env.CEREBRAS_API_KEY, contextCharLimit: 25000 },
-  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY, contextCharLimit: 25000 },
+  { name: 'openai', rpm: 100, rpd: 10000, enabled: !!process.env.OPENAI_API_KEY, contextCharLimit: 128000 },
+  { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY, contextCharLimit: 128000 },
+  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY, contextCharLimit: 32000 },
+  { name: 'cerebras', rpm: 120, rpd: 15000, enabled: !!process.env.CEREBRAS_API_KEY, contextCharLimit: 32000 },
   { name: 'sambanova', rpm: 100, rpd: 10000, enabled: !!process.env.SAMBANOVA_API_KEY, contextCharLimit: 40000 },
-  { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY, contextCharLimit: 120000 },
 ];
 
 export const PROVIDER_FUNCTIONS = {
+  openai: callOpenAI,
+  gemini: callGemini,
   deepseek: callDeepSeek,
+  groq: callGroq,
   cerebras: callCerebras,
   sambanova: callSambaNova,
   hyperbolic: callHyperbolic,
-  groq: callGroq,
   openrouter: callOpenRouter,
-  gemini: callGemini
 };
 
-/**
- * NEURAL GRID SYNTHESIZER (v50.0)
- * RESILIENCE LOGIC: Treat 404/400/500 as transient node faults and keep hopping.
- */
 export async function synthesize(
   prompt: string,
   history: any[],
@@ -46,20 +46,29 @@ export async function synthesize(
 ): Promise<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }> {
   return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }>(async () => {
     const currentProviders = getProvidersConfig();
+    const isMappingTask = prompt.includes('PEDAGOGICAL MARKDOWN') || prompt.includes('SLO');
     
-    const isRAGTask = hasDocs || prompt.includes('<AUTHORITATIVE_VAULT>');
-    const isImageTask = systemInstruction.includes('IMAGE_GENERATION_MODE') || prompt.includes('GENERATE_VISUAL');
-    
+    // Dynamically sort providers based on the specific task
+    // If it's a mapping task, prioritize reasoning models (Gemini/OpenAI/DeepSeek)
     let targetProviders = [...currentProviders].filter(p => p.enabled);
-
-    // Initial node selection logic
-    const primaryChoice = preferredProvider || (isRAGTask ? 'gemini' : targetProviders[0]?.name);
     
-    targetProviders.sort((a, b) => {
-      if (a.name === primaryChoice) return -1;
-      if (b.name === primaryChoice) return 1;
-      return 0;
-    });
+    if (isMappingTask) {
+      const reasoningOrder = ['gemini', 'openai', 'deepseek', 'groq'];
+      targetProviders.sort((a, b) => {
+        const idxA = reasoningOrder.indexOf(a.name);
+        const idxB = reasoningOrder.indexOf(b.name);
+        if (idxA === -1) return 1;
+        if (idxB === -1) return -1;
+        return idxA - idxB;
+      });
+    }
+
+    if (preferredProvider && targetProviders.some(p => p.name === preferredProvider)) {
+      targetProviders = [
+        targetProviders.find(p => p.name === preferredProvider)!,
+        ...targetProviders.filter(p => p.name !== preferredProvider)
+      ];
+    }
 
     let lastError = null;
 
@@ -67,29 +76,27 @@ export async function synthesize(
       if (!await rateLimiter.canMakeRequest(config.name, config)) continue;
       
       try {
-        console.log(`📡 [Synthesizer] Node Engagement: ${config.name}`);
+        console.log(`📡 [Synthesizer] Engaging Node: ${config.name} for ${isMappingTask ? 'REASONING' : 'CHATTING'}`);
         
-        // Context windowing to prevent node-level context crashes
         let effectivePrompt = prompt;
         if (prompt.length > config.contextCharLimit) {
-          if (prompt.includes('<AUTHORITATIVE_VAULT>')) {
-             const parts = prompt.split('</AUTHORITATIVE_VAULT>');
-             const vaultPart = parts[0].substring(0, config.contextCharLimit - 3000);
-             effectivePrompt = `${vaultPart}\n</AUTHORITATIVE_VAULT>\n${parts[1] || ''}`;
-          } else {
-             effectivePrompt = prompt.substring(0, config.contextCharLimit);
-          }
+          effectivePrompt = prompt.substring(0, config.contextCharLimit);
         }
 
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        const timeout = config.name === 'gemini' ? 95000 : 25000; // Fast-fail for non-Gemini nodes
+        const timeout = 110000; // Increased timeout for heavy reasoning
         
         const response = await Promise.race([
-          (callFunction as any)(effectivePrompt, history, systemInstruction, hasDocs, docParts, isImageTask),
+          (callFunction as any)(effectivePrompt, history, systemInstruction, hasDocs, docParts),
           new Promise((_, reject) => setTimeout(() => reject(new Error('NODE_TIMEOUT')), timeout))
         ]);
 
         if (typeof response === 'string') {
+          // If response is too short and it was a mapping task, consider it a partial failure and try next
+          if (isMappingTask && response.length < 500 && targetProviders.length > 1) {
+            console.warn(`⚠️ [Node Quality Warning] ${config.name} returned suspiciously short mapping. Hopping...`);
+            continue;
+          }
           return { text: response, provider: config.name };
         }
         
@@ -100,36 +107,12 @@ export async function synthesize(
           imageUrl: response.imageUrl
         };
       } catch (e: any) { 
-        const errorMsg = e.message?.toLowerCase() || "";
-        
-        // DETERMINISTIC FAILOVER CRITERIA
-        const isSkipableError = 
-          errorMsg.includes('429') || 
-          errorMsg.includes('quota') || 
-          errorMsg.includes('404') || // Model not found on this node
-          errorMsg.includes('400') || // Bad request/Context size
-          errorMsg.includes('500') || // Provider internal error
-          errorMsg.includes('timeout') ||
-          errorMsg.includes('failed to fetch');
-
         console.warn(`⚠️ [Node Fault] ${config.name}: ${e.message}`);
-        
         lastError = e;
-        
-        // If the node is broken, hop to the next one immediately
-        if (isSkipableError) {
-          console.log(`🔄 [Orchestrator] Rerouting request to next available segment...`);
-          continue;
-        }
-        
-        // If it's a security/auth error (401), we throw it as it's a configuration issue
-        if (errorMsg.includes('401')) throw e;
-
-        // For all other unknown errors, attempt failover anyway for production resilience
-        continue;
+        continue; // Keep hopping until we exhaust the grid
       }
     }
     
-    throw lastError || new Error("NEURAL GRID EXHAUSTED: All nodes failed to process this pedagogical request.");
+    throw lastError || new Error("GRID_EXHAUSTED: All neural nodes failed to process the document.");
   });
 }
