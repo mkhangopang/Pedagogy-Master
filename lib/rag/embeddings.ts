@@ -22,8 +22,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * BATCH VECTOR SYNTHESIS (v31.0 - HIGH CONCURRENCY)
- * Uses parallel embedContent calls to ensure maximum throughput and stability.
+ * BATCH VECTOR SYNTHESIS (v32.0 - HIGH CONCURRENCY)
+ * Fixed SDK property name from 'content' to 'contents'.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   const start = performance.now();
@@ -51,11 +51,11 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Execute embeddings in parallel batches to saturate the grid efficiently
+    // Fixed: 'contents' is the correct property for the latest SDK version
     const results = await Promise.all(uncachedTexts.map(text => 
       ai.models.embedContent({
         model: "text-embedding-004",
-        content: { parts: [{ text }] }
+        contents: { parts: [{ text }] }
       })
     ));
 
@@ -79,11 +79,9 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
 
     performanceMonitor.track('embedding_batch_api_call', performance.now() - start, { count: uncachedTexts.length });
     
-    // Final defensive check for missing results
     return finalResults.map(r => r || new Array(768).fill(0));
   } catch (error: any) {
-    console.error('❌ [Batch Embedding] Critical Node Failure:', error.message);
-    // Return zero-vectors instead of throwing to prevent document sync from hanging indefinitely
+    console.error('❌ [Batch Embedding] Grid Fault:', error.message);
     return finalResults.map(r => r || new Array(768).fill(0));
   }
 }
