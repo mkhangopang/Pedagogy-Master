@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -59,8 +58,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const textContent = await page.getTextContent();
         fullText += textContent.items.map((item: any) => (item as any).str).join(' ') + '\n';
         
-        // Slight delay every 10 pages to prevent UI freezing on huge files
-        if (i % 10 === 0) {
+        // Yield to browser UI thread every 5 pages to prevent freeze on 185+ page files
+        if (i % 5 === 0) {
           await new Promise(r => setTimeout(r, 0)); 
         }
       }
@@ -131,7 +130,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         })
       });
       if (!response.ok) throw new Error('Vault sync failed.');
-      onComplete(await response.json());
+      const finalDoc = await response.json();
+      onComplete(finalDoc);
     } catch (err: any) {
       setError(err.message);
     } finally { setIsProcessing(false); }
@@ -146,8 +146,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <div>
               <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Structured Preview</h3>
               <div className="flex gap-2 mt-1">
-                 <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board}</span>
-                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Grade {extractedMeta?.grade}</span>
+                 <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
+                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Grade {extractedMeta?.grade || '9-12'}</span>
               </div>
             </div>
           </div>
@@ -164,4 +164,83 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 flex items-center gap-3 border-b dark:border-white/5">
                 <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Pedagogical Rendering</span>
              </div>
-             <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert
+             <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          </div>
+        </div>
+        <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
+           <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
+              <ShieldCheck size={14} className="text-emerald-500" /> Human-in-the-loop Verification
+           </div>
+           <button 
+             onClick={handleFinalApproval}
+             disabled={isProcessing}
+             className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
+           >
+             {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>}
+             Sync to Neural Vault
+           </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 md:p-16 w-full max-w-2xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 text-center relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
+      <button onClick={onCancel} className="absolute top-8 right-8 p-2 text-slate-400 hover:text-slate-900 transition-all"><X size={24}/></button>
+      
+      <div className="space-y-8">
+        <div className="w-24 h-24 bg-indigo-600 text-white rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl relative">
+           <BrainCircuit size={48} className={isProcessing ? 'animate-pulse' : ''} />
+           {isProcessing && <div className="absolute inset-0 border-4 border-white/20 border-t-white rounded-[2rem] animate-spin" />}
+        </div>
+        
+        <div>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
+          <p className="text-slate-500 font-medium">Deep structural mapping for curriculum standards.</p>
+        </div>
+
+        {error && (
+          <div className="p-5 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex items-start gap-4 text-left animate-in slide-in-from-top-2">
+            <AlertTriangle className="text-rose-500 shrink-0" size={20} />
+            <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        {isProcessing ? (
+          <div className="space-y-6 py-4">
+             <div className="h-2 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                <div className="h-full bg-indigo-600 animate-progress-load rounded-full" />
+             </div>
+             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 animate-pulse">{procStage}</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-6">
+            <label className="group relative cursor-pointer">
+              <input type="file" className="hidden" accept=".pdf,.docx,.txt" onChange={handleFileUpload} />
+              <div className="p-12 border-4 border-dashed border-slate-100 dark:border-white/5 rounded-[3rem] group-hover:border-indigo-500/50 transition-all flex flex-col items-center gap-6 bg-slate-50/50 dark:bg-white/5">
+                <div className="p-6 bg-white dark:bg-slate-800 rounded-[2rem] shadow-sm text-slate-400 group-hover:text-indigo-600 transition-colors">
+                  <UploadCloud size={40} />
+                </div>
+                <div>
+                  <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Document</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">PDF • DOCX • MARKDOWN</p>
+                </div>
+              </div>
+            </label>
+            
+            <div className="flex items-center justify-center gap-6 pt-4">
+               <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <Lock size={12} /> Encrypted
+               </div>
+               <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
+               <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <Sparkles size={12} className="text-indigo-400" /> RAG Optimized
+               </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
