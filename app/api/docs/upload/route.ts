@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * WORLD-CLASS INGESTION GATEWAY (v125.0)
- * Implements Structured Payload Pattern for zero-fault indexing.
+ * WORLD-CLASS INGESTION GATEWAY (v126.0)
+ * Optimized for Sindh Biology 2024 Progression Grids.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -27,17 +27,29 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, sourceType, extractedText, previewOnly, metadata, slos } = body;
     
-    // PHASE 1: Neural Mapping & Extraction (Returns JSON + MD)
+    // PHASE 1: Neural Mapping & Extraction
     if (sourceType === 'raw_text' && previewOnly) {
-      console.log(`🧠 [Ingestion] Executing Deep Structured Analysis: ${name}`);
+      console.log(`🧠 [Ingestion] Analyzing Progression Grid: ${name}`);
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `Analyze this curriculum raw text.
+        contents: `You are a curriculum engineering agent. Analyze this raw OCR text from a SINDH CURRICULUM PROGRESSION GRID.
+        
+        GOALS:
         1. Convert to high-fidelity Pedagogical Markdown.
-        2. Extract metadata: Subject, Grade (use Arabic numerals), Board, Difficulty.
-        3. Identify all SLO codes (e.g., B-09-A-01).
+        2. Extract EXACT metadata: Subject, Board, Difficulty.
+        3. Identify ALL SLO codes. 
+        
+        CRITICAL RULES FOR SINDH GRIDS:
+        - The text contains tables where Grade IX, X, XI, and XII are columns.
+        - You MUST correctly attribute each objective to its grade using the code:
+          * B-09-... or S-09-... -> Grade 9
+          * B-10-... or S-10-... -> Grade 10
+          * B-11-... or S-11-... -> Grade 11
+          * B-12-... or S-12-... -> Grade 12
+        - If an objective is in a 'Grade IX' column but the code says 'B-09', it belongs to Grade 9.
+        - Return the total range of grades found (e.g., "9-12").
         
         RAW TEXT: ${extractedText.substring(0, 40000)}`,
         config: {
@@ -67,12 +79,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(JSON.parse(response.text || '{}'));
     }
 
-    // PHASE 2: Zero-AI Atomic Ingestion (Uses pre-extracted metadata)
+    // PHASE 2: Zero-AI Atomic Ingestion
     if (sourceType === 'markdown' && extractedText) {
       const filePath = `vault/${user.id}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
       if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Offline.");
 
-      // Upload human-readable MD backup to R2
       await r2Client.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: filePath,
@@ -80,26 +91,23 @@ export async function POST(req: NextRequest) {
         ContentType: 'text/markdown',
       }));
 
-      // Instant DB commit with provided metadata
       const { data: docData, error: dbError } = await supabase.from('documents').insert({
         user_id: user.id,
         name: name || "Curriculum Asset",
         source_type: 'markdown',
-        status: 'processing', // Temporary status for chunking
+        status: 'processing',
         extracted_text: extractedText,
         file_path: filePath,
         is_selected: true,
-        subject: metadata?.subject || 'General',
-        grade_level: metadata?.grade || 'Auto',
+        subject: metadata?.subject || 'Biology',
+        grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
-        difficulty_level: metadata?.difficulty || 'middle',
-        document_summary: slos?.slice(0, 5).join(', ') || 'Indexed'
+        difficulty_level: metadata?.difficulty || 'high',
+        document_summary: slos?.slice(0, 8).join(', ') || 'Indexed'
       }).select().single();
 
       if (dbError) throw dbError;
 
-      // Parallelized Zero-AI Vector Sync
-      // We pass metadata directly to prevent the indexer from calling Gemini again
       indexDocumentForRAG(docData.id, extractedText, filePath, supabase, metadata).catch(e => {
         console.error("Async indexing failure:", e);
       });
