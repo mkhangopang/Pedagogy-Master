@@ -12,9 +12,9 @@ import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
 /**
- * NEURAL PROVIDER GRID (v60.0)
- * Tier 1: Gemini 3 Pro, GPT-4o, DeepSeek R1 (Reasoning)
- * Tier 2: Groq, Cerebras, SambaNova (Inference Speed)
+ * NEURAL PROVIDER GRID (v65.0)
+ * Tier 1: Gemini 3 Pro, GPT-4o, DeepSeek R1 (Reasoning/Synthesis)
+ * Tier 2: Groq, Cerebras, SambaNova (High-Speed Extraction)
  */
 export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: number })[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled(), contextCharLimit: 1000000 },
@@ -36,6 +36,10 @@ export const PROVIDER_FUNCTIONS = {
   openrouter: callOpenRouter,
 };
 
+/**
+ * SWARM SYNTHESIZER
+ * Orchestrates multi-model collaboration for massive documents.
+ */
 export async function synthesize(
   prompt: string,
   history: any[],
@@ -44,12 +48,17 @@ export async function synthesize(
   preferredProvider?: string,
   systemInstruction: string = DEFAULT_MASTER_PROMPT
 ): Promise<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }> {
+  
+  // HEAVY TASK DETECTION: Trigger Swarm Processing if payload is massive
+  const isMassive = prompt.length > 150000;
+  if (isMassive && !prompt.includes('[PARTIAL_CHUNK]')) {
+    return swarmProcess(prompt, history, systemInstruction);
+  }
+
   return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }>(async () => {
     const currentProviders = getProvidersConfig();
     const isMappingTask = prompt.includes('PEDAGOGICAL MARKDOWN') || prompt.includes('SLO');
     
-    // Dynamically sort providers based on the specific task
-    // If it's a mapping task, prioritize reasoning models (Gemini/OpenAI/DeepSeek)
     let targetProviders = [...currentProviders].filter(p => p.enabled);
     
     if (isMappingTask) {
@@ -76,30 +85,19 @@ export async function synthesize(
       if (!await rateLimiter.canMakeRequest(config.name, config)) continue;
       
       try {
-        console.log(`📡 [Synthesizer] Engaging Node: ${config.name} for ${isMappingTask ? 'REASONING' : 'CHATTING'}`);
-        
         let effectivePrompt = prompt;
         if (prompt.length > config.contextCharLimit) {
+          console.warn(`📏 [Synthesizer] Truncating prompt for ${config.name} (${prompt.length} -> ${config.contextCharLimit})`);
           effectivePrompt = prompt.substring(0, config.contextCharLimit);
         }
 
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        const timeout = 110000; // Increased timeout for heavy reasoning
-        
         const response = await Promise.race([
           (callFunction as any)(effectivePrompt, history, systemInstruction, hasDocs, docParts),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('NODE_TIMEOUT')), timeout))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('NODE_TIMEOUT')), 115000))
         ]);
 
-        if (typeof response === 'string') {
-          // If response is too short and it was a mapping task, consider it a partial failure and try next
-          if (isMappingTask && response.length < 500 && targetProviders.length > 1) {
-            console.warn(`⚠️ [Node Quality Warning] ${config.name} returned suspiciously short mapping. Hopping...`);
-            continue;
-          }
-          return { text: response, provider: config.name };
-        }
-        
+        if (typeof response === 'string') return { text: response, provider: config.name };
         return { 
           text: response.text || "Synthesis complete.", 
           provider: config.name, 
@@ -109,10 +107,45 @@ export async function synthesize(
       } catch (e: any) { 
         console.warn(`⚠️ [Node Fault] ${config.name}: ${e.message}`);
         lastError = e;
-        continue; // Keep hopping until we exhaust the grid
+        continue; 
       }
     }
     
-    throw lastError || new Error("GRID_EXHAUSTED: All neural nodes failed to process the document.");
+    throw lastError || new Error("GRID_EXHAUSTED: All nodes failed.");
   });
+}
+
+/**
+ * RECURSIVE SWARM ORCHESTRATOR
+ * Splits 185+ page tasks into manageable parallel inference nodes.
+ */
+async function swarmProcess(fullPrompt: string, history: any[], systemInstruction: string) {
+  console.log(`🚀 [Swarm] Initializing Multi-Model Map-Reduce...`);
+  
+  const CHUNK_SIZE = 80000;
+  const chunks: string[] = [];
+  for (let i = 0; i < fullPrompt.length; i += CHUNK_SIZE) {
+    chunks.push(fullPrompt.substring(i, i + CHUNK_SIZE));
+  }
+
+  // 1. MAP PHASE: Parallel extraction using the fastest available grid nodes
+  const partialResults = await Promise.all(chunks.map((chunk, idx) => {
+    const chunkPrompt = `[PARTIAL_CHUNK ${idx + 1}/${chunks.length}] Analyze this segment of the 2024 curriculum. 
+    EXTRACT: All SLO codes and their verbatim text.
+    TEXT: ${chunk}`;
+    return synthesize(chunkPrompt, [], false, [], undefined, "You are a data extraction node. Return only structured data.");
+  }));
+
+  // 2. REDUCE PHASE: Master synthesis using a high-reasoning model
+  console.log(`🧠 [Swarm] Synthesis Node Convergence Initiated...`);
+  const aggregateData = partialResults.map(r => r.text).join('\n---\n');
+  const masterPrompt = `The following is a collection of extracted curriculum segments from a 185-page document.
+  
+  TASK: Merge these into one authoritative, hierarchical SINDH BIOLOGY 2024 JSON map.
+  SCHEMA: Must include metadata, slos, and slo_map.
+  
+  PARTIAL EXTRACTS:
+  ${aggregateData}`;
+
+  return synthesize(masterPrompt, history, false, [], 'gemini', systemInstruction);
 }
