@@ -9,9 +9,8 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v160.0)
- * Optimized for "Zero-AI" Latency. 
- * Re-synthesis is only performed if pre-extracted metadata is missing.
+ * WORLD-CLASS NEURAL INDEXER (v161.0)
+ * Optimized for SLO-Centric Retrieval & Massive Documents.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -21,33 +20,41 @@ export async function indexDocumentForRAG(
   preExtractedMeta?: any
 ) {
   const startTime = Date.now();
-  console.log(`📡 [Indexer] Zero-AI Sync Initiated for: ${documentId}`);
+  console.log(`📡 [Indexer] Ingesting Neural Nodes for document: ${documentId}`);
   
   try {
-    let meta = preExtractedMeta;
-
-    // 1. ADAPTIVE SEMANTIC CHUNKING
+    const meta = preExtractedMeta || {};
     const lines = content.split('\n');
     const processedChunks: any[] = [];
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
+    // 1. ADAPTIVE SLO-AWARE CHUNKING
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
+      
+      // Track Hierarchical Context
       if (line.match(/^DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      if (line.match(/^- SLO:/i) || line.match(/^#{1,3}\s+/) || i === lines.length - 1) {
-        if (buffer.length > 50) {
-          const sloMatches = buffer.match(/[B-Z]-\d{2}-[A-Z]-\d{2}|S-\d{2}-[A-Z]-\d{2}/gi) || [];
+      // Break chunk at SLO marker or header
+      const isSloMarker = line.match(/^- SLO[:\s]*([A-Z]-\d{2}-[A-Z]-\d{2})/i);
+      const isHeader = line.match(/^#{1,3}\s+/);
+
+      if (isSloMarker || isHeader || i === lines.length - 1) {
+        if (buffer.length > 30) {
+          // Deep Regex extraction for Sindh & Short formats
+          const sloMatches = buffer.match(/([B-Z]-\d{2}-[A-Z]-\d{2})|([S]-\d{2}-[A-Z]-\d{2})/gi) || [];
           const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
 
           processedChunks.push({
             text: buffer.trim(),
             metadata: {
               ...currentCtx,
-              ...meta,
+              subject: meta.subject,
+              grade: meta.grade,
+              board: meta.board,
               slo_codes: normalizedSLOs,
               is_slo_definition: buffer.includes('- SLO:'),
               chunk_index: processedChunks.length,
@@ -61,13 +68,18 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // 2. ATOMIC STORE RESET
+    // 2. CLEAR PREVIOUS NODES (Atomic Refresh)
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 3. BATCH PROCESSING (Optimized for Free Tier)
-    const BATCH_SIZE = 15; 
+    // 3. BATCH EMBEDDING GRID (v35 Performance)
+    // Using a reliable batch size for Vercel edge/lambda limits
+    const BATCH_SIZE = 20; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      if (Date.now() - startTime > 55000) break; 
+      // Safety Break: Prevent function timeout (approx 60s for standard nodes)
+      if (Date.now() - startTime > 85000) {
+        console.warn(`⚠️ [Indexer] Timeout Protection triggered. Incomplete sync for doc: ${documentId}`);
+        break;
+      }
 
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -80,22 +92,22 @@ export async function indexDocumentForRAG(
         metadata: chunk.metadata
       }));
 
-      await supabase.from('document_chunks').insert(records);
+      const { error: insertError } = await supabase.from('document_chunks').insert(records);
+      if (insertError) console.error(`❌ Batch Insert Fault:`, insertError);
     }
 
-    // 4. FINALIZE (Mark as ready instantly)
+    // 4. ANCHOR SUCCESS
     await supabase.from('documents').update({ 
       status: 'ready', 
-      rag_indexed: true 
+      rag_indexed: true,
+      last_synced_at: new Date().toISOString()
     }).eq('id', documentId);
 
-    console.log(`✅ [Indexer] Sync Complete in ${Date.now() - startTime}ms`);
-    return { success: true };
+    console.log(`✅ [Indexer] Neural Handshake Success: ${processedChunks.length} nodes anchored in ${Date.now() - startTime}ms`);
+    return { success: true, count: processedChunks.length };
   } catch (error: any) {
-    console.error("❌ [Indexer Fault]:", error);
-    try {
-      await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
-    } catch (e) {}
+    console.error("❌ [Indexer Fatal Fault]:", error);
+    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
     throw error;
   }
 }
