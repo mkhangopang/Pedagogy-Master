@@ -22,8 +22,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * BATCH VECTOR SYNTHESIS (v30.0 - ULTRA-FAST)
- * Uses native batchEmbedContents to saturate the neural pipeline efficiently.
+ * BATCH VECTOR SYNTHESIS (v31.0 - HIGH CONCURRENCY)
+ * Uses parallel embedContent calls to ensure maximum throughput and stability.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   const start = performance.now();
@@ -51,19 +51,18 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Using native batch API for maximum throughput
-    const response = await ai.models.batchEmbedContents({
-      model: "text-embedding-004",
-      requests: uncachedTexts.map(text => ({
-        model: "models/text-embedding-004",
+    // Execute embeddings in parallel batches to saturate the grid efficiently
+    const results = await Promise.all(uncachedTexts.map(text => 
+      ai.models.embedContent({
+        model: "text-embedding-004",
         content: { parts: [{ text }] }
-      }))
-    });
+      })
+    ));
 
-    const embeddings = response.embeddings || [];
-
-    for (let i = 0; i < embeddings.length; i++) {
-      const vector = embeddings[i].values;
+    for (let i = 0; i < results.length; i++) {
+      const vector = results[i].embedding?.values;
+      if (!vector) continue;
+      
       const originalIndex = uncachedIndices[i];
       
       // Strict Dimension Enforcement (768)
@@ -80,10 +79,11 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
 
     performanceMonitor.track('embedding_batch_api_call', performance.now() - start, { count: uncachedTexts.length });
     
-    // Fill any missing results with zeros to prevent hang
+    // Final defensive check for missing results
     return finalResults.map(r => r || new Array(768).fill(0));
   } catch (error: any) {
-    console.error('❌ [Batch Embedding] Critical Fault:', error.message);
+    console.error('❌ [Batch Embedding] Critical Node Failure:', error.message);
+    // Return zero-vectors instead of throwing to prevent document sync from hanging indefinitely
     return finalResults.map(r => r || new Array(768).fill(0));
   }
 }
