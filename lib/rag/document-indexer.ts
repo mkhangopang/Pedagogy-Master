@@ -10,9 +10,8 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v151.0)
- * Optimized for Sindh Grids & Pedagogical Precision.
- * Fixed build-time TypeScript errors with Supabase query builders.
+ * WORLD-CLASS NEURAL INDEXER (v152.0)
+ * Optimized for Sindh Grids & High-Fidelity Pedagogical Mapping.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -21,15 +20,15 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient
 ) {
   const startTime = Date.now();
-  console.log(`📡 [Indexer] Sync Initiated for Asset: ${documentId}`);
+  console.log(`📡 [Indexer] Sync Initiated for Asset Node: ${documentId}`);
   
   try {
-    // 1. EXTRACT ADVANCED METADATA
+    // 1. EXTRACT ARCHITECTURAL METADATA
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const metadataResponse = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Analyze this curriculum document excerpt and extract structural metadata. 
-      EXCERPT: ${content.substring(0, 5000)}`,
+      EXCERPT: ${content.substring(0, 6000)}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -39,7 +38,8 @@ export async function indexDocumentForRAG(
             subject: { type: Type.STRING },
             grade: { type: Type.STRING },
             topics: { type: Type.ARRAY, items: { type: Type.STRING } },
-            difficulty: { type: Type.STRING, enum: ["elementary", "middle", "high", "college"] }
+            difficulty: { type: Type.STRING, enum: ["elementary", "middle", "high", "college"] },
+            board: { type: Type.STRING }
           }
         }
       }
@@ -47,7 +47,7 @@ export async function indexDocumentForRAG(
 
     const meta = JSON.parse(metadataResponse.text || "{}");
 
-    // 2. SEMANTIC CHUNKING
+    // 2. ADAPTIVE SEMANTIC CHUNKING
     const lines = content.split('\n');
     const processedChunks: any[] = [];
     let currentCtx: IngestionContext = {};
@@ -59,7 +59,7 @@ export async function indexDocumentForRAG(
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      // Grouping on SLO boundaries or natural sections
+      // Grouping on SLO boundaries or structural headers
       if (line.match(/^- SLO:/i) || line.match(/^#{1,3}\s+/) || i === lines.length - 1) {
         if (buffer.length > 50) {
           const sloMatches = buffer.match(/[B-Z]-\d{2}-[A-Z]-\d{2}|S-\d{2}-[A-Z]-\d{2}/gi) || [];
@@ -73,7 +73,8 @@ export async function indexDocumentForRAG(
               slo_codes: normalizedSLOs,
               is_slo_definition: buffer.includes('- SLO:'),
               chunk_index: processedChunks.length,
-              source_path: filePath
+              source_path: filePath,
+              indexed_at: new Date().toISOString()
             }
           });
         }
@@ -83,12 +84,19 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // 3. ATOMIC STORE
+    console.log(`🧠 [Indexer] Mapping ${processedChunks.length} nodes to vector grid...`);
+
+    // 3. ATOMIC STORE RESET
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
+    // 4. BATCH PROCESSING WITH WATCHDOG
     const BATCH_SIZE = 15; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      if (Date.now() - startTime > 55000) break; // Watchdog margin
+      // 55s Margins for Serverless stability
+      if (Date.now() - startTime > 55000) {
+        console.warn('⏳ [Indexer] Watchdog triggered. Committing partial node set.');
+        break;
+      }
 
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -101,27 +109,31 @@ export async function indexDocumentForRAG(
         metadata: chunk.metadata
       }));
 
-      await supabase.from('document_chunks').insert(records);
+      const { error: insertError } = await supabase.from('document_chunks').insert(records);
+      if (insertError) throw insertError;
     }
 
-    // 4. FINALIZE DOCUMENT RECORD
-    await supabase.from('documents').update({ 
+    // 5. FINALIZE ASSET STATUS
+    const { error: updateError } = await supabase.from('documents').update({ 
       status: 'ready', 
       rag_indexed: true,
-      document_summary: meta.topics?.join(', ') || '',
+      document_summary: meta.topics?.join(', ') || meta.title || '',
       difficulty_level: meta.difficulty || 'middle',
       subject: meta.subject || 'General',
-      grade_level: meta.grade || 'Auto'
+      grade_level: meta.grade || 'Auto',
+      authority: meta.board || 'Sindh Board'
     }).eq('id', documentId);
 
+    if (updateError) throw updateError;
+
+    console.log(`✅ [Indexer] Asset node ${documentId} anchored successfully.`);
     return { success: true };
   } catch (error: any) {
-    console.error("❌ [Indexer Fatal]:", error);
-    // Mark as failed so user can retry, safely handling builder errors
+    console.error("❌ [Indexer Fault]:", error);
     try {
       await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
-    } catch (dbErr) {
-      console.warn("Failed to report indexer failure status to DB.");
+    } catch (e) {
+      console.warn("Failed to set failure state in DB.");
     }
     throw error;
   }

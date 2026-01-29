@@ -1,5 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { generateEmbedding } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
@@ -8,95 +8,193 @@ export interface RetrievalFilters {
   documentIds?: string[];
   subject?: string;
   gradeLevel?: string;
+  sloCode?: string;
 }
 
 export interface RetrievedChunk {
   id: string;
+  documentId: string;
   content: string;
   metadata: any;
-  similarity: number;
+  similarity?: number;
+  rank?: number;
 }
 
 /**
- * HYBRID RETRIEVAL ENGINE (v1.0)
- * Combines exact SLO matching with semantic vector search.
+ * HYBRID SEARCH: Combines keyword + semantic search using the DB's native capabilities.
  */
-export async function smartRetrieve(
+export async function hybridSearch(
   query: string,
   supabase: SupabaseClient,
   filters: RetrievalFilters = {},
   topK: number = 5
 ): Promise<RetrievedChunk[]> {
-  
-  const targetSLOs = extractSLOCodes(query);
-  const queryEmbedding = await generateEmbedding(query);
+  try {
+    const queryEmbedding = await generateEmbedding(query);
 
-  // Call hybrid search function defined in the DB
-  const { data, error } = await supabase.rpc('hybrid_search_chunks_v3', {
-    query_text: query,
-    query_embedding: queryEmbedding,
-    match_count: topK * 2,
-    filter_document_ids: filters.documentIds || null
-  });
+    const { data, error } = await supabase.rpc('hybrid_search_chunks_v3', {
+      query_text: query,
+      query_embedding: queryEmbedding,
+      match_count: topK,
+      filter_document_ids: filters.documentIds || null
+    });
 
-  if (error) {
-    console.error('Retrieval error:', error);
+    if (error) {
+      console.error('Hybrid search error:', error);
+      return [];
+    }
+
+    return (data || []).map((item: any) => ({
+      id: item.id,
+      documentId: item.document_id,
+      content: item.chunk_text,
+      metadata: item.metadata,
+      rank: item.combined_score
+    }));
+  } catch (error) {
+    console.error('Hybrid search failed:', error);
     return [];
   }
-
-  const rawResults = (data || []).map((item: any) => ({
-    id: item.id,
-    content: item.chunk_text,
-    metadata: item.metadata,
-    similarity: item.combined_score || 0
-  }));
-
-  // AI-Powered Reranking for high-stakes queries
-  if (rawResults.length > 0 && (query.includes('LESSON PLAN') || query.includes('QUIZ'))) {
-    return await rerankResults(query, rawResults, topK);
-  }
-
-  return rawResults.slice(0, topK);
 }
 
 /**
- * NEURAL RERANKER
- * Uses Gemini to evaluate the relevance of top candidates.
+ * SLO LOOKUP: Specialized retrieval for specific Student Learning Outcomes.
  */
-async function rerankResults(query: string, chunks: RetrievedChunk[], topK: number): Promise<RetrievedChunk[]> {
+export async function sloLookup(
+  sloCode: string,
+  supabase: SupabaseClient,
+  documentIds?: string[]
+): Promise<RetrievedChunk[]> {
+  try {
+    const { data, error } = await supabase
+      .from('document_chunks')
+      .select('id, document_id, chunk_text, metadata')
+      .contains('slo_codes', [sloCode])
+      .in('document_id', documentIds || [])
+      .limit(5);
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      return data.map((item: any) => ({
+        id: item.id,
+        documentId: item.document_id,
+        content: item.chunk_text,
+        metadata: item.metadata
+      }));
+    }
+
+    // Fallback to hybrid search if no exact code match found
+    return hybridSearch(`SLO ${sloCode}`, supabase, { documentIds }, 3);
+  } catch (error) {
+    console.error('SLO lookup failed:', error);
+    return [];
+  }
+}
+
+/**
+ * SMART RETRIEVAL: Automatically chooses the best search strategy based on query intent.
+ */
+export async function smartRetrieval(
+  query: string,
+  supabase: SupabaseClient,
+  filters: RetrievalFilters = {},
+  topK: number = 5
+): Promise<RetrievedChunk[]> {
+  // Detect SLO specific queries
+  const targetSLOs = extractSLOCodes(query);
+  
+  if (targetSLOs.length > 0) {
+    return sloLookup(targetSLOs[0], supabase, filters.documentIds);
+  }
+
+  return hybridSearch(query, supabase, filters, topK);
+}
+
+/**
+ * NEURAL RERANKER: Improves retrieval quality by scoring candidates with a reasoning model.
+ */
+export async function rerankResults(
+  query: string,
+  chunks: RetrievedChunk[],
+  topK: number = 5
+): Promise<RetrievedChunk[]> {
+  if (chunks.length === 0) return [];
+
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const model = ai.models.generateContent({
+    const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Rate the pedagogical relevance of these curriculum chunks to the query: "${query}"
-      
-      CHUNKS:
-      ${chunks.map((c, i) => `[${i}] ${c.content.substring(0, 300)}`).join('\n---\n')}
-      
-      Return ONLY a comma-separated list of indices in order of relevance. Example: 2, 0, 1`
+
+CHUNKS:
+${chunks.map((chunk, i) => `[${i}] ${chunk.content.substring(0, 500)}`).join('\n---\n')}
+
+Return ONLY a JSON array of numbers representing indices in order of relevance (best first).
+Example: [2, 0, 1]`,
+      config: {
+        responseMimeType: 'application/json'
+      }
     });
 
-    const response = await model;
-    const order = response.text.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
-    
-    const sorted = order.map(idx => chunks[idx]).filter(Boolean);
+    const responseText = response.text;
+    if (!responseText) {
+      return chunks.slice(0, topK);
+    }
+
+    const order = JSON.parse(responseText);
+    if (!Array.isArray(order)) {
+      return chunks.slice(0, topK);
+    }
+
+    const sorted = order
+      .map(idx => chunks[idx])
+      .filter(Boolean);
+      
     return sorted.slice(0, topK);
-  } catch (e) {
+  } catch (error) {
+    console.error('Reranking error:', error);
     return chunks.slice(0, topK);
   }
 }
 
 /**
- * CONTEXT CONSTRUCTOR
- * Prepares the grounded prompt for the generation agents.
+ * CONTEXT BUILDER: Constructs a grounded context string for the LLM.
  */
-export function buildContextString(chunks: RetrievedChunk[]): string {
-  if (chunks.length === 0) return "[NO_AUTHORITATIVE_CONTEXT_FOUND]";
-  
-  return chunks.map((c, i) => `
-### VAULT_NODE_${i+1}
-SOURCE: ${c.metadata.title || 'Curriculum'}
+export async function buildContext(
+  query: string,
+  supabase: SupabaseClient,
+  filters: RetrievalFilters = {},
+  maxTokens: number = 20000
+): Promise<string> {
+  try {
+    const chunks = await smartRetrieval(query, supabase, filters, 15);
+
+    if (chunks.length === 0) {
+      return 'No relevant curriculum context found in the vault for this query.';
+    }
+
+    const rankedChunks = await rerankResults(query, chunks, 8);
+
+    let context = '';
+    for (const chunk of rankedChunks) {
+      const chunkText = `
+### ASSET_NODE: ${chunk.metadata?.title || 'Curriculum Reference'}
+[ID: ${chunk.id}] [Subject: ${chunk.metadata?.subject || 'N/A'}]
+[SLOs: ${chunk.metadata?.slo_codes?.join(', ') || 'General'}]
+
 CONTENT:
-${c.content}
-`).join('\n\n');
+${chunk.content}
+---
+`;
+      // Safety break to respect context windows (approx character limit)
+      if ((context.length + chunkText.length) > maxTokens) break;
+      context += chunkText;
+    }
+
+    return context || 'Neural vault search returned insufficient results.';
+  } catch (error) {
+    console.error('Context building error:', error);
+    return 'Grid Error: Unable to retrieve grounded curriculum context.';
+  }
 }
