@@ -10,10 +10,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
-/**
- * WORLD-CLASS INGESTION GATEWAY (v129.0)
- * Optimized for Sindh Biology 2024 (185 Pages) & Map-Reduce Architecture.
- */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -27,34 +23,25 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map } = body;
     
-    // PHASE 1: Distributed Map-Reduce Analysis
     if (sourceType === 'raw_text' && previewOnly) {
-      console.log(`📡 [Gateway] Collaborative Map-Reduce Engaged for: ${name}`);
+      console.log(`📡 [Gateway] Collaborative Map-Reduce Engaged for: ${name} (${extractedText?.length || 0} chars)`);
       
-      const mapReduceInstruction = `You are a Lead Curriculum Engineer. 
-      Analyze the SINDH BIOLOGY 2024 context using Map-Reduce logic. 
-      Ensure 100% fidelity for SLO codes B-09 to B-12 and Domains A-S + X.
-      Generate the Master Pedagogical Markdown and full SLO Map.`;
-
-      // Trigger the Map-Reduce trigger in synthesizer-core
-      const triggerPrompt = `MAP_REDUCE_TRIGGER: SINDH BIOLOGY 2024 CURRICULUM.
-      FULL CONTENT: ${extractedText}`;
+      const mapReduceInstruction = `You are a Lead Curriculum Engineer. Analyze the SINDH BIOLOGY 2024 context. Ensure 100% fidelity for SLO codes B-09 to B-12. Generate Master Pedagogical Markdown and SLO Map.`;
+      const triggerPrompt = `MAP_REDUCE_TRIGGER: SINDH BIOLOGY 2024 CURRICULUM. FULL CONTENT: ${extractedText}`;
 
       const result = await synthesize(triggerPrompt, [], false, [], 'gemini', mapReduceInstruction);
       
-      // Clean and return structured result
       const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
       let parsed;
       try {
         parsed = JSON.parse(jsonClean);
       } catch (e) {
-        // Fallback for partial JSON or markdown-wrapped strings
+        console.warn(`[Gateway] Synthesis returned non-JSON. Wrapping raw text.`);
         parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
       }
       return NextResponse.json(parsed);
     }
 
-    // PHASE 2: Zero-AI Atomic Ingestion (Permanent Vault)
     if (sourceType === 'markdown' && extractedText) {
       const filePath = `vault/${user.id}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
       if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Offline.");
@@ -78,13 +65,12 @@ export async function POST(req: NextRequest) {
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
         difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Distributed Map-Reduce Sync: ${slos?.length || 0} SLOs mapped sequentially.`,
+        document_summary: `Distributed Map-Reduce Sync: ${slos?.length || 0} SLOs mapped.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
       if (dbError) throw dbError;
 
-      // Parallelize RAG Indexing
       indexDocumentForRAG(docData.id, extractedText, filePath, supabase, { ...metadata, slos, slo_map }).catch(e => {
         console.error("Async Indexing Fault:", e);
       });
@@ -95,6 +81,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid pipeline command." }, { status: 400 });
   } catch (error: any) {
     console.error("❌ [Ingestion Fault]:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message || "The neural grid encountered a timeout. Try splitting the document." }, { status: 500 });
   }
 }

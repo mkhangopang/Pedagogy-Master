@@ -33,7 +33,7 @@ export const PROVIDER_FUNCTIONS = {
 
 /**
  * WORLD-CLASS SYNTHESIZER ORCHESTRATOR
- * Detects massive payloads and automatically triggers a Map-Reduce pipeline.
+ * Optimized for massive 185+ page document ingestion via distributed Map-Reduce.
  */
 export async function synthesize(
   prompt: string,
@@ -41,22 +41,24 @@ export async function synthesize(
   hasDocs: boolean,
   docParts: any[] = [],
   preferredProvider?: string,
-  systemInstruction: string = DEFAULT_MASTER_PROMPT
+  systemInstruction: string = DEFAULT_MASTER_PROMPT,
+  bypassQueue: boolean = false // Used for internal Map-Reduce sub-tasks to prevent deadlocks
 ): Promise<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }> {
   
-  // HEAVY TASK DETECTION: 185-page curriculum mapping trigger
+  // HEAVY TASK DETECTION
   const isCurriculumMapping = prompt.includes('SINDH BIOLOGY 2024') || prompt.includes('MAP_REDUCE_TRIGGER');
   const isMassive = prompt.length > 120000;
+  // Markers to prevent infinite recursion during Map-Reduce segments
+  const isAlreadyFragmented = prompt.includes('[PARTIAL_MAP_CHUNK]') || prompt.includes('[REDUCE_PHASE_ACTIVE]');
 
-  if ((isMassive || isCurriculumMapping) && !prompt.includes('[PARTIAL_MAP_CHUNK]')) {
+  if ((isMassive || isCurriculumMapping) && !isAlreadyFragmented) {
     return await runCurriculumMapReduce(prompt, history, systemInstruction);
   }
 
-  return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }>(async () => {
+  const executionTask = async () => {
     const currentProviders = getProvidersConfig();
     let targetProviders = [...currentProviders].filter(p => p.enabled);
     
-    // Sort providers by reasoning capability for complex tasks
     const reasoningOrder = ['gemini', 'openai', 'deepseek', 'groq'];
     targetProviders.sort((a, b) => reasoningOrder.indexOf(a.name) - reasoningOrder.indexOf(b.name));
 
@@ -97,64 +99,56 @@ export async function synthesize(
       }
     }
     throw lastError || new Error("GRID_EXHAUSTED: Multi-provider synthesis failed.");
-  });
+  };
+
+  // Logic: Internal sub-tasks bypass the queue to prevent occupancy-based deadlocks
+  if (bypassQueue) {
+    return await executionTask();
+  }
+
+  return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }>(executionTask);
 }
 
-/**
- * MAP-REDUCE PIPELINE FOR SINDH BIOLOGY 2024
- * Parallelizes extraction across the provider grid.
- */
 async function runCurriculumMapReduce(fullText: string, history: any[], masterSystem: string) {
-  console.log(`🚀 [Map-Reduce] Initializing Distributed Ingestion for 185-page asset...`);
+  console.log(`🚀 [Map-Reduce] Distributed Ingestion Engaged for 185-page asset...`);
   
-  // 1. CHUNKING (Overlap logic to prevent SLO truncation)
-  const CHUNK_SIZE = 90000;
-  const OVERLAP = 3000;
+  // Larger chunk sizes to reduce total request count
+  const CHUNK_SIZE = 120000;
+  const OVERLAP = 5000;
   const chunks: string[] = [];
   for (let i = 0; i < fullText.length; i += (CHUNK_SIZE - OVERLAP)) {
     chunks.push(fullText.substring(i, i + CHUNK_SIZE));
   }
 
-  // 2. MAP PHASE: Distribute extraction to fast nodes (Groq, Cerebras, SambaNova)
-  const availableExtractionProviders = ['groq', 'cerebras', 'sambanova', 'deepseek', 'openai']
+  // MAP PHASE: Use high-speed providers (Groq/Cerebras) for fragment extraction
+  const availableExtractionProviders = ['groq', 'cerebras', 'sambanova', 'deepseek']
     .filter(name => getProvidersConfig().find(p => p.name === name)?.enabled);
 
-  console.log(`📡 [Map Phase] Deploying ${chunks.length} extraction nodes across grid...`);
+  console.log(`📡 [Map Phase] Processing ${chunks.length} segments in parallel...`);
   
   const mapPromises = chunks.map((chunk, idx) => {
     const provider = availableExtractionProviders[idx % availableExtractionProviders.length] || 'gemini';
     const mapPrompt = `[PARTIAL_MAP_CHUNK ${idx + 1}/${chunks.length}] 
-    Analyze this CHUNK of the Biology Sindh 2024 curriculum.
-    EXTRACT: ALL SLO codes (B-grade-domain-number), verbatim descriptions, and benchmarks.
-    FORMAT: JSON object with 'domains', 'slos', and 'cross_references'.
+    Analyze this CHUNK of the curriculum.
+    EXTRACT: SLO codes (B-grade-domain-number), descriptions, and benchmarks.
+    FORMAT: JSON object.
     TEXT: ${chunk}`;
 
-    return synthesize(mapPrompt, [], false, [], provider, "You are a curriculum data extractor. Return valid JSON only.");
+    // bypassQueue is TRUE to prevent deadlock with the parent task
+    return synthesize(mapPrompt, [], false, [], provider, "You are a curriculum data extractor. Return JSON.", true);
   });
 
   const mapResults = await Promise.all(mapPromises);
 
-  // 3. REDUCE PHASE: Master Synthesis using Gemini 3 Pro
-  console.log(`🧠 [Reduce Phase] Synthesizing master curriculum hierarchy via Gemini Pro...`);
+  // REDUCE PHASE: Final high-reasoning synthesis
+  console.log(`🧠 [Reduce Phase] Finalizing master curriculum via Gemini Pro...`);
   const aggregatedResults = mapResults.map(r => r.text).join('\n---\n');
   
-  const reducePrompt = `You are the MASTER SYNTHESIZER for the Sindh Biology 2024 Project.
-  You have received ${mapResults.length} partial JSON extractions.
+  const reducePrompt = `[REDUCE_PHASE_ACTIVE] You are the MASTER SYNTHESIZER.
+  MERGE all partial extracts into one authoritative Sindh Biology 2024 JSON hierarchy.
   
-  GOALS:
-  1. MERGE all partial structures into one authoritative master hierarchy.
-  2. DEDUPLICATE any SLOs caught in chunk overlaps.
-  3. VALIDATE sequential numbering for Grades IX-XII and Domains A-S + X.
-  4. ASSIGN Grade levels correctly based on code (e.g., B-09-A-01 is Grade 9).
-  
-  OUTPUT: A single, comprehensive JSON payload containing:
-  - curriculum_metadata (title, total_slos, grades)
-  - domain_summary (count per domain)
-  - complete_hierarchy (Domain -> Standard -> Grade -> Benchmark -> SLO)
-  - keyword_index
-  
-  PARTIAL EXTRACTS:
+  EXTRACTS:
   ${aggregatedResults}`;
 
-  return await synthesize(reducePrompt, history, false, [], 'gemini', masterSystem);
+  return await synthesize(reducePrompt, history, false, [], 'gemini', masterSystem, true);
 }
