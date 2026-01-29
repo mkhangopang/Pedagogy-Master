@@ -10,8 +10,9 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v150.0)
+ * WORLD-CLASS NEURAL INDEXER (v151.0)
  * Optimized for Sindh Grids & Pedagogical Precision.
+ * Fixed build-time TypeScript errors with Supabase query builders.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -87,7 +88,7 @@ export async function indexDocumentForRAG(
 
     const BATCH_SIZE = 15; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      if (Date.now() - startTime > 55000) break; // Watchdog
+      if (Date.now() - startTime > 55000) break; // Watchdog margin
 
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -116,7 +117,12 @@ export async function indexDocumentForRAG(
     return { success: true };
   } catch (error: any) {
     console.error("❌ [Indexer Fatal]:", error);
-    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId).catch(() => {});
+    // Mark as failed so user can retry, safely handling builder errors
+    try {
+      await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
+    } catch (dbErr) {
+      console.warn("Failed to report indexer failure status to DB.");
+    }
     throw error;
   }
 }
