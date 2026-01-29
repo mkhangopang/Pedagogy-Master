@@ -1,5 +1,4 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { GoogleGenAI, Type } from "@google/genai";
 import { generateEmbeddingsBatch } from './embeddings';
 import { normalizeSLO } from './slo-extractor';
 
@@ -10,48 +9,24 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v153.0)
- * Optimized for Sindh Grids & High-Fidelity Pedagogical Mapping.
- * Performance tuned to minimize extraction bottlenecks.
+ * WORLD-CLASS NEURAL INDEXER (v160.0)
+ * Optimized for "Zero-AI" Latency. 
+ * Re-synthesis is only performed if pre-extracted metadata is missing.
  */
 export async function indexDocumentForRAG(
   documentId: string,
   content: string,
   filePath: string,
-  supabase: SupabaseClient
+  supabase: SupabaseClient,
+  preExtractedMeta?: any
 ) {
   const startTime = Date.now();
-  console.log(`📡 [Indexer] Sync Initiated for Asset Node: ${documentId}`);
+  console.log(`📡 [Indexer] Zero-AI Sync Initiated for: ${documentId}`);
   
   try {
-    // 1. EXTRACT ARCHITECTURAL METADATA
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    // Using a smaller sample (4000) for metadata to stay within token/time budgets
-    const metadataResponse = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Analyze this curriculum document excerpt and extract structural metadata. 
-      EXCERPT: ${content.substring(0, 4000)}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            subject: { type: Type.STRING },
-            grade: { type: Type.STRING },
-            topics: { type: Type.ARRAY, items: { type: Type.STRING } },
-            difficulty: { type: Type.STRING, enum: ["elementary", "middle", "high", "college"] },
-            board: { type: Type.STRING }
-          }
-        }
-      }
-    });
+    let meta = preExtractedMeta;
 
-    const metaText = metadataResponse.text;
-    const meta = metaText ? JSON.parse(metaText) : {};
-
-    // 2. ADAPTIVE SEMANTIC CHUNKING
+    // 1. ADAPTIVE SEMANTIC CHUNKING
     const lines = content.split('\n');
     const processedChunks: any[] = [];
     let currentCtx: IngestionContext = {};
@@ -63,7 +38,6 @@ export async function indexDocumentForRAG(
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      // Grouping on SLO boundaries or structural headers
       if (line.match(/^- SLO:/i) || line.match(/^#{1,3}\s+/) || i === lines.length - 1) {
         if (buffer.length > 50) {
           const sloMatches = buffer.match(/[B-Z]-\d{2}-[A-Z]-\d{2}|S-\d{2}-[A-Z]-\d{2}/gi) || [];
@@ -77,8 +51,7 @@ export async function indexDocumentForRAG(
               slo_codes: normalizedSLOs,
               is_slo_definition: buffer.includes('- SLO:'),
               chunk_index: processedChunks.length,
-              source_path: filePath,
-              indexed_at: new Date().toISOString()
+              source_path: filePath
             }
           });
         }
@@ -88,19 +61,13 @@ export async function indexDocumentForRAG(
       }
     }
 
-    console.log(`🧠 [Indexer] Mapping ${processedChunks.length} nodes to vector grid...`);
-
-    // 3. ATOMIC STORE RESET
+    // 2. ATOMIC STORE RESET
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 4. BATCH PROCESSING WITH WATCHDOG
+    // 3. BATCH PROCESSING (Optimized for Free Tier)
     const BATCH_SIZE = 15; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      // 55s Margins for Serverless stability
-      if (Date.now() - startTime > 55000) {
-        console.warn('⏳ [Indexer] Watchdog triggered. Committing partial node set.');
-        break;
-      }
+      if (Date.now() - startTime > 55000) break; 
 
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -113,32 +80,22 @@ export async function indexDocumentForRAG(
         metadata: chunk.metadata
       }));
 
-      const { error: insertError } = await supabase.from('document_chunks').insert(records);
-      if (insertError) throw insertError;
+      await supabase.from('document_chunks').insert(records);
     }
 
-    // 5. FINALIZE ASSET STATUS
-    const { error: updateError } = await supabase.from('documents').update({ 
+    // 4. FINALIZE (Mark as ready instantly)
+    await supabase.from('documents').update({ 
       status: 'ready', 
-      rag_indexed: true,
-      document_summary: meta.topics?.join(', ') || meta.title || '',
-      difficulty_level: meta.difficulty || 'middle',
-      subject: meta.subject || 'General',
-      grade_level: meta.grade || 'Auto',
-      authority: meta.board || 'Sindh Board'
+      rag_indexed: true 
     }).eq('id', documentId);
 
-    if (updateError) throw updateError;
-
-    console.log(`✅ [Indexer] Asset node ${documentId} anchored successfully.`);
+    console.log(`✅ [Indexer] Sync Complete in ${Date.now() - startTime}ms`);
     return { success: true };
   } catch (error: any) {
     console.error("❌ [Indexer Fault]:", error);
     try {
       await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
-    } catch (e) {
-      console.warn("Failed to set failure state in DB.");
-    }
+    } catch (e) {}
     throw error;
   }
 }

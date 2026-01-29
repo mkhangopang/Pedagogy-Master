@@ -4,14 +4,15 @@ import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
-import { synthesize } from '../../../../lib/ai/synthesizer-core';
+import { GoogleGenAI, Type } from "@google/genai";
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * WORLD-CLASS INGESTION GATEWAY (v120.0)
+ * WORLD-CLASS INGESTION GATEWAY (v125.0)
+ * Implements Structured Payload Pattern for zero-fault indexing.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -24,23 +25,54 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     const body = await req.json();
-    const { name, sourceType, extractedText, previewOnly } = body;
+    const { name, sourceType, extractedText, previewOnly, metadata, slos } = body;
     
-    // PHASE 1: Neural Mapping Preview
+    // PHASE 1: Neural Mapping & Extraction (Returns JSON + MD)
     if (sourceType === 'raw_text' && previewOnly) {
-      console.log(`🧠 [Ingestion] Advanced Mapping: ${name}`);
-      const systemInstruction = `You are a Lead Curriculum Architect. Parse input into structured PEDAGOGICAL MARKDOWN. Use hierarchical blocks for Domain, Standard, Benchmark, and SLO codes. Output ONLY Markdown.`;
-      const prompt = `Synthesize this raw text into standardized standards: ${extractedText.substring(0, 100000)}`;
+      console.log(`🧠 [Ingestion] Executing Deep Structured Analysis: ${name}`);
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Analyze this curriculum raw text.
+        1. Convert to high-fidelity Pedagogical Markdown.
+        2. Extract metadata: Subject, Grade (use Arabic numerals), Board, Difficulty.
+        3. Identify all SLO codes (e.g., B-09-A-01).
+        
+        RAW TEXT: ${extractedText.substring(0, 40000)}`,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              markdown: { type: Type.STRING },
+              metadata: {
+                type: Type.OBJECT,
+                properties: {
+                  subject: { type: Type.STRING },
+                  grade: { type: Type.STRING },
+                  board: { type: Type.STRING },
+                  difficulty: { type: Type.STRING }
+                }
+              },
+              slos: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
+            }
+          }
+        }
+      });
 
-      const { text, provider } = await synthesize(prompt, [], false, [], 'gemini', systemInstruction);
-      return NextResponse.json({ markdown: text, provider });
+      return NextResponse.json(JSON.parse(response.text || '{}'));
     }
 
-    // PHASE 2: Permanent Vaulting
+    // PHASE 2: Zero-AI Atomic Ingestion (Uses pre-extracted metadata)
     if (sourceType === 'markdown' && extractedText) {
       const filePath = `vault/${user.id}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
       if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Offline.");
 
+      // Upload human-readable MD backup to R2
       await r2Client.send(new PutObjectCommand({
         Bucket: R2_BUCKET,
         Key: filePath,
@@ -48,27 +80,29 @@ export async function POST(req: NextRequest) {
         ContentType: 'text/markdown',
       }));
 
-      await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
-
+      // Instant DB commit with provided metadata
       const { data: docData, error: dbError } = await supabase.from('documents').insert({
         user_id: user.id,
-        name,
+        name: name || "Curriculum Asset",
         source_type: 'markdown',
-        status: 'processing',
+        status: 'processing', // Temporary status for chunking
         extracted_text: extractedText,
         file_path: filePath,
         is_selected: true,
-        rag_indexed: false
+        subject: metadata?.subject || 'General',
+        grade_level: metadata?.grade || 'Auto',
+        authority: metadata?.board || 'Sindh Board',
+        difficulty_level: metadata?.difficulty || 'middle',
+        document_summary: slos?.slice(0, 5).join(', ') || 'Indexed'
       }).select().single();
 
       if (dbError) throw dbError;
 
-      // Start high-fidelity indexing (Await for stability in serverless)
-      try {
-        await indexDocumentForRAG(docData.id, extractedText, filePath, supabase);
-      } catch (e) {
-        console.error("Async indexing warning:", e);
-      }
+      // Parallelized Zero-AI Vector Sync
+      // We pass metadata directly to prevent the indexer from calling Gemini again
+      indexDocumentForRAG(docData.id, extractedText, filePath, supabase, metadata).catch(e => {
+        console.error("Async indexing failure:", e);
+      });
 
       return NextResponse.json({ success: true, id: docData.id });
     }
