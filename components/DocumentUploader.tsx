@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -49,11 +50,19 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       let fullText = '';
-      for (let i = 1; i <= Math.min(pdf.numPages, 50); i++) {
+      // Increased page limit to 500 to support heavy 185-page documents
+      const pageLimit = Math.min(pdf.numPages, 500); 
+      
+      for (let i = 1; i <= pageLimit; i++) {
         setProcStage(`Extracting Page ${i} of ${pdf.numPages}...`);
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         fullText += textContent.items.map((item: any) => (item as any).str).join(' ') + '\n';
+        
+        // Slight delay every 10 pages to prevent UI freezing on huge files
+        if (i % 10 === 0) {
+          await new Promise(r => setTimeout(r, 0)); 
+        }
       }
       return fullText;
     } else if (extension === 'docx') {
@@ -76,7 +85,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty or image-only.");
 
-      setProcStage(`Neural Mapping: Analyzing structure...`);
+      setProcStage(`Collaborative Synthesis: Mapping ${file.name}...`);
       const { data: { session } } = await supabase.auth.getSession();
       
       const response = await fetch('/api/docs/upload', {
@@ -85,15 +94,20 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         body: JSON.stringify({ name: file.name, sourceType: 'raw_text', extractedText: rawText, previewOnly: true })
       });
       
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Grid Timeout' }));
+        throw new Error(errorData.error || 'The neural grid timed out processing this large asset.');
+      }
+
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Mapping failed.');
       
-      setDraftMarkdown(result.markdown);
+      setDraftMarkdown(result.markdown || "");
       setExtractedMeta(result.metadata);
       setExtractedSLOs(result.slos || []);
       setMode('transition');
     } catch (err: any) {
-      setError(err.message);
+      console.error("Ingestion Node Fault:", err);
+      setError(err.message || "Synthesis node unreachable.");
     } finally {
       setIsProcessing(false);
       setProcStage('');
@@ -150,43 +164,4 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 flex items-center gap-3 border-b dark:border-white/5">
                 <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Pedagogical Rendering</span>
              </div>
-             <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert h-full max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
-          </div>
-        </div>
-        <div className="p-6 bg-slate-50 dark:bg-slate-900/50 flex flex-col md:flex-row items-center justify-between gap-6 shrink-0 border-t dark:border-white/5">
-           <div className="max-w-2xl w-full">
-             <div className="flex items-center gap-4 text-amber-600">
-               <AlertTriangle size={20} className="shrink-0" />
-               <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.1em] leading-relaxed">
-                  Zero-AI Atomic Indexing Active. Confirmation will anchor this node permanently.
-               </p>
-             </div>
-           </div>
-           <button onClick={handleFinalApproval} disabled={isProcessing || !draftMarkdown} className="w-full md:w-auto px-12 py-5 bg-indigo-600 text-white rounded-[2rem] font-black shadow-2xl flex items-center justify-center gap-3 hover:bg-indigo-700 transition-all uppercase text-xs tracking-widest">
-             {isProcessing ? <Loader2 className="animate-spin" size={20}/> : <Database size={20}/>} Sync to Vault
-           </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-0 w-full max-w-xl shadow-2xl border dark:border-white/5 animate-in zoom-in-95 overflow-hidden h-fit flex flex-col text-left">
-      <div className="h-1 bg-gradient-to-r from-indigo-500 via-amber-500 to-indigo-500 shrink-0" />
-      <div className="p-12 text-center">
-        <div className="w-20 h-20 bg-indigo-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8 text-white shadow-2xl"><UploadCloud size={40} /></div>
-        <h3 className="text-3xl font-black dark:text-white uppercase tracking-tight mb-2">Vault Ingestion</h3>
-        <p className="text-slate-500 mb-10 font-medium">Deep structural mapping for curriculum standards.</p>
-        {error && <div className="mb-6 p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 rounded-2xl text-rose-600 text-xs font-bold text-left flex gap-2 items-center"><AlertCircle size={16} /> {error}</div>}
-        <div className="grid gap-3">
-          <input type="file" id="asset-up" className="hidden" accept=".pdf,.docx,.md" onChange={handleFileUpload} />
-          <label htmlFor="asset-up" className="p-10 border-2 border-dashed rounded-[3rem] border-slate-200 dark:border-white/10 hover:border-indigo-500 hover:bg-indigo-50/30 cursor-pointer transition-all flex flex-col items-center gap-6 group">
-             <div className="p-4 bg-white dark:bg-slate-800 rounded-2xl text-slate-400 group-hover:text-indigo-600 transition-all shadow-sm"><FileText size={32}/></div>
-             <div className="text-center"><p className="font-black dark:text-white text-lg uppercase tracking-tight">Select Document</p><p className="text-[10px] text-slate-400 uppercase tracking-widest mt-1">PDF • DOCX • MARKDOWN</p></div>
-          </label>
-        </div>
-      </div>
-      {isProcessing && <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/95 flex flex-col items-center justify-center z-50 p-10 text-center animate-in fade-in"><Loader2 className="animate-spin text-indigo-600 w-16 h-16 mb-8" /><p className="text-2xl font-black text-indigo-600 uppercase tracking-tighter mb-4">Neural Handshake In Progress</p><p className="text-xs font-bold text-slate-500 uppercase tracking-widest">{procStage}</p></div>}
-    </div>
-  );
-}
+             <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert
