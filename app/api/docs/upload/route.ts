@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * WORLD-CLASS INGESTION GATEWAY (v128.0)
- * Orchestrates Distributed Inference for Sindh Biology 2024 (185 Pages).
+ * WORLD-CLASS INGESTION GATEWAY (v129.0)
+ * Optimized for Sindh Biology 2024 (185 Pages) & Map-Reduce Architecture.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -27,23 +27,34 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map } = body;
     
-    // PHASE 1: Distributed Swarm Analysis
+    // PHASE 1: Distributed Map-Reduce Analysis
     if (sourceType === 'raw_text' && previewOnly) {
-      console.log(`📡 [Gateway] Distributed Swarm Engaged for: ${name}`);
+      console.log(`📡 [Gateway] Collaborative Map-Reduce Engaged for: ${name}`);
       
-      const swarmInstruction = `You are a Lead Curriculum Engineer. 
-      Analyze the SINDH BIOLOGY 2024 context. 
-      Assign Grade 9 (09), 10 (10), 11 (11), or 12 (12) correctly.
-      Return a complete JSON payload with 'markdown', 'metadata', 'slos', and 'slo_map'.`;
+      const mapReduceInstruction = `You are a Lead Curriculum Engineer. 
+      Analyze the SINDH BIOLOGY 2024 context using Map-Reduce logic. 
+      Ensure 100% fidelity for SLO codes B-09 to B-12 and Domains A-S + X.
+      Generate the Master Pedagogical Markdown and full SLO Map.`;
 
-      const result = await synthesize(extractedText, [], false, [], 'gemini', swarmInstruction);
+      // Trigger the Map-Reduce trigger in synthesizer-core
+      const triggerPrompt = `MAP_REDUCE_TRIGGER: SINDH BIOLOGY 2024 CURRICULUM.
+      FULL CONTENT: ${extractedText}`;
+
+      const result = await synthesize(triggerPrompt, [], false, [], 'gemini', mapReduceInstruction);
       
-      // Cleanup any non-JSON markers sometimes added by inferior fallback nodes
+      // Clean and return structured result
       const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
-      return NextResponse.json(JSON.parse(jsonClean));
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonClean);
+      } catch (e) {
+        // Fallback for partial JSON or markdown-wrapped strings
+        parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
+      }
+      return NextResponse.json(parsed);
     }
 
-    // PHASE 2: Zero-AI Atomic Ingestion
+    // PHASE 2: Zero-AI Atomic Ingestion (Permanent Vault)
     if (sourceType === 'markdown' && extractedText) {
       const filePath = `vault/${user.id}/${Date.now()}_${name.replace(/\s+/g, '_')}.md`;
       if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Offline.");
@@ -57,7 +68,7 @@ export async function POST(req: NextRequest) {
 
       const { data: docData, error: dbError } = await supabase.from('documents').insert({
         user_id: user.id,
-        name: name || "Sindh Biology Asset",
+        name: name || "Sindh Biology Master Asset",
         source_type: 'markdown',
         status: 'processing',
         extracted_text: extractedText,
@@ -67,22 +78,23 @@ export async function POST(req: NextRequest) {
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
         difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Distributed Sync: ${slos?.length || 0} SLOs anchored.`,
+        document_summary: `Distributed Map-Reduce Sync: ${slos?.length || 0} SLOs mapped sequentially.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
       if (dbError) throw dbError;
 
+      // Parallelize RAG Indexing
       indexDocumentForRAG(docData.id, extractedText, filePath, supabase, { ...metadata, slos, slo_map }).catch(e => {
-        console.error("Async Swarm Indexing Fault:", e);
+        console.error("Async Indexing Fault:", e);
       });
 
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Invalid Node Pipeline Command." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid pipeline command." }, { status: 400 });
   } catch (error: any) {
-    console.error("❌ [Distributed Ingestion Fault]:", error);
+    console.error("❌ [Ingestion Fault]:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
