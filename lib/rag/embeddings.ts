@@ -22,8 +22,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * BATCH VECTOR SYNTHESIS (v32.0 - HIGH CONCURRENCY)
- * Fixed SDK property name from 'content' to 'contents'.
+ * BATCH VECTOR SYNTHESIS (v35.0 - HIGH CONCURRENCY)
+ * Fixed type error in EmbedContentResponse and added multi-property fallback.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   const start = performance.now();
@@ -51,7 +51,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Fixed: 'contents' is the correct property for the latest SDK version
+    // Execute embeddings in parallel batches
     const results = await Promise.all(uncachedTexts.map(text => 
       ai.models.embedContent({
         model: "text-embedding-004",
@@ -60,7 +60,10 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     ));
 
     for (let i = 0; i < results.length; i++) {
-      const vector = results[i].embedding?.values;
+      const res = results[i] as any;
+      // FIX: Handle both singular 'embedding.values' and plural 'embeddings' response formats
+      const vector = res.embedding?.values || res.embeddings;
+      
       if (!vector) continue;
       
       const originalIndex = uncachedIndices[i];
@@ -73,7 +76,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
 
       finalResults[originalIndex] = finalVector;
       
-      // Commit back to cache (fire and forget)
+      // Commit back to cache
       embeddingCache.set(uncachedTexts[i], finalVector).catch(() => {});
     }
 

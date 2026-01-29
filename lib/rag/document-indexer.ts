@@ -1,4 +1,5 @@
 import { SupabaseClient } from '@supabase/supabase-js';
+import { GoogleGenAI, Type } from "@google/genai";
 import { generateEmbeddingsBatch } from './embeddings';
 import { normalizeSLO } from './slo-extractor';
 
@@ -9,8 +10,8 @@ interface IngestionContext {
 }
 
 /**
- * ULTRA-AGGRESSIVE NEURAL INDEXER (v120.0)
- * Optimized for Sindh Grids & Vercel Gateway Resilience.
+ * WORLD-CLASS NEURAL INDEXER (v150.0)
+ * Optimized for Sindh Grids & Pedagogical Precision.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -22,20 +23,44 @@ export async function indexDocumentForRAG(
   console.log(`📡 [Indexer] Sync Initiated for Asset: ${documentId}`);
   
   try {
+    // 1. EXTRACT ADVANCED METADATA
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const metadataResponse = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Analyze this curriculum document excerpt and extract structural metadata. 
+      EXCERPT: ${content.substring(0, 5000)}`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: { type: Type.STRING },
+            subject: { type: Type.STRING },
+            grade: { type: Type.STRING },
+            topics: { type: Type.ARRAY, items: { type: Type.STRING } },
+            difficulty: { type: Type.STRING, enum: ["elementary", "middle", "high", "college"] }
+          }
+        }
+      }
+    });
+
+    const meta = JSON.parse(metadataResponse.text || "{}");
+
+    // 2. SEMANTIC CHUNKING
     const lines = content.split('\n');
     const processedChunks: any[] = [];
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
-    // 1. Structural Decomposition
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (line.match(/^DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      if (line.match(/^- SLO:/i) || i === lines.length - 1) {
-        if (buffer.length > 20) {
+      // Grouping on SLO boundaries or natural sections
+      if (line.match(/^- SLO:/i) || line.match(/^#{1,3}\s+/) || i === lines.length - 1) {
+        if (buffer.length > 50) {
           const sloMatches = buffer.match(/[B-Z]-\d{2}-[A-Z]-\d{2}|S-\d{2}-[A-Z]-\d{2}/gi) || [];
           const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
 
@@ -43,6 +68,7 @@ export async function indexDocumentForRAG(
             text: buffer.trim(),
             metadata: {
               ...currentCtx,
+              ...meta,
               slo_codes: normalizedSLOs,
               is_slo_definition: buffer.includes('- SLO:'),
               chunk_index: processedChunks.length,
@@ -56,66 +82,41 @@ export async function indexDocumentForRAG(
       }
     }
 
-    console.log(`🧠 [Indexer] Anchoring ${processedChunks.length} neural nodes...`);
-
-    // 2. Atomic Cache Reset
+    // 3. ATOMIC STORE
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 3. High-Throughput Parallel Vectorization
-    // Use smaller batch size but higher concurrency to stay within memory limits while maximizing speed
-    const BATCH_SIZE = 10; 
-    const batches = [];
+    const BATCH_SIZE = 15; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      batches.push(processedChunks.slice(i, i + BATCH_SIZE));
+      if (Date.now() - startTime > 55000) break; // Watchdog
+
+      const batch = processedChunks.slice(i, i + BATCH_SIZE);
+      const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
+      
+      const records = batch.map((chunk, j) => ({
+        document_id: documentId,
+        chunk_text: chunk.text,
+        embedding: embeddings[j],
+        slo_codes: chunk.metadata.slo_codes,
+        metadata: chunk.metadata
+      }));
+
+      await supabase.from('document_chunks').insert(records);
     }
 
-    for (let i = 0; i < batches.length; i++) {
-      // Vercel Free Watchdog (10s) vs Pro Watchdog (300s)
-      // We aim for a 9s threshold for baseline safety
-      const elapsed = Date.now() - startTime;
-      if (elapsed > 9000 && processedChunks.length > 50) { 
-        // If we are on a tight budget, commit what we have and finish
-        console.warn(`⏳ [Indexer] Early completion triggered for safety.`);
-        break;
-      }
-
-      const batch = batches[i];
-      try {
-        const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
-        
-        const records = batch.map((chunk, j) => ({
-          document_id: documentId,
-          chunk_text: chunk.text,
-          embedding: embeddings[j],
-          slo_codes: chunk.metadata.slo_codes,
-          metadata: chunk.metadata
-        }));
-
-        await supabase.from('document_chunks').insert(records);
-        
-        // Progress Heartbeat: Update status to partial success if we've processed significant chunks
-        if (i % 5 === 0) {
-           await supabase.from('documents').update({ status: 'ready', rag_indexed: true }).eq('id', documentId);
-        }
-      } catch (batchErr: any) {
-        console.error(`⚠️ [Indexer] Batch fault:`, batchErr.message);
-      }
-    }
-
-    // 4. Final Lock
+    // 4. FINALIZE DOCUMENT RECORD
     await supabase.from('documents').update({ 
       status: 'ready', 
       rag_indexed: true,
-      updated_at: new Date().toISOString()
+      document_summary: meta.topics?.join(', ') || '',
+      difficulty_level: meta.difficulty || 'middle',
+      subject: meta.subject || 'General',
+      grade_level: meta.grade || 'Auto'
     }).eq('id', documentId);
 
-    console.log(`✅ [Indexer] Sync Complete: ${(Date.now() - startTime) / 1000}s`);
     return { success: true };
   } catch (error: any) {
-    console.error("❌ [Indexer Critical]:", error);
-    try {
-      await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
-    } catch (e) {}
+    console.error("❌ [Indexer Fatal]:", error);
+    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId).catch(() => {});
     throw error;
   }
 }
