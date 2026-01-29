@@ -10,8 +10,9 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v152.0)
+ * WORLD-CLASS NEURAL INDEXER (v153.0)
  * Optimized for Sindh Grids & High-Fidelity Pedagogical Mapping.
+ * Performance tuned to minimize extraction bottlenecks.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -25,10 +26,12 @@ export async function indexDocumentForRAG(
   try {
     // 1. EXTRACT ARCHITECTURAL METADATA
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    
+    // Using a smaller sample (4000) for metadata to stay within token/time budgets
     const metadataResponse = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Analyze this curriculum document excerpt and extract structural metadata. 
-      EXCERPT: ${content.substring(0, 6000)}`,
+      EXCERPT: ${content.substring(0, 4000)}`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -45,7 +48,8 @@ export async function indexDocumentForRAG(
       }
     });
 
-    const meta = JSON.parse(metadataResponse.text || "{}");
+    const metaText = metadataResponse.text;
+    const meta = metaText ? JSON.parse(metaText) : {};
 
     // 2. ADAPTIVE SEMANTIC CHUNKING
     const lines = content.split('\n');

@@ -101,7 +101,6 @@ export async function smartRetrieval(
   filters: RetrievalFilters = {},
   topK: number = 5
 ): Promise<RetrievedChunk[]> {
-  // Detect SLO specific queries
   const targetSLOs = extractSLOCodes(query);
   
   if (targetSLOs.length > 0) {
@@ -112,7 +111,8 @@ export async function smartRetrieval(
 }
 
 /**
- * NEURAL RERANKER: Improves retrieval quality by scoring candidates with a reasoning model.
+ * RERANK: Improve retrieval quality by reranking results
+ * FIXED: Uses @google/genai and property access for .text
  */
 export async function rerankResults(
   query: string,
@@ -125,33 +125,45 @@ export async function rerankResults(
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Rate the pedagogical relevance of these curriculum chunks to the query: "${query}"
-
-CHUNKS:
-${chunks.map((chunk, i) => `[${i}] ${chunk.content.substring(0, 500)}`).join('\n---\n')}
-
-Return ONLY a JSON array of numbers representing indices in order of relevance (best first).
-Example: [2, 0, 1]`,
+      contents: `You are a relevance scorer for curriculum documents.
+      
+      QUERY: "${query}"
+      
+      Rate each chunk's relevance to the query on a scale of 0-100.
+      
+      CHUNKS:
+      ${chunks.map((chunk, i) => `[${i}] ${chunk.content.substring(0, 500)}...`).join('\n---\n')}
+      
+      Return ONLY a JSON array of numbers (scores) representing the relevance of each index.
+      Example: [85, 72, 91, 45, 68]`,
       config: {
         responseMimeType: 'application/json'
       }
     });
 
     const responseText = response.text;
+    
     if (!responseText) {
+      console.warn('No response text from reranking, using original order');
       return chunks.slice(0, topK);
     }
 
-    const order = JSON.parse(responseText);
-    if (!Array.isArray(order)) {
+    const scores = JSON.parse(responseText);
+
+    if (!Array.isArray(scores) || scores.length !== chunks.length) {
+      console.warn('Invalid scores format, using original order');
       return chunks.slice(0, topK);
     }
 
-    const sorted = order
-      .map(idx => chunks[idx])
-      .filter(Boolean);
+    const rankedChunks = chunks.map((chunk, i) => ({
+      ...chunk,
+      rank: typeof scores[i] === 'number' ? scores[i] : 0
+    }));
+
+    return rankedChunks
+      .sort((a, b) => (b.rank || 0) - (a.rank || 0))
+      .slice(0, topK);
       
-    return sorted.slice(0, topK);
   } catch (error) {
     console.error('Reranking error:', error);
     return chunks.slice(0, topK);
@@ -187,7 +199,6 @@ CONTENT:
 ${chunk.content}
 ---
 `;
-      // Safety break to respect context windows (approx character limit)
       if ((context.length + chunkText.length) > maxTokens) break;
       context += chunkText;
     }
