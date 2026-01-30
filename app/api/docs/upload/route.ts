@@ -8,7 +8,7 @@ import { getSynthesizer } from '../../../../lib/ai/synthesizer-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 10; // Forced compliance for Vercel Hobby
+export const maxDuration = 10; 
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,26 +21,18 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     const body = await req.json();
-    const { name, sourceType, extractedText, previewOnly, metadata, isReduce } = body;
+    const { name, sourceType, extractedText, previewOnly, metadata } = body;
     
     if (sourceType === 'raw_text' && previewOnly) {
       const synth = getSynthesizer();
-
       const instruction = `
-# GRID FORMATTER NODE
-INPUT: Raw text with SLO B-09 to B-12.
-TASK: Clean formatting only. No conversational filler.
-OUTPUT: 
-# Curriculum Metadata
-Board: Sindh
-Subject: Biology
-Grade: 9-12
-
-# Master Curriculum Grid
-- SLO:[CODE]: [VERBATIM_DESCRIPTION]
+# PULSE CLEANER
+INPUT: Curriculum blocks.
+TASK: Extract SLO codes and descriptions. 
+OUTPUT: Verbatim Markdown list. No chat.
+FORMAT: - SLO:[CODE]: [DESCRIPTION]
 `;
-      
-      const result = await synth.synthesize(`${instruction}\n\nINPUT:\n${extractedText}`, { type: 'reduce' });
+      const result = await synth.synthesize(`${instruction}\n\nINPUT_PULSE:\n${extractedText}`);
       return NextResponse.json({ markdown: result.text, provider: result.provider });
     }
 
@@ -59,7 +51,7 @@ Grade: 9-12
 
       const { data: docData, error: dbError } = await supabase.from('documents').insert({
         user_id: user.id,
-        name: name || "Curriculum Master",
+        name: name || "Curriculum Vault",
         source_type: 'markdown',
         status: 'processing',
         extracted_text: extractedText,
@@ -68,7 +60,7 @@ Grade: 9-12
         subject: metadata?.subject || 'Biology',
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
-        document_summary: `Neural Sync Complete.`
+        document_summary: `Neural Pulse Sync Complete.`
       }).select().single();
 
       if (dbError) throw new Error(dbError.message);
@@ -78,9 +70,9 @@ Grade: 9-12
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Configuration mismatch." }, { status: 400 });
+    return NextResponse.json({ error: "Pulse configuration mismatch." }, { status: 400 });
   } catch (error: any) {
-    console.error("❌ [Upload Gateway Error]:", error);
+    console.error("❌ [Upload Gateway Pulse Error]:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

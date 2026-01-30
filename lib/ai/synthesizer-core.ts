@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -9,34 +10,21 @@ export interface AIProvider {
   apiKeyEnv: string;
   maxTokens: number;
   rateLimit: number; 
+  // Fix: Added rpm and rpd for compatibility with ProviderConfig used in rate-limiter.ts
+  rpm: number;
+  rpd: number;
   tier: 1 | 2;
   enabled: boolean;
   canHandleLargeContext: boolean;
 }
 
-interface RateLimitTracker {
-  requestCount: number;
-  windowStart: number;
-  lastRequest: number;
-}
-
 export class SynthesizerCore {
   private providers: Map<string, AIProvider>;
-  private rateLimits: Map<string, RateLimitTracker>;
   private failedProviders: Map<string, number>;
 
   constructor() {
     this.providers = this.initializeProviders();
-    this.rateLimits = new Map();
     this.failedProviders = new Map();
-    
-    this.providers.forEach((_, id) => {
-      this.rateLimits.set(id, {
-        requestCount: 0,
-        windowStart: Date.now(),
-        lastRequest: 0
-      });
-    });
   }
 
   private initializeProviders(): Map<string, AIProvider> {
@@ -48,49 +36,29 @@ export class SynthesizerCore {
       endpoint: 'native',
       model: 'gemini-3-flash-preview',
       apiKeyEnv: 'API_KEY',
-      maxTokens: 8192,
+      maxTokens: 2048, // Reduced for speed in Pulse Mode
       rateLimit: 60,
+      // Fix: Provided rpm and rpd values
+      rpm: 60,
+      rpd: 10000,
       tier: 1,
       enabled: isGeminiEnabled(),
       canHandleLargeContext: true
     });
 
-    providers.set('openrouter', {
-      id: 'openrouter',
-      name: 'OpenRouter Hub',
-      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-      model: 'google/gemini-2.0-flash-001',
-      apiKeyEnv: 'OPENROUTER_API_KEY',
-      maxTokens: 8192,
-      rateLimit: 20,
-      tier: 1,
-      enabled: !!process.env.OPENROUTER_API_KEY,
-      canHandleLargeContext: true
-    });
-
     providers.set('groq', {
       id: 'groq',
-      name: 'Groq Llama',
+      name: 'Groq Llama 3.3',
       endpoint: 'https://api.groq.com/openai/v1/chat/completions',
       model: 'llama-3.3-70b-versatile',
       apiKeyEnv: 'GROQ_API_KEY',
-      maxTokens: 4096,
+      maxTokens: 1024,
       rateLimit: 30,
+      // Fix: Provided rpm and rpd values
+      rpm: 30,
+      rpd: 5000,
       tier: 1,
       enabled: !!process.env.GROQ_API_KEY,
-      canHandleLargeContext: false
-    });
-
-    providers.set('cerebras', {
-      id: 'cerebras',
-      name: 'Cerebras Ultra',
-      endpoint: 'https://api.cerebras.ai/v1/chat/completions',
-      model: 'llama3.1-70b', 
-      apiKeyEnv: 'CEREBRAS_API_KEY',
-      maxTokens: 2048,
-      rateLimit: 15,
-      tier: 2,
-      enabled: !!process.env.CEREBRAS_API_KEY,
       canHandleLargeContext: false
     });
 
@@ -98,31 +66,24 @@ export class SynthesizerCore {
   }
 
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
-    const isHeavy = options.type === 'reduce' || prompt.length > 8000;
     const now = Date.now();
-    
-    // Cleanup failures
     for (const [id, expiry] of this.failedProviders.entries()) {
       if (now > expiry) this.failedProviders.delete(id);
     }
 
-    // Get viable nodes for this specific task
     const candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id))
-      .filter(p => isHeavy ? p.canHandleLargeContext : true)
       .sort((a, b) => a.tier - b.tier);
 
     if (candidates.length === 0) {
-      throw new Error("GRID_EXHAUSTED: All high-context nodes are currently in a cooldown state. Please retry in 60s.");
+      throw new Error("GRID_EXHAUSTED: Neural nodes cooling down. Retry Pulse in 10s.");
     }
 
-    // Linear Execution (No Recursion)
     for (const provider of candidates) {
       try {
-        console.log(`🛰️ Engaging Node: ${provider.name}`);
         let content = "";
-
         if (provider.endpoint === 'native') {
+          // Fix: Initializing GoogleGenAI with named parameter apiKey as per guidelines
           const ai = new GoogleGenAI({ apiKey: process.env[provider.apiKeyEnv]! });
           const res = await ai.models.generateContent({
             model: provider.model,
@@ -130,9 +91,10 @@ export class SynthesizerCore {
             config: { 
               temperature: 0.0, 
               maxOutputTokens: provider.maxTokens,
-              thinkingConfig: { thinkingBudget: 0 } // Speed priority
+              thinkingConfig: { thinkingBudget: 0 }
             }
           });
+          // Fix: Accessing generated text via .text property on GenerateContentResponse
           content = res.text || "";
         } else {
           const res = await fetch(provider.endpoint, {
@@ -143,25 +105,28 @@ export class SynthesizerCore {
             },
             body: JSON.stringify({
               model: provider.model,
-              messages: [{ role: 'system', content: options.systemPrompt || 'Formatting node.' }, { role: 'user', content: prompt }],
+              messages: [{ role: 'system', content: 'Output ONLY structured markdown.' }, { role: 'user', content: prompt }],
               temperature: 0.0,
               max_tokens: provider.maxTokens
             })
           });
-
-          if (!res.ok) throw new Error(`Node rejected request [${res.status}]`);
+          if (!res.ok) throw new Error("Node Rejected Pulse");
           const data = await res.json();
           content = data.choices[0].message.content;
         }
 
         if (content) return { text: content, provider: provider.name };
       } catch (e: any) {
-        console.error(`🔴 Node Failure [${provider.id}]: ${e.message}`);
-        this.failedProviders.set(provider.id, Date.now() + 60000); // 60s blacklist
+        this.failedProviders.set(provider.id, Date.now() + 30000); // 30s block
       }
     }
 
-    throw new Error("GRID_FAILURE: All neural nodes failed to synthesize the payload. The document chunk may be too complex.");
+    throw new Error("PULSE_FAULT: Neural nodes timed out. Retrying segment...");
+  }
+
+  // Fix: Added public method to access providers
+  public getProviders(): AIProvider[] {
+    return Array.from(this.providers.values());
   }
 
   public getProviderStatus() {
@@ -180,10 +145,11 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-export function getProvidersConfig(): any[] {
-  return getSynthesizer().getProviderStatus();
+// Fix: Exporting getProvidersConfig function required by multi-provider-router.ts
+export function getProvidersConfig(): AIProvider[] {
+  return getSynthesizer().getProviders();
 }
 
 export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string) => {
-  return getSynthesizer().synthesize(prompt, { type: hasDocs ? 'reduce' : 'chat', systemPrompt: system });
+  return getSynthesizer().synthesize(prompt, { type: 'chat', systemPrompt: system });
 };
