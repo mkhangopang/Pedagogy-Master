@@ -4,16 +4,12 @@ import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { Buffer } from 'buffer';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
-import { synthesize } from '../../../../lib/ai/synthesizer-core';
+import { getSynthesizer } from '../../../../lib/ai/synthesizer-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
-/**
- * NEURAL INGESTION GATEWAY (v11.0)
- * Optimized for Multi-Node Load Balancing across 185+ pages.
- */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -25,57 +21,32 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     const body = await req.json();
-    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce, isIntermediate, isFragment } = body;
+    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce, isIntermediate } = body;
     
-    // BRANCH A: AI PRE-SYNC
     if (sourceType === 'raw_text' && previewOnly) {
       let instruction = "";
-      // FIX: Removed hardcoded preferred = "gemini" to allow grid balancing
-      let preferred = undefined; 
-      let finalPrompt = "";
+      const synth = getSynthesizer();
 
       if (isReduce) {
-        if (isIntermediate) {
-          instruction = "REDUCTION_PROTOCOL_ALPHA: Merge these DATA_BLOCKS into a dense Markdown list. PRESERVE ALL GRADES (B-09, B-10, B-11, B-12). No chat.";
-        } else {
-          instruction = "FINAL_SYNTHESIS_OMEGA: BELOW IS THE FULL REDUCED CURRICULUM. Generate official MASTER SINDH BIOLOGY 2024 hierarchy (9-12). Format: B-[Grade]-[Domain]-[Number].";
-          preferred = "gemini"; // Force Gemini only for the final massive context reduction
-        }
+        instruction = isIntermediate 
+          ? "REDUCTION_PROTOCOL: Merge these segments into a dense Markdown list. Use SLO codes." 
+          : "MASTER_SYNTHESIS: Create the final Sindh Biology 2024 hierarchy. JSON-Ready Markdown.";
         
-        finalPrompt = `
-[SYSTEM_EXECUTION_MODE: MANDATORY]
-[INPUT_DATA_NODES]
-${extractedText}
-[/INPUT_DATA_NODES]
-
-[COMMAND]
-${instruction}
-[/COMMAND]
-
-[STRICT_RULE]
-DO NOT SAY "I AM READY". GENERATE THE COMPLETE MARKDOWN LIST NOW.
-[/STRICT_RULE]
-`;
+        const finalPrompt = `[INPUT]\n${extractedText}\n[EXECUTE]: ${instruction}`;
+        const result = await synth.synthesize(finalPrompt, { type: 'reduce' });
+        
+        return NextResponse.json({ markdown: result.text, provider: result.provider });
       } else {
-        instruction = "MAPPING_PROTOCOL: Extract every Student Learning Outcome (SLO) from this fragment. Use format [SLO:CODE] Description.";
-        finalPrompt = `[DATA_FRAGMENT]:\n${extractedText}\n\n[EXECUTE]: ${instruction}`;
+        instruction = "MAPPING: Extract all SLO codes and descriptions from this fragment.";
+        const finalPrompt = `[DATA]:\n${extractedText}\n[EXECUTE]: ${instruction}`;
+        const result = await synth.synthesize(finalPrompt, { type: 'map' });
+        
+        return NextResponse.json({ markdown: result.text, provider: result.provider });
       }
-
-      const result = await synthesize(finalPrompt, [], false, [], preferred, "STRICT_DATA_ENGINE: ACTIVE", true);
-      
-      const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
-      let parsed;
-      try {
-        parsed = JSON.parse(jsonClean);
-      } catch (e) {
-        parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
-      }
-      return NextResponse.json(parsed);
     }
 
-    // BRANCH B: FINAL VAULT LOCK
     if (sourceType === 'markdown' && extractedText) {
-      const fileNameClean = (name || "Sindh_Master").replace(/\s+/g, '_');
+      const fileNameClean = (name || "Master_Curriculum").replace(/\s+/g, '_');
       const filePath = `vault/${user.id}/${Date.now()}_${fileNameClean}.md`;
       
       if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Offline.");
@@ -98,31 +69,20 @@ DO NOT SAY "I AM READY". GENERATE THE COMPLETE MARKDOWN LIST NOW.
         subject: metadata?.subject || 'Biology',
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
-        difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Neural Vault v11.0: Balanced Multi-Node Sync (185pg).`,
+        document_summary: `Neural Grid v10.0: High-fidelity multi-node extraction complete.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
-      if (dbError) throw new Error(`Database Error: ${dbError.message}`);
+      if (dbError) throw new Error(dbError.message);
 
-      indexDocumentForRAG(docData.id, extractedText, filePath, supabase, { ...metadata, slos, slo_map }).catch(e => {
-        console.error("Indexing Fault:", e);
-      });
+      indexDocumentForRAG(docData.id, extractedText, filePath, supabase, metadata).catch(console.error);
 
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Pipeline configuration mismatch." }, { status: 400 });
+    return NextResponse.json({ error: "Configuration mismatch." }, { status: 400 });
   } catch (error: any) {
-    console.error("❌ [Gateway Fatal]:", error);
-    // Error Sanitizer: Clean up JSON code from message
-    let cleanMsg = error.message || "Synthesis grid exception.";
-    if (cleanMsg.includes('{"error"')) {
-      try {
-        const parsed = JSON.parse(cleanMsg.substring(cleanMsg.indexOf('{')));
-        cleanMsg = `AI Grid Alert: ${parsed.error?.message || "Rate Limit Reached."}`;
-      } catch(e) {}
-    }
-    return NextResponse.json({ error: cleanMsg }, { status: 500 });
+    console.error("❌ [Gateway Error]:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

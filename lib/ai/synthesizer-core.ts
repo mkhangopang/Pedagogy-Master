@@ -1,127 +1,277 @@
-import { callGroq } from './providers/groq';
-import { callOpenRouter } from './providers/openrouter';
-import { callGemini } from './providers/gemini';
-import { callDeepSeek } from './providers/deepseek';
-import { callCerebras } from './providers/cerebras';
-import { callSambaNova } from './providers/sambanova';
-import { callHyperbolic } from './providers/hyperbolic';
-import { rateLimiter, ProviderConfig } from './rate-limiter';
-import { requestQueue } from './request-queue';
-import { DEFAULT_MASTER_PROMPT } from '../../constants';
+import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
-// Session-based node blacklisting to prevent repeated failures
-const nodeBlacklist = new Map<string, number>();
-
 /**
- * NEURAL MESH CONFIGURATION (v12.5)
- * 7-Node Failover Grid with Aggressive Blacklisting
+ * OPTIMIZED 7-NODE NEURAL GRID v10.0
+ * Features: Smart Load Balancing, Tiered Priority, and Auto-Failover.
  */
-export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: number; priority: number })[] => [
-  { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled(), contextCharLimit: 1000000, priority: 1 },
-  { name: 'cerebras', rpm: 30, rpd: 10000, enabled: !!process.env.CEREBRAS_API_KEY, contextCharLimit: 64000, priority: 2 },
-  { name: 'sambanova', rpm: 20, rpd: 5000, enabled: !!process.env.SAMBANOVA_API_KEY, contextCharLimit: 64000, priority: 3 },
-  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY, contextCharLimit: 32000, priority: 4 },
-  { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY, contextCharLimit: 128000, priority: 5 },
-  { name: 'hyperbolic', rpm: 10, rpd: 2000, enabled: !!process.env.HYPERBOLIC_API_KEY, contextCharLimit: 64000, priority: 6 },
-  { name: 'openrouter', rpm: 50, rpd: 50000, enabled: !!process.env.OPENROUTER_API_KEY, contextCharLimit: 128000, priority: 7 },
-];
 
-export const PROVIDER_FUNCTIONS = {
-  gemini: callGemini,
-  cerebras: callCerebras,
-  sambanova: callSambaNova,
-  groq: callGroq,
-  deepseek: callDeepSeek,
-  hyperbolic: callHyperbolic,
-  openrouter: callOpenRouter,
-};
-
-export async function synthesize(
-  prompt: string,
-  history: any[],
-  hasDocs: boolean,
-  docParts: any[] = [],
-  preferredProvider?: string,
-  systemInstruction: string = DEFAULT_MASTER_PROMPT,
-  bypassQueue: boolean = false
-): Promise<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }> {
-  
-  const executionTask = async () => {
-    const currentProviders = getProvidersConfig();
-    const now = Date.now();
-
-    let targetProviders = [...currentProviders]
-      .filter(p => p.enabled)
-      .filter(p => {
-        const blacklistExpiry = nodeBlacklist.get(p.name);
-        return !blacklistExpiry || now > blacklistExpiry;
-      })
-      .sort((a, b) => a.priority - b.priority);
-    
-    if (targetProviders.length === 0) {
-      nodeBlacklist.clear();
-      targetProviders = [currentProviders[0]];
-    }
-
-    const isMassiveTask = prompt.includes('FINAL_REDUCE_PROTOCOL') || prompt.length > 35000;
-    
-    if (isMassiveTask && !nodeBlacklist.has('gemini')) {
-      preferredProvider = 'gemini'; 
-    }
-
-    if (preferredProvider) {
-      const preferred = targetProviders.find(p => p.name === preferredProvider);
-      if (preferred) {
-        targetProviders = [preferred, ...targetProviders.filter(p => p.name !== preferredProvider)];
-      }
-    }
-
-    let lastError = null;
-    for (const config of targetProviders) {
-      if (prompt.length > (config.contextCharLimit * 0.95)) continue;
-
-      try {
-        const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        const timeout = isMassiveTask ? 290000 : 90000;
-        
-        const response = await Promise.race([
-          (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('NODE_TIMEOUT')), timeout))
-        ]);
-
-        if (typeof response === 'string') return { text: response, provider: config.name };
-        return { 
-          text: response.text || "Synthesis complete.", 
-          provider: config.name, 
-          groundingMetadata: response.groundingMetadata,
-          imageUrl: response.imageUrl
-        };
-      } catch (e: any) { 
-        const errorMsg = e.message?.toLowerCase() || "";
-        console.warn(`⚠️ [Grid Failover] Node ${config.name} rejected: ${errorMsg}`);
-        lastError = e;
-        
-        if (
-          errorMsg.includes('429') || 
-          errorMsg.includes('resource_exhausted') || 
-          errorMsg.includes('quota') || 
-          errorMsg.includes('402') || 
-          errorMsg.includes('400') || 
-          errorMsg.includes('node_timeout')
-        ) {
-          console.error(`🔴 [Grid Control] Node ${config.name} saturated. Blacklisting for 120s.`);
-          nodeBlacklist.set(config.name, Date.now() + 120000);
-        }
-        
-        await new Promise(r => setTimeout(r, 2000));
-        continue; 
-      }
-    }
-    
-    throw lastError || new Error("GRID_FAILURE: All neural segments rejected the payload.");
-  };
-
-  if (bypassQueue) return await executionTask();
-  return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }>(executionTask);
+// Add comment above each fix
+// Fix: Export AIProvider interface to allow external access to provider configuration details
+export interface AIProvider {
+  id: string;
+  name: string;
+  endpoint: string;
+  model: string;
+  apiKeyEnv: string;
+  maxTokens: number;
+  rateLimit: number; // RPM
+  tier: 1 | 2;
+  enabled: boolean;
 }
+
+interface RateLimitTracker {
+  requestCount: number;
+  windowStart: number;
+  lastRequest: number;
+}
+
+export class SynthesizerCore {
+  private providers: Map<string, AIProvider>;
+  private rateLimits: Map<string, RateLimitTracker>;
+  private failedProviders: Set<string>;
+
+  constructor() {
+    this.providers = this.initializeProviders();
+    this.rateLimits = new Map();
+    this.failedProviders = new Set();
+    
+    this.providers.forEach((_, id) => {
+      this.rateLimits.set(id, {
+        requestCount: 0,
+        windowStart: Date.now(),
+        lastRequest: 0
+      });
+    });
+  }
+
+  private initializeProviders(): Map<string, AIProvider> {
+    const providers = new Map<string, AIProvider>();
+
+    // TIER 1: PRIMARY NODES
+    providers.set('gemini-flash', {
+      id: 'gemini-flash',
+      name: 'Gemini 3 Flash',
+      endpoint: 'native',
+      model: 'gemini-3-flash-preview',
+      apiKeyEnv: 'API_KEY',
+      maxTokens: 8192,
+      rateLimit: 50,
+      tier: 1,
+      enabled: isGeminiEnabled()
+    });
+
+    providers.set('deepseek', {
+      id: 'deepseek',
+      name: 'DeepSeek R1',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-chat',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      maxTokens: 8192,
+      rateLimit: 30,
+      tier: 1,
+      enabled: !!process.env.DEEPSEEK_API_KEY
+    });
+
+    providers.set('groq', {
+      id: 'groq',
+      name: 'Groq Llama 3.3',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      model: 'llama-3.3-70b-versatile',
+      apiKeyEnv: 'GROQ_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 30,
+      tier: 1,
+      enabled: !!process.env.GROQ_API_KEY
+    });
+
+    // TIER 2: SPECIALIZED FALLBACKS
+    providers.set('cerebras', {
+      id: 'cerebras',
+      name: 'Cerebras Ultra',
+      endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+      model: 'llama3.1-70b', 
+      apiKeyEnv: 'CEREBRAS_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 15,
+      tier: 2,
+      enabled: !!process.env.CEREBRAS_API_KEY
+    });
+
+    providers.set('sambanova', {
+      id: 'sambanova',
+      name: 'SambaNova XL',
+      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
+      model: 'Meta-Llama-3.1-405B-Instruct', 
+      apiKeyEnv: 'SAMBANOVA_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 15,
+      tier: 2,
+      enabled: !!process.env.SAMBANOVA_API_KEY
+    });
+
+    providers.set('hyperbolic', {
+      id: 'hyperbolic',
+      name: 'Hyperbolic Llama',
+      endpoint: 'https://api.hyperbolic.xyz/v1/chat/completions',
+      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct',
+      apiKeyEnv: 'HYPERBOLIC_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 20,
+      tier: 2,
+      enabled: !!process.env.HYPERBOLIC_API_KEY
+    });
+
+    providers.set('openrouter', {
+      id: 'openrouter',
+      name: 'OpenRouter Hub',
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      model: 'meta-llama/llama-3.3-70b-instruct',
+      apiKeyEnv: 'OPENROUTER_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 20,
+      tier: 2,
+      enabled: !!process.env.OPENROUTER_API_KEY
+    });
+
+    return providers;
+  }
+
+  private async selectProvider(type: 'map' | 'reduce' | 'chat'): Promise<AIProvider | null> {
+    const isReduce = type === 'reduce';
+    
+    // REDUCE phase priority
+    const candidates = Array.from(this.providers.values())
+      .filter(p => p.enabled && !this.failedProviders.has(p.id))
+      .sort((a, b) => {
+        if (isReduce) {
+          if (a.id === 'gemini-flash') return -1;
+          if (b.id === 'gemini-flash') return 1;
+        }
+        if (a.tier !== b.tier) return a.tier - b.tier;
+        const aT = this.rateLimits.get(a.id)!;
+        const bT = this.rateLimits.get(b.id)!;
+        return aT.requestCount - bT.requestCount;
+      });
+
+    for (const provider of candidates) {
+      if (await this.checkRateLimit(provider.id)) return provider;
+    }
+    return candidates.length > 0 ? candidates[0] : null;
+  }
+
+  private async checkRateLimit(id: string): Promise<boolean> {
+    const provider = this.providers.get(id);
+    const tracker = this.rateLimits.get(id);
+    if (!provider || !tracker) return false;
+
+    const now = Date.now();
+    if (now - tracker.windowStart > 60000) {
+      tracker.requestCount = 0;
+      tracker.windowStart = now;
+    }
+
+    if (tracker.requestCount < provider.rateLimit) {
+      const minInterval = 60000 / provider.rateLimit;
+      const elapsed = now - tracker.lastRequest;
+      if (elapsed < minInterval) await new Promise(r => setTimeout(r, minInterval - elapsed));
+      return true;
+    }
+    return false;
+  }
+
+  public async synthesize(prompt: string, options: any = {}): Promise<any> {
+    const type = options.type || 'chat';
+    const provider = await this.selectProvider(type);
+    if (!provider) throw new Error('GRID_EXHAUSTED: No active neural nodes.');
+
+    console.log(`🛰️ [Neural Grid] Engaging: ${provider.name.toUpperCase()}`);
+
+    try {
+      let content = "";
+      if (provider.endpoint === 'native') {
+        const ai = new GoogleGenAI({ apiKey: process.env[provider.apiKeyEnv]! });
+        const res = await ai.models.generateContent({
+          model: provider.model,
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          config: { temperature: options.temperature || 0.1, maxOutputTokens: provider.maxTokens }
+        });
+        content = res.text || "";
+      } else {
+        const res = await fetch(provider.endpoint, {
+          method: 'POST',
+          headers: { 
+            'Authorization': `Bearer ${process.env[provider.apiKeyEnv]}`, 
+            'Content-Type': 'application/json',
+            'X-Title': 'EduNexus AI Synthesis'
+          },
+          body: JSON.stringify({
+            model: provider.model,
+            messages: [{ role: 'system', content: options.systemPrompt || 'World-class pedagogical designer.' }, { role: 'user', content: prompt }],
+            temperature: options.temperature || 0.1,
+            max_tokens: provider.maxTokens
+          })
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(`${res.status}: ${err.error?.message || 'Node Error'}`);
+        }
+        const data = await res.json();
+        content = data.choices[0].message.content;
+      }
+
+      const tracker = this.rateLimits.get(provider.id)!;
+      tracker.requestCount++;
+      tracker.lastRequest = Date.now();
+      this.failedProviders.delete(provider.id);
+
+      return { text: content, provider: provider.name };
+    } catch (e: any) {
+      console.error(`🔴 [Grid Failover] ${provider.name} rejected payload: ${e.message}`);
+      this.failedProviders.add(provider.id);
+      setTimeout(() => this.failedProviders.delete(provider.id), 120000);
+      return this.synthesize(prompt, options);
+    }
+  }
+
+  public getProviderStatus() {
+    return Array.from(this.providers.values()).map(p => {
+      const tracker = this.rateLimits.get(p.id)!;
+      return {
+        id: p.id,
+        name: p.name,
+        status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : tracker.requestCount >= p.rateLimit ? 'rate-limited' : 'active',
+        remaining: Math.max(0, p.rateLimit - tracker.requestCount),
+        tier: p.tier
+      };
+    });
+  }
+
+  // Add comment above each fix
+  // Fix: Expose internal provider storage for status monitoring and configuration mapping
+  public getProviders(): AIProvider[] {
+    return Array.from(this.providers.values());
+  }
+}
+
+let instance: SynthesizerCore | null = null;
+export function getSynthesizer(): SynthesizerCore {
+  if (!instance) instance = new SynthesizerCore();
+  return instance;
+}
+
+// Add comment above each fix
+// Fix: Export getProvidersConfig function to provide standard provider configurations to the multi-provider orchestrator
+export function getProvidersConfig(): any[] {
+  return getSynthesizer().getProviders().map(p => ({
+    ...p,
+    rpm: p.rateLimit,
+    rpd: p.rateLimit * 1440 // Estimated daily limit based on RPM (60 mins * 24 hours)
+  }));
+}
+
+// For backward compatibility with existing multi-provider-router calls
+export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string, bypass?: boolean) => {
+  return getSynthesizer().synthesize(prompt, { type: hasDocs ? 'map' : 'chat', systemPrompt: system });
+};
