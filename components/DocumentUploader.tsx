@@ -79,7 +79,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         });
         if (res.ok) return await res.json();
         const errData = await res.json().catch(() => ({ error: 'Node busy.' }));
-        lastErr = new Error(errData.error || `Node Error (${res.status})`);
+        
+        // Handle 429 specifically in client-side retry logic
+        if (res.status === 429) {
+          setProcStage('Rate Limit Hit: Throttling Grid...');
+          await new Promise(r => setTimeout(r, 4000 * (i + 1))); // Dynamic cooling
+        }
+        
+        lastErr = new Error(errData.error || `Grid Error (${res.status})`);
       } catch (e: any) {
         lastErr = e;
       }
@@ -101,20 +108,20 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // Higher fidelity chunks (10k chars)
+      // Resolution optimization: 10k chunks
       const chunkSize = 10000; 
       const overlapSize = 2000; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 80) break;
+        if (fragments.length > 90) break; // Maximum resolution for 185-page mode
       }
 
       setProcStage(`Neural Grid: Mapping ${fragments.length} Nodes...`);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // PHASE 1: MAP (Parallel batches of 2 for maximum stability)
+      // PHASE 1: MAP (Sequential batches with cooling)
       const mapResults: string[] = [];
       const MAP_BATCH_SIZE = 2; 
       
@@ -133,11 +140,17 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           }, token);
           return data.markdown || "";
         }));
+        
         mapResults.push(...batchResults);
         setProgressValue(prev => Math.min(60, prev + (45 / (fragments.length / MAP_BATCH_SIZE))));
+        
+        // CRITICAL FIX: Inter-batch Cooling to prevent 429s on free tier
+        if (i + MAP_BATCH_SIZE < fragments.length) {
+          await new Promise(r => setTimeout(r, 3000)); 
+        }
       }
 
-      // PHASE 2: RECURSIVE REDUCTION (Groups of 4)
+      // PHASE 2: RECURSIVE REDUCTION
       setProcStage(`Recursive Synthesis: Consolidating Nodes...`);
       const intermediateHierarchies: string[] = [];
       const REDUCE_BATCH_SIZE = 4;
@@ -157,9 +170,12 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         intermediateHierarchies.push(tierRes.markdown || "");
         setProgressValue(prev => Math.min(90, prev + 4));
+        
+        // Cooling between reductions
+        await new Promise(r => setTimeout(r, 2000));
       }
 
-      // PHASE 3: MASTER SYNTHESIS (FORCED GEMINI)
+      // PHASE 3: MASTER SYNTHESIS
       setProcStage(`Finalizing Master Vault Sync...`);
       const finalResult = await processWithRetry('/api/docs/upload', {
         name: file.name,
@@ -177,11 +193,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      // Strip technical SambaNova/Cerebras jargon for user
-      const cleanMsg = err.message.includes('410') || err.message.includes('fault')
-        ? "The unstable SambaNova node has been removed from the grid. Infrastructure is re-routing to Gemini. Please retry the upload."
-        : err.message;
-      setError(cleanMsg);
+      setError(err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -271,7 +283,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Stable Synthesis Grid v5.0 (185-Page Optimized)</p>
+          <p className="text-slate-500 font-medium">Stable Synthesis Grid v5.5 (Rate-Limit Optimized)</p>
         </div>
 
         {error && (
@@ -307,7 +319,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Stage Stable Mapping Mode</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Stage Rate-Limited Sync Mode</p>
                 </div>
               </div>
             </label>

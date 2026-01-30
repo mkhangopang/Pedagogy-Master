@@ -21,9 +21,9 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * WORLD-CLASS SYNTHESIZER ORCHESTRATOR (v5.0)
+ * WORLD-CLASS SYNTHESIZER ORCHESTRATOR (v5.5)
  * Stable Grid: Gemini, DeepSeek, Groq. 
- * SambaNova/Cerebras excised due to endpoint deprecation.
+ * Optimized for high-volume Pakistan Curriculum Ingestion.
  */
 export async function synthesize(
   prompt: string,
@@ -43,11 +43,11 @@ export async function synthesize(
       throw new Error("NO_STABLE_NODES: Ensure API_KEY (Gemini) is configured in Vercel.");
     }
     
-    // Sort by stability and capacity (Gemini 1M > DeepSeek 128k > Groq 32k)
+    // Sort by stability and capacity
     const reasoningOrder = ['gemini', 'deepseek', 'groq'];
     targetProviders.sort((a, b) => reasoningOrder.indexOf(a.name) - reasoningOrder.indexOf(b.name));
 
-    // Force Preferred Provider if requested (usually for Reduction phases)
+    // Force Preferred Provider for critical phases
     if (preferredProvider) {
       const preferred = targetProviders.find(p => p.name === preferredProvider);
       if (preferred) {
@@ -59,7 +59,7 @@ export async function synthesize(
     for (const config of targetProviders) {
       if (!config.enabled) continue;
 
-      // Logic Guard: Don't attempt if prompt is too big for node
+      // Logic Guard: Context size mismatch
       if (prompt.length > (config.contextCharLimit * 0.9)) {
         console.warn(`⏭️ [Grid Guard] Skipping ${config.name} - Capacity mismatch.`);
         continue;
@@ -69,9 +69,9 @@ export async function synthesize(
       
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        // Massive reduction tasks need longer timeout (up to 4 mins)
+        // 185-page reduction tasks need significant context time
         const isReduction = prompt.includes('FINAL_REDUCE_PROTOCOL') || prompt.length > 35000;
-        const timeout = isReduction ? 240000 : 90000;
+        const timeout = isReduction ? 260000 : 95000;
         
         const response = await Promise.race([
           (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts),
@@ -88,6 +88,11 @@ export async function synthesize(
       } catch (e: any) { 
         console.warn(`⚠️ [Node Bypass] ${config.name}: ${e.message}`);
         lastError = e;
+        
+        // Failover cooling delay
+        if (e.message.includes('429')) {
+          await new Promise(r => setTimeout(r, 1500));
+        }
         continue; 
       }
     }
