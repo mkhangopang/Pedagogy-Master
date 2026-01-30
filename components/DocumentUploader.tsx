@@ -57,7 +57,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         fullText += textContent.items.map((item: any) => (item as any).str).join(' ') + '\n';
-        if (i % 10 === 0) await new Promise(r => setTimeout(r, 0)); 
+        if (i % 12 === 0) await new Promise(r => setTimeout(r, 0)); 
       }
       return fullText;
     } else if (extension === 'docx') {
@@ -81,10 +81,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         const errData = await res.json().catch(() => ({ error: 'Grid Node Busy' }));
         if (res.status === 429 || res.status === 410 || res.status === 503) {
-          setProcStage(`Node Failure (${res.status}): Mesh Re-routing...`);
-          await new Promise(r => setTimeout(r, 5500 * (i + 1))); 
+          setProcStage(`Neural Jitter: Node ${res.status} Re-routing...`);
+          await new Promise(r => setTimeout(r, 6000 * (i + 1))); 
         }
-        lastErr = new Error(errData.error || `Grid Fail (${res.status})`);
+        lastErr = new Error(errData.error || `Grid Error (${res.status})`);
       } catch (e: any) {
         lastErr = e;
       }
@@ -99,15 +99,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     setError(null);
     setIsProcessing(true);
     setProgressValue(2);
-    setProcStage(`Initializing Ingestion Pipeline...`);
+    setProcStage(`Initializing Ingestion...`);
 
     try {
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // Resolution optimization for 185-page coverage
-      const chunkSize = 12000; 
-      const overlapSize = 3000; 
+      const chunkSize = 14000; 
+      const overlapSize = 3500; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
@@ -118,24 +117,21 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // PHASE 1: MAP
       const mapResults: string[] = [];
       const MAP_BATCH_SIZE = 1; 
       
       for (let i = 0; i < fragments.length; i += MAP_BATCH_SIZE) {
         const batch = fragments.slice(i, i + MAP_BATCH_SIZE);
-        setProcStage(`Mapping Curriculum (Segment ${i + 1}/${fragments.length})...`);
+        setProcStage(`Syncing Curriculum (Segment ${i + 1}/${fragments.length})...`);
         
-        const batchResults = await Promise.all(batch.map(async (frag, batchIdx) => {
-          const absoluteIdx = i + batchIdx;
-          const data = await processWithRetry('/api/docs/upload', {
-            name: `${file.name}_p${absoluteIdx + 1}`,
+        const batchResults = await Promise.all(batch.map(async (frag, bIdx) => {
+          return (await processWithRetry('/api/docs/upload', {
+            name: `${file.name}_f${i+bIdx}`,
             sourceType: 'raw_text',
             extractedText: frag,
             previewOnly: true,
             isFragment: true
-          }, token);
-          return data.markdown || "";
+          }, token)).markdown || "";
         }));
         
         mapResults.push(...batchResults);
@@ -145,10 +141,9 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         }
       }
 
-      // PHASE 2: RECURSIVE REDUCTION
       setProcStage(`Neural Synthesis: Reducing Hierarchy...`);
       const intermediateHierarchies: string[] = [];
-      const REDUCE_BATCH_SIZE = 4; // Smaller groups for higher grade-fidelity
+      const REDUCE_BATCH_SIZE = 4; 
 
       for (let i = 0; i < mapResults.length; i += REDUCE_BATCH_SIZE) {
         const tierBatch = mapResults.slice(i, i + REDUCE_BATCH_SIZE);
@@ -168,7 +163,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         await new Promise(r => setTimeout(r, 3000));
       }
 
-      // PHASE 3: MASTER VAULT SYNC
       setProcStage(`Finalizing Master Vault Sync...`);
       const finalResult = await processWithRetry('/api/docs/upload', {
         name: file.name,
@@ -180,15 +174,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       }, token);
 
       const finalMd = finalResult.markdown || "";
-
-      // CRITICAL CHECK: Detect "Grade Collapsing"
-      const hasGrade10 = finalMd.includes('B-10');
-      const hasGrade11 = finalMd.includes('B-11');
-      const hasGrade12 = finalMd.includes('B-12');
-      
-      if (!hasGrade10 && !hasGrade11 && !hasGrade12 && finalMd.length < 5000) {
-        setProcStage(`Fidelity Warning: Only Grade 9 detected.`);
-        // Note: We still show the preview but warn the user
+      if (finalMd.includes("I am ready") && finalMd.length < 400) {
+        throw new Error("Grid Hallucination: The model refused to process the data nodes. This usually happens if the curriculum text is poorly formatted. Please retry.");
       }
 
       setDraftMarkdown(finalMd);
@@ -205,8 +192,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   };
 
   const handleFinalApproval = async () => {
-    if (isProcessing) return; // Prevent double trigger
-    
+    if (isProcessing) return;
     setIsProcessing(true);
     setProcStage('Vaulting Intelligence...');
     setError(null);
@@ -214,10 +200,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${session?.access_token}` 
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ 
           name: extractedMeta?.board || "Sindh Curriculum Master", 
           sourceType: 'markdown', 
@@ -231,10 +214,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       if (!response.ok) throw new Error(data.error || 'Vault lock failed.');
       onComplete(data);
     } catch (err: any) {
-      console.error("Approval Fault:", err);
       setError(`VAULT_FAULT: ${err.message}`);
-    } finally { 
-      setIsProcessing(false); 
+      setIsProcessing(false); // Restore button state on error
     }
   };
 
@@ -248,7 +229,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
               <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Validated Standards</h3>
               <div className="flex gap-2 mt-1">
                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
-                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Multi-Grade Span Node</span>
+                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Fidelity Check Success</span>
               </div>
             </div>
           </div>
@@ -259,6 +240,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <div className="m-6 p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-2">
             <AlertTriangle className="text-rose-500" size={18} />
             <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{error}</p>
+            <button onClick={() => setError(null)} className="ml-auto text-[10px] font-black uppercase text-rose-500">Dismiss</button>
           </div>
         )}
 
@@ -278,11 +260,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v9.0 Active (Verified Multi-Grade)
+              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v9.5 (Active Node)
            </div>
            <button 
              onClick={handleFinalApproval}
-             disabled={isProcessing || draftMarkdown.length < 50}
+             disabled={isProcessing || draftMarkdown.length < 100}
              className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50 transition-all"
            >
              {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>}
@@ -306,7 +288,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Neural Mesh Grid v9.0 (Multi-Grade Mode)</p>
+          <p className="text-slate-500 font-medium">Neural Mesh Grid v9.5 (Multi-Grade Execution)</p>
         </div>
 
         {error && (
@@ -345,18 +327,18 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Grade Mapping • Failover Enabled</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Quad-Grade Mapping Protocol</p>
                 </div>
               </div>
             </label>
             
             <div className="flex items-center justify-center gap-6 pt-4">
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Layers size={12} /> Quad-Grade Sync
+                  <Layers size={12} /> Linear Sync
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <ShieldQuestion size={12} className="text-indigo-400" /> High Fidelity
+                  <ShieldQuestion size={12} className="text-indigo-400" /> High-Fidelity
                </div>
             </div>
           </div>

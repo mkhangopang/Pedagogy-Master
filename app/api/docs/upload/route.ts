@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL INGESTION GATEWAY (v9.0)
- * Optimized for Multi-Grade (09-12) Sindh Curriculum Synthesis.
+ * NEURAL INGESTION GATEWAY (v9.5)
+ * Fixed: Mapping Phase Fallthrough Bug.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -25,67 +25,51 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     const body = await req.json();
-    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce, isIntermediate } = body;
+    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce, isIntermediate, isFragment } = body;
     
-    // PHASE: AI PRE-SYNC (Reduction & Extraction)
+    // PHASE 1/2: AI PRE-SYNC (Fragment Mapping & Recursive Reduction)
     if (sourceType === 'raw_text' && previewOnly) {
       let instruction = "You are a curriculum data extractor. Return valid JSON of SLOs.";
-      let preferred = ""; 
+      let preferred = "gemini"; 
+      let finalPrompt = "";
 
       if (isReduce) {
-        preferred = "gemini";
         if (isIntermediate) {
-          instruction = `
-COMPRESSED_REDUCTION_NODE: 
-Merge the following DATA_BLOCKS into a dense Markdown list. 
-CRITICAL: You MUST preserve the Grade distinctions (e.g., B-09, B-10, B-11, B-12). 
-Do NOT collapse different grades into a single grade list.
-Keep all Domain letters (A-X) intact. No conversational filler.
-`;
+          instruction = "REDUCTION_TASK: Merge these nodes into a dense Markdown list. PRESERVE GRADE LEVELS (B-09, B-10, B-11, B-12). No chat.";
         } else {
-          instruction = `
-FINAL_REDUCE_PROTOCOL: Master Multi-Grade Synthesizer.
-TASK: Transform the collected curriculum nodes into the final MASTER SINDH BIOLOGY 2024 hierarchy.
-
-## CORE REQUIREMENTS:
-1. **MULTI-GRADE SPAN**: The curriculum covers Grades 9, 10, 11, and 12. You MUST include SLOs for B-09, B-10, B-11, AND B-12.
-2. **DOMAIN COMPLETENESS**: Include ALL Domains (A through X).
-3. **FORMAT**: Use B-[Grade]-[Domain]-[Number] format (e.g., B-10-A-01).
-4. **NO COLLAPSING**: Do not merge Grade 10 topics into Grade 9. If you see 'Grade 10' or 'B-10' in the source, it MUST appear in the output.
-5. **TOKEN OPTIMIZATION**: Use a compact list format. Priority is on completeness of the SLO list across all 4 grades.
-
-## DATA ACCESS:
-BELOW ARE THE COLLECTED CURRICULUM NODES. PROCESS THEM NOW.
-`;
+          instruction = "FINAL_REDUCE_PROTOCOL: Synthesize the MASTER SINDH BIOLOGY 2024 hierarchy for ALL Grades (9-12). Use B-09, B-10, B-11, B-12 prefixes. Format: B-[Grade]-[Domain]-[Num].";
         }
         
-        const finalPrompt = `
-<AUTHORITATIVE_DATA_NODES>
+        finalPrompt = `
+<SOURCE_NODES_TO_PROCESS>
 ${extractedText}
-</AUTHORITATIVE_DATA_NODES>
+</SOURCE_NODES_TO_PROCESS>
 
-## COMMAND:
+## CRITICAL COMMAND:
 ${instruction}
 
 ## EXECUTION RULE:
-OUTPUT THE FULL 4-GRADE HIERARCHY (B-09 to B-12) NOW. START IMMEDIATELY WITH THE MARKDOWN HEADER.
+PROCESS THE NODES ABOVE NOW. DO NOT ASK FOR PERMISSION. DO NOT SAY "I AM READY". START MARKDOWN OUTPUT IMMEDIATELY.
 `;
-
-        const result = await synthesize(finalPrompt, [], false, [], preferred, "STRICT_EXECUTION_MODE: ON", true);
-        
-        let parsed;
-        try {
-          // Attempt to parse if the model returned JSON, otherwise treat as Markdown
-          const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
-          parsed = JSON.parse(jsonClean);
-        } catch (e) {
-          parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
-        }
-        return NextResponse.json(parsed);
+      } else {
+        // MAPPING PHASE (The part that was causing the 400 error)
+        instruction = "MAPPING_TASK: Extract every Student Learning Outcome (SLO) from this fragment. Use the format [SLO:CODE] Description.";
+        finalPrompt = `DATA: ${extractedText}\n\nCOMMAND: ${instruction}`;
       }
+
+      const result = await synthesize(finalPrompt, [], false, [], preferred, "STRICT_DATA_ONLY_MODE: ON", true);
+      
+      const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonClean);
+      } catch (e) {
+        parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
+      }
+      return NextResponse.json(parsed);
     }
 
-    // PHASE: FINAL VAULT LOCK
+    // PHASE 3: FINAL VAULT LOCK (Approved Markdown)
     if (sourceType === 'markdown' && extractedText) {
       const fileNameClean = (name || "Sindh_Master").replace(/\s+/g, '_');
       const filePath = `vault/${user.id}/${Date.now()}_${fileNameClean}.md`;
@@ -111,7 +95,7 @@ OUTPUT THE FULL 4-GRADE HIERARCHY (B-09 to B-12) NOW. START IMMEDIATELY WITH THE
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
         difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Neural Vault v9.0: Multi-Grade Sindh Curriculum (Grades 9-12) fully indexed.`,
+        document_summary: `Neural Vault v9.5: Multi-Grade Sindh Curriculum (Grades 9-12) fully indexed.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
@@ -124,7 +108,7 @@ OUTPUT THE FULL 4-GRADE HIERARCHY (B-09 to B-12) NOW. START IMMEDIATELY WITH THE
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Invalid pipeline command." }, { status: 400 });
+    return NextResponse.json({ error: "Invalid pipeline command node." }, { status: 400 });
   } catch (error: any) {
     console.error("❌ [Gateway Fault]:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
