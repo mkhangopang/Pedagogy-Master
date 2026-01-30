@@ -12,7 +12,15 @@ if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
 }
 
-export default function DocumentUploader({ userId, userPlan, docCount, onComplete, onCancel }: any) {
+interface DocumentUploaderProps {
+  userId: string;
+  userPlan: SubscriptionPlan;
+  docCount: number;
+  onComplete: (result: any) => void;
+  onCancel: () => void;
+}
+
+export default function DocumentUploader({ userId, userPlan, docCount, onComplete, onCancel }: DocumentUploaderProps) {
   const [mode, setMode] = useState<'selection' | 'transition'>('selection');
   const [isProcessing, setIsProcessing] = useState(false);
   const [procStage, setProcStage] = useState<string>('');

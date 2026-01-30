@@ -14,7 +14,7 @@ import { supabase } from '../lib/supabase';
 interface DocumentsProps {
   documents: Document[];
   userProfile: UserProfile;
-  onAddDocument: (doc: Document) => Promise<void>;
+  onAddDocument: (doc: any) => Promise<void>;
   onUpdateDocument: (id: string, updates: Partial<Document>) => Promise<void>;
   onDeleteDocument: (id: string) => Promise<void>;
   isConnected: boolean;
@@ -99,7 +99,7 @@ const Documents: React.FC<DocumentsProps> = ({
             userId={userProfile.id} 
             userPlan={userProfile.plan}
             docCount={documents.length}
-            onComplete={async (result) => {
+            onComplete={async (result: any) => {
               await onAddDocument(result);
               setShowUploader(false);
             }}
