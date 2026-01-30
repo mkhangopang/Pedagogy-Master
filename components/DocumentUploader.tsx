@@ -74,24 +74,26 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
     setError(null);
     setIsProcessing(true);
-    setProgressValue(5);
-    setProcStage(`Initializing Local Node...`);
+    setProgressValue(2);
+    setProcStage(`Initializing Ingestion...`);
 
     try {
       const rawText = await extractLocalText(file);
-      if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty or image-only.");
+      if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // CLIENT-SIDE MAP REDUCE: Split 185 pages into chunks of ~20,000 chars
-      const chunkSize = 25000;
+      // MICRO-CHUNKING: Increased resolution (10k chars vs 25k) to ensure no SLOs are skipped
+      const chunkSize = 10000; 
+      const overlapSize = 2000; // Large overlap to catch codes split across chunks
       const fragments: string[] = [];
-      for (let i = 0; i < rawText.length; i += chunkSize) {
+      for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
+        if (fragments.length > 50) break; // Hard limit for safety
       }
 
-      setProcStage(`Neural Grid: Mapping ${fragments.length} Knowledge Blocks...`);
+      setProcStage(`Neural Grid: Mapping ${fragments.length} High-Density Blocks...`);
       const { data: { session } } = await supabase.auth.getSession();
       
-      // Parallel Process Chunks to avoid individual request timeouts
+      // Parallel Map Phase
       const mapResults = await Promise.all(fragments.map(async (frag, idx) => {
         const res = await fetch('/api/docs/upload', {
           method: 'POST',
@@ -104,14 +106,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             isFragment: true 
           })
         });
-        if (!res.ok) throw new Error(`Node ${idx} failed to respond.`);
+        if (!res.ok) throw new Error(`Block ${idx + 1} extraction failed.`);
         const data = await res.json();
-        setProgressValue(prev => Math.min(80, prev + (70 / fragments.length)));
+        setProgressValue(prev => Math.min(85, prev + (80 / fragments.length)));
         return data.markdown || "";
       }));
 
-      // REDUCE PHASE: Merge fragments in one final reasoning call
-      setProcStage(`Master Synthesis: Merging Sindh Intelligence...`);
+      // Final Reduce Phase: Authoritative Synthesis
+      setProcStage(`Master Synthesis: Anchoring Biology 2024 Standards...`);
       const mergedContext = mapResults.join('\n\n---\n\n');
       
       const reduceRes = await fetch('/api/docs/upload', {
@@ -126,7 +128,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         })
       });
 
-      if (!reduceRes.ok) throw new Error('Master Synthesis Node timed out. This curriculum is massive.');
+      if (!reduceRes.ok) throw new Error('Master Synthesis bottlenecked. This curriculum is exceptionally dense.');
 
       const finalResult = await reduceRes.json();
       setDraftMarkdown(finalResult.markdown || "");
@@ -136,7 +138,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      setError(err.message || "Synthesis node unreachable.");
+      setError(err.message || "The synthesis node encountered a fatal load. Try a smaller document.");
     } finally {
       setIsProcessing(false);
     }
@@ -144,14 +146,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
   const handleFinalApproval = async () => {
     setIsProcessing(true);
-    setProcStage('Syncing to Neural Vault...');
+    setProcStage('Vaulting Intelligence...');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ 
-          name: extractedMeta?.board || "Sindh Biology Master", 
+          name: extractedMeta?.board || "Sindh Curriculum Node", 
           sourceType: 'markdown', 
           extractedText: draftMarkdown,
           metadata: extractedMeta,
@@ -173,7 +175,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <div className="flex items-center gap-4">
             <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 shadow-sm"><ArrowLeft size={20}/></button>
             <div>
-              <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Structured Preview</h3>
+              <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Structured Hierarchy</h3>
               <div className="flex gap-2 mt-1">
                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
                  <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Grade {extractedMeta?.grade || '9-12'}</span>
@@ -185,13 +187,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden h-full">
           <div className="flex flex-col border-r dark:border-white/5 overflow-hidden">
             <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
-              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Master Artifact</span>
+              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Pedagogical Markdown</span>
             </div>
             <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-8 bg-slate-50/50 dark:bg-black/20 font-mono text-[11px] outline-none resize-none custom-scrollbar leading-relaxed" />
           </div>
           <div className="flex flex-col overflow-hidden h-full">
              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 flex items-center gap-3 border-b dark:border-white/5">
-                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Visual Rendering</span>
+                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Rendered Preview</span>
              </div>
              <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           </div>
@@ -206,7 +208,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
              className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
            >
              {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>}
-             Finalize Vault Sync
+             Initialize Permanent Vault Sync
            </button>
         </div>
       </div>
@@ -226,7 +228,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Processing 185-page curriculum standards.</p>
+          <p className="text-slate-500 font-medium">Curriculum Standards Mapping Grid v2.0</p>
         </div>
 
         {error && (
@@ -258,19 +260,19 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                   <UploadCloud size={40} />
                 </div>
                 <div>
-                  <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">SINDH BIOLOGY PDF SUPPORTED</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Curriculum</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">High-Fidelity PDF/DOCX Parsing</p>
                 </div>
               </div>
             </label>
             
             <div className="flex items-center justify-center gap-6 pt-4">
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Lock size={12} /> Encrypted
+                  <Lock size={12} /> SSL Encrypted
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Sparkles size={12} className="text-indigo-400" /> RAG Optimized
+                  <Sparkles size={12} className="text-indigo-400" /> RAG Ready
                </div>
             </div>
           </div>

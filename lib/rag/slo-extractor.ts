@@ -1,63 +1,60 @@
 /**
- * NEURAL SLO NORMALIZER (v14.0)
- * Optimized for Sindh Curriculum 2024 & Federal Standards.
- * Handles: B-09-A-01, [SLO:B-11-C-04], S-10-B-05, etc.
+ * NEURAL SLO NORMALIZER (v15.0)
+ * Optimized for Sindh Curriculum 2024 & International Standards.
  */
 export function normalizeSLO(code: string): string {
   if (!code) return '';
   
   // High-fidelity pattern for Sindh 2024: [Subject]-[Grade]-[Domain]-[Number]
-  const sindhMatch = code.toUpperCase().match(/([A-Z])\s*-?\s*(\d{1,2})\s*-?\s*([A-Z])?\s*-?\s*(\d{1,2})/);
+  // Matches B-09-A-01, B09A01, B 09 A 01, etc.
+  const cleanCode = code.replace(/[\[\]]/g, '').trim();
+  const sindhMatch = cleanCode.toUpperCase().match(/([B-Z])\s*-?\s*(\d{1,2})\s*-?\s*([A-Z])?\s*-?\s*(\d{1,2})/);
   
   if (sindhMatch) {
     const subject = sindhMatch[1];
     const grade = sindhMatch[2].padStart(2, '0');
-    const domain = sindhMatch[3] || 'X'; // Sindh uses 'X' for skills
+    const domain = sindhMatch[3] || 'X'; 
     const num = sindhMatch[4].padStart(2, '0');
     return `${subject}-${grade}-${domain}-${num}`;
   }
 
-  // Fallback for short formats (e.g. S8a5)
-  return code.toUpperCase().replace(/\s+/g, '-').replace(/[\[\]]/g, '');
+  return cleanCode.toUpperCase().replace(/\s+/g, '-');
 }
 
 /**
  * STRATEGIC SLO EXTRACTOR
  * Scans user queries or text chunks for curriculum anchors.
+ * Supports both [SLO:...] and - SLO: formats.
  */
-export function extractSLOCodes(query: string): string[] {
-  if (!query) return [];
+export function extractSLOCodes(text: string): string[] {
+  if (!text) return [];
   
   const matches = new Set<string>();
   
-  // 1. Sindh 2024 Deep Matcher: B-09-A-01 or S-10-C-03
-  const pattern2024 = /([B-Z])\s*-?\s*(\d{2})\s*-?\s*([A-Z])?\s*-?\s*(\d{2})/gi;
-  const found2024 = Array.from(query.matchAll(pattern2024));
-  
-  for (const match of found2024) {
-    const subject = match[1].toUpperCase();
-    const grade = match[2];
-    const domain = (match[3] || 'X').toUpperCase();
-    const num = match[4];
-    
-    // Store multiple versions for maximum RAG overlap
-    matches.add(`${subject}-${grade}-${domain}-${num}`); // Canonical
-    matches.add(`${subject}${parseInt(grade)}${domain}${parseInt(num)}`); // Shorthand
+  // 1. Bracketed Format: [SLO:B-09-A-01]
+  const patternBracketed = /\[SLO:\s*([B-Z]-?\d{2}-?[A-Z]-?\d{2})\]/gi;
+  const foundBracketed = Array.from(text.matchAll(patternBracketed));
+  for (const match of foundBracketed) {
+    matches.add(normalizeSLO(match[1]));
   }
 
-  // 2. Bracketed/Explicit Shorthand: [SLO:B-09-A-01]
-  const patternExplicit = /\[SLO:\s*([^\]]+)\]/gi;
-  const foundExplicit = Array.from(query.matchAll(patternExplicit));
-  for (const match of foundExplicit) {
+  // 2. Dash/Colon Format: - SLO: B-09-A-01
+  const patternPrefixed = /SLO\s*[:\s-]*([B-Z]-?\d{2}-?[A-Z]-?\d{2})/gi;
+  const foundPrefixed = Array.from(text.matchAll(patternPrefixed));
+  for (const match of foundPrefixed) {
     matches.add(normalizeSLO(match[1]));
+  }
+
+  // 3. Raw Pattern Matcher (Safety Net)
+  const patternRaw = /([B-Z])\s*-?\s*(\d{2})\s*-?\s*([A-Z])\s*-?\s*(\d{2})/gi;
+  const foundRaw = Array.from(text.matchAll(patternRaw));
+  for (const match of foundRaw) {
+    matches.add(normalizeSLO(match[0]));
   }
   
   return Array.from(matches);
 }
 
-/**
- * Grade-specific inference from a normalized SLO code.
- */
 export function extractGradeFromSLO(normalizedCode: string): string | null {
   const match = normalizedCode.match(/[A-Z]-(\d{2})/);
   return match ? parseInt(match[1], 10).toString() : null;

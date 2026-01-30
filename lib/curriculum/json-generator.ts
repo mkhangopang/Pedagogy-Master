@@ -1,5 +1,5 @@
 /**
- * DEEP HIERARCHICAL CURRICULUM GENERATOR (v8.0)
+ * DEEP HIERARCHICAL CURRICULUM GENERATOR (v9.0)
  * Specialized for Sindh Progression Grids (Grades IX-XII).
  * Logic: Domain -> Standard -> Benchmark -> SLO (with Grade Attribution)
  */
@@ -21,7 +21,7 @@ export function generateCurriculumJson(markdown: string) {
     const trimmed = line.trim();
     if (!trimmed) return;
 
-    // 1. DOMAIN IDENTIFICATION (e.g., "DOMAIN A: NATURE OF SCIENCE")
+    // 1. DOMAIN IDENTIFICATION
     const domainMatch = trimmed.match(/^(?:#+\s*)?DOMAIN\s+([A-Z]):\s*(.+)/i);
     if (domainMatch) {
       if (currentDomain) result.domains.push(currentDomain);
@@ -60,11 +60,14 @@ export function generateCurriculumJson(markdown: string) {
       return;
     }
 
-    // 4. SINDH SLO EXTRACTION (e.g., "- SLO:B-09-A-01: Description")
-    const sloMatch = trimmed.match(/^- SLO\s*[:\s]*([A-Z]-\d{2}-[A-Z]-\d{2})[:\s]*(.+)/i);
+    // 4. SINDH SLO EXTRACTION (Handles [SLO:B-09-A-01] and - SLO:B-09-A-01)
+    const sloPattern = /(?:- SLO\s*[:\s]*|\[SLO:\s*)([B-Z]-?\d{2}-?[A-Z]-?\d{2})(?:\]|[:\s]*)(.+)/i;
+    const sloMatch = trimmed.match(sloPattern);
+    
     if (sloMatch && currentBenchmark) {
-      const code = sloMatch[1].trim();
-      const grade = code.split('-')[1]; // Extracts "09" from "B-09-A-01"
+      const code = sloMatch[1].trim().toUpperCase().replace(/[^A-Z0-9-]/g, '');
+      const parts = code.split('-');
+      const grade = parts[1] || '09';
       
       currentBenchmark.slos.push({
         code: code,
@@ -75,11 +78,11 @@ export function generateCurriculumJson(markdown: string) {
       return;
     }
 
-    // 5. LEGACY SLO EXTRACTION
+    // 5. LEGACY FALLBACK
     const legacySloMatch = trimmed.match(/^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/i);
     if (legacySloMatch && currentBenchmark && !sloMatch) {
       currentBenchmark.slos.push({
-        code: legacySloMatch[1].trim(),
+        code: legacySloMatch[1].trim().toUpperCase(),
         text: legacySloMatch[2].trim()
       });
       result.totalSLOs++;
