@@ -42,6 +42,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       
+      // Browser-side extraction (Offloading CPU from Vercel)
       for (let i = 1; i <= Math.min(pdf.numPages, 185); i++) {
         setProcStage(`Extracting: Pg ${i}/${pdf.numPages}`);
         const page = await pdf.getPage(i);
@@ -50,32 +51,40 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         setProgressValue(5 + (i / pdf.numPages) * 15);
       }
 
-      const gridRegex = /(?:[B-Z]\s*-?\s*(?:0?9|9|10|11|12)\s*-?\s*[A-Z]\s*-?\s*\d{1,2})[\s\S]{1,1200}/gi;
-      const allBlocks = rawText.replace(/[\[\]]/g, ' ').match(gridRegex) || [];
-      
-      if (allBlocks.length === 0) throw new Error("No Sindh SLO anchors (B9-B12) found in this PDF.");
+      // STATEFUL RECURSIVE PULSE LOGIC
+      // Split raw text into small batches of ~2500 characters to stay under Vercel 10s limit
+      const chunkSize = 2500;
+      const chunks = [];
+      for (let i = 0; i < rawText.length; i += chunkSize) {
+        chunks.push(rawText.substring(i, i + chunkSize));
+      }
 
-      // PULSE INGESTION: Process in pulses of 4 blocks each to stay under 10s Vercel limit
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
-      const totalPulses = Math.ceil(Math.min(allBlocks.length, 32) / 4); // Limit to 32 blocks total
-      let finalMd = "# Curriculum Pulse Results\n\n";
+      let finalMd = "# Curriculum Processed Results\n\n";
 
-      for (let p = 0; p < totalPulses; p++) {
-        const start = p * 4;
-        const pulseBlocks = allBlocks.slice(start, start + 4).join('\n---\n');
-        setProcStage(`Neural Pulse ${p + 1}/${totalPulses}...`);
+      // Limit pulses to prevent massive token burn on free tier
+      const maxPulses = Math.min(chunks.length, 40); 
+      
+      for (let p = 0; p < maxPulses; p++) {
+        setProcStage(`Neural Clean: Chunk ${p + 1}/${maxPulses}...`);
         
         const res = await fetch('/api/docs/upload', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ sourceType: 'raw_text', extractedText: pulseBlocks, previewOnly: true })
+          body: JSON.stringify({ 
+            sourceType: 'raw_text', 
+            extractedText: chunks[p], 
+            previewOnly: true 
+          })
         });
 
-        if (!res.ok) throw new Error(`Pulse ${p+1} failed. Neural nodes are saturated.`);
+        if (!res.ok) throw new Error(`Chunk ${p+1} timed out. Splitting too much data.`);
         const data = await res.json();
         finalMd += (data.markdown || "") + "\n\n";
-        setProgressValue(20 + ((p + 1) / totalPulses) * 80);
+        
+        // Dynamic progress based on current chunk
+        setProgressValue(20 + ((p + 1) / maxPulses) * 80);
       }
 
       setDraftMarkdown(finalMd);
@@ -99,7 +108,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           name: "Curriculum Master", 
           sourceType: 'markdown', 
           extractedText: draftMarkdown,
-          metadata: { subject: 'Biology', grade: '9-12', board: 'Sindh' }
+          metadata: { subject: 'Automated', grade: 'Mixed', board: 'Sindh' }
         })
       });
       const data = await response.json();
@@ -141,13 +150,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
            {isProcessing && <div className="absolute inset-0 border-4 border-white/20 border-t-white rounded-[2.5rem] animate-spin" />}
         </div>
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Pulse Skimmer</h2>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Neural Ingestion Protocol v13.0</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Vercel Pulse Node</h2>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Segmented Ingestion Protocol Active</p>
         </div>
         {error && (
           <div className="p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-3xl flex flex-col items-center gap-4 text-left">
             <div className="flex items-center gap-3"><AlertCircle className="text-rose-500" size={20} /><p className="text-xs font-bold text-rose-600 dark:text-rose-400">{error}</p></div>
-            <button onClick={() => {setError(null); setIsProcessing(false);}} className="px-6 py-2 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><RefreshCw size={12}/> Retry Skim</button>
+            <button onClick={() => {setError(null); setIsProcessing(false);}} className="px-6 py-2 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><RefreshCw size={12}/> Restart Sync</button>
           </div>
         )}
         {isProcessing ? (
@@ -163,7 +172,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <div className="p-16 border-4 border-dashed border-slate-100 dark:border-white/5 rounded-[3.5rem] group-hover:border-indigo-500/50 transition-all bg-slate-50/50 dark:bg-white/5">
               <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-500 transition-all mx-auto mb-6" />
               <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Curriculum PDF</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Sequential Segmenting Mode Active</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Maximum 185 Pages • Recursive Ingestion</p>
             </div>
           </label>
         )}
