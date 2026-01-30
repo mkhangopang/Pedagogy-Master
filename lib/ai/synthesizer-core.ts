@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -9,13 +8,12 @@ export interface AIProvider {
   model: string;
   apiKeyEnv: string;
   maxTokens: number;
+  thinkingBudget?: number;
   rateLimit: number; 
-  // Fix: Added rpm and rpd for compatibility with ProviderConfig used in rate-limiter.ts
   rpm: number;
   rpd: number;
-  tier: 1 | 2;
+  tier: 1 | 2 | 3;
   enabled: boolean;
-  canHandleLargeContext: boolean;
 }
 
 export class SynthesizerCore {
@@ -30,36 +28,111 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
+    // NODE 1: PREMIER REASONING (Gemini 3 Pro)
+    providers.set('gemini-pro', {
+      id: 'gemini-pro',
+      name: 'Gemini 3 Pro',
+      endpoint: 'native',
+      model: 'gemini-3-pro-preview',
+      apiKeyEnv: 'API_KEY',
+      maxTokens: 8192,
+      thinkingBudget: 4096,
+      rateLimit: 50,
+      rpm: 2,
+      rpd: 1000,
+      tier: 1,
+      enabled: isGeminiEnabled()
+    });
+
+    // NODE 2: HIGH-SPEED VERSATILITY (Gemini 3 Flash)
     providers.set('gemini-flash', {
       id: 'gemini-flash',
       name: 'Gemini 3 Flash',
       endpoint: 'native',
       model: 'gemini-3-flash-preview',
       apiKeyEnv: 'API_KEY',
-      maxTokens: 2048, // Reduced for speed in Pulse Mode
-      rateLimit: 60,
-      // Fix: Provided rpm and rpd values
-      rpm: 60,
-      rpd: 10000,
+      maxTokens: 4096,
+      thinkingBudget: 1024,
+      rateLimit: 100,
+      rpm: 15,
+      rpd: 2000,
       tier: 1,
-      enabled: isGeminiEnabled(),
-      canHandleLargeContext: true
+      enabled: isGeminiEnabled()
     });
 
+    // NODE 3: INSTANT INFERENCE (Groq)
     providers.set('groq', {
       id: 'groq',
       name: 'Groq Llama 3.3',
       endpoint: 'https://api.groq.com/openai/v1/chat/completions',
       model: 'llama-3.3-70b-versatile',
       apiKeyEnv: 'GROQ_API_KEY',
-      maxTokens: 1024,
+      maxTokens: 4096,
       rateLimit: 30,
-      // Fix: Provided rpm and rpd values
       rpm: 30,
       rpd: 5000,
+      tier: 2,
+      enabled: !!process.env.GROQ_API_KEY
+    });
+
+    // NODE 4: FASTEST GRID SEGMENT (Cerebras)
+    providers.set('cerebras', {
+      id: 'cerebras',
+      name: 'Cerebras Node',
+      endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+      model: 'llama3.1-70b',
+      apiKeyEnv: 'CEREBRAS_API_KEY',
+      maxTokens: 2048,
+      rateLimit: 60,
+      rpm: 60,
+      rpd: 10000,
+      tier: 2,
+      enabled: !!process.env.CEREBRAS_API_KEY
+    });
+
+    // NODE 5: MASSIVE CONTEXT (SambaNova)
+    providers.set('sambanova', {
+      id: 'sambanova',
+      name: 'SambaNova 405B',
+      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
+      model: 'Meta-Llama-3.1-405B-Instruct',
+      apiKeyEnv: 'SAMBANOVA_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 10,
+      rpm: 5,
+      rpd: 500,
       tier: 1,
-      enabled: !!process.env.GROQ_API_KEY,
-      canHandleLargeContext: false
+      enabled: !!process.env.SAMBANOVA_API_KEY
+    });
+
+    // NODE 6: LOGICAL EXTRACTION (DeepSeek)
+    providers.set('deepseek', {
+      id: 'deepseek',
+      name: 'DeepSeek Logic',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-chat',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 20,
+      rpm: 10,
+      rpd: 1000,
+      tier: 2,
+      enabled: !!process.env.DEEPSEEK_API_KEY
+    });
+
+    // NODE 7: DISTRIBUTED RESILIENCE (Hyperbolic)
+    providers.set('hyperbolic', {
+      id: 'hyperbolic',
+      name: 'Hyperbolic Grid',
+      endpoint: 'https://api.hyperbolic.xyz/v1/chat/completions',
+      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct',
+      apiKeyEnv: 'HYPERBOLIC_API_KEY',
+      maxTokens: 4096,
+      rateLimit: 20,
+      rpm: 10,
+      rpd: 2000,
+      tier: 3,
+      enabled: !!process.env.HYPERBOLIC_API_KEY
     });
 
     return providers;
@@ -73,28 +146,35 @@ export class SynthesizerCore {
 
     const candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id))
-      .sort((a, b) => a.tier - b.tier);
+      .sort((a, b) => {
+        // Prefer tiered relevance: If complex task, tier 1 first. If pulse, tier 2 first.
+        const isPulse = prompt.includes('FAST_PULSE_EXTRACTOR');
+        if (isPulse) return b.tier - a.tier; // Try tier 2/3 first for pulses
+        return a.tier - b.tier; // Try tier 1 first for complex
+      });
 
     if (candidates.length === 0) {
-      throw new Error("GRID_EXHAUSTED: Neural nodes cooling down. Retry Pulse in 10s.");
+      throw new Error("NEURAL_GRID_OFFLINE: All nodes are cooling down.");
     }
 
     for (const provider of candidates) {
       try {
         let content = "";
         if (provider.endpoint === 'native') {
-          // Fix: Initializing GoogleGenAI with named parameter apiKey as per guidelines
           const ai = new GoogleGenAI({ apiKey: process.env[provider.apiKeyEnv]! });
+          const config: any = { 
+            temperature: options.temperature ?? 0.0, 
+            maxOutputTokens: provider.maxTokens 
+          };
+          if (provider.thinkingBudget !== undefined) {
+            config.thinkingConfig = { thinkingBudget: provider.thinkingBudget };
+          }
+
           const res = await ai.models.generateContent({
             model: provider.model,
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            config: { 
-              temperature: 0.0, 
-              maxOutputTokens: provider.maxTokens,
-              thinkingConfig: { thinkingBudget: 0 }
-            }
+            config
           });
-          // Fix: Accessing generated text via .text property on GenerateContentResponse
           content = res.text || "";
         } else {
           const res = await fetch(provider.endpoint, {
@@ -105,26 +185,26 @@ export class SynthesizerCore {
             },
             body: JSON.stringify({
               model: provider.model,
-              messages: [{ role: 'system', content: 'Output ONLY structured markdown.' }, { role: 'user', content: prompt }],
-              temperature: 0.0,
+              messages: [{ role: 'system', content: options.systemPrompt || 'Output Markdown.' }, { role: 'user', content: prompt }],
+              temperature: options.temperature ?? 0.0,
               max_tokens: provider.maxTokens
             })
           });
-          if (!res.ok) throw new Error("Node Rejected Pulse");
+          if (!res.ok) throw new Error(`Node ${provider.id} Refusal: ${res.status}`);
           const data = await res.json();
           content = data.choices[0].message.content;
         }
 
         if (content) return { text: content, provider: provider.name };
       } catch (e: any) {
-        this.failedProviders.set(provider.id, Date.now() + 30000); // 30s block
+        console.warn(`[Synthesizer] Node ${provider.id} fault: ${e.message}. Switching segment...`);
+        this.failedProviders.set(provider.id, Date.now() + 30000); // 30s cooling
       }
     }
 
-    throw new Error("PULSE_FAULT: Neural nodes timed out. Retrying segment...");
+    throw new Error("GRID_FAILURE: All synthesis segments exhausted.");
   }
 
-  // Fix: Added public method to access providers
   public getProviders(): AIProvider[] {
     return Array.from(this.providers.values());
   }
@@ -134,7 +214,8 @@ export class SynthesizerCore {
       id: p.id,
       name: p.name,
       status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : 'active',
-      tier: p.tier
+      tier: p.tier,
+      remaining: 'N/A' // Managed by internal rate limiter if implemented
     }));
   }
 }
@@ -145,7 +226,6 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-// Fix: Exporting getProvidersConfig function required by multi-provider-router.ts
 export function getProvidersConfig(): AIProvider[] {
   return getSynthesizer().getProviders();
 }

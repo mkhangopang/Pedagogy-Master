@@ -15,18 +15,18 @@ export const ProviderStatusBar: React.FC = () => {
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 10000);
+    const interval = setInterval(fetchStatus, 15000); // Poll every 15s
     return () => clearInterval(interval);
   }, []);
 
   if (!show || status.length === 0) return null;
 
   return (
-    <div className="bg-slate-950/95 backdrop-blur-xl border-b border-white/5 px-4 py-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500">
+    <div className="bg-slate-950/95 backdrop-blur-xl border-b border-white/5 px-4 py-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500 z-[100]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]" />
-           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">7-Node Neural Grid v10.0</span>
+           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">7-Node Multi-Provider Neural Grid v10.0</span>
         </div>
         <button onClick={() => setShow(false)} className="text-slate-500 hover:text-white transition-colors">✕</button>
       </div>
@@ -48,7 +48,7 @@ export const ProviderStatusBar: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                    <span className="text-[8px] font-bold text-slate-500 uppercase">{p.status}</span>
-                   {p.status === 'active' && <span className="text-[8px] font-black text-indigo-400">{p.remaining} REQ LEFT</span>}
+                   {p.status === 'active' && <span className="text-[8px] font-black text-indigo-400">NODE_ONLINE</span>}
                 </div>
              </div>
           </div>

@@ -8,7 +8,7 @@ import { getSynthesizer } from '../../../../lib/ai/synthesizer-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-// VERCEL OPTIMIZATION: 60s is plenty for a 2,000-char pulse
+// VERCEL OPTIMIZATION: 60s max, but targeting <5s per pulse
 export const maxDuration = 60; 
 
 export async function POST(req: NextRequest) {
@@ -24,17 +24,17 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, sourceType, extractedText, previewOnly, metadata } = body;
     
-    // MICRO-PULSE HANDLER: Cleans a small segment of text quickly
+    // MICRO-PULSE HANDLER: Cleans a small segment of text extremely fast
     if (sourceType === 'raw_text' && previewOnly) {
       const synth = getSynthesizer();
       const instruction = `
-# PULSE CLEANER v2 (Vercel Optimized)
-TASK: Extract SLO codes and descriptions from this segment.
-OUTPUT: Verbatim Markdown list.
+# FAST_PULSE_EXTRACTOR
+TASK: List all Student Learning Objectives (SLOs) found in the text.
 FORMAT: - SLO:[CODE]: [DESCRIPTION]
-LIMIT: Do not add conversational text.
+RULE: Output ONLY the list. No commentary. No bold.
 `;
-      const result = await synth.synthesize(`${instruction}\n\nINPUT_SEGMENT:\n${extractedText.substring(0, 5000)}`);
+      // Use shorter input limit for max speed
+      const result = await synth.synthesize(`${instruction}\n\nINPUT:\n${extractedText.substring(0, 3000)}`);
       return NextResponse.json({ markdown: result.text, provider: result.provider });
     }
 
@@ -70,10 +70,7 @@ LIMIT: Do not add conversational text.
 
       if (dbError) throw new Error(dbError.message);
 
-      // 3. Vector Grid Indexing (Non-blocking trigger for Vercel)
-      // We use a promise here that doesn't block the response, 
-      // but note that Vercel may kill it if the response finishes too early.
-      // This is why we poll for 'ready' status in the UI.
+      // 3. Vector Grid Indexing (Non-blocking trigger)
       indexDocumentForRAG(docData.id, extractedText, filePath, supabase, metadata).catch(err => {
         console.error("Vector Grid Sync Error:", err);
       });

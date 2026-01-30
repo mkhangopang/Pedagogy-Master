@@ -56,12 +56,12 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         rawText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
-        setProgressValue(5 + (i / pdf.numPages) * 15);
+        setProgressValue(5 + (i / pdf.numPages) * 10);
       }
 
-      // STATEFUL RECURSIVE PULSE LOGIC
-      // Split raw text into small batches of ~2500 characters to stay under Vercel 10s limit
-      const chunkSize = 2500;
+      // VERCEL HOBBY OPTIMIZATION:
+      // Reduced chunk size to 1200 chars to ensure < 10s processing even under load
+      const chunkSize = 1200;
       const chunks = [];
       for (let i = 0; i < rawText.length; i += chunkSize) {
         chunks.push(rawText.substring(i, i + chunkSize));
@@ -71,28 +71,40 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const token = session?.access_token || '';
       let finalMd = "# Curriculum Processed Results\n\n";
 
-      // Limit pulses to prevent massive token burn on free tier
-      const maxPulses = Math.min(chunks.length, 40); 
+      const maxPulses = Math.min(chunks.length, 100); 
       
       for (let p = 0; p < maxPulses; p++) {
-        setProcStage(`Neural Clean: Chunk ${p + 1}/${maxPulses}...`);
+        setProcStage(`Neural Clean: Node ${p + 1}/${maxPulses}...`);
         
-        const res = await fetch('/api/docs/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-          body: JSON.stringify({ 
-            sourceType: 'raw_text', 
-            extractedText: chunks[p], 
-            previewOnly: true 
-          })
-        });
+        // Internal retry logic for specific chunk failures
+        let success = false;
+        let retries = 0;
+        
+        while (!success && retries < 2) {
+          try {
+            const res = await fetch('/api/docs/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ 
+                sourceType: 'raw_text', 
+                extractedText: chunks[p], 
+                previewOnly: true 
+              })
+            });
 
-        if (!res.ok) throw new Error(`Chunk ${p+1} timed out. Splitting too much data.`);
-        const data = await res.json();
-        finalMd += (data.markdown || "") + "\n\n";
+            if (!res.ok) throw new Error(res.status === 504 ? "Gateway Timeout" : "Node Fault");
+            const data = await res.json();
+            finalMd += (data.markdown || "") + "\n\n";
+            success = true;
+          } catch (chunkErr) {
+            retries++;
+            if (retries >= 2) throw new Error(`Chunk ${p + 1} timed out after retries. Try a smaller file.`);
+            setProcStage(`Throttling... Retrying Chunk ${p + 1}`);
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
         
-        // Dynamic progress based on current chunk
-        setProgressValue(20 + ((p + 1) / maxPulses) * 80);
+        setProgressValue(15 + ((p + 1) / maxPulses) * 85);
       }
 
       setDraftMarkdown(finalMd);
