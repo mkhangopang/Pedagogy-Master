@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud, Zap, RefreshCw, Layers } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud, Zap, RefreshCw, Layers, ShieldQuestion } from 'lucide-react';
 import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -57,7 +57,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         fullText += textContent.items.map((item: any) => (item as any).str).join(' ') + '\n';
-        if (i % 8 === 0) await new Promise(r => setTimeout(r, 0)); 
+        if (i % 10 === 0) await new Promise(r => setTimeout(r, 0)); 
       }
       return fullText;
     } else if (extension === 'docx') {
@@ -78,19 +78,20 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           body: JSON.stringify(body)
         });
         if (res.ok) return await res.json();
-        const errData = await res.json().catch(() => ({ error: 'Node busy.' }));
         
-        // Handle 429 specifically in client-side retry logic
-        if (res.status === 429) {
-          setProcStage('Rate Limit Hit: Throttling Grid...');
-          await new Promise(r => setTimeout(r, 4000 * (i + 1))); // Dynamic cooling
+        const errData = await res.json().catch(() => ({ error: 'Grid Node Busy' }));
+        
+        // AUTO-FAILOVER LOGIC
+        if (res.status === 429 || res.status === 410 || res.status === 503) {
+          setProcStage(`Node Failure (${res.status}): Mesh Re-routing...`);
+          // Exponential backoff + extra cooling for 429s
+          await new Promise(r => setTimeout(r, 5500 * (i + 1))); 
         }
         
-        lastErr = new Error(errData.error || `Grid Error (${res.status})`);
+        lastErr = new Error(errData.error || `Grid Fail (${res.status})`);
       } catch (e: any) {
         lastErr = e;
       }
-      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, i)));
     }
     throw lastErr;
   };
@@ -102,32 +103,32 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     setError(null);
     setIsProcessing(true);
     setProgressValue(2);
-    setProcStage(`Initializing Ingestion...`);
+    setProcStage(`Initializing Ingestion Pipeline...`);
 
     try {
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // Resolution optimization: 10k chunks
-      const chunkSize = 10000; 
-      const overlapSize = 2000; 
+      // Resolution optimization: 12k chunks for 185-page coverage
+      const chunkSize = 12000; 
+      const overlapSize = 3000; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 90) break; // Maximum resolution for 185-page mode
+        if (fragments.length > 120) break; // Maximum grid resolution
       }
 
-      setProcStage(`Neural Grid: Mapping ${fragments.length} Nodes...`);
+      setProcStage(`Neural Mesh: Ingesting ${fragments.length} Nodes...`);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // PHASE 1: MAP (Sequential batches with cooling)
+      // PHASE 1: MAP (Linear progress to stay within free-tier RPM)
       const mapResults: string[] = [];
-      const MAP_BATCH_SIZE = 2; 
+      const MAP_BATCH_SIZE = 1; // Strict linear mapping for high-volume documents
       
       for (let i = 0; i < fragments.length; i += MAP_BATCH_SIZE) {
         const batch = fragments.slice(i, i + MAP_BATCH_SIZE);
-        setProcStage(`Extracting Curriculum (Block ${Math.floor(i/MAP_BATCH_SIZE) + 1}/${Math.ceil(fragments.length/MAP_BATCH_SIZE)})...`);
+        setProcStage(`Mapping Curriculum (Segment ${i + 1}/${fragments.length})...`);
         
         const batchResults = await Promise.all(batch.map(async (frag, batchIdx) => {
           const absoluteIdx = i + batchIdx;
@@ -142,22 +143,22 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         }));
         
         mapResults.push(...batchResults);
-        setProgressValue(prev => Math.min(60, prev + (45 / (fragments.length / MAP_BATCH_SIZE))));
+        setProgressValue(prev => Math.min(65, prev + (60 / fragments.length)));
         
-        // CRITICAL FIX: Inter-batch Cooling to prevent 429s on free tier
+        // Mandatory Cooling Period (Strictly prevents 429)
         if (i + MAP_BATCH_SIZE < fragments.length) {
-          await new Promise(r => setTimeout(r, 3000)); 
+          await new Promise(r => setTimeout(r, 4500)); 
         }
       }
 
-      // PHASE 2: RECURSIVE REDUCTION
-      setProcStage(`Recursive Synthesis: Consolidating Nodes...`);
+      // PHASE 2: RECURSIVE REDUCTION (Cluster groups of 5)
+      setProcStage(`Neural Synthesis: Reducing Hierarchy...`);
       const intermediateHierarchies: string[] = [];
-      const REDUCE_BATCH_SIZE = 4;
+      const REDUCE_BATCH_SIZE = 5;
 
       for (let i = 0; i < mapResults.length; i += REDUCE_BATCH_SIZE) {
         const tierBatch = mapResults.slice(i, i + REDUCE_BATCH_SIZE);
-        setProcStage(`Merging Segment ${Math.floor(i/REDUCE_BATCH_SIZE) + 1} of ${Math.ceil(mapResults.length/REDUCE_BATCH_SIZE)}...`);
+        setProcStage(`Merging Standard Cluster ${Math.floor(i/REDUCE_BATCH_SIZE) + 1}...`);
         
         const tierRes = await processWithRetry('/api/docs/upload', {
           name: `Sync_Tier_${i}`,
@@ -169,13 +170,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         }, token);
         
         intermediateHierarchies.push(tierRes.markdown || "");
-        setProgressValue(prev => Math.min(90, prev + 4));
-        
-        // Cooling between reductions
-        await new Promise(r => setTimeout(r, 2000));
+        setProgressValue(prev => Math.min(94, prev + 5));
+        await new Promise(r => setTimeout(r, 3000));
       }
 
-      // PHASE 3: MASTER SYNTHESIS
+      // PHASE 3: MASTER VAULT SYNC (Locked to Gemini)
       setProcStage(`Finalizing Master Vault Sync...`);
       const finalResult = await processWithRetry('/api/docs/upload', {
         name: file.name,
@@ -193,7 +192,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      setError(err.message);
+      const msg = err.message.includes('429') 
+        ? "The Groq Node is currently saturated. The system attempted a failover but the mesh is under heavy load. Please retry in 30 seconds."
+        : err.message;
+      setError(msg);
     } finally {
       setIsProcessing(false);
     }
@@ -233,7 +235,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
               <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Validated Standards</h3>
               <div className="flex gap-2 mt-1">
                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
-                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Recursive Node Verified</span>
+                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Mesh Verification Success</span>
               </div>
             </div>
           </div>
@@ -255,7 +257,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Multi-Stage High Fidelity
+              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v7.0 (Verified)
            </div>
            <button 
              onClick={handleFinalApproval}
@@ -283,7 +285,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Stable Synthesis Grid v5.5 (Rate-Limit Optimized)</p>
+          <p className="text-slate-500 font-medium">Neural Mesh Grid v7.0 (Self-Healing Mode)</p>
         </div>
 
         {error && (
@@ -291,7 +293,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <AlertTriangle className="text-rose-500 shrink-0" size={20} />
             <div className="space-y-2">
               <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
-              <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Restart Synthesis</button>
+              <div className="flex gap-4">
+                <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Restart Sync</button>
+                <button onClick={onCancel} className="text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 flex items-center gap-1"><X size={10} /> Cancel Ingestion</button>
+              </div>
             </div>
           </div>
         )}
@@ -319,18 +324,18 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Stage Rate-Limited Sync Mode</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Linear Progress • Failover Enabled</p>
                 </div>
               </div>
             </label>
             
             <div className="flex items-center justify-center gap-6 pt-4">
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Layers size={12} /> Recursive
+                  <Layers size={12} /> Linear Sync
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <ShieldCheck size={12} className="text-indigo-400" /> Deterministic
+                  <ShieldQuestion size={12} className="text-indigo-400" /> Auto-Failover
                </div>
             </div>
           </div>

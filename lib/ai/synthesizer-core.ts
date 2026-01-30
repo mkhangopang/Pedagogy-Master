@@ -7,10 +7,14 @@ import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
-export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: number })[] => [
-  { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled(), contextCharLimit: 1000000 },
-  { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY, contextCharLimit: 128000 },
-  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY, contextCharLimit: 32000 },
+// Session-based node blacklisting to prevent repeated 429/410 failures
+const nodeBlacklist = new Map<string, number>();
+
+export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: number; priority: number })[] => [
+  { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled(), contextCharLimit: 1000000, priority: 1 },
+  { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY, contextCharLimit: 128000, priority: 2 },
+  { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY, contextCharLimit: 32000, priority: 3 },
+  { name: 'openrouter', rpm: 50, rpd: 50000, enabled: !!process.env.OPENROUTER_API_KEY, contextCharLimit: 128000, priority: 4 },
 ];
 
 export const PROVIDER_FUNCTIONS = {
@@ -21,9 +25,9 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * WORLD-CLASS SYNTHESIZER ORCHESTRATOR (v5.5)
- * Stable Grid: Gemini, DeepSeek, Groq. 
- * Optimized for high-volume Pakistan Curriculum Ingestion.
+ * NEURAL MESH ORCHESTRATOR (v7.0)
+ * Architecture: Self-Healing Priority Grid with Circuit Breaking.
+ * Optimized for Sindh Biology 185-page massive curriculum ingestion.
  */
 export async function synthesize(
   prompt: string,
@@ -37,17 +41,29 @@ export async function synthesize(
   
   const executionTask = async () => {
     const currentProviders = getProvidersConfig();
-    let targetProviders = [...currentProviders].filter(p => p.enabled);
+    const now = Date.now();
+
+    // Filter by enabled, priority, AND blacklist status
+    let targetProviders = [...currentProviders]
+      .filter(p => p.enabled)
+      .filter(p => {
+        const blacklistExpiry = nodeBlacklist.get(p.name);
+        return !blacklistExpiry || now > blacklistExpiry;
+      })
+      .sort((a, b) => a.priority - b.priority);
     
     if (targetProviders.length === 0) {
-      throw new Error("NO_STABLE_NODES: Ensure API_KEY (Gemini) is configured in Vercel.");
+      // If all nodes are blacklisted, clear blacklist and try primary only
+      nodeBlacklist.clear();
+      targetProviders = [currentProviders[0]];
     }
-    
-    // Sort by stability and capacity
-    const reasoningOrder = ['gemini', 'deepseek', 'groq'];
-    targetProviders.sort((a, b) => reasoningOrder.indexOf(a.name) - reasoningOrder.indexOf(b.name));
 
-    // Force Preferred Provider for critical phases
+    // Force Gemini for massive synthesis reduction
+    const isMassiveReduction = prompt.includes('FINAL_REDUCE_PROTOCOL') || prompt.length > 35000;
+    if (isMassiveReduction) {
+      preferredProvider = 'gemini';
+    }
+
     if (preferredProvider) {
       const preferred = targetProviders.find(p => p.name === preferredProvider);
       if (preferred) {
@@ -57,21 +73,14 @@ export async function synthesize(
 
     let lastError = null;
     for (const config of targetProviders) {
-      if (!config.enabled) continue;
+      // Logic Guard: Prevent payload overflow errors
+      if (prompt.length > (config.contextCharLimit * 0.95)) continue;
 
-      // Logic Guard: Context size mismatch
-      if (prompt.length > (config.contextCharLimit * 0.9)) {
-        console.warn(`⏭️ [Grid Guard] Skipping ${config.name} - Capacity mismatch.`);
-        continue;
-      }
-
-      if (!await rateLimiter.canMakeRequest(config.name, config)) continue;
-      
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        // 185-page reduction tasks need significant context time
-        const isReduction = prompt.includes('FINAL_REDUCE_PROTOCOL') || prompt.length > 35000;
-        const timeout = isReduction ? 260000 : 95000;
+        const timeout = isMassiveReduction ? 290000 : 110000;
+        
+        console.log(`🛰️ [Neural Mesh] Requesting Node: ${config.name}`);
         
         const response = await Promise.race([
           (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts),
@@ -86,17 +95,23 @@ export async function synthesize(
           imageUrl: response.imageUrl
         };
       } catch (e: any) { 
-        console.warn(`⚠️ [Node Bypass] ${config.name}: ${e.message}`);
+        const errorMsg = e.message || "";
+        console.warn(`⚠️ [Mesh Failover] Node ${config.name} rejected payload: ${errorMsg}`);
         lastError = e;
         
-        // Failover cooling delay
-        if (e.message.includes('429')) {
-          await new Promise(r => setTimeout(r, 1500));
+        // CIRCUIT BREAKER: Blacklist nodes that are saturated (429) or gone (410/404)
+        if (errorMsg.includes('429') || errorMsg.includes('410') || errorMsg.includes('quota')) {
+          console.error(`🔴 [Mesh Control] Node ${config.name} saturated. Isolating for 60s.`);
+          nodeBlacklist.set(config.name, Date.now() + 60000);
         }
+        
+        // Immediate jitter before fallback
+        await new Promise(r => setTimeout(r, 1200));
         continue; 
       }
     }
-    throw lastError || new Error("GRID_EXHAUSTED: Document complexity exceeds current node windows.");
+    
+    throw lastError || new Error("MESH_EXHAUSTED: All neural grid segments rejected the curriculum node.");
   };
 
   if (bypassQueue) return await executionTask();
