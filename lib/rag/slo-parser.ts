@@ -1,5 +1,5 @@
 /**
- * WORLD-CLASS SLO PARSER (v5.0)
+ * WORLD-CLASS SLO PARSER (v6.0)
  * Optimized for Sindh (B-09-A-01) and Federal (S8a5) standards.
  */
 
@@ -25,8 +25,8 @@ const SUBJECT_MAP: Record<string, string> = {
 };
 
 export function parseSLOCode(code: string): ParsedSLO | null {
-  // Pattern 1: Sindh 2024 (B-09-A-01)
-  const pattern2024 = /^([A-Z])-?(\d{2})-?([A-Z])-?(\d{2})$/i;
+  // Pattern 1: Sindh 2024 (Handles B-09-A-01 or B-9-A-1)
+  const pattern2024 = /^([A-Z])\s*-?\s*(0?9|10|11|12)\s*-?\s*([A-Z])\s*-?\s*(\d{1,2})$/i;
   // Pattern 2: Shorthand (S8a5)
   const patternShort = /^([A-Z])(\d{1,2})([A-Z])(\d{1,2})$/i;
 

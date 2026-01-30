@@ -67,18 +67,24 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         rawText = new TextDecoder().decode(arrayBuffer);
       }
 
-      // 2. PRECISION SKIMMER: Focus ONLY on B-09, B-10, B-11, B-12
+      // 2. PRECISION ELASTIC SKIMMER: Handles B-9, B-09, B-10, B-11, B-12
       setProcStage(`Grid Extraction: Identifying Anchors...`);
-      const gridRegex = /(?:[B-Z]-(?:09|10|11|12)-[A-Z]-\d{1,2})[\s\S]{1,1000}/gi;
-      const relevantBlocks = rawText.match(gridRegex) || [];
+      
+      // Sanitization: Remove brackets which often interfere with regex boundaries in messy PDF text
+      const cleanRaw = rawText.replace(/[\[\]]/g, ' ');
+      
+      // The "Elastic Anchor" Pattern: Handles varying separators and single/double digit grades
+      const gridRegex = /(?:[B-Z]\s*-?\s*(?:0?9|9|10|11|12)\s*-?\s*[A-Z]\s*-?\s*\d{1,2})[\s\S]{1,1500}/gi;
+      const relevantBlocks = cleanRaw.match(gridRegex) || [];
       
       if (relevantBlocks.length === 0) {
-        throw new Error("Grid Check Failed: No curriculum anchors (B-09 to B-12) found in this document.");
+        throw new Error("Grid Check Failed: No curriculum anchors (B-09 to B-12) detected. Please ensure the PDF contains standard Student Learning Objectives.");
       }
 
-      const skimmedText = relevantBlocks.slice(0, 100).join('\n\n---\n\n'); // Limit to first 100 matches for stability
+      // Limit to 80 blocks to prevent payload overflow in free-tier nodes
+      const skimmedText = relevantBlocks.slice(0, 80).join('\n\n---\n\n'); 
 
-      // 3. ONE-PASS SYNTHESIS (Bypass heavy mapping)
+      // 3. ONE-PASS SYNTHESIS
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
@@ -184,7 +190,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <div className="p-5 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex flex-col items-center gap-4 animate-in slide-in-from-top-2">
             <div className="flex items-center gap-2">
               <AlertCircle className="text-rose-500" size={18} />
-              <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{error}</p>
+              <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
             </div>
             <button onClick={() => setError(null)} className="px-6 py-2 bg-rose-100 dark:bg-rose-900/40 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-200 transition-all flex items-center gap-2"><RefreshCw size={12}/> Reset Sync</button>
           </div>
