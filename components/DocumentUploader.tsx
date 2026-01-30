@@ -84,7 +84,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         // AUTO-FAILOVER LOGIC
         if (res.status === 429 || res.status === 410 || res.status === 503) {
           setProcStage(`Node Failure (${res.status}): Mesh Re-routing...`);
-          // Exponential backoff + extra cooling for 429s
           await new Promise(r => setTimeout(r, 5500 * (i + 1))); 
         }
         
@@ -115,7 +114,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 120) break; // Maximum grid resolution
+        if (fragments.length > 120) break; 
       }
 
       setProcStage(`Neural Mesh: Ingesting ${fragments.length} Nodes...`);
@@ -124,7 +123,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
       // PHASE 1: MAP (Linear progress to stay within free-tier RPM)
       const mapResults: string[] = [];
-      const MAP_BATCH_SIZE = 1; // Strict linear mapping for high-volume documents
+      const MAP_BATCH_SIZE = 1; 
       
       for (let i = 0; i < fragments.length; i += MAP_BATCH_SIZE) {
         const batch = fragments.slice(i, i + MAP_BATCH_SIZE);
@@ -145,7 +144,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         mapResults.push(...batchResults);
         setProgressValue(prev => Math.min(65, prev + (60 / fragments.length)));
         
-        // Mandatory Cooling Period (Strictly prevents 429)
         if (i + MAP_BATCH_SIZE < fragments.length) {
           await new Promise(r => setTimeout(r, 4500)); 
         }
@@ -185,6 +183,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         isIntermediate: false
       }, token);
 
+      // CRITICAL FIX: If the model Hallucinated a "Ready" message instead of data, show alert
+      if (finalResult.markdown?.includes("I am ready") && finalResult.markdown?.length < 300) {
+        throw new Error("Recursive sync resulted in a placeholder response. Please ensure the document contains clear Student Learning Outcomes and retry.");
+      }
+
       setDraftMarkdown(finalResult.markdown || "");
       setExtractedMeta(finalResult.metadata);
       setExtractedSLOs(finalResult.slos || []);
@@ -192,10 +195,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      const msg = err.message.includes('429') 
-        ? "The Groq Node is currently saturated. The system attempted a failover but the mesh is under heavy load. Please retry in 30 seconds."
-        : err.message;
-      setError(msg);
+      setError(err.message);
     } finally {
       setIsProcessing(false);
     }
@@ -204,11 +204,15 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   const handleFinalApproval = async () => {
     setIsProcessing(true);
     setProcStage('Vaulting Intelligence...');
+    setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${session?.access_token}` 
+        },
         body: JSON.stringify({ 
           name: extractedMeta?.board || "Sindh Curriculum Master", 
           sourceType: 'markdown', 
@@ -217,12 +221,20 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           slos: extractedSLOs
         })
       });
-      if (!response.ok) throw new Error('Vault lock failed.');
-      const finalDoc = await response.json();
-      onComplete(finalDoc);
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Vault lock failed. Verification node rejected the manifest.');
+      }
+      
+      onComplete(data);
     } catch (err: any) {
-      setError(err.message);
-    } finally { setIsProcessing(false); }
+      console.error("Approval Fault:", err);
+      setError(`VAULT_FAULT: ${err.message}`);
+    } finally { 
+      setIsProcessing(false); 
+    }
   };
 
   if (mode === 'transition') {
@@ -230,21 +242,29 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 animate-in zoom-in-95 flex flex-col h-[92vh] overflow-hidden text-left">
         <div className="flex items-center justify-between p-4 md:p-6 border-b dark:border-white/5 shrink-0">
           <div className="flex items-center gap-4">
-            <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 shadow-sm"><ArrowLeft size={20}/></button>
+            <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 shadow-sm transition-all"><ArrowLeft size={20}/></button>
             <div>
               <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Validated Standards</h3>
               <div className="flex gap-2 mt-1">
                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
-                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Mesh Verification Success</span>
+                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Recursive Node Verified</span>
               </div>
             </div>
           </div>
           <button onClick={onCancel} className="p-3 text-slate-400 hover:text-rose-500 transition-colors"><X size={28}/></button>
         </div>
+
+        {error && (
+          <div className="m-6 p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex items-center gap-4 animate-in slide-in-from-top-2">
+            <AlertTriangle className="text-rose-500" size={18} />
+            <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{error}</p>
+          </div>
+        )}
+
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden h-full">
           <div className="flex flex-col border-r dark:border-white/5 overflow-hidden">
             <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
-              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Master Hierarchy</span>
+              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Master Hierarchy Editor</span>
             </div>
             <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-8 bg-slate-50/50 dark:bg-black/20 font-mono text-[11px] outline-none resize-none custom-scrollbar leading-relaxed" />
           </div>
@@ -257,12 +277,12 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v7.0 (Verified)
+              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v8.0 Active
            </div>
            <button 
              onClick={handleFinalApproval}
-             disabled={isProcessing}
-             className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
+             disabled={isProcessing || draftMarkdown.length < 50}
+             className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50 transition-all"
            >
              {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>}
              Initialize Vault Lock
@@ -285,7 +305,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Neural Mesh Grid v7.0 (Self-Healing Mode)</p>
+          <p className="text-slate-500 font-medium">Neural Mesh Grid v8.0 (Self-Healing Mode)</p>
         </div>
 
         {error && (
@@ -294,8 +314,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <div className="space-y-2">
               <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
               <div className="flex gap-4">
-                <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Restart Sync</button>
-                <button onClick={onCancel} className="text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 flex items-center gap-1"><X size={10} /> Cancel Ingestion</button>
+                <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1 transition-all"><RefreshCw size={10} /> Restart Sync</button>
+                <button onClick={onCancel} className="text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 flex items-center gap-1 transition-all"><X size={10} /> Cancel Ingestion</button>
               </div>
             </div>
           </div>
