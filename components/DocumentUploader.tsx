@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud, Zap } from 'lucide-react';
 import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -27,6 +27,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   const [mode, setMode] = useState<'selection' | 'transition'>('selection');
   const [isProcessing, setIsProcessing] = useState(false);
   const [procStage, setProcStage] = useState<string>('');
+  const [progressValue, setProgressValue] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [draftMarkdown, setDraftMarkdown] = useState('');
   const [previewHtml, setPreviewHtml] = useState('');
@@ -49,19 +50,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       let fullText = '';
-      // Support for massive documents like the 185-page Sindh Curriculum
       const pageLimit = Math.min(pdf.numPages, 500); 
       
       for (let i = 1; i <= pageLimit; i++) {
-        setProcStage(`Extracting Page ${i} of ${pdf.numPages}...`);
+        setProcStage(`Local Extraction: Page ${i}/${pdf.numPages}`);
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         fullText += textContent.items.map((item: any) => (item as any).str).join(' ') + '\n';
-        
-        // V-Sync delay to prevent UI freeze on large files
-        if (i % 8 === 0) {
-          await new Promise(r => setTimeout(r, 0)); 
-        }
+        if (i % 8 === 0) await new Promise(r => setTimeout(r, 0)); 
       }
       return fullText;
     } else if (extension === 'docx') {
@@ -78,39 +74,71 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
     setError(null);
     setIsProcessing(true);
-    setProcStage(`Initializing Local Extraction...`);
+    setProgressValue(5);
+    setProcStage(`Initializing Local Node...`);
 
     try {
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty or image-only.");
 
-      setProcStage(`Neural Grid: Engaging Distributed Map-Reduce...`);
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // We explicitly let the backend know it's a heavy task to prioritize reasoning
-      const response = await fetch('/api/docs/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ name: file.name, sourceType: 'raw_text', extractedText: rawText, previewOnly: true })
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Grid Timeout' }));
-        throw new Error(errorData.error || 'The neural grid timed out processing this massive curriculum asset.');
+      // CLIENT-SIDE MAP REDUCE: Split 185 pages into chunks of ~20,000 chars
+      const chunkSize = 25000;
+      const fragments: string[] = [];
+      for (let i = 0; i < rawText.length; i += chunkSize) {
+        fragments.push(rawText.substring(i, i + chunkSize));
       }
 
-      const result = await response.json();
+      setProcStage(`Neural Grid: Mapping ${fragments.length} Knowledge Blocks...`);
+      const { data: { session } } = await supabase.auth.getSession();
       
-      setDraftMarkdown(result.markdown || "");
-      setExtractedMeta(result.metadata);
-      setExtractedSLOs(result.slos || []);
+      // Parallel Process Chunks to avoid individual request timeouts
+      const mapResults = await Promise.all(fragments.map(async (frag, idx) => {
+        const res = await fetch('/api/docs/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ 
+            name: `${file.name}_part_${idx}`, 
+            sourceType: 'raw_text', 
+            extractedText: frag, 
+            previewOnly: true,
+            isFragment: true 
+          })
+        });
+        if (!res.ok) throw new Error(`Node ${idx} failed to respond.`);
+        const data = await res.json();
+        setProgressValue(prev => Math.min(80, prev + (70 / fragments.length)));
+        return data.markdown || "";
+      }));
+
+      // REDUCE PHASE: Merge fragments in one final reasoning call
+      setProcStage(`Master Synthesis: Merging Sindh Intelligence...`);
+      const mergedContext = mapResults.join('\n\n---\n\n');
+      
+      const reduceRes = await fetch('/api/docs/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ 
+          name: file.name, 
+          sourceType: 'raw_text', 
+          extractedText: mergedContext, 
+          previewOnly: true,
+          isReduce: true 
+        })
+      });
+
+      if (!reduceRes.ok) throw new Error('Master Synthesis Node timed out. This curriculum is massive.');
+
+      const finalResult = await reduceRes.json();
+      setDraftMarkdown(finalResult.markdown || "");
+      setExtractedMeta(finalResult.metadata);
+      setExtractedSLOs(finalResult.slos || []);
       setMode('transition');
+      setProgressValue(100);
     } catch (err: any) {
-      console.error("Ingestion Node Fault:", err);
-      setError(err.message || "Synthesis node unreachable. Try splitting the PDF into smaller parts.");
+      console.error("Ingestion Fault:", err);
+      setError(err.message || "Synthesis node unreachable.");
     } finally {
       setIsProcessing(false);
-      setProcStage('');
     }
   };
 
@@ -157,13 +185,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden h-full">
           <div className="flex flex-col border-r dark:border-white/5 overflow-hidden">
             <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
-              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Source Node</span>
+              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Master Artifact</span>
             </div>
             <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-8 bg-slate-50/50 dark:bg-black/20 font-mono text-[11px] outline-none resize-none custom-scrollbar leading-relaxed" />
           </div>
           <div className="flex flex-col overflow-hidden h-full">
              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 flex items-center gap-3 border-b dark:border-white/5">
-                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Pedagogical Rendering</span>
+                <span className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">Visual Rendering</span>
              </div>
              <div className="p-8 md:p-16 overflow-y-auto custom-scrollbar prose dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: previewHtml }} />
           </div>
@@ -198,7 +226,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Deep structural mapping for curriculum standards.</p>
+          <p className="text-slate-500 font-medium">Processing 185-page curriculum standards.</p>
         </div>
 
         {error && (
@@ -210,10 +238,16 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
         {isProcessing ? (
           <div className="space-y-6 py-4">
-             <div className="h-2 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-600 animate-progress-load rounded-full" />
+             <div className="h-3 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-indigo-600 transition-all duration-1000 rounded-full" 
+                  style={{ width: `${progressValue}%` }}
+                />
              </div>
-             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 animate-pulse">{procStage}</p>
+             <div className="flex items-center justify-center gap-3">
+                <Zap size={14} className="text-indigo-500 animate-pulse" />
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600">{procStage}</p>
+             </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6">
@@ -225,7 +259,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">PDF • DOCX • MARKDOWN</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">SINDH BIOLOGY PDF SUPPORTED</p>
                 </div>
               </div>
             </label>

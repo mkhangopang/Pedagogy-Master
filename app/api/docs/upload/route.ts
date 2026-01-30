@@ -21,22 +21,24 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     const body = await req.json();
-    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map } = body;
+    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isFragment, isReduce } = body;
     
     if (sourceType === 'raw_text' && previewOnly) {
-      console.log(`📡 [Gateway] Collaborative Map-Reduce Engaged for: ${name} (${extractedText?.length || 0} chars)`);
+      console.log(`📡 [Gateway] Distributed Node: ${name} (F:${!!isFragment} R:${!!isReduce})`);
       
-      const mapReduceInstruction = `You are a Lead Curriculum Engineer. Analyze the SINDH BIOLOGY 2024 context. Ensure 100% fidelity for SLO codes B-09 to B-12. Generate Master Pedagogical Markdown and SLO Map.`;
-      const triggerPrompt = `MAP_REDUCE_TRIGGER: SINDH BIOLOGY 2024 CURRICULUM. FULL CONTENT: ${extractedText}`;
+      let instruction = "You are a curriculum data extractor. Return valid JSON of SLOs.";
+      if (isReduce) {
+        instruction = `You are a Lead Curriculum Engineer. Merge multiple fragments into one MASTER SINDH BIOLOGY 2024 hierarchy. Deduplicate SLOs. Use B-09-A-01 format.`;
+      }
 
-      const result = await synthesize(triggerPrompt, [], false, [], 'gemini', mapReduceInstruction);
+      const result = await synthesize(extractedText, [], false, [], isReduce ? 'gemini' : 'groq', instruction, true);
       
       const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
       let parsed;
       try {
         parsed = JSON.parse(jsonClean);
       } catch (e) {
-        console.warn(`[Gateway] Synthesis returned non-JSON. Wrapping raw text.`);
+        console.warn(`[Gateway] Non-JSON output. Wrapping raw text.`);
         parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
       }
       return NextResponse.json(parsed);
@@ -55,7 +57,7 @@ export async function POST(req: NextRequest) {
 
       const { data: docData, error: dbError } = await supabase.from('documents').insert({
         user_id: user.id,
-        name: name || "Sindh Biology Master Asset",
+        name: name || "Sindh Biology Master",
         source_type: 'markdown',
         status: 'processing',
         extracted_text: extractedText,
@@ -65,7 +67,7 @@ export async function POST(req: NextRequest) {
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
         difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Distributed Map-Reduce Sync: ${slos?.length || 0} SLOs mapped.`,
+        document_summary: `Distributed Sync: ${slos?.length || 0} SLOs anchored.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: "Invalid pipeline command." }, { status: 400 });
   } catch (error: any) {
-    console.error("❌ [Ingestion Fault]:", error);
-    return NextResponse.json({ error: error.message || "The neural grid encountered a timeout. Try splitting the document." }, { status: 500 });
+    console.error("❌ [Gateway Fault]:", error);
+    return NextResponse.json({ error: error.message || "Synthesis grid timeout." }, { status: 500 });
   }
 }
