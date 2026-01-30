@@ -57,7 +57,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
         fullText += textContent.items.map((item: any) => (item as any).str).join(' ') + '\n';
-        if (i % 12 === 0) await new Promise(r => setTimeout(r, 0)); 
+        if (i % 15 === 0) await new Promise(r => setTimeout(r, 0)); 
       }
       return fullText;
     } else if (extension === 'docx') {
@@ -77,14 +77,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
           body: JSON.stringify(body)
         });
-        if (res.ok) return await res.json();
+        const data = await res.json();
+        if (res.ok) return data;
         
-        const errData = await res.json().catch(() => ({ error: 'Grid Node Busy' }));
         if (res.status === 429 || res.status === 410 || res.status === 503) {
-          setProcStage(`Neural Jitter: Node ${res.status} Re-routing...`);
-          await new Promise(r => setTimeout(r, 6000 * (i + 1))); 
+          setProcStage(`Node Saturated: Retrying in ${6 + i}s...`);
+          await new Promise(r => setTimeout(r, 6500 * (i + 1))); 
         }
-        lastErr = new Error(errData.error || `Grid Error (${res.status})`);
+        lastErr = new Error(data.error || `Grid Fail (${res.status})`);
       } catch (e: any) {
         lastErr = e;
       }
@@ -99,72 +99,63 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     setError(null);
     setIsProcessing(true);
     setProgressValue(2);
-    setProcStage(`Initializing Ingestion...`);
+    setProcStage(`Initializing Quad-Grade Sync...`);
 
     try {
       const rawText = await extractLocalText(file);
-      if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
+      if (!rawText || rawText.trim().length < 50) throw new Error("Empty document node.");
 
-      const chunkSize = 14000; 
-      const overlapSize = 3500; 
+      // Resolution optimization for large 185-page Sindh docs
+      const chunkSize = 15000; 
+      const overlapSize = 4000; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 120) break; 
+        if (fragments.length > 150) break; 
       }
 
-      setProcStage(`Neural Mesh: Ingesting ${fragments.length} Nodes...`);
+      setProcStage(`Ingesting ${fragments.length} Neural Segments...`);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
+      // PHASE 1: MAP
       const mapResults: string[] = [];
-      const MAP_BATCH_SIZE = 1; 
-      
-      for (let i = 0; i < fragments.length; i += MAP_BATCH_SIZE) {
-        const batch = fragments.slice(i, i + MAP_BATCH_SIZE);
-        setProcStage(`Syncing Curriculum (Segment ${i + 1}/${fragments.length})...`);
-        
-        const batchResults = await Promise.all(batch.map(async (frag, bIdx) => {
-          return (await processWithRetry('/api/docs/upload', {
-            name: `${file.name}_f${i+bIdx}`,
-            sourceType: 'raw_text',
-            extractedText: frag,
-            previewOnly: true,
-            isFragment: true
-          }, token)).markdown || "";
-        }));
-        
-        mapResults.push(...batchResults);
-        setProgressValue(prev => Math.min(65, prev + (60 / fragments.length)));
-        if (i + MAP_BATCH_SIZE < fragments.length) {
-          await new Promise(r => setTimeout(r, 4500)); 
-        }
+      for (let i = 0; i < fragments.length; i++) {
+        setProcStage(`Syncing Segment ${i + 1}/${fragments.length}...`);
+        const res = await processWithRetry('/api/docs/upload', {
+          name: `${file.name}_seg${i}`,
+          sourceType: 'raw_text',
+          extractedText: fragments[i],
+          previewOnly: true,
+          isFragment: true
+        }, token);
+        mapResults.push(res.markdown || "");
+        setProgressValue(prev => Math.min(60, prev + (55 / fragments.length)));
+        await new Promise(r => setTimeout(r, 4500)); // Cooling delay
       }
 
-      setProcStage(`Neural Synthesis: Reducing Hierarchy...`);
+      // PHASE 2: RECURSIVE REDUCE
+      setProcStage(`Merging Standard Hierarchies...`);
       const intermediateHierarchies: string[] = [];
-      const REDUCE_BATCH_SIZE = 4; 
-
-      for (let i = 0; i < mapResults.length; i += REDUCE_BATCH_SIZE) {
-        const tierBatch = mapResults.slice(i, i + REDUCE_BATCH_SIZE);
-        setProcStage(`Merging Standard Cluster ${Math.floor(i/REDUCE_BATCH_SIZE) + 1}...`);
-        
-        const tierRes = await processWithRetry('/api/docs/upload', {
-          name: `Sync_Tier_${i}`,
+      const BATCH = 5;
+      for (let i = 0; i < mapResults.length; i += BATCH) {
+        const batch = mapResults.slice(i, i + BATCH);
+        setProcStage(`Merging Cluster ${Math.floor(i/BATCH) + 1}...`);
+        const res = await processWithRetry('/api/docs/upload', {
           sourceType: 'raw_text',
-          extractedText: tierBatch.join('\n\n---\n\n'),
+          extractedText: batch.join('\n\n---\n\n'),
           previewOnly: true,
           isReduce: true,
           isIntermediate: true
         }, token);
-        
-        intermediateHierarchies.push(tierRes.markdown || "");
-        setProgressValue(prev => Math.min(94, prev + 5));
-        await new Promise(r => setTimeout(r, 3000));
+        intermediateHierarchies.push(res.markdown || "");
+        setProgressValue(prev => Math.min(90, prev + 5));
+        await new Promise(r => setTimeout(r, 3500));
       }
 
+      // PHASE 3: MASTER FINALIZATION
       setProcStage(`Finalizing Master Vault Sync...`);
-      const finalResult = await processWithRetry('/api/docs/upload', {
+      const final = await processWithRetry('/api/docs/upload', {
         name: file.name,
         sourceType: 'raw_text',
         extractedText: intermediateHierarchies.join('\n\n---\n\n'),
@@ -173,14 +164,15 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         isIntermediate: false
       }, token);
 
-      const finalMd = finalResult.markdown || "";
-      if (finalMd.includes("I am ready") && finalMd.length < 400) {
-        throw new Error("Grid Hallucination: The model refused to process the data nodes. This usually happens if the curriculum text is poorly formatted. Please retry.");
+      const finalMd = final.markdown || "";
+      // HALLUCINATION GUARD
+      if (finalMd.toLowerCase().includes("i am ready") && finalMd.length < 500) {
+        throw new Error("Recursive Reduction Drift: The AI hallucinated a response instead of data. Please click Restart Sync.");
       }
 
       setDraftMarkdown(finalMd);
-      setExtractedMeta(finalResult.metadata);
-      setExtractedSLOs(finalResult.slos || []);
+      setExtractedMeta(final.metadata);
+      setExtractedSLOs(final.slos || []);
       setMode('transition');
       setProgressValue(100);
     } catch (err: any) {
@@ -194,15 +186,16 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   const handleFinalApproval = async () => {
     if (isProcessing) return;
     setIsProcessing(true);
-    setProcStage('Vaulting Intelligence...');
     setError(null);
+    setProcStage('Vaulting Intelligence...');
+    
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ 
-          name: extractedMeta?.board || "Sindh Curriculum Master", 
+          name: extractedMeta?.board || "Sindh Biology Master", 
           sourceType: 'markdown', 
           extractedText: draftMarkdown,
           metadata: extractedMeta,
@@ -211,11 +204,12 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       });
       
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Vault lock failed.');
+      if (!response.ok) throw new Error(data.error || 'Cloud Rejected Lock.');
       onComplete(data);
     } catch (err: any) {
       setError(`VAULT_FAULT: ${err.message}`);
-      setIsProcessing(false); // Restore button state on error
+    } finally {
+      setIsProcessing(false); 
     }
   };
 
@@ -260,7 +254,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v9.5 (Active Node)
+              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v10.0 (Active Node)
            </div>
            <button 
              onClick={handleFinalApproval}
@@ -288,7 +282,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Neural Mesh Grid v9.5 (Multi-Grade Execution)</p>
+          <p className="text-slate-500 font-medium">Neural Mesh Grid v10.0 (Strict Execution)</p>
         </div>
 
         {error && (
@@ -327,7 +321,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Quad-Grade Mapping Protocol</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Quad-Grade Mesh Sync v10.0</p>
                 </div>
               </div>
             </label>
@@ -338,7 +332,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <ShieldQuestion size={12} className="text-indigo-400" /> High-Fidelity
+                  <ShieldQuestion size={12} className="text-indigo-400" /> Self-Healing
                </div>
             </div>
           </div>

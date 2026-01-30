@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL INGESTION GATEWAY (v9.5)
- * Fixed: Mapping Phase Fallthrough Bug.
+ * NEURAL INGESTION GATEWAY (v10.0)
+ * Optimized for High-Volume Sindh Biology Ingestion (185 Pages)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -27,50 +27,57 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce, isIntermediate, isFragment } = body;
     
-    // PHASE 1/2: AI PRE-SYNC (Fragment Mapping & Recursive Reduction)
+    // BRANCH A: AI PRE-SYNC (Fragment Mapping, Tier Merging, Final Reduction)
     if (sourceType === 'raw_text' && previewOnly) {
-      let instruction = "You are a curriculum data extractor. Return valid JSON of SLOs.";
+      let instruction = "";
       let preferred = "gemini"; 
       let finalPrompt = "";
 
       if (isReduce) {
+        // REDUCTION PROTOCOL (The bottleneck phase)
         if (isIntermediate) {
-          instruction = "REDUCTION_TASK: Merge these nodes into a dense Markdown list. PRESERVE GRADE LEVELS (B-09, B-10, B-11, B-12). No chat.";
+          instruction = "REDUCTION_PROTOCOL_ALPHA: Merge these DATA_BLOCKS into a dense Markdown list. PRESERVE ALL GRADES (B-09, B-10, B-11, B-12). No chat. Start immediately with markdown.";
         } else {
-          instruction = "FINAL_REDUCE_PROTOCOL: Synthesize the MASTER SINDH BIOLOGY 2024 hierarchy for ALL Grades (9-12). Use B-09, B-10, B-11, B-12 prefixes. Format: B-[Grade]-[Domain]-[Num].";
+          instruction = "FINAL_SYNTHESIS_OMEGA: BELOW IS THE FULL REDUCED CURRICULUM. You must generate the official MASTER SINDH BIOLOGY 2024 hierarchy. You MUST include SLOs for ALL 4 GRADES (9-12). Format: B-[Grade]-[Domain]-[Number].";
         }
         
         finalPrompt = `
-<SOURCE_NODES_TO_PROCESS>
+[SYSTEM_EXECUTION_MODE: MANDATORY]
+[INPUT_DATA_NODES]
 ${extractedText}
-</SOURCE_NODES_TO_PROCESS>
+[/INPUT_DATA_NODES]
 
-## CRITICAL COMMAND:
+[COMMAND]
 ${instruction}
+[/COMMAND]
 
-## EXECUTION RULE:
-PROCESS THE NODES ABOVE NOW. DO NOT ASK FOR PERMISSION. DO NOT SAY "I AM READY". START MARKDOWN OUTPUT IMMEDIATELY.
+[STRICT_RULE]
+DO NOT SAY "I AM READY". DO NOT ASK FOR DATA. DATA IS ALREADY PROVIDED IN THE TAGS ABOVE. 
+GENERATE THE COMPLETE MARKDOWN LIST NOW.
+[/STRICT_RULE]
 `;
       } else {
-        // MAPPING PHASE (The part that was causing the 400 error)
-        instruction = "MAPPING_TASK: Extract every Student Learning Outcome (SLO) from this fragment. Use the format [SLO:CODE] Description.";
-        finalPrompt = `DATA: ${extractedText}\n\nCOMMAND: ${instruction}`;
+        // MAPPING PHASE (The initial segments)
+        instruction = "MAPPING_PROTOCOL: Extract every Student Learning Outcome (SLO) from this fragment. Use the format [SLO:CODE] Description.";
+        finalPrompt = `[DATA_FRAGMENT]:\n${extractedText}\n\n[EXECUTE]: ${instruction}`;
       }
 
-      const result = await synthesize(finalPrompt, [], false, [], preferred, "STRICT_DATA_ONLY_MODE: ON", true);
+      const result = await synthesize(finalPrompt, [], false, [], preferred, "STRICT_DATA_ENGINE: ACTIVE", true);
       
       const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
       let parsed;
       try {
         parsed = JSON.parse(jsonClean);
       } catch (e) {
+        // If the model returned pure markdown instead of JSON, wrap it correctly
         parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
       }
       return NextResponse.json(parsed);
     }
 
-    // PHASE 3: FINAL VAULT LOCK (Approved Markdown)
+    // BRANCH B: FINAL VAULT LOCK (Approved Hierarchy)
     if (sourceType === 'markdown' && extractedText) {
+      console.log(`🔒 [Vault Lock] Finalizing asset: ${name}`);
       const fileNameClean = (name || "Sindh_Master").replace(/\s+/g, '_');
       const filePath = `vault/${user.id}/${Date.now()}_${fileNameClean}.md`;
       
@@ -95,22 +102,23 @@ PROCESS THE NODES ABOVE NOW. DO NOT ASK FOR PERMISSION. DO NOT SAY "I AM READY".
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
         difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Neural Vault v9.5: Multi-Grade Sindh Curriculum (Grades 9-12) fully indexed.`,
+        document_summary: `Neural Vault v10.0: Comprehensive Quad-Grade (9-12) Sindh Curriculum Synced.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
-      if (dbError) throw new Error(`Database rejected vault entry: ${dbError.message}`);
+      if (dbError) throw new Error(`Database Error: ${dbError.message}`);
 
+      // Async Indexing
       indexDocumentForRAG(docData.id, extractedText, filePath, supabase, { ...metadata, slos, slo_map }).catch(e => {
-        console.error("Async Indexing Fault:", e);
+        console.error("Indexing Fault:", e);
       });
 
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Invalid pipeline command node." }, { status: 400 });
+    return NextResponse.json({ error: "Pipeline configuration mismatch. Branch exhausted." }, { status: 400 });
   } catch (error: any) {
-    console.error("❌ [Gateway Fault]:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("❌ [Gateway Fatal]:", error);
+    return NextResponse.json({ error: error.message || "Synthesis grid exception." }, { status: 500 });
   }
 }
