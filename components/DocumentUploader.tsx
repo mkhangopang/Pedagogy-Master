@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud, Zap } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud, Zap, RefreshCw } from 'lucide-react';
 import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -68,6 +68,27 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     }
   };
 
+  const processWithRetry = async (url: string, body: any, token: string, maxRetries = 3): Promise<any> => {
+    let lastErr;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(body)
+        });
+        if (res.ok) return await res.json();
+        const errData = await res.json().catch(() => ({ error: 'Grid Node Unreachable' }));
+        lastErr = new Error(errData.error || `Node Error (${res.status})`);
+      } catch (e: any) {
+        lastErr = e;
+      }
+      // Wait before retry (exponential backoff)
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
+    }
+    throw lastErr;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -75,62 +96,66 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     setError(null);
     setIsProcessing(true);
     setProgressValue(2);
-    setProcStage(`Initializing Ingestion...`);
+    setProcStage(`Initializing Ingestion Pipeline...`);
 
     try {
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // MICRO-CHUNKING: Increased resolution (10k chars vs 25k) to ensure no SLOs are skipped
-      const chunkSize = 10000; 
-      const overlapSize = 2000; // Large overlap to catch codes split across chunks
+      // MICRO-CHUNKING: High fidelity extraction
+      const chunkSize = 12000; 
+      const overlapSize = 2500; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 50) break; // Hard limit for safety
+        if (fragments.length > 60) break; // Hard limit for safety
       }
 
-      setProcStage(`Neural Grid: Mapping ${fragments.length} High-Density Blocks...`);
+      setProcStage(`Throttled Ingestion: Processing ${fragments.length} Knowledge Blocks...`);
       const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || '';
+
+      // BATCH PROCESSING: Process fragments in groups of 3 to avoid browser/server congestion
+      const mapResults: string[] = [];
+      const BATCH_SIZE = 3;
       
-      // Parallel Map Phase
-      const mapResults = await Promise.all(fragments.map(async (frag, idx) => {
-        const res = await fetch('/api/docs/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ 
-            name: `${file.name}_part_${idx}`, 
-            sourceType: 'raw_text', 
-            extractedText: frag, 
-            previewOnly: true,
-            isFragment: true 
-          })
+      for (let i = 0; i < fragments.length; i += BATCH_SIZE) {
+        const batch = fragments.slice(i, i + BATCH_SIZE);
+        setProcStage(`Ingesting Batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(fragments.length/BATCH_SIZE)}...`);
+        
+        const batchPromises = batch.map(async (frag, batchIdx) => {
+          const absoluteIdx = i + batchIdx;
+          try {
+            const data = await processWithRetry('/api/docs/upload', {
+              name: `${file.name}_block_${absoluteIdx + 1}`,
+              sourceType: 'raw_text',
+              extractedText: frag,
+              previewOnly: true,
+              isFragment: true
+            }, token);
+            setProgressValue(prev => Math.min(85, prev + (80 / fragments.length)));
+            return data.markdown || "";
+          } catch (err: any) {
+            throw new Error(`Block ${absoluteIdx + 1} failed: ${err.message}`);
+          }
         });
-        if (!res.ok) throw new Error(`Block ${idx + 1} extraction failed.`);
-        const data = await res.json();
-        setProgressValue(prev => Math.min(85, prev + (80 / fragments.length)));
-        return data.markdown || "";
-      }));
+
+        const batchResults = await Promise.all(batchPromises);
+        mapResults.push(...batchResults);
+      }
 
       // Final Reduce Phase: Authoritative Synthesis
-      setProcStage(`Master Synthesis: Anchoring Biology 2024 Standards...`);
+      setProcStage(`Neural Convergence: Merging Sindh Biology 2024 Grid...`);
       const mergedContext = mapResults.join('\n\n---\n\n');
       
-      const reduceRes = await fetch('/api/docs/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ 
-          name: file.name, 
-          sourceType: 'raw_text', 
-          extractedText: mergedContext, 
-          previewOnly: true,
-          isReduce: true 
-        })
-      });
+      const finalResult = await processWithRetry('/api/docs/upload', {
+        name: file.name,
+        sourceType: 'raw_text',
+        extractedText: mergedContext,
+        previewOnly: true,
+        isReduce: true
+      }, token);
 
-      if (!reduceRes.ok) throw new Error('Master Synthesis bottlenecked. This curriculum is exceptionally dense.');
-
-      const finalResult = await reduceRes.json();
       setDraftMarkdown(finalResult.markdown || "");
       setExtractedMeta(finalResult.metadata);
       setExtractedSLOs(finalResult.slos || []);
@@ -138,7 +163,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      setError(err.message || "The synthesis node encountered a fatal load. Try a smaller document.");
+      setError(err.message || "Synthesis grid timeout.");
     } finally {
       setIsProcessing(false);
     }
@@ -228,13 +253,21 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Curriculum Standards Mapping Grid v2.0</p>
+          <p className="text-slate-500 font-medium">Curriculum Standards Mapping Grid v2.1</p>
         </div>
 
         {error && (
           <div className="p-5 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex items-start gap-4 text-left animate-in slide-in-from-top-2">
             <AlertTriangle className="text-rose-500 shrink-0" size={20} />
-            <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
+              <button 
+                onClick={() => { setError(null); }} 
+                className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"
+              >
+                <RefreshCw size={10} /> Clear Error & Retry Selection
+              </button>
+            </div>
           </div>
         )}
 
@@ -261,18 +294,18 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Curriculum</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">High-Fidelity PDF/DOCX Parsing</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Fault-Tolerant Sequential Batching</p>
                 </div>
               </div>
             </label>
             
             <div className="flex items-center justify-center gap-6 pt-4">
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Lock size={12} /> SSL Encrypted
+                  <Lock size={12} /> SSL Secure
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Sparkles size={12} className="text-indigo-400" /> RAG Ready
+                  <Sparkles size={12} className="text-indigo-400" /> RAG Optimized
                </div>
             </div>
           </div>

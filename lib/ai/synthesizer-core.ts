@@ -66,7 +66,13 @@ export async function synthesize(
 
     let lastError = null;
     for (const config of targetProviders) {
-      if (!await rateLimiter.canMakeRequest(config.name, config)) continue;
+      // Immediate Skip: Unconfigured providers
+      if (!config.enabled) continue;
+
+      if (!await rateLimiter.canMakeRequest(config.name, config)) {
+        console.warn(`🕒 [Rate Limit] Node ${config.name} throttled. Failing over...`);
+        continue;
+      }
       
       try {
         let effectivePrompt = prompt;
@@ -77,7 +83,7 @@ export async function synthesize(
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         // High fidelity synthesis for complex merged data
         const isReducePhase = prompt.includes('[REDUCE_PHASE_ACTIVE]') || prompt.length > 50000;
-        const timeout = isReducePhase ? 240000 : 90000;
+        const timeout = isReducePhase ? 240000 : 95000;
         
         const response = await Promise.race([
           (callFunction as any)(effectivePrompt, history, systemInstruction, hasDocs, docParts),
