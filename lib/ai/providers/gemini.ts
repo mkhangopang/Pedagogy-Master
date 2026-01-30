@@ -1,8 +1,8 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * NEURAL GEMINI ADAPTER (v46.0)
- * Optimized for Recursive Synthesis and Massive Curriculum Artifacts.
+ * NEURAL GEMINI ADAPTER (v47.0)
+ * Optimized for Recursive Synthesis and Massive Multi-Grade Curriculum Artifacts.
  */
 export async function callGemini(
   fullPrompt: string, 
@@ -48,12 +48,12 @@ export async function callGemini(
       contents,
       config: {
         systemInstruction: systemInstruction || "You are a world-class pedagogy master.",
-        temperature: isMassiveTask ? 0.05 : 0.7, // Near-zero temp for data integrity
-        // CRITICAL: Maximize output tokens for 185-page curriculum reduction
-        maxOutputTokens: isMassiveTask ? 8192 : 4096,
+        temperature: isMassiveTask ? 0.0 : 0.7, // Zero temp for maximum data integrity
+        // CRITICAL: Maximize output tokens for 185-page curriculum reduction (9-12 span)
+        maxOutputTokens: 8192, 
         thinkingConfig: { 
-          // Reserve tokens for final result to prevent truncation at Domain F
-          thinkingBudget: isMassiveTask ? 1024 : 2048 
+          // High budget to process complex hierarchy transitions across grades
+          thinkingBudget: isMassiveTask ? 4096 : 2048 
         }
       }
     });
@@ -68,7 +68,6 @@ export async function callGemini(
   } catch (error: any) {
     const errorMsg = error.message?.toLowerCase() || "";
     if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('resource_exhausted')) {
-      console.warn(`🔄 [Gemini Failover] Pro saturated. Engaging Flash Node...`);
       const fallbackResponse = await executeWithModel('gemini-3-flash-preview');
       return { text: fallbackResponse.text || "Synthesis complete (via Flash).", groundingMetadata: fallbackResponse.candidates?.[0]?.groundingMetadata };
     }

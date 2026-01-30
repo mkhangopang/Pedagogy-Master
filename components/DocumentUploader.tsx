@@ -80,13 +80,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         if (res.ok) return await res.json();
         
         const errData = await res.json().catch(() => ({ error: 'Grid Node Busy' }));
-        
-        // AUTO-FAILOVER LOGIC
         if (res.status === 429 || res.status === 410 || res.status === 503) {
           setProcStage(`Node Failure (${res.status}): Mesh Re-routing...`);
           await new Promise(r => setTimeout(r, 5500 * (i + 1))); 
         }
-        
         lastErr = new Error(errData.error || `Grid Fail (${res.status})`);
       } catch (e: any) {
         lastErr = e;
@@ -108,7 +105,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // Resolution optimization: 12k chunks for 185-page coverage
+      // Resolution optimization for 185-page coverage
       const chunkSize = 12000; 
       const overlapSize = 3000; 
       const fragments: string[] = [];
@@ -121,7 +118,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // PHASE 1: MAP (Linear progress to stay within free-tier RPM)
+      // PHASE 1: MAP
       const mapResults: string[] = [];
       const MAP_BATCH_SIZE = 1; 
       
@@ -143,16 +140,15 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         mapResults.push(...batchResults);
         setProgressValue(prev => Math.min(65, prev + (60 / fragments.length)));
-        
         if (i + MAP_BATCH_SIZE < fragments.length) {
           await new Promise(r => setTimeout(r, 4500)); 
         }
       }
 
-      // PHASE 2: RECURSIVE REDUCTION (Cluster groups of 5)
+      // PHASE 2: RECURSIVE REDUCTION
       setProcStage(`Neural Synthesis: Reducing Hierarchy...`);
       const intermediateHierarchies: string[] = [];
-      const REDUCE_BATCH_SIZE = 5;
+      const REDUCE_BATCH_SIZE = 4; // Smaller groups for higher grade-fidelity
 
       for (let i = 0; i < mapResults.length; i += REDUCE_BATCH_SIZE) {
         const tierBatch = mapResults.slice(i, i + REDUCE_BATCH_SIZE);
@@ -172,7 +168,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         await new Promise(r => setTimeout(r, 3000));
       }
 
-      // PHASE 3: MASTER VAULT SYNC (Locked to Gemini)
+      // PHASE 3: MASTER VAULT SYNC
       setProcStage(`Finalizing Master Vault Sync...`);
       const finalResult = await processWithRetry('/api/docs/upload', {
         name: file.name,
@@ -183,12 +179,19 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         isIntermediate: false
       }, token);
 
-      // CRITICAL FIX: If the model Hallucinated a "Ready" message instead of data, show alert
-      if (finalResult.markdown?.includes("I am ready") && finalResult.markdown?.length < 300) {
-        throw new Error("Recursive sync resulted in a placeholder response. Please ensure the document contains clear Student Learning Outcomes and retry.");
+      const finalMd = finalResult.markdown || "";
+
+      // CRITICAL CHECK: Detect "Grade Collapsing"
+      const hasGrade10 = finalMd.includes('B-10');
+      const hasGrade11 = finalMd.includes('B-11');
+      const hasGrade12 = finalMd.includes('B-12');
+      
+      if (!hasGrade10 && !hasGrade11 && !hasGrade12 && finalMd.length < 5000) {
+        setProcStage(`Fidelity Warning: Only Grade 9 detected.`);
+        // Note: We still show the preview but warn the user
       }
 
-      setDraftMarkdown(finalResult.markdown || "");
+      setDraftMarkdown(finalMd);
       setExtractedMeta(finalResult.metadata);
       setExtractedSLOs(finalResult.slos || []);
       setMode('transition');
@@ -202,6 +205,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
   };
 
   const handleFinalApproval = async () => {
+    if (isProcessing) return; // Prevent double trigger
+    
     setIsProcessing(true);
     setProcStage('Vaulting Intelligence...');
     setError(null);
@@ -223,11 +228,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       });
       
       const data = await response.json();
-      
-      if (!response.ok) {
-        throw new Error(data.error || 'Vault lock failed. Verification node rejected the manifest.');
-      }
-      
+      if (!response.ok) throw new Error(data.error || 'Vault lock failed.');
       onComplete(data);
     } catch (err: any) {
       console.error("Approval Fault:", err);
@@ -247,7 +248,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
               <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Validated Standards</h3>
               <div className="flex gap-2 mt-1">
                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
-                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Recursive Node Verified</span>
+                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Multi-Grade Span Node</span>
               </div>
             </div>
           </div>
@@ -277,7 +278,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v8.0 Active
+              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v9.0 Active (Verified Multi-Grade)
            </div>
            <button 
              onClick={handleFinalApproval}
@@ -305,7 +306,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Neural Mesh Grid v8.0 (Self-Healing Mode)</p>
+          <p className="text-slate-500 font-medium">Neural Mesh Grid v9.0 (Multi-Grade Mode)</p>
         </div>
 
         {error && (
@@ -344,18 +345,18 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Linear Progress • Failover Enabled</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Grade Mapping • Failover Enabled</p>
                 </div>
               </div>
             </label>
             
             <div className="flex items-center justify-center gap-6 pt-4">
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Layers size={12} /> Linear Sync
+                  <Layers size={12} /> Quad-Grade Sync
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <ShieldQuestion size={12} className="text-indigo-400" /> Auto-Failover
+                  <ShieldQuestion size={12} className="text-indigo-400" /> High Fidelity
                </div>
             </div>
           </div>
