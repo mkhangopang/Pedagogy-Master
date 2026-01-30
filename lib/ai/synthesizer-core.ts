@@ -10,7 +10,7 @@ import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
-// Session-based node blacklisting to prevent repeated 429/410/402/500 failures
+// Session-based node blacklisting to prevent repeated 429/410/402/500/400 failures
 const nodeBlacklist = new Map<string, number>();
 
 /**
@@ -119,8 +119,17 @@ export async function synthesize(
         console.warn(`⚠️ [Grid Failover] Node ${config.name} rejected: ${errorMsg}`);
         lastError = e;
         
-        // CIRCUIT BREAKER: Isolate failing nodes (Rate Limit, Deprecated, No Credits)
-        if (errorMsg.includes('429') || errorMsg.includes('410') || errorMsg.includes('402') || errorMsg.includes('quota') || errorMsg.includes('NODE_TIMEOUT')) {
+        // CIRCUIT BREAKER: Isolate failing nodes
+        // FIX: Added '400' and 'segment fault' to detection to trigger failover on Bad Requests
+        if (
+          errorMsg.includes('429') || 
+          errorMsg.includes('410') || 
+          errorMsg.includes('402') || 
+          errorMsg.includes('400') || 
+          errorMsg.includes('segment fault') || 
+          errorMsg.includes('quota') || 
+          errorMsg.includes('NODE_TIMEOUT')
+        ) {
           console.error(`🔴 [Grid Control] Isolating node ${config.name} for 90s.`);
           nodeBlacklist.set(config.name, Date.now() + 90000);
         }

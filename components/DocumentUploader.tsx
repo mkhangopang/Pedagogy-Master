@@ -105,13 +105,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Empty document node.");
 
-      // Resolution optimization for large 185-page Sindh docs
-      const chunkSize = 15000; 
-      const overlapSize = 4000; 
+      // Resolution optimization: Reduced chunk size to 8000 to ensure broad model compatibility
+      const chunkSize = 8000; 
+      const overlapSize = 1500; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 150) break; 
+        if (fragments.length > 250) break; 
       }
 
       setProcStage(`Ingesting ${fragments.length} Neural Segments...`);

@@ -7,7 +7,7 @@ export async function callCerebras(
   const apiKey = process.env.CEREBRAS_API_KEY;
   if (!apiKey) throw new Error('CEREBRAS_API_KEY missing');
 
-  // fallback to llama3.1-8b if 70b isn't working for the tier
+  // Using the standard model ID for Cerebras Inference
   const modelName = 'llama3.1-8b';
 
   const messages = [
@@ -18,7 +18,10 @@ export async function callCerebras(
 
   const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    headers: { 
+      'Authorization': `Bearer ${apiKey}`, 
+      'Content-Type': 'application/json' 
+    },
     body: JSON.stringify({ 
       model: modelName,
       messages, 
@@ -28,7 +31,9 @@ export async function callCerebras(
   });
 
   if (!res.ok) {
-    throw new Error(`Cerebras segment fault: ${res.status}`);
+    const errorData = await res.json().catch(() => ({}));
+    const detailedMsg = errorData.error?.message || `Status: ${res.status}`;
+    throw new Error(`Cerebras segment fault: ${detailedMsg}`);
   }
   
   const data = await res.json();
