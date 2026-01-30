@@ -49,7 +49,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
       const pdf = await loadingTask.promise;
       let fullText = '';
-      // Increased page limit to 500 to support heavy 185-page documents
+      // Support for massive documents like the 185-page Sindh Curriculum
       const pageLimit = Math.min(pdf.numPages, 500); 
       
       for (let i = 1; i <= pageLimit; i++) {
@@ -58,8 +58,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         const textContent = await page.getTextContent();
         fullText += textContent.items.map((item: any) => (item as any).str).join(' ') + '\n';
         
-        // Yield to browser UI thread every 5 pages to prevent freeze on 185+ page files
-        if (i % 5 === 0) {
+        // V-Sync delay to prevent UI freeze on large files
+        if (i % 8 === 0) {
           await new Promise(r => setTimeout(r, 0)); 
         }
       }
@@ -84,9 +84,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty or image-only.");
 
-      setProcStage(`Collaborative Synthesis: Mapping ${file.name}...`);
+      setProcStage(`Neural Grid: Engaging Distributed Map-Reduce...`);
       const { data: { session } } = await supabase.auth.getSession();
       
+      // We explicitly let the backend know it's a heavy task to prioritize reasoning
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
@@ -95,7 +96,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Grid Timeout' }));
-        throw new Error(errorData.error || 'The neural grid timed out processing this large asset.');
+        throw new Error(errorData.error || 'The neural grid timed out processing this massive curriculum asset.');
       }
 
       const result = await response.json();
@@ -106,7 +107,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setMode('transition');
     } catch (err: any) {
       console.error("Ingestion Node Fault:", err);
-      setError(err.message || "Synthesis node unreachable.");
+      setError(err.message || "Synthesis node unreachable. Try splitting the PDF into smaller parts.");
     } finally {
       setIsProcessing(false);
       setProcStage('');
@@ -115,21 +116,21 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
   const handleFinalApproval = async () => {
     setIsProcessing(true);
-    setProcStage('Vaulting Intelligence...');
+    setProcStage('Syncing to Neural Vault...');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ 
-          name: extractedMeta?.board || "Curriculum Asset", 
+          name: extractedMeta?.board || "Sindh Biology Master", 
           sourceType: 'markdown', 
           extractedText: draftMarkdown,
           metadata: extractedMeta,
           slos: extractedSLOs
         })
       });
-      if (!response.ok) throw new Error('Vault sync failed.');
+      if (!response.ok) throw new Error('Vault synchronization failed.');
       const finalDoc = await response.json();
       onComplete(finalDoc);
     } catch (err: any) {
@@ -177,7 +178,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
              className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
            >
              {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>}
-             Sync to Neural Vault
+             Finalize Vault Sync
            </button>
         </div>
       </div>

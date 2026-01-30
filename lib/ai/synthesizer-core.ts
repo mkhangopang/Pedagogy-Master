@@ -33,7 +33,7 @@ export const PROVIDER_FUNCTIONS = {
 
 /**
  * WORLD-CLASS SYNTHESIZER ORCHESTRATOR
- * Optimized for massive 185+ page document ingestion via distributed Map-Reduce.
+ * Optimized for massive 185+ page document ingestion.
  */
 export async function synthesize(
   prompt: string,
@@ -42,16 +42,15 @@ export async function synthesize(
   docParts: any[] = [],
   preferredProvider?: string,
   systemInstruction: string = DEFAULT_MASTER_PROMPT,
-  bypassQueue: boolean = false // Used for internal Map-Reduce sub-tasks to prevent deadlocks
+  bypassQueue: boolean = false
 ): Promise<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }> {
   
-  // HEAVY TASK DETECTION
+  // HEAVY TASK DETECTION: 185-page curriculum mapping trigger
   const isCurriculumMapping = prompt.includes('SINDH BIOLOGY 2024') || prompt.includes('MAP_REDUCE_TRIGGER');
-  const isMassive = prompt.length > 120000;
-  // Markers to prevent infinite recursion during Map-Reduce segments
-  const isAlreadyFragmented = prompt.includes('[PARTIAL_MAP_CHUNK]') || prompt.includes('[REDUCE_PHASE_ACTIVE]');
+  const isMassive = prompt.length > 90000;
+  const isInternalTask = prompt.includes('[PARTIAL_MAP_CHUNK]') || prompt.includes('[REDUCE_PHASE_ACTIVE]');
 
-  if ((isMassive || isCurriculumMapping) && !isAlreadyFragmented) {
+  if ((isMassive || isCurriculumMapping) && !isInternalTask) {
     return await runCurriculumMapReduce(prompt, history, systemInstruction);
   }
 
@@ -59,6 +58,7 @@ export async function synthesize(
     const currentProviders = getProvidersConfig();
     let targetProviders = [...currentProviders].filter(p => p.enabled);
     
+    // Sort providers by reasoning capability for complex tasks
     const reasoningOrder = ['gemini', 'openai', 'deepseek', 'groq'];
     targetProviders.sort((a, b) => reasoningOrder.indexOf(a.name) - reasoningOrder.indexOf(b.name));
 
@@ -80,9 +80,12 @@ export async function synthesize(
         }
 
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
+        // Increased timeout for Reduce phase
+        const timeout = isInternalTask && prompt.includes('[REDUCE_PHASE_ACTIVE]') ? 180000 : 120000;
+        
         const response = await Promise.race([
           (callFunction as any)(effectivePrompt, history, systemInstruction, hasDocs, docParts),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('NODE_TIMEOUT')), 115000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('NODE_TIMEOUT')), timeout))
         ]);
 
         if (typeof response === 'string') return { text: response, provider: config.name };
@@ -101,51 +104,46 @@ export async function synthesize(
     throw lastError || new Error("GRID_EXHAUSTED: Multi-provider synthesis failed.");
   };
 
-  // Logic: Internal sub-tasks bypass the queue to prevent occupancy-based deadlocks
-  if (bypassQueue) {
-    return await executionTask();
-  }
-
+  if (bypassQueue) return await executionTask();
   return await requestQueue.add<{ text: string; provider: string; groundingMetadata?: any; imageUrl?: string }>(executionTask);
 }
 
 async function runCurriculumMapReduce(fullText: string, history: any[], masterSystem: string) {
-  console.log(`🚀 [Map-Reduce] Distributed Ingestion Engaged for 185-page asset...`);
+  console.log(`🚀 [Map-Reduce] Distributed Ingestion Engaged: 185-page curriculum...`);
   
-  // Larger chunk sizes to reduce total request count
-  const CHUNK_SIZE = 120000;
-  const OVERLAP = 5000;
+  // Reduced chunk size for faster parallel processing of massive text
+  const CHUNK_SIZE = 80000;
+  const OVERLAP = 4000;
   const chunks: string[] = [];
   for (let i = 0; i < fullText.length; i += (CHUNK_SIZE - OVERLAP)) {
     chunks.push(fullText.substring(i, i + CHUNK_SIZE));
   }
 
-  // MAP PHASE: Use high-speed providers (Groq/Cerebras) for fragment extraction
-  const availableExtractionProviders = ['groq', 'cerebras', 'sambanova', 'deepseek']
+  // MAP PHASE: Use fast nodes for raw extraction
+  const availableExtractionProviders = ['groq', 'cerebras', 'sambanova', 'deepseek', 'openai']
     .filter(name => getProvidersConfig().find(p => p.name === name)?.enabled);
 
-  console.log(`📡 [Map Phase] Processing ${chunks.length} segments in parallel...`);
+  console.log(`📡 [Map Phase] Deploying ${chunks.length} extraction nodes...`);
   
   const mapPromises = chunks.map((chunk, idx) => {
     const provider = availableExtractionProviders[idx % availableExtractionProviders.length] || 'gemini';
     const mapPrompt = `[PARTIAL_MAP_CHUNK ${idx + 1}/${chunks.length}] 
-    Analyze this CHUNK of the curriculum.
-    EXTRACT: SLO codes (B-grade-domain-number), descriptions, and benchmarks.
-    FORMAT: JSON object.
+    Analyze this chunk of Biology Sindh 2024. Extract ALL SLO codes and descriptions verbatim.
+    FORMAT: JSON array of objects {code, description}.
     TEXT: ${chunk}`;
 
-    // bypassQueue is TRUE to prevent deadlock with the parent task
-    return synthesize(mapPrompt, [], false, [], provider, "You are a curriculum data extractor. Return JSON.", true);
+    return synthesize(mapPrompt, [], false, [], provider, "You are a curriculum data extractor. Return valid JSON only.", true);
   });
 
   const mapResults = await Promise.all(mapPromises);
 
-  // REDUCE PHASE: Final high-reasoning synthesis
-  console.log(`🧠 [Reduce Phase] Finalizing master curriculum via Gemini Pro...`);
+  // REDUCE PHASE: Final synthesis using top-tier model
+  console.log(`🧠 [Reduce Phase] Finalizing Master Hierarchy via Gemini Pro...`);
   const aggregatedResults = mapResults.map(r => r.text).join('\n---\n');
   
   const reducePrompt = `[REDUCE_PHASE_ACTIVE] You are the MASTER SYNTHESIZER.
-  MERGE all partial extracts into one authoritative Sindh Biology 2024 JSON hierarchy.
+  Merge ${mapResults.length} partial JSON extracts into one authoritative Sindh Biology 2024 hierarchy.
+  DEDUPLICATE SLOs. Return Master Markdown + Master JSON SLO Map.
   
   EXTRACTS:
   ${aggregatedResults}`;
