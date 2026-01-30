@@ -28,12 +28,13 @@ export async function POST(req: NextRequest) {
       let preferred = ""; 
 
       if (isReduce) {
-        if (isIntermediate) {
-          instruction = `COMPRESSED_REDUCTION: Merge these curriculum fragments into a structured Markdown list. Prioritize SLO codes and descriptions. Keep it dense. NO CONVERSATIONAL FILLER.`;
-        } else {
-          instruction = `FINAL_REDUCE_PROTOCOL: Synthesize the MASTER SINDH BIOLOGY 2024 hierarchy. Include ALL Domains (A-X). deduplicate SLOs. Use B-09-A-01 format. If too large, prioritize hierarchy completeness over lengthy explanations.`;
-        }
+        // ENFORCEMENT: Reduction tasks MUST use Gemini for context depth
         preferred = "gemini";
+        if (isIntermediate) {
+          instruction = `COMPRESSED_REDUCTION: Merge curriculum nodes into dense Markdown. Focus on SLO codes/descriptions. NO FILLER.`;
+        } else {
+          instruction = `FINAL_REDUCE_PROTOCOL: Synthesize the MASTER SINDH BIOLOGY 2024 hierarchy. Include ALL Domains (A-X). Use B-09-A-01 format. If exceeding token limits, prioritize list completeness over detailed paragraphs.`;
+        }
       }
 
       const result = await synthesize(extractedText, [], false, [], preferred, instruction, true);

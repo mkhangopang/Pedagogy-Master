@@ -78,12 +78,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           body: JSON.stringify(body)
         });
         if (res.ok) return await res.json();
-        const errData = await res.json().catch(() => ({ error: 'Neural node failed to respond.' }));
-        lastErr = new Error(errData.error || `Grid Error (${res.status})`);
+        const errData = await res.json().catch(() => ({ error: 'Node busy.' }));
+        lastErr = new Error(errData.error || `Node Error (${res.status})`);
       } catch (e: any) {
         lastErr = e;
       }
-      // Wait for cooling
       await new Promise(r => setTimeout(r, 2000 * Math.pow(2, i)));
     }
     throw lastErr;
@@ -102,58 +101,53 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // Resolution: 11k chars with overlap
-      const chunkSize = 11000; 
-      const overlapSize = 2500; 
+      // Higher fidelity chunks (10k chars)
+      const chunkSize = 10000; 
+      const overlapSize = 2000; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 70) break;
+        if (fragments.length > 80) break;
       }
 
-      setProcStage(`Neural Grid: Mapping ${fragments.length} High-Density Blocks...`);
+      setProcStage(`Neural Grid: Mapping ${fragments.length} Nodes...`);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // PHASE 1: PARALLEL MAP
+      // PHASE 1: MAP (Parallel batches of 2 for maximum stability)
       const mapResults: string[] = [];
-      const MAP_BATCH_SIZE = 3; // Reduced batch size for higher stability
+      const MAP_BATCH_SIZE = 2; 
       
       for (let i = 0; i < fragments.length; i += MAP_BATCH_SIZE) {
         const batch = fragments.slice(i, i + MAP_BATCH_SIZE);
-        setProcStage(`Mapping Curriculum Nodes (Set ${Math.floor(i/MAP_BATCH_SIZE) + 1}/${Math.ceil(fragments.length/MAP_BATCH_SIZE)})...`);
+        setProcStage(`Extracting Curriculum (Block ${Math.floor(i/MAP_BATCH_SIZE) + 1}/${Math.ceil(fragments.length/MAP_BATCH_SIZE)})...`);
         
         const batchResults = await Promise.all(batch.map(async (frag, batchIdx) => {
           const absoluteIdx = i + batchIdx;
-          try {
-            const data = await processWithRetry('/api/docs/upload', {
-              name: `${file.name}_part_${absoluteIdx + 1}`,
-              sourceType: 'raw_text',
-              extractedText: frag,
-              previewOnly: true,
-              isFragment: true
-            }, token);
-            return data.markdown || "";
-          } catch (err: any) {
-            // Rethrow with cleaner message
-            throw new Error(`Knowledge segment ${absoluteIdx + 1} extraction fault. Please retry.`);
-          }
+          const data = await processWithRetry('/api/docs/upload', {
+            name: `${file.name}_p${absoluteIdx + 1}`,
+            sourceType: 'raw_text',
+            extractedText: frag,
+            previewOnly: true,
+            isFragment: true
+          }, token);
+          return data.markdown || "";
         }));
         mapResults.push(...batchResults);
-        setProgressValue(prev => Math.min(60, prev + (50 / (fragments.length / MAP_BATCH_SIZE))));
+        setProgressValue(prev => Math.min(60, prev + (45 / (fragments.length / MAP_BATCH_SIZE))));
       }
 
-      // PHASE 2: RECURSIVE REDUCTION
-      setProcStage(`Recursive Synthesis: Merging Clusters...`);
+      // PHASE 2: RECURSIVE REDUCTION (Groups of 4)
+      setProcStage(`Recursive Synthesis: Consolidating Nodes...`);
       const intermediateHierarchies: string[] = [];
-      const REDUCE_BATCH_SIZE = 5;
+      const REDUCE_BATCH_SIZE = 4;
 
       for (let i = 0; i < mapResults.length; i += REDUCE_BATCH_SIZE) {
         const tierBatch = mapResults.slice(i, i + REDUCE_BATCH_SIZE);
-        setProcStage(`Processing Tier ${Math.floor(i/REDUCE_BATCH_SIZE) + 1} of ${Math.ceil(mapResults.length/REDUCE_BATCH_SIZE)}...`);
+        setProcStage(`Merging Segment ${Math.floor(i/REDUCE_BATCH_SIZE) + 1} of ${Math.ceil(mapResults.length/REDUCE_BATCH_SIZE)}...`);
         
         const tierRes = await processWithRetry('/api/docs/upload', {
-          name: `Tier_Merge_${i}`,
+          name: `Sync_Tier_${i}`,
           sourceType: 'raw_text',
           extractedText: tierBatch.join('\n\n---\n\n'),
           previewOnly: true,
@@ -162,11 +156,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         }, token);
         
         intermediateHierarchies.push(tierRes.markdown || "");
-        setProgressValue(prev => Math.min(90, prev + 5));
+        setProgressValue(prev => Math.min(90, prev + 4));
       }
 
-      // PHASE 3: MASTER SYNTHESIS
-      setProcStage(`Finalizing Vault Synchronization...`);
+      // PHASE 3: MASTER SYNTHESIS (FORCED GEMINI)
+      setProcStage(`Finalizing Master Vault Sync...`);
       const finalResult = await processWithRetry('/api/docs/upload', {
         name: file.name,
         sourceType: 'raw_text',
@@ -183,11 +177,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      // Clean up technical node errors for user
-      const userFriendlyError = err.message.includes('410') || err.message.includes('fault') 
-        ? "One of the synthesis nodes encountered a version error. The unstable provider has been removed from the rotation. Please try again."
+      // Strip technical SambaNova/Cerebras jargon for user
+      const cleanMsg = err.message.includes('410') || err.message.includes('fault')
+        ? "The unstable SambaNova node has been removed from the grid. Infrastructure is re-routing to Gemini. Please retry the upload."
         : err.message;
-      setError(userFriendlyError);
+      setError(cleanMsg);
     } finally {
       setIsProcessing(false);
     }
@@ -202,14 +196,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ 
-          name: extractedMeta?.board || "Sindh Curriculum Node", 
+          name: extractedMeta?.board || "Sindh Curriculum Master", 
           sourceType: 'markdown', 
           extractedText: draftMarkdown,
           metadata: extractedMeta,
           slos: extractedSLOs
         })
       });
-      if (!response.ok) throw new Error('Vault synchronization failed.');
+      if (!response.ok) throw new Error('Vault lock failed.');
       const finalDoc = await response.json();
       onComplete(finalDoc);
     } catch (err: any) {
@@ -249,7 +243,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Multi-Stage Integrity Verified
+              <ShieldCheck size={14} className="text-emerald-500" /> Multi-Stage High Fidelity
            </div>
            <button 
              onClick={handleFinalApproval}
@@ -277,7 +271,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Stable Synthesis Grid v2.6 (Auto-Failover Mode)</p>
+          <p className="text-slate-500 font-medium">Stable Synthesis Grid v5.0 (185-Page Optimized)</p>
         </div>
 
         {error && (
@@ -285,7 +279,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <AlertTriangle className="text-rose-500 shrink-0" size={20} />
             <div className="space-y-2">
               <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
-              <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Restart Selection</button>
+              <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Restart Synthesis</button>
             </div>
           </div>
         )}

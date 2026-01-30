@@ -21,9 +21,9 @@ export const PROVIDER_FUNCTIONS = {
 };
 
 /**
- * WORLD-CLASS SYNTHESIZER ORCHESTRATOR (v4.6)
- * Stable Grid Enforcement: Gemini, DeepSeek, Groq.
- * Removed volatile SambaNova/Cerebras nodes to prevent segment faults.
+ * WORLD-CLASS SYNTHESIZER ORCHESTRATOR (v5.0)
+ * Stable Grid: Gemini, DeepSeek, Groq. 
+ * SambaNova/Cerebras excised due to endpoint deprecation.
  */
 export async function synthesize(
   prompt: string,
@@ -40,14 +40,14 @@ export async function synthesize(
     let targetProviders = [...currentProviders].filter(p => p.enabled);
     
     if (targetProviders.length === 0) {
-      throw new Error("NO_NODES_AVAILABLE: Verify your Gemini or DeepSeek API keys.");
+      throw new Error("NO_STABLE_NODES: Ensure API_KEY (Gemini) is configured in Vercel.");
     }
     
-    // Sort providers by reliability for large context
+    // Sort by stability and capacity (Gemini 1M > DeepSeek 128k > Groq 32k)
     const reasoningOrder = ['gemini', 'deepseek', 'groq'];
     targetProviders.sort((a, b) => reasoningOrder.indexOf(a.name) - reasoningOrder.indexOf(b.name));
 
-    // Handle Preferred Provider Re-routing (e.g., forcing Gemini for Reduce phase)
+    // Force Preferred Provider if requested (usually for Reduction phases)
     if (preferredProvider) {
       const preferred = targetProviders.find(p => p.name === preferredProvider);
       if (preferred) {
@@ -59,9 +59,9 @@ export async function synthesize(
     for (const config of targetProviders) {
       if (!config.enabled) continue;
 
-      // SAFETY: Context window guard
-      if (prompt.length > (config.contextCharLimit * 0.95)) {
-        console.warn(`⏭️ [Context] Skipping ${config.name} - Prompt too dense.`);
+      // Logic Guard: Don't attempt if prompt is too big for node
+      if (prompt.length > (config.contextCharLimit * 0.9)) {
+        console.warn(`⏭️ [Grid Guard] Skipping ${config.name} - Capacity mismatch.`);
         continue;
       }
 
@@ -69,9 +69,9 @@ export async function synthesize(
       
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
-        // High fidelity synthesis for complex merged data
-        const isReducePhase = prompt.includes('REDUCE') || prompt.length > 40000;
-        const timeout = isReducePhase ? 280000 : 95000;
+        // Massive reduction tasks need longer timeout (up to 4 mins)
+        const isReduction = prompt.includes('FINAL_REDUCE_PROTOCOL') || prompt.length > 35000;
+        const timeout = isReduction ? 240000 : 90000;
         
         const response = await Promise.race([
           (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts),
@@ -86,13 +86,12 @@ export async function synthesize(
           imageUrl: response.imageUrl
         };
       } catch (e: any) { 
-        console.warn(`⚠️ [Node Fault] ${config.name}: ${e.message}`);
+        console.warn(`⚠️ [Node Bypass] ${config.name}: ${e.message}`);
         lastError = e;
-        // Continue to next provider in the chain
         continue; 
       }
     }
-    throw lastError || new Error("GRID_FAILURE: All stable synthesis nodes are currently saturated.");
+    throw lastError || new Error("GRID_EXHAUSTED: Document complexity exceeds current node windows.");
   };
 
   if (bypassQueue) return await executionTask();
