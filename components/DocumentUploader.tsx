@@ -47,18 +47,17 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     setError(null);
     setIsProcessing(true);
     setProgressValue(5);
-    setProcStage(`Neural Skim: Ingesting ${file.name}...`);
+    setProcStage(`Neural Skim: ${file.name}...`);
 
     try {
-      // 1. LOCAL EXTRACTION
       const arrayBuffer = await file.arrayBuffer();
       let rawText = "";
       
       if (file.name.toLowerCase().endsWith('.pdf')) {
         const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
         const pdf = await loadingTask.promise;
-        for (let i = 1; i <= pdf.numPages; i++) {
-          setProcStage(`Local Scan: Pg ${i}/${pdf.numPages}`);
+        for (let i = 1; i <= Math.min(pdf.numPages, 200); i++) {
+          setProcStage(`Pg ${i}/${pdf.numPages}`);
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
           rawText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
@@ -67,24 +66,22 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         rawText = new TextDecoder().decode(arrayBuffer);
       }
 
-      // 2. PRECISION ELASTIC SKIMMER
-      setProcStage(`Grid Extraction: Identifying Anchors...`);
+      setProcStage(`Anchor Scan...`);
       const cleanRaw = rawText.replace(/[\[\]]/g, ' ');
-      const gridRegex = /(?:[B-Z]\s*-?\s*(?:0?9|9|10|11|12)\s*-?\s*[A-Z]\s*-?\s*\d{1,2})[\s\S]{1,1200}/gi;
+      const gridRegex = /(?:[B-Z]\s*-?\s*(?:0?9|9|10|11|12)\s*-?\s*[A-Z]\s*-?\s*\d{1,2})[\s\S]{1,1000}/gi;
       const relevantBlocks = cleanRaw.match(gridRegex) || [];
       
       if (relevantBlocks.length === 0) {
-        throw new Error("Grid Check Failed: No curriculum anchors (B-09 to B-12) detected. Please ensure the PDF contains standard Student Learning Objectives.");
+        throw new Error("Extraction Error: No B9-B12 anchors found. Check PDF formatting.");
       }
 
-      // REDUCED PAYLOAD: 40 blocks is safer for Vercel timeouts/memory with large curriculum strings
-      const skimmedText = relevantBlocks.slice(0, 40).join('\n\n---\n\n'); 
+      // ULTRA-REDUCED PAYLOAD: 20 blocks ensures 10s Vercel timeout compliance
+      const skimmedText = relevantBlocks.slice(0, 20).join('\n\n---\n\n'); 
 
-      // 3. ONE-PASS SYNTHESIS
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      setProcStage(`Final Handshake: Stitching Master Vault...`);
+      setProcStage(`Stitching Vault (High-Speed)...`);
       setProgressValue(60);
 
       const res = await fetch('/api/docs/upload', {
@@ -98,14 +95,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         })
       });
 
-      // ROBUST RESPONSE HANDLING
       const contentType = res.headers.get("content-type");
       let data;
       if (contentType && contentType.includes("application/json")) {
         data = await res.json();
       } else {
         const textError = await res.text();
-        throw new Error(`Cloud Fault: ${textError.substring(0, 100)}... (The neural grid timed out processing this block)`);
+        throw new Error(`Node Timeout: The document fragment is too large for the current synthesis window.`);
       }
 
       if (!res.ok) throw new Error(data.error || "Neural synthesis failed.");
@@ -131,7 +127,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ 
-          name: "Sindh Biology Master (IX-XII)", 
+          name: "Sindh Biology Master", 
           sourceType: 'markdown', 
           extractedText: draftMarkdown,
           metadata: extractedMeta
@@ -167,7 +163,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
-           <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400"><ShieldCheck size={14} className="text-emerald-500" /> Grade 9-12 Precision Active</div>
+           <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400"><ShieldCheck size={14} className="text-emerald-500" /> Standard Lock: Active</div>
            <button onClick={handleFinalApproval} className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all">
              {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>} Ingest to Vault
            </button>
@@ -188,16 +184,16 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Skimmer</h2>
-          <p className="text-slate-500 font-medium">Neural Grid v11.0 (High-Speed Ingestion)</p>
+          <p className="text-slate-500 font-medium tracking-tight">Optimized Grid v12.0 (B9-B12 Precision)</p>
         </div>
 
         {error && (
-          <div className="p-5 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex flex-col items-center gap-4 animate-in slide-in-from-top-2">
+          <div className="p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex flex-col items-center gap-4 animate-in slide-in-from-top-2 text-left">
             <div className="flex items-center gap-2">
-              <AlertCircle className="text-rose-500" size={18} />
-              <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
+              <AlertCircle className="text-rose-500 shrink-0" size={18} />
+              <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-tight">{error}</p>
             </div>
-            <button onClick={() => setError(null)} className="px-6 py-2 bg-rose-100 dark:bg-rose-900/40 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-200 transition-all flex items-center gap-2"><RefreshCw size={12}/> Reset Sync</button>
+            <button onClick={() => {setError(null); setIsProcessing(false);}} className="px-6 py-2 bg-rose-100 dark:bg-rose-900/40 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-rose-200 transition-all flex items-center gap-2"><RefreshCw size={12}/> Initialize Grid Reset</button>
           </div>
         )}
 
@@ -215,7 +211,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
               <UploadCloud size={48} className="text-slate-300 group-hover:text-indigo-500 transition-all" />
               <div>
                 <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Curriculum PDF</p>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Automatic B9-B12 Extraction</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1"> Sindh Biology (IX-XII) Support Active</p>
               </div>
             </div>
           </label>

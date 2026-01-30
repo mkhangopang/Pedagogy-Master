@@ -8,7 +8,7 @@ import { getSynthesizer } from '../../../../lib/ai/synthesizer-core';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; 
+export const maxDuration = 10; // Forced compliance for Vercel Hobby
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,17 +21,16 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     const body = await req.json();
-    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce } = body;
+    const { name, sourceType, extractedText, previewOnly, metadata, isReduce } = body;
     
     if (sourceType === 'raw_text' && previewOnly) {
       const synth = getSynthesizer();
 
-      // INSTRUCTION: Enforce strict B-09 to B-12 filtering for 185pg docs
       const instruction = `
-TASK: CURRICULUM GRID CLEANER.
-INPUT: Raw text containing curriculum SLOs.
-FILTER: Extract ONLY Student Learning Objectives (SLOs) starting with codes B-09, B-10, B-11, or B-12.
-FORMAT: 
+# GRID FORMATTER NODE
+INPUT: Raw text with SLO B-09 to B-12.
+TASK: Clean formatting only. No conversational filler.
+OUTPUT: 
 # Curriculum Metadata
 Board: Sindh
 Subject: Biology
@@ -39,14 +38,9 @@ Grade: 9-12
 
 # Master Curriculum Grid
 - SLO:[CODE]: [VERBATIM_DESCRIPTION]
-
-RULES: 
-1. DO NOT add chat or explanation. 
-2. IGNORE all text that is not a target SLO.
-3. PRESERVE THE HIERARCHY.
 `;
       
-      const result = await synth.synthesize(`${instruction}\n\nINPUT_TEXT:\n${extractedText}`, { type: 'reduce' });
+      const result = await synth.synthesize(`${instruction}\n\nINPUT:\n${extractedText}`, { type: 'reduce' });
       return NextResponse.json({ markdown: result.text, provider: result.provider });
     }
 
@@ -65,7 +59,7 @@ RULES:
 
       const { data: docData, error: dbError } = await supabase.from('documents').insert({
         user_id: user.id,
-        name: name || "Sindh Biology Master",
+        name: name || "Curriculum Master",
         source_type: 'markdown',
         status: 'processing',
         extracted_text: extractedText,
@@ -74,8 +68,7 @@ RULES:
         subject: metadata?.subject || 'Biology',
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
-        document_summary: `Precision Ingestion: 185pg Skim Complete. B9-B12 focused.`,
-        generated_json: { slos, slo_map }
+        document_summary: `Neural Sync Complete.`
       }).select().single();
 
       if (dbError) throw new Error(dbError.message);
@@ -85,7 +78,7 @@ RULES:
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Pipeline configuration mismatch." }, { status: 400 });
+    return NextResponse.json({ error: "Configuration mismatch." }, { status: 400 });
   } catch (error: any) {
     console.error("❌ [Upload Gateway Error]:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
