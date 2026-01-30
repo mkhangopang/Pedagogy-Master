@@ -81,8 +81,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         if (res.ok) return data;
         
         if (res.status === 429 || res.status === 410 || res.status === 503) {
-          setProcStage(`Node Saturated: Retrying in ${6 + i}s...`);
-          await new Promise(r => setTimeout(r, 6500 * (i + 1))); 
+          setProcStage(`Node Saturated: Retrying in ${10 + i}s...`);
+          await new Promise(r => setTimeout(r, 10000 * (i + 1))); 
         }
         lastErr = new Error(data.error || `Grid Fail (${res.status})`);
       } catch (e: any) {
@@ -105,13 +105,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Empty document node.");
 
-      // Resolution optimization: Reduced chunk size to 8000 to ensure broad model compatibility
-      const chunkSize = 8000; 
-      const overlapSize = 1500; 
+      // OPTIMIZATION: Increased chunk size to 12000 to reduce total request volume for 185pg docs
+      const chunkSize = 12000; 
+      const overlapSize = 2500; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 250) break; 
+        if (fragments.length > 200) break; 
       }
 
       setProcStage(`Ingesting ${fragments.length} Neural Segments...`);
@@ -131,7 +131,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         }, token);
         mapResults.push(res.markdown || "");
         setProgressValue(prev => Math.min(60, prev + (55 / fragments.length)));
-        await new Promise(r => setTimeout(r, 4500)); // Cooling delay
+        // DYNAMIC COOLING: Respect RPM limits (Requests Per Minute)
+        await new Promise(r => setTimeout(r, 5500)); 
       }
 
       // PHASE 2: RECURSIVE REDUCE
@@ -150,7 +151,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         }, token);
         intermediateHierarchies.push(res.markdown || "");
         setProgressValue(prev => Math.min(90, prev + 5));
-        await new Promise(r => setTimeout(r, 3500));
+        await new Promise(r => setTimeout(r, 4500));
       }
 
       // PHASE 3: MASTER FINALIZATION
@@ -165,9 +166,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       }, token);
 
       const finalMd = final.markdown || "";
-      // HALLUCINATION GUARD
       if (finalMd.toLowerCase().includes("i am ready") && finalMd.length < 500) {
-        throw new Error("Recursive Reduction Drift: The AI hallucinated a response instead of data. Please click Restart Sync.");
+        throw new Error("Recursive Reduction Drift: Please restart sync.");
       }
 
       setDraftMarkdown(finalMd);
@@ -177,7 +177,15 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      setError(err.message);
+      // CLEAN ERROR DISPLAY
+      let msg = err.message || "Unknown grid fault.";
+      if (msg.includes('{"error"')) {
+        try {
+          const parsed = JSON.parse(msg.substring(msg.indexOf('{')));
+          msg = parsed.error?.message || "Rate limit reached. Please wait 1 minute.";
+        } catch(e) {}
+      }
+      setError(msg);
     } finally {
       setIsProcessing(false);
     }
@@ -254,7 +262,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v10.0 (Active Node)
+              <ShieldCheck size={14} className="text-emerald-500" /> Neural Mesh v11.0 (Active Node)
            </div>
            <button 
              onClick={handleFinalApproval}
@@ -282,7 +290,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Neural Mesh Grid v10.0 (Strict Execution)</p>
+          <p className="text-slate-500 font-medium">Neural Mesh Grid v11.0 (Balanced Node)</p>
         </div>
 
         {error && (
@@ -321,14 +329,14 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Quad-Grade Mesh Sync v10.0</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Quad-Grade Mesh Sync v11.0</p>
                 </div>
               </div>
             </label>
             
             <div className="flex items-center justify-center gap-6 pt-4">
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Layers size={12} /> Linear Sync
+                  <Layers size={12} /> Load Balanced
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">

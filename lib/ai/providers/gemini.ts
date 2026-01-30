@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * NEURAL GEMINI ADAPTER (v48.0)
+ * NEURAL GEMINI ADAPTER (v49.0)
  * Optimized for Recursive Synthesis and Massive Multi-Grade Curriculum Artifacts.
  */
 export async function callGemini(
@@ -40,7 +40,6 @@ export async function callGemini(
     parts.push({ text: fullPrompt });
     contents.push({ role: 'user', parts });
 
-    // RECURSIVE SYNERGY: Detect if this is a massive merge/reduction task
     const isMassiveTask = fullPrompt.includes('MASTER SINDH BIOLOGY 2024') || fullPrompt.includes('Tier_Merge');
     
     return await ai.models.generateContent({
@@ -48,10 +47,8 @@ export async function callGemini(
       contents,
       config: {
         systemInstruction: systemInstruction || "You are a world-class pedagogy master.",
-        temperature: isMassiveTask ? 0.0 : 0.7, // Zero temp for maximum data integrity
-        // CRITICAL: Maximize output tokens for 185-page curriculum reduction
+        temperature: isMassiveTask ? 0.0 : 0.7,
         maxOutputTokens: 8192, 
-        // FIX: Must set thinkingBudget when maxOutputTokens is defined to prevent response blocking
         thinkingConfig: { 
           thinkingBudget: isMassiveTask ? 4096 : 2048 
         }
@@ -61,16 +58,8 @@ export async function callGemini(
 
   const isComplex = fullPrompt.includes('LESSON PLAN') || fullPrompt.includes('MASTER SINDH BIOLOGY') || fullPrompt.length > 5000;
   
-  try {
-    const model = isComplex ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
-    const response = await executeWithModel(model);
-    return { text: response.text || "Synthesis complete.", groundingMetadata: response.candidates?.[0]?.groundingMetadata };
-  } catch (error: any) {
-    const errorMsg = error.message?.toLowerCase() || "";
-    if (errorMsg.includes('429') || errorMsg.includes('quota') || errorMsg.includes('resource_exhausted')) {
-      const fallbackResponse = await executeWithModel('gemini-3-flash-preview');
-      return { text: fallbackResponse.text || "Synthesis complete (via Flash).", groundingMetadata: fallbackResponse.candidates?.[0]?.groundingMetadata };
-    }
-    throw error;
-  }
+  // NO LOCAL RETRY: Let synthesizer-core handle failover to other providers (Groq/Cerebras)
+  const model = isComplex ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
+  const response = await executeWithModel(model);
+  return { text: response.text || "Synthesis complete.", groundingMetadata: response.candidates?.[0]?.groundingMetadata };
 }

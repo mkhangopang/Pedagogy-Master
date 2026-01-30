@@ -10,12 +10,12 @@ import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 import { isGeminiEnabled } from '../env-server';
 
-// Session-based node blacklisting to prevent repeated 429/410/402/500/400 failures
+// Session-based node blacklisting to prevent repeated failures
 const nodeBlacklist = new Map<string, number>();
 
 /**
- * NEURAL MESH CONFIGURATION (v12.0)
- * Engaging 7-Node Multi-Provider Failover Grid
+ * NEURAL MESH CONFIGURATION (v12.5)
+ * 7-Node Failover Grid with Aggressive Blacklisting
  */
 export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: number; priority: number })[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled(), contextCharLimit: 1000000, priority: 1 },
@@ -37,11 +37,6 @@ export const PROVIDER_FUNCTIONS = {
   openrouter: callOpenRouter,
 };
 
-/**
- * NEURAL MESH ORCHESTRATOR
- * Architecture: Self-Healing Priority Grid with Circuit Breaking.
- * Optimized for Quad-Grade Sindh Biology 2024.
- */
 export async function synthesize(
   prompt: string,
   history: any[],
@@ -56,7 +51,6 @@ export async function synthesize(
     const currentProviders = getProvidersConfig();
     const now = Date.now();
 
-    // 1. Filter nodes by availability and health
     let targetProviders = [...currentProviders]
       .filter(p => p.enabled)
       .filter(p => {
@@ -66,19 +60,14 @@ export async function synthesize(
       .sort((a, b) => a.priority - b.priority);
     
     if (targetProviders.length === 0) {
-      console.warn("⚠️ All nodes blacklisted. Resetting grid health.");
       nodeBlacklist.clear();
       targetProviders = [currentProviders[0]];
     }
 
-    // 2. Task Routing Logic
     const isMassiveTask = prompt.includes('FINAL_REDUCE_PROTOCOL') || prompt.length > 35000;
-    const isInstantTool = prompt.includes('LESSON PLAN') || prompt.includes('QUIZ');
-
-    if (isMassiveTask) {
-      preferredProvider = 'gemini'; // Only Gemini handles 1M context reliably
-    } else if (isInstantTool && !preferredProvider) {
-      preferredProvider = 'cerebras'; // Cerebras is the fastest for short tools
+    
+    if (isMassiveTask && !nodeBlacklist.has('gemini')) {
+      preferredProvider = 'gemini'; 
     }
 
     if (preferredProvider) {
@@ -90,17 +79,11 @@ export async function synthesize(
 
     let lastError = null;
     for (const config of targetProviders) {
-      // Context safety check
-      if (prompt.length > (config.contextCharLimit * 0.95)) {
-         console.warn(`⏭️ Skipping Node ${config.name}: Payload exceeds context limit.`);
-         continue;
-      }
+      if (prompt.length > (config.contextCharLimit * 0.95)) continue;
 
       try {
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         const timeout = isMassiveTask ? 290000 : 90000;
-        
-        console.log(`🛰️ [Neural Mesh] Engaged Node: ${config.name.toUpperCase()}`);
         
         const response = await Promise.race([
           (callFunction as any)(prompt, history, systemInstruction, hasDocs, docParts),
@@ -115,31 +98,28 @@ export async function synthesize(
           imageUrl: response.imageUrl
         };
       } catch (e: any) { 
-        const errorMsg = e.message || "";
+        const errorMsg = e.message?.toLowerCase() || "";
         console.warn(`⚠️ [Grid Failover] Node ${config.name} rejected: ${errorMsg}`);
         lastError = e;
         
-        // CIRCUIT BREAKER: Isolate failing nodes
-        // FIX: Added '400' and 'segment fault' to detection to trigger failover on Bad Requests
         if (
           errorMsg.includes('429') || 
-          errorMsg.includes('410') || 
+          errorMsg.includes('resource_exhausted') || 
+          errorMsg.includes('quota') || 
           errorMsg.includes('402') || 
           errorMsg.includes('400') || 
-          errorMsg.includes('segment fault') || 
-          errorMsg.includes('quota') || 
-          errorMsg.includes('NODE_TIMEOUT')
+          errorMsg.includes('node_timeout')
         ) {
-          console.error(`🔴 [Grid Control] Isolating node ${config.name} for 90s.`);
-          nodeBlacklist.set(config.name, Date.now() + 90000);
+          console.error(`🔴 [Grid Control] Node ${config.name} saturated. Blacklisting for 120s.`);
+          nodeBlacklist.set(config.name, Date.now() + 120000);
         }
         
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 2000));
         continue; 
       }
     }
     
-    throw lastError || new Error("GRID_BLACKOUT: All 7 neural segments rejected the curriculum node.");
+    throw lastError || new Error("GRID_FAILURE: All neural segments rejected the payload.");
   };
 
   if (bypassQueue) return await executionTask();

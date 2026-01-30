@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL INGESTION GATEWAY (v10.0)
- * Optimized for High-Volume Sindh Biology Ingestion (185 Pages)
+ * NEURAL INGESTION GATEWAY (v11.0)
+ * Optimized for Multi-Node Load Balancing across 185+ pages.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -27,18 +27,19 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce, isIntermediate, isFragment } = body;
     
-    // BRANCH A: AI PRE-SYNC (Fragment Mapping, Tier Merging, Final Reduction)
+    // BRANCH A: AI PRE-SYNC
     if (sourceType === 'raw_text' && previewOnly) {
       let instruction = "";
-      let preferred = "gemini"; 
+      // FIX: Removed hardcoded preferred = "gemini" to allow grid balancing
+      let preferred = undefined; 
       let finalPrompt = "";
 
       if (isReduce) {
-        // REDUCTION PROTOCOL (The bottleneck phase)
         if (isIntermediate) {
-          instruction = "REDUCTION_PROTOCOL_ALPHA: Merge these DATA_BLOCKS into a dense Markdown list. PRESERVE ALL GRADES (B-09, B-10, B-11, B-12). No chat. Start immediately with markdown.";
+          instruction = "REDUCTION_PROTOCOL_ALPHA: Merge these DATA_BLOCKS into a dense Markdown list. PRESERVE ALL GRADES (B-09, B-10, B-11, B-12). No chat.";
         } else {
-          instruction = "FINAL_SYNTHESIS_OMEGA: BELOW IS THE FULL REDUCED CURRICULUM. You must generate the official MASTER SINDH BIOLOGY 2024 hierarchy. You MUST include SLOs for ALL 4 GRADES (9-12). Format: B-[Grade]-[Domain]-[Number].";
+          instruction = "FINAL_SYNTHESIS_OMEGA: BELOW IS THE FULL REDUCED CURRICULUM. Generate official MASTER SINDH BIOLOGY 2024 hierarchy (9-12). Format: B-[Grade]-[Domain]-[Number].";
+          preferred = "gemini"; // Force Gemini only for the final massive context reduction
         }
         
         finalPrompt = `
@@ -52,13 +53,11 @@ ${instruction}
 [/COMMAND]
 
 [STRICT_RULE]
-DO NOT SAY "I AM READY". DO NOT ASK FOR DATA. DATA IS ALREADY PROVIDED IN THE TAGS ABOVE. 
-GENERATE THE COMPLETE MARKDOWN LIST NOW.
+DO NOT SAY "I AM READY". GENERATE THE COMPLETE MARKDOWN LIST NOW.
 [/STRICT_RULE]
 `;
       } else {
-        // MAPPING PHASE (The initial segments)
-        instruction = "MAPPING_PROTOCOL: Extract every Student Learning Outcome (SLO) from this fragment. Use the format [SLO:CODE] Description.";
+        instruction = "MAPPING_PROTOCOL: Extract every Student Learning Outcome (SLO) from this fragment. Use format [SLO:CODE] Description.";
         finalPrompt = `[DATA_FRAGMENT]:\n${extractedText}\n\n[EXECUTE]: ${instruction}`;
       }
 
@@ -69,15 +68,13 @@ GENERATE THE COMPLETE MARKDOWN LIST NOW.
       try {
         parsed = JSON.parse(jsonClean);
       } catch (e) {
-        // If the model returned pure markdown instead of JSON, wrap it correctly
         parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
       }
       return NextResponse.json(parsed);
     }
 
-    // BRANCH B: FINAL VAULT LOCK (Approved Hierarchy)
+    // BRANCH B: FINAL VAULT LOCK
     if (sourceType === 'markdown' && extractedText) {
-      console.log(`🔒 [Vault Lock] Finalizing asset: ${name}`);
       const fileNameClean = (name || "Sindh_Master").replace(/\s+/g, '_');
       const filePath = `vault/${user.id}/${Date.now()}_${fileNameClean}.md`;
       
@@ -102,13 +99,12 @@ GENERATE THE COMPLETE MARKDOWN LIST NOW.
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
         difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Neural Vault v10.0: Comprehensive Quad-Grade (9-12) Sindh Curriculum Synced.`,
+        document_summary: `Neural Vault v11.0: Balanced Multi-Node Sync (185pg).`,
         generated_json: { slos, slo_map }
       }).select().single();
 
       if (dbError) throw new Error(`Database Error: ${dbError.message}`);
 
-      // Async Indexing
       indexDocumentForRAG(docData.id, extractedText, filePath, supabase, { ...metadata, slos, slo_map }).catch(e => {
         console.error("Indexing Fault:", e);
       });
@@ -116,9 +112,17 @@ GENERATE THE COMPLETE MARKDOWN LIST NOW.
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Pipeline configuration mismatch. Branch exhausted." }, { status: 400 });
+    return NextResponse.json({ error: "Pipeline configuration mismatch." }, { status: 400 });
   } catch (error: any) {
     console.error("❌ [Gateway Fatal]:", error);
-    return NextResponse.json({ error: error.message || "Synthesis grid exception." }, { status: 500 });
+    // Error Sanitizer: Clean up JSON code from message
+    let cleanMsg = error.message || "Synthesis grid exception.";
+    if (cleanMsg.includes('{"error"')) {
+      try {
+        const parsed = JSON.parse(cleanMsg.substring(cleanMsg.indexOf('{')));
+        cleanMsg = `AI Grid Alert: ${parsed.error?.message || "Rate Limit Reached."}`;
+      } catch(e) {}
+    }
+    return NextResponse.json({ error: cleanMsg }, { status: 500 });
   }
 }
