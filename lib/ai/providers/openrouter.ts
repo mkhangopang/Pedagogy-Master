@@ -31,13 +31,17 @@ export async function callOpenRouter(
       model, 
       messages, 
       temperature: hasDocuments ? 0.0 : 0.7, 
-      max_tokens: 8192,
+      // FIX: Reduced to 4000 to avoid 402 "Insufficient Credits" for large reservations
+      max_tokens: 4000,
       top_p: 1
     })
   });
 
   if (!res.ok) {
     const errData = await res.json().catch(() => ({}));
+    if (res.status === 402) {
+      throw new Error(`OpenRouter_402: Insufficient credits for high-token reservation. Switching node...`);
+    }
     throw new Error(`OpenRouter Node Failure: ${res.status} ${errData.error?.message || ''}`);
   }
   const data = await res.json();

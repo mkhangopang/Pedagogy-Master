@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * NEURAL GEMINI ADAPTER (v47.0)
+ * NEURAL GEMINI ADAPTER (v48.0)
  * Optimized for Recursive Synthesis and Massive Multi-Grade Curriculum Artifacts.
  */
 export async function callGemini(
@@ -49,10 +49,10 @@ export async function callGemini(
       config: {
         systemInstruction: systemInstruction || "You are a world-class pedagogy master.",
         temperature: isMassiveTask ? 0.0 : 0.7, // Zero temp for maximum data integrity
-        // CRITICAL: Maximize output tokens for 185-page curriculum reduction (9-12 span)
+        // CRITICAL: Maximize output tokens for 185-page curriculum reduction
         maxOutputTokens: 8192, 
+        // FIX: Must set thinkingBudget when maxOutputTokens is defined to prevent response blocking
         thinkingConfig: { 
-          // High budget to process complex hierarchy transitions across grades
           thinkingBudget: isMassiveTask ? 4096 : 2048 
         }
       }
