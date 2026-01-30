@@ -21,32 +21,37 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     const body = await req.json();
-    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce, isIntermediate } = body;
+    const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isReduce } = body;
     
     if (sourceType === 'raw_text' && previewOnly) {
-      let instruction = "";
       const synth = getSynthesizer();
 
-      if (isReduce) {
-        instruction = isIntermediate 
-          ? "REDUCTION_PROTOCOL: Merge these segments into a dense Markdown list. Use SLO codes." 
-          : "MASTER_SYNTHESIS: Create the final Sindh Biology 2024 hierarchy. JSON-Ready Markdown.";
-        
-        const finalPrompt = `[INPUT]\n${extractedText}\n[EXECUTE]: ${instruction}`;
-        const result = await synth.synthesize(finalPrompt, { type: 'reduce' });
-        
-        return NextResponse.json({ markdown: result.text, provider: result.provider });
-      } else {
-        instruction = "MAPPING: Extract all SLO codes and descriptions from this fragment.";
-        const finalPrompt = `[DATA]:\n${extractedText}\n[EXECUTE]: ${instruction}`;
-        const result = await synth.synthesize(finalPrompt, { type: 'map' });
-        
-        return NextResponse.json({ markdown: result.text, provider: result.provider });
-      }
+      // INSTRUCTION: Enforce strict B-09 to B-12 filtering for 185pg docs
+      const instruction = `
+TASK: CURRICULUM GRID CLEANER.
+INPUT: Raw text containing curriculum SLOs.
+FILTER: Extract ONLY Student Learning Objectives (SLOs) starting with codes B-09, B-10, B-11, or B-12.
+FORMAT: 
+# Curriculum Metadata
+Board: Sindh
+Subject: Biology
+Grade: 9-12
+
+# Master Curriculum Grid
+- SLO:[CODE]: [VERBATIM_DESCRIPTION]
+
+RULES: 
+1. DO NOT add chat or explanation. 
+2. IGNORE all text that is not a target SLO.
+3. PRESERVE THE HIERARCHY.
+`;
+      
+      const result = await synth.synthesize(`${instruction}\n\nINPUT_TEXT:\n${extractedText}`, { type: 'reduce' });
+      return NextResponse.json({ markdown: result.text, provider: result.provider });
     }
 
     if (sourceType === 'markdown' && extractedText) {
-      const fileNameClean = (name || "Master_Curriculum").replace(/\s+/g, '_');
+      const fileNameClean = (name || "Curriculum").replace(/\s+/g, '_');
       const filePath = `vault/${user.id}/${Date.now()}_${fileNameClean}.md`;
       
       if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Offline.");
@@ -69,7 +74,7 @@ export async function POST(req: NextRequest) {
         subject: metadata?.subject || 'Biology',
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
-        document_summary: `Neural Grid v10.0: High-fidelity multi-node extraction complete.`,
+        document_summary: `Precision Ingestion: 185pg Skim Complete. B9-B12 focused.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
@@ -80,9 +85,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: docData.id });
     }
 
-    return NextResponse.json({ error: "Configuration mismatch." }, { status: 400 });
+    return NextResponse.json({ error: "Pipeline configuration mismatch." }, { status: 400 });
   } catch (error: any) {
-    console.error("❌ [Gateway Error]:", error);
+    console.error("❌ [Upload Gateway Error]:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

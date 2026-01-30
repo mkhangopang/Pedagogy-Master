@@ -1,13 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
-/**
- * OPTIMIZED 7-NODE NEURAL GRID v10.0
- * Features: Smart Load Balancing, Tiered Priority, and Auto-Failover.
- */
-
-// Add comment above each fix
-// Fix: Export AIProvider interface to allow external access to provider configuration details
 export interface AIProvider {
   id: string;
   name: string;
@@ -15,7 +8,7 @@ export interface AIProvider {
   model: string;
   apiKeyEnv: string;
   maxTokens: number;
-  rateLimit: number; // RPM
+  rateLimit: number; 
   tier: 1 | 2;
   enabled: boolean;
 }
@@ -29,12 +22,12 @@ interface RateLimitTracker {
 export class SynthesizerCore {
   private providers: Map<string, AIProvider>;
   private rateLimits: Map<string, RateLimitTracker>;
-  private failedProviders: Set<string>;
+  private failedProviders: Map<string, number>; // ID -> Expiry
 
   constructor() {
     this.providers = this.initializeProviders();
     this.rateLimits = new Map();
-    this.failedProviders = new Set();
+    this.failedProviders = new Map();
     
     this.providers.forEach((_, id) => {
       this.rateLimits.set(id, {
@@ -48,7 +41,6 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // TIER 1: PRIMARY NODES
     providers.set('gemini-flash', {
       id: 'gemini-flash',
       name: 'Gemini 3 Flash',
@@ -56,21 +48,9 @@ export class SynthesizerCore {
       model: 'gemini-3-flash-preview',
       apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
-      rateLimit: 50,
+      rateLimit: 60,
       tier: 1,
       enabled: isGeminiEnabled()
-    });
-
-    providers.set('deepseek', {
-      id: 'deepseek',
-      name: 'DeepSeek R1',
-      endpoint: 'https://api.deepseek.com/v1/chat/completions',
-      model: 'deepseek-chat',
-      apiKeyEnv: 'DEEPSEEK_API_KEY',
-      maxTokens: 8192,
-      rateLimit: 30,
-      tier: 1,
-      enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
     providers.set('groq', {
@@ -85,7 +65,6 @@ export class SynthesizerCore {
       enabled: !!process.env.GROQ_API_KEY
     });
 
-    // TIER 2: SPECIALIZED FALLBACKS
     providers.set('cerebras', {
       id: 'cerebras',
       name: 'Cerebras Ultra',
@@ -108,6 +87,18 @@ export class SynthesizerCore {
       rateLimit: 15,
       tier: 2,
       enabled: !!process.env.SAMBANOVA_API_KEY
+    });
+
+    providers.set('deepseek', {
+      id: 'deepseek',
+      name: 'DeepSeek R1',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-chat',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      maxTokens: 8192,
+      rateLimit: 20,
+      tier: 1,
+      enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
     providers.set('hyperbolic', {
@@ -138,21 +129,31 @@ export class SynthesizerCore {
   }
 
   private async selectProvider(type: 'map' | 'reduce' | 'chat'): Promise<AIProvider | null> {
-    const isReduce = type === 'reduce';
+    const now = Date.now();
     
-    // REDUCE phase priority
+    // Clear expired failures
+    for (const [id, expiry] of this.failedProviders.entries()) {
+      if (now > expiry) this.failedProviders.delete(id);
+    }
+
     const candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id))
       .sort((a, b) => {
-        if (isReduce) {
-          if (a.id === 'gemini-flash') return -1;
-          if (b.id === 'gemini-flash') return 1;
-        }
         if (a.tier !== b.tier) return a.tier - b.tier;
         const aT = this.rateLimits.get(a.id)!;
         const bT = this.rateLimits.get(b.id)!;
         return aT.requestCount - bT.requestCount;
       });
+
+    // EMERGENCY RESET: If all nodes are blacklisted, revive one
+    if (candidates.length === 0 && Array.from(this.providers.values()).some(p => p.enabled)) {
+      console.warn("⚠️ GRID_BLACKOUT: Reviving Gemini Flash for emergency recovery.");
+      const gemini = this.providers.get('gemini-flash');
+      if (gemini?.enabled) {
+        this.failedProviders.delete('gemini-flash');
+        return gemini;
+      }
+    }
 
     for (const provider of candidates) {
       if (await this.checkRateLimit(provider.id)) return provider;
@@ -172,9 +173,6 @@ export class SynthesizerCore {
     }
 
     if (tracker.requestCount < provider.rateLimit) {
-      const minInterval = 60000 / provider.rateLimit;
-      const elapsed = now - tracker.lastRequest;
-      if (elapsed < minInterval) await new Promise(r => setTimeout(r, minInterval - elapsed));
       return true;
     }
     return false;
@@ -183,9 +181,7 @@ export class SynthesizerCore {
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
     const type = options.type || 'chat';
     const provider = await this.selectProvider(type);
-    if (!provider) throw new Error('GRID_EXHAUSTED: No active neural nodes.');
-
-    console.log(`🛰️ [Neural Grid] Engaging: ${provider.name.toUpperCase()}`);
+    if (!provider) throw new Error('GRID_EXHAUSTED: All neural nodes are cooling down.');
 
     try {
       let content = "";
@@ -202,20 +198,19 @@ export class SynthesizerCore {
           method: 'POST',
           headers: { 
             'Authorization': `Bearer ${process.env[provider.apiKeyEnv]}`, 
-            'Content-Type': 'application/json',
-            'X-Title': 'EduNexus AI Synthesis'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             model: provider.model,
-            messages: [{ role: 'system', content: options.systemPrompt || 'World-class pedagogical designer.' }, { role: 'user', content: prompt }],
-            temperature: options.temperature || 0.1,
+            messages: [{ role: 'system', content: options.systemPrompt || 'World-class pedagogical formatter.' }, { role: 'user', content: prompt }],
+            temperature: options.temperature || 0.0,
             max_tokens: provider.maxTokens
           })
         });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(`${res.status}: ${err.error?.message || 'Node Error'}`);
+          const errText = await res.text();
+          throw new Error(`Node ${provider.name} error: ${res.status}`);
         }
         const data = await res.json();
         content = data.choices[0].message.content;
@@ -224,13 +219,11 @@ export class SynthesizerCore {
       const tracker = this.rateLimits.get(provider.id)!;
       tracker.requestCount++;
       tracker.lastRequest = Date.now();
-      this.failedProviders.delete(provider.id);
-
+      
       return { text: content, provider: provider.name };
     } catch (e: any) {
-      console.error(`🔴 [Grid Failover] ${provider.name} rejected payload: ${e.message}`);
-      this.failedProviders.add(provider.id);
-      setTimeout(() => this.failedProviders.delete(provider.id), 120000);
+      console.error(`🔴 [Failover] Node ${provider.id}: ${e.message}`);
+      this.failedProviders.set(provider.id, Date.now() + 90000); // 90s blacklist
       return this.synthesize(prompt, options);
     }
   }
@@ -238,20 +231,15 @@ export class SynthesizerCore {
   public getProviderStatus() {
     return Array.from(this.providers.values()).map(p => {
       const tracker = this.rateLimits.get(p.id)!;
+      const isFailed = this.failedProviders.has(p.id);
       return {
         id: p.id,
         name: p.name,
-        status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : tracker.requestCount >= p.rateLimit ? 'rate-limited' : 'active',
+        status: !p.enabled ? 'disabled' : isFailed ? 'failed' : tracker.requestCount >= p.rateLimit ? 'rate-limited' : 'active',
         remaining: Math.max(0, p.rateLimit - tracker.requestCount),
         tier: p.tier
       };
     });
-  }
-
-  // Add comment above each fix
-  // Fix: Expose internal provider storage for status monitoring and configuration mapping
-  public getProviders(): AIProvider[] {
-    return Array.from(this.providers.values());
   }
 }
 
@@ -261,17 +249,15 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-// Add comment above each fix
-// Fix: Export getProvidersConfig function to provide standard provider configurations to the multi-provider orchestrator
 export function getProvidersConfig(): any[] {
-  return getSynthesizer().getProviders().map(p => ({
-    ...p,
-    rpm: p.rateLimit,
-    rpd: p.rateLimit * 1440 // Estimated daily limit based on RPM (60 mins * 24 hours)
+  return getSynthesizer().getProviderStatus().map(p => ({
+    name: p.id,
+    rpm: 30,
+    rpd: 1000,
+    enabled: p.status !== 'disabled'
   }));
 }
 
-// For backward compatibility with existing multi-provider-router calls
-export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string, bypass?: boolean) => {
+export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string) => {
   return getSynthesizer().synthesize(prompt, { type: hasDocs ? 'map' : 'chat', systemPrompt: system });
 };
