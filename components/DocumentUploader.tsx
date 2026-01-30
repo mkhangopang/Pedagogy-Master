@@ -67,22 +67,18 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         rawText = new TextDecoder().decode(arrayBuffer);
       }
 
-      // 2. PRECISION ELASTIC SKIMMER: Handles B-9, B-09, B-10, B-11, B-12
+      // 2. PRECISION ELASTIC SKIMMER
       setProcStage(`Grid Extraction: Identifying Anchors...`);
-      
-      // Sanitization: Remove brackets which often interfere with regex boundaries in messy PDF text
       const cleanRaw = rawText.replace(/[\[\]]/g, ' ');
-      
-      // The "Elastic Anchor" Pattern: Handles varying separators and single/double digit grades
-      const gridRegex = /(?:[B-Z]\s*-?\s*(?:0?9|9|10|11|12)\s*-?\s*[A-Z]\s*-?\s*\d{1,2})[\s\S]{1,1500}/gi;
+      const gridRegex = /(?:[B-Z]\s*-?\s*(?:0?9|9|10|11|12)\s*-?\s*[A-Z]\s*-?\s*\d{1,2})[\s\S]{1,1200}/gi;
       const relevantBlocks = cleanRaw.match(gridRegex) || [];
       
       if (relevantBlocks.length === 0) {
         throw new Error("Grid Check Failed: No curriculum anchors (B-09 to B-12) detected. Please ensure the PDF contains standard Student Learning Objectives.");
       }
 
-      // Limit to 80 blocks to prevent payload overflow in free-tier nodes
-      const skimmedText = relevantBlocks.slice(0, 80).join('\n\n---\n\n'); 
+      // REDUCED PAYLOAD: 40 blocks is safer for Vercel timeouts/memory with large curriculum strings
+      const skimmedText = relevantBlocks.slice(0, 40).join('\n\n---\n\n'); 
 
       // 3. ONE-PASS SYNTHESIS
       const { data: { session } } = await supabase.auth.getSession();
@@ -102,7 +98,16 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         })
       });
 
-      const data = await res.json();
+      // ROBUST RESPONSE HANDLING
+      const contentType = res.headers.get("content-type");
+      let data;
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const textError = await res.text();
+        throw new Error(`Cloud Fault: ${textError.substring(0, 100)}... (The neural grid timed out processing this block)`);
+      }
+
       if (!res.ok) throw new Error(data.error || "Neural synthesis failed.");
 
       setDraftMarkdown(data.markdown || "");

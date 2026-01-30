@@ -130,8 +130,6 @@ export class SynthesizerCore {
 
   private async selectProvider(type: 'map' | 'reduce' | 'chat'): Promise<AIProvider | null> {
     const now = Date.now();
-    
-    // Clear expired failures
     for (const [id, expiry] of this.failedProviders.entries()) {
       if (now > expiry) this.failedProviders.delete(id);
     }
@@ -145,9 +143,7 @@ export class SynthesizerCore {
         return aT.requestCount - bT.requestCount;
       });
 
-    // EMERGENCY RESET: If all nodes are blacklisted, revive one
     if (candidates.length === 0 && Array.from(this.providers.values()).some(p => p.enabled)) {
-      console.warn("⚠️ GRID_BLACKOUT: Reviving Gemini Flash for emergency recovery.");
       const gemini = this.providers.get('gemini-flash');
       if (gemini?.enabled) {
         this.failedProviders.delete('gemini-flash');
@@ -172,13 +168,13 @@ export class SynthesizerCore {
       tracker.windowStart = now;
     }
 
-    if (tracker.requestCount < provider.rateLimit) {
-      return true;
-    }
-    return false;
+    return tracker.requestCount < provider.rateLimit;
   }
 
-  public async synthesize(prompt: string, options: any = {}): Promise<any> {
+  public async synthesize(prompt: string, options: any = {}, retryCount = 0): Promise<any> {
+    // CIRCUIT BREAKER: Stop infinite recursion
+    if (retryCount > 4) throw new Error("GRID_BLACKOUT: All neural fallback nodes failed consecutively.");
+
     const type = options.type || 'chat';
     const provider = await this.selectProvider(type);
     if (!provider) throw new Error('GRID_EXHAUSTED: All neural nodes are cooling down.');
@@ -202,16 +198,17 @@ export class SynthesizerCore {
           },
           body: JSON.stringify({
             model: provider.model,
-            messages: [{ role: 'system', content: options.systemPrompt || 'World-class pedagogical formatter.' }, { role: 'user', content: prompt }],
+            messages: [{ role: 'system', content: options.systemPrompt || 'Pedagogical formatter.' }, { role: 'user', content: prompt }],
             temperature: options.temperature || 0.0,
             max_tokens: provider.maxTokens
           })
         });
 
         if (!res.ok) {
-          const errText = await res.text();
-          throw new Error(`Node ${provider.name} error: ${res.status}`);
+           const errText = await res.text();
+           throw new Error(`Node ${provider.id} error [${res.status}]: ${errText.substring(0, 50)}`);
         }
+
         const data = await res.json();
         content = data.choices[0].message.content;
       }
@@ -223,8 +220,8 @@ export class SynthesizerCore {
       return { text: content, provider: provider.name };
     } catch (e: any) {
       console.error(`🔴 [Failover] Node ${provider.id}: ${e.message}`);
-      this.failedProviders.set(provider.id, Date.now() + 90000); // 90s blacklist
-      return this.synthesize(prompt, options);
+      this.failedProviders.set(provider.id, Date.now() + 60000); 
+      return this.synthesize(prompt, options, retryCount + 1);
     }
   }
 
