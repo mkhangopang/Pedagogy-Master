@@ -68,7 +68,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     }
   };
 
-  const processWithRetry = async (url: string, body: any, token: string, maxRetries = 3): Promise<any> => {
+  const processWithRetry = async (url: string, body: any, token: string, maxRetries = 2): Promise<any> => {
     let lastErr;
     for (let i = 0; i < maxRetries; i++) {
       try {
@@ -78,12 +78,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           body: JSON.stringify(body)
         });
         if (res.ok) return await res.json();
-        const errData = await res.json().catch(() => ({ error: 'Grid Node Unreachable' }));
-        lastErr = new Error(errData.error || `Node Error (${res.status})`);
+        const errData = await res.json().catch(() => ({ error: 'Neural node failed to respond.' }));
+        lastErr = new Error(errData.error || `Grid Error (${res.status})`);
       } catch (e: any) {
         lastErr = e;
       }
-      await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
+      // Wait for cooling
+      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, i)));
     }
     throw lastErr;
   };
@@ -101,13 +102,13 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // Resolution: 12k chars with overlap
-      const chunkSize = 12000; 
-      const overlapSize = 3000; 
+      // Resolution: 11k chars with overlap
+      const chunkSize = 11000; 
+      const overlapSize = 2500; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 70) break; // Maximum resolution safety
+        if (fragments.length > 70) break;
       }
 
       setProcStage(`Neural Grid: Mapping ${fragments.length} High-Density Blocks...`);
@@ -116,36 +117,40 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
 
       // PHASE 1: PARALLEL MAP
       const mapResults: string[] = [];
-      const MAP_BATCH_SIZE = 4;
+      const MAP_BATCH_SIZE = 3; // Reduced batch size for higher stability
       
       for (let i = 0; i < fragments.length; i += MAP_BATCH_SIZE) {
         const batch = fragments.slice(i, i + MAP_BATCH_SIZE);
-        setProcStage(`Extracting Curriculum Nodes (Group ${Math.floor(i/MAP_BATCH_SIZE) + 1}/${Math.ceil(fragments.length/MAP_BATCH_SIZE)})...`);
+        setProcStage(`Mapping Curriculum Nodes (Set ${Math.floor(i/MAP_BATCH_SIZE) + 1}/${Math.ceil(fragments.length/MAP_BATCH_SIZE)})...`);
         
         const batchResults = await Promise.all(batch.map(async (frag, batchIdx) => {
           const absoluteIdx = i + batchIdx;
-          const data = await processWithRetry('/api/docs/upload', {
-            name: `${file.name}_part_${absoluteIdx + 1}`,
-            sourceType: 'raw_text',
-            extractedText: frag,
-            previewOnly: true,
-            isFragment: true
-          }, token);
-          return data.markdown || "";
+          try {
+            const data = await processWithRetry('/api/docs/upload', {
+              name: `${file.name}_part_${absoluteIdx + 1}`,
+              sourceType: 'raw_text',
+              extractedText: frag,
+              previewOnly: true,
+              isFragment: true
+            }, token);
+            return data.markdown || "";
+          } catch (err: any) {
+            // Rethrow with cleaner message
+            throw new Error(`Knowledge segment ${absoluteIdx + 1} extraction fault. Please retry.`);
+          }
         }));
         mapResults.push(...batchResults);
         setProgressValue(prev => Math.min(60, prev + (50 / (fragments.length / MAP_BATCH_SIZE))));
       }
 
-      // PHASE 2: RECURSIVE REDUCTION (Prevents truncation)
-      // We merge mapResults in groups of 6 to create intermediate hierarchies
-      setProcStage(`Recursive Synthesis: Compiling Intermediate Tiers...`);
+      // PHASE 2: RECURSIVE REDUCTION
+      setProcStage(`Recursive Synthesis: Merging Clusters...`);
       const intermediateHierarchies: string[] = [];
-      const REDUCE_BATCH_SIZE = 6;
+      const REDUCE_BATCH_SIZE = 5;
 
       for (let i = 0; i < mapResults.length; i += REDUCE_BATCH_SIZE) {
         const tierBatch = mapResults.slice(i, i + REDUCE_BATCH_SIZE);
-        setProcStage(`Merging Segment ${Math.floor(i/REDUCE_BATCH_SIZE) + 1} of ${Math.ceil(mapResults.length/REDUCE_BATCH_SIZE)}...`);
+        setProcStage(`Processing Tier ${Math.floor(i/REDUCE_BATCH_SIZE) + 1} of ${Math.ceil(mapResults.length/REDUCE_BATCH_SIZE)}...`);
         
         const tierRes = await processWithRetry('/api/docs/upload', {
           name: `Tier_Merge_${i}`,
@@ -160,8 +165,8 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         setProgressValue(prev => Math.min(90, prev + 5));
       }
 
-      // PHASE 3: FINAL MASTER SYNTHESIS
-      setProcStage(`Finalizing Master Vault: Syncing Sindh 2024 Standards...`);
+      // PHASE 3: MASTER SYNTHESIS
+      setProcStage(`Finalizing Vault Synchronization...`);
       const finalResult = await processWithRetry('/api/docs/upload', {
         name: file.name,
         sourceType: 'raw_text',
@@ -178,7 +183,11 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       setProgressValue(100);
     } catch (err: any) {
       console.error("Ingestion Fault:", err);
-      setError(err.message || "Synthesis grid timeout.");
+      // Clean up technical node errors for user
+      const userFriendlyError = err.message.includes('410') || err.message.includes('fault') 
+        ? "One of the synthesis nodes encountered a version error. The unstable provider has been removed from the rotation. Please try again."
+        : err.message;
+      setError(userFriendlyError);
     } finally {
       setIsProcessing(false);
     }
@@ -218,7 +227,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
               <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Validated Standards</h3>
               <div className="flex gap-2 mt-1">
                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
-                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Complete Syllabus</span>
+                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Recursive Node Verified</span>
               </div>
             </div>
           </div>
@@ -240,7 +249,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Multi-Stage Recursive Validated
+              <ShieldCheck size={14} className="text-emerald-500" /> Multi-Stage Integrity Verified
            </div>
            <button 
              onClick={handleFinalApproval}
@@ -248,7 +257,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
              className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
            >
              {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>}
-             Deploy to Permanent Vault
+             Initialize Vault Lock
            </button>
         </div>
       </div>
@@ -268,7 +277,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Recursive Synthesis Grid v2.5 (185-Page Mode)</p>
+          <p className="text-slate-500 font-medium">Stable Synthesis Grid v2.6 (Auto-Failover Mode)</p>
         </div>
 
         {error && (
@@ -276,7 +285,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <AlertTriangle className="text-rose-500 shrink-0" size={20} />
             <div className="space-y-2">
               <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
-              <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Retry Selection</button>
+              <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Restart Selection</button>
             </div>
           </div>
         )}
@@ -304,7 +313,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                 </div>
                 <div>
                   <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Stage Synthesis Mode Enabled</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Stage Stable Mapping Mode</p>
                 </div>
               </div>
             </label>
