@@ -24,21 +24,26 @@ export async function POST(req: NextRequest) {
     const { name, sourceType, extractedText, previewOnly, metadata, slos, slo_map, isFragment, isReduce } = body;
     
     if (sourceType === 'raw_text' && previewOnly) {
-      console.log(`📡 [Gateway] Distributed Node: ${name} (F:${!!isFragment} R:${!!isReduce})`);
+      console.log(`📡 [Gateway] Node Routing: ${name} (F:${!!isFragment} R:${!!isReduce})`);
       
       let instruction = "You are a curriculum data extractor. Return valid JSON of SLOs.";
+      let preferred = ""; // Default to grid-choice for fragments to ensure speed
+
       if (isReduce) {
-        instruction = `You are a Lead Curriculum Engineer. Merge multiple fragments into one MASTER SINDH BIOLOGY 2024 hierarchy. Deduplicate SLOs. Use B-09-A-01 format.`;
+        instruction = `You are a Lead Curriculum Engineer. Merge multiple fragments into one MASTER SINDH BIOLOGY 2024 hierarchy. Deduplicate SLOs. Use B-09-A-01 format. Ensure ALL Domains (A-X) from TOC are present.`;
+        preferred = "gemini";
       }
 
-      const result = await synthesize(extractedText, [], false, [], isReduce ? 'gemini' : 'groq', instruction, true);
+      // If it's a fragment, we don't force 'groq' in case the user hasn't provided a key. 
+      // The orchestrator will pick the fastest available enabled node.
+      const result = await synthesize(extractedText, [], false, [], preferred, instruction, true);
       
       const jsonClean = (result.text || '{}').replace(/```json|```/g, '').trim();
       let parsed;
       try {
         parsed = JSON.parse(jsonClean);
       } catch (e) {
-        console.warn(`[Gateway] Non-JSON output. Wrapping raw text.`);
+        console.warn(`[Gateway] Synthesis returned text. Encoding as markdown.`);
         parsed = { markdown: result.text, metadata: { grade: '9-12', board: 'Sindh' } };
       }
       return NextResponse.json(parsed);
@@ -67,7 +72,7 @@ export async function POST(req: NextRequest) {
         grade_level: metadata?.grade || '9-12',
         authority: metadata?.board || 'Sindh Board',
         difficulty_level: metadata?.difficulty || 'high',
-        document_summary: `Distributed Sync: ${slos?.length || 0} SLOs anchored.`,
+        document_summary: `Sync Successful: ${slos?.length || 0} SLOs mapped to vault.`,
         generated_json: { slos, slo_map }
       }).select().single();
 
@@ -83,6 +88,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid pipeline command." }, { status: 400 });
   } catch (error: any) {
     console.error("❌ [Gateway Fault]:", error);
-    return NextResponse.json({ error: error.message || "Synthesis grid timeout." }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Neural grid bottleneck. Please retry." }, { status: 500 });
   }
 }

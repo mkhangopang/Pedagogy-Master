@@ -5,7 +5,6 @@ import { callDeepSeek } from './providers/deepseek';
 import { callCerebras } from './providers/cerebras';
 import { callSambaNova } from './providers/sambanova';
 import { callHyperbolic } from './providers/hyperbolic';
-import { callOpenAI } from './providers/openai';
 import { rateLimiter, ProviderConfig } from './rate-limiter';
 import { requestQueue } from './request-queue';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
@@ -13,7 +12,6 @@ import { isGeminiEnabled } from '../env-server';
 
 export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: number })[] => [
   { name: 'gemini', rpm: 50, rpd: 5000, enabled: isGeminiEnabled(), contextCharLimit: 1000000 },
-  { name: 'openai', rpm: 100, rpd: 10000, enabled: !!process.env.OPENAI_API_KEY, contextCharLimit: 128000 },
   { name: 'deepseek', rpm: 60, rpd: 999999, enabled: !!process.env.DEEPSEEK_API_KEY, contextCharLimit: 128000 },
   { name: 'groq', rpm: 30, rpd: 14000, enabled: !!process.env.GROQ_API_KEY, contextCharLimit: 32000 },
   { name: 'cerebras', rpm: 120, rpd: 15000, enabled: !!process.env.CEREBRAS_API_KEY, contextCharLimit: 32000 },
@@ -21,7 +19,6 @@ export const getProvidersConfig = (): (ProviderConfig & { contextCharLimit: numb
 ];
 
 export const PROVIDER_FUNCTIONS = {
-  openai: callOpenAI,
   gemini: callGemini,
   deepseek: callDeepSeek,
   groq: callGroq,
@@ -34,6 +31,7 @@ export const PROVIDER_FUNCTIONS = {
 /**
  * WORLD-CLASS SYNTHESIZER ORCHESTRATOR
  * Optimized for distributed client-side processing.
+ * OpenAI removed from grid per user request.
  */
 export async function synthesize(
   prompt: string,
@@ -49,15 +47,21 @@ export async function synthesize(
     const currentProviders = getProvidersConfig();
     let targetProviders = [...currentProviders].filter(p => p.enabled);
     
-    // Sort providers by reasoning capability
-    const reasoningOrder = ['gemini', 'openai', 'deepseek', 'groq'];
+    if (targetProviders.length === 0) {
+      throw new Error("NO_NODES_AVAILABLE: Ensure API_KEY (Gemini) or DEEPSEEK_API_KEY are configured in environment.");
+    }
+    
+    // Sort providers by reasoning capability (Removed OpenAI)
+    const reasoningOrder = ['gemini', 'deepseek', 'groq', 'sambanova'];
     targetProviders.sort((a, b) => reasoningOrder.indexOf(a.name) - reasoningOrder.indexOf(b.name));
 
-    if (preferredProvider && targetProviders.some(p => p.name === preferredProvider)) {
-      targetProviders = [
-        targetProviders.find(p => p.name === preferredProvider)!,
-        ...targetProviders.filter(p => p.name !== preferredProvider)
-      ];
+    // Handle Preferred Provider Re-routing
+    if (preferredProvider) {
+      const preferred = targetProviders.find(p => p.name === preferredProvider);
+      if (preferred) {
+        targetProviders = [preferred, ...targetProviders.filter(p => p.name !== preferredProvider)];
+      }
+      // If preferred isn't enabled, we just use the sorted targetProviders list (Automatic Failover)
     }
 
     let lastError = null;
@@ -72,7 +76,7 @@ export async function synthesize(
 
         const callFunction = PROVIDER_FUNCTIONS[config.name as keyof typeof PROVIDER_FUNCTIONS];
         // High fidelity synthesis for complex merged data
-        const isReducePhase = prompt.includes('isReduce: true') || prompt.length > 50000;
+        const isReducePhase = prompt.includes('[REDUCE_PHASE_ACTIVE]') || prompt.length > 50000;
         const timeout = isReducePhase ? 240000 : 90000;
         
         const response = await Promise.race([
