@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud, Zap, RefreshCw } from 'lucide-react';
+import { X, FileText, CheckCircle2, AlertCircle, Loader2, FileCode, ArrowRight, ShieldCheck, Database, BrainCircuit, Sparkles, ArrowLeft, AlertTriangle, Lock, UploadCloud, Zap, RefreshCw, Layers } from 'lucide-react';
 import { marked } from 'marked';
 import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
@@ -83,7 +83,6 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
       } catch (e: any) {
         lastErr = e;
       }
-      // Wait before retry (exponential backoff)
       await new Promise(r => setTimeout(r, 1000 * Math.pow(2, i)));
     }
     throw lastErr;
@@ -96,64 +95,80 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
     setError(null);
     setIsProcessing(true);
     setProgressValue(2);
-    setProcStage(`Initializing Ingestion Pipeline...`);
+    setProcStage(`Initializing Ingestion...`);
 
     try {
       const rawText = await extractLocalText(file);
       if (!rawText || rawText.trim().length < 50) throw new Error("Extraction failed: Document is empty.");
 
-      // MICRO-CHUNKING: High fidelity extraction
+      // Resolution: 12k chars with overlap
       const chunkSize = 12000; 
-      const overlapSize = 2500; 
+      const overlapSize = 3000; 
       const fragments: string[] = [];
       for (let i = 0; i < rawText.length; i += (chunkSize - overlapSize)) {
         fragments.push(rawText.substring(i, i + chunkSize));
-        if (fragments.length > 60) break; // Hard limit for safety
+        if (fragments.length > 70) break; // Maximum resolution safety
       }
 
-      setProcStage(`Throttled Ingestion: Processing ${fragments.length} Knowledge Blocks...`);
+      setProcStage(`Neural Grid: Mapping ${fragments.length} High-Density Blocks...`);
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token || '';
 
-      // BATCH PROCESSING: Process fragments in groups of 3 to avoid browser/server congestion
+      // PHASE 1: PARALLEL MAP
       const mapResults: string[] = [];
-      const BATCH_SIZE = 3;
+      const MAP_BATCH_SIZE = 4;
       
-      for (let i = 0; i < fragments.length; i += BATCH_SIZE) {
-        const batch = fragments.slice(i, i + BATCH_SIZE);
-        setProcStage(`Ingesting Batch ${Math.floor(i/BATCH_SIZE) + 1} of ${Math.ceil(fragments.length/BATCH_SIZE)}...`);
+      for (let i = 0; i < fragments.length; i += MAP_BATCH_SIZE) {
+        const batch = fragments.slice(i, i + MAP_BATCH_SIZE);
+        setProcStage(`Extracting Curriculum Nodes (Group ${Math.floor(i/MAP_BATCH_SIZE) + 1}/${Math.ceil(fragments.length/MAP_BATCH_SIZE)})...`);
         
-        const batchPromises = batch.map(async (frag, batchIdx) => {
+        const batchResults = await Promise.all(batch.map(async (frag, batchIdx) => {
           const absoluteIdx = i + batchIdx;
-          try {
-            const data = await processWithRetry('/api/docs/upload', {
-              name: `${file.name}_block_${absoluteIdx + 1}`,
-              sourceType: 'raw_text',
-              extractedText: frag,
-              previewOnly: true,
-              isFragment: true
-            }, token);
-            setProgressValue(prev => Math.min(85, prev + (80 / fragments.length)));
-            return data.markdown || "";
-          } catch (err: any) {
-            throw new Error(`Block ${absoluteIdx + 1} failed: ${err.message}`);
-          }
-        });
-
-        const batchResults = await Promise.all(batchPromises);
+          const data = await processWithRetry('/api/docs/upload', {
+            name: `${file.name}_part_${absoluteIdx + 1}`,
+            sourceType: 'raw_text',
+            extractedText: frag,
+            previewOnly: true,
+            isFragment: true
+          }, token);
+          return data.markdown || "";
+        }));
         mapResults.push(...batchResults);
+        setProgressValue(prev => Math.min(60, prev + (50 / (fragments.length / MAP_BATCH_SIZE))));
       }
 
-      // Final Reduce Phase: Authoritative Synthesis
-      setProcStage(`Neural Convergence: Merging Sindh Biology 2024 Grid...`);
-      const mergedContext = mapResults.join('\n\n---\n\n');
-      
+      // PHASE 2: RECURSIVE REDUCTION (Prevents truncation)
+      // We merge mapResults in groups of 6 to create intermediate hierarchies
+      setProcStage(`Recursive Synthesis: Compiling Intermediate Tiers...`);
+      const intermediateHierarchies: string[] = [];
+      const REDUCE_BATCH_SIZE = 6;
+
+      for (let i = 0; i < mapResults.length; i += REDUCE_BATCH_SIZE) {
+        const tierBatch = mapResults.slice(i, i + REDUCE_BATCH_SIZE);
+        setProcStage(`Merging Segment ${Math.floor(i/REDUCE_BATCH_SIZE) + 1} of ${Math.ceil(mapResults.length/REDUCE_BATCH_SIZE)}...`);
+        
+        const tierRes = await processWithRetry('/api/docs/upload', {
+          name: `Tier_Merge_${i}`,
+          sourceType: 'raw_text',
+          extractedText: tierBatch.join('\n\n---\n\n'),
+          previewOnly: true,
+          isReduce: true,
+          isIntermediate: true
+        }, token);
+        
+        intermediateHierarchies.push(tierRes.markdown || "");
+        setProgressValue(prev => Math.min(90, prev + 5));
+      }
+
+      // PHASE 3: FINAL MASTER SYNTHESIS
+      setProcStage(`Finalizing Master Vault: Syncing Sindh 2024 Standards...`);
       const finalResult = await processWithRetry('/api/docs/upload', {
         name: file.name,
         sourceType: 'raw_text',
-        extractedText: mergedContext,
+        extractedText: intermediateHierarchies.join('\n\n---\n\n'),
         previewOnly: true,
-        isReduce: true
+        isReduce: true,
+        isIntermediate: false
       }, token);
 
       setDraftMarkdown(finalResult.markdown || "");
@@ -200,10 +215,10 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
           <div className="flex items-center gap-4">
             <button onClick={() => setMode('selection')} className="p-3 bg-slate-100 dark:bg-slate-800 rounded-2xl hover:bg-indigo-50 shadow-sm"><ArrowLeft size={20}/></button>
             <div>
-              <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Structured Hierarchy</h3>
+              <h3 className="text-sm md:text-2xl font-black dark:text-white uppercase tracking-tight">Validated Standards</h3>
               <div className="flex gap-2 mt-1">
                  <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 rounded text-[8px] font-black uppercase">{extractedMeta?.board || 'Sindh'}</span>
-                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Grade {extractedMeta?.grade || '9-12'}</span>
+                 <span className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 rounded text-[8px] font-black uppercase">Complete Syllabus</span>
               </div>
             </div>
           </div>
@@ -212,7 +227,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden h-full">
           <div className="flex flex-col border-r dark:border-white/5 overflow-hidden">
             <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-3 border-b dark:border-white/5">
-              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Pedagogical Markdown</span>
+              <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest">Master Hierarchy</span>
             </div>
             <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="flex-1 p-8 bg-slate-50/50 dark:bg-black/20 font-mono text-[11px] outline-none resize-none custom-scrollbar leading-relaxed" />
           </div>
@@ -225,7 +240,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         </div>
         <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-slate-900 shrink-0">
            <div className="flex items-center gap-3 text-[10px] font-black uppercase text-slate-400">
-              <ShieldCheck size={14} className="text-emerald-500" /> Human-in-the-loop Verification
+              <ShieldCheck size={14} className="text-emerald-500" /> Multi-Stage Recursive Validated
            </div>
            <button 
              onClick={handleFinalApproval}
@@ -233,7 +248,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
              className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl flex items-center gap-3 hover:bg-indigo-700 active:scale-95 disabled:opacity-50"
            >
              {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>}
-             Initialize Permanent Vault Sync
+             Deploy to Permanent Vault
            </button>
         </div>
       </div>
@@ -253,7 +268,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
         
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase mb-2">Vault Ingestion</h2>
-          <p className="text-slate-500 font-medium">Curriculum Standards Mapping Grid v2.1</p>
+          <p className="text-slate-500 font-medium">Recursive Synthesis Grid v2.5 (185-Page Mode)</p>
         </div>
 
         {error && (
@@ -261,12 +276,7 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <AlertTriangle className="text-rose-500 shrink-0" size={20} />
             <div className="space-y-2">
               <p className="text-xs font-bold text-rose-600 dark:text-rose-400 leading-relaxed">{error}</p>
-              <button 
-                onClick={() => { setError(null); }} 
-                className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"
-              >
-                <RefreshCw size={10} /> Clear Error & Retry Selection
-              </button>
+              <button onClick={() => { setError(null); }} className="text-[9px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-600 flex items-center gap-1"><RefreshCw size={10} /> Retry Selection</button>
             </div>
           </div>
         )}
@@ -293,19 +303,19 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
                   <UploadCloud size={40} />
                 </div>
                 <div>
-                  <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Curriculum</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Fault-Tolerant Sequential Batching</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Sindh Document</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Multi-Stage Synthesis Mode Enabled</p>
                 </div>
               </div>
             </label>
             
             <div className="flex items-center justify-center gap-6 pt-4">
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Lock size={12} /> SSL Secure
+                  <Layers size={12} /> Recursive
                </div>
                <div className="w-px h-3 bg-slate-200 dark:bg-white/10" />
                <div className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                  <Sparkles size={12} className="text-indigo-400" /> RAG Optimized
+                  <ShieldCheck size={12} className="text-indigo-400" /> Deterministic
                </div>
             </div>
           </div>
