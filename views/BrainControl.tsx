@@ -1,4 +1,4 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v92.2)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v92.3)
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
@@ -39,6 +39,22 @@ ADD COLUMN IF NOT EXISTS generation_count INTEGER DEFAULT 0,
 ADD COLUMN IF NOT EXISTS edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::jsonb;
 
 CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Reset Diagnostic View to prevent Column Name collision (Error 42P16)
+DROP VIEW IF EXISTS public.rag_health_report;
+CREATE VIEW public.rag_health_report AS
+SELECT 
+    d.id as document_id,
+    d.name as document_name,
+    count(dc.id) as chunk_count,
+    CASE 
+        WHEN d.status = 'ready' AND count(dc.id) > 0 THEN 'HEALTHY'
+        WHEN d.status = 'ready' AND count(dc.id) = 0 THEN 'BROKEN_INDEX'
+        ELSE 'PROCESSING'
+    END as health_status
+FROM public.documents d
+LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
+GROUP BY d.id, d.name, d.status;
 `;
 
   const corsConfig = `[
@@ -51,7 +67,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
   }
 ]`;
 
-  const masterSchemaSql = `-- EDUNEXUS AI: COMPLETE INFRASTRUCTURE SCHEMA v92.2
+  const masterSchemaSql = `-- EDUNEXUS AI: COMPLETE INFRASTRUCTURE SCHEMA v92.3
 -- TARGET: Supabase + PGVector High-Fidelity Cluster
 
 -- 1. EXTENSIONS
@@ -194,7 +210,9 @@ CREATE INDEX IF NOT EXISTS idx_slo_code ON public.slo_database (slo_code);
 CREATE INDEX IF NOT EXISTS idx_progress_user ON public.teacher_progress (user_id);
 
 -- 11. DIAGNOSTIC VIEWS
-CREATE OR REPLACE VIEW public.rag_health_report AS
+-- Fixed: Drop before create to handle column name changes
+DROP VIEW IF EXISTS public.rag_health_report;
+CREATE VIEW public.rag_health_report AS
 SELECT 
     d.id as document_id,
     d.name as document_name,
@@ -279,7 +297,7 @@ $$;
           <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
             <ShieldCheck className="text-indigo-600" /> Infrastructure Node
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic">V92.2 RAG Optimized Cluster</p>
+          <p className="text-slate-500 text-xs font-medium italic">V92.3 RAG Optimized Cluster</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
           {['logic', 'schema', 'repair', 'rag'].map(tab => (
@@ -325,7 +343,7 @@ $$;
                   <AlertTriangle className="text-rose-600 shrink-0" />
                   <div>
                     <h4 className="text-sm font-black uppercase text-rose-700 tracking-tight">Fix Schema Cache Errors</h4>
-                    <p className="text-xs text-rose-600/80 mt-1 leading-relaxed">If the app reports missing columns or tables, copy this script and run it in your Supabase SQL Editor.</p>
+                    <p className="text-xs text-rose-600/80 mt-1 leading-relaxed">If the app reports missing columns or tables, copy this script and run it in your Supabase SQL Editor. This script now includes a <b>DROP VIEW</b> fix to handle column rename conflicts.</p>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
@@ -373,7 +391,7 @@ $$;
         <div className="space-y-6">
            <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
               <div className="p-8 border-b border-white/5 flex items-center justify-between">
-                 <h3 className="text-white font-black uppercase tracking-tight">Full Master Schema v92.2</h3>
+                 <h3 className="text-white font-black uppercase tracking-tight">Full Master Schema v92.3</h3>
                  <button onClick={() => copyToClipboard(masterSchemaSql, 'schema')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase text-white transition-all">
                     {copiedId === 'schema' ? <Check size={12}/> : <Copy size={12}/>} Copy Master SQL
                  </button>
