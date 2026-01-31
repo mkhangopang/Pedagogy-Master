@@ -1,4 +1,4 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v92.1)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v92.2)
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
@@ -18,15 +18,26 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const repairSql = `-- REPAIR SCRIPT: Run this in Supabase SQL Editor to fix missing columns
+  const repairSql = `-- REPAIR SCRIPT: Fix existing installations
 ALTER TABLE public.documents 
 ADD COLUMN IF NOT EXISTS document_summary TEXT,
 ADD COLUMN IF NOT EXISTS difficulty_level TEXT,
 ADD COLUMN IF NOT EXISTS rag_indexed BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS extracted_text TEXT,
-ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false;
+ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS gemini_metadata JSONB,
+ADD COLUMN IF NOT EXISTS error_message TEXT;
 
--- Ensure Vector sync is possible
+-- Profiles enhancement
+ALTER TABLE public.profiles
+ADD COLUMN IF NOT EXISTS grade_level TEXT,
+ADD COLUMN IF NOT EXISTS subject_area TEXT,
+ADD COLUMN IF NOT EXISTS teaching_style TEXT,
+ADD COLUMN IF NOT EXISTS pedagogical_approach TEXT,
+ADD COLUMN IF NOT EXISTS success_rate FLOAT DEFAULT 0.0,
+ADD COLUMN IF NOT EXISTS generation_count INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::jsonb;
+
 CREATE EXTENSION IF NOT EXISTS vector;
 `;
 
@@ -40,13 +51,46 @@ CREATE EXTENSION IF NOT EXISTS vector;
   }
 ]`;
 
-  const masterSchemaSql = `-- EDUNEXUS AI: MASTER SCHEMA v92.0
--- TARGET: Supabase + PGVector
+  const masterSchemaSql = `-- EDUNEXUS AI: COMPLETE INFRASTRUCTURE SCHEMA v92.2
+-- TARGET: Supabase + PGVector High-Fidelity Cluster
 
 -- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- 2. NEURAL VAULT
+-- 2. USER PROFILES & ADAPTIVE IDENTITY
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT,
+    name TEXT,
+    role TEXT DEFAULT 'teacher',
+    plan TEXT DEFAULT 'free',
+    queries_used INTEGER DEFAULT 0,
+    queries_limit INTEGER DEFAULT 30,
+    grade_level TEXT,
+    subject_area TEXT,
+    teaching_style TEXT,
+    pedagogical_approach TEXT,
+    generation_count INTEGER DEFAULT 0,
+    success_rate FLOAT DEFAULT 0.0,
+    edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0, "structureModifications": 0}'::jsonb,
+    tenant_config JSONB DEFAULT '{"primary_color": "#4f46e5", "brand_name": "EduNexus AI"}'::jsonb,
+    active_doc_id UUID,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. NEURAL BRAIN (MASTER PROMPT VAULT)
+CREATE TABLE IF NOT EXISTS public.neural_brain (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    master_prompt TEXT NOT NULL,
+    bloom_rules TEXT,
+    version INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT true,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. CURRICULUM VAULT (DOCUMENTS)
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -61,10 +105,13 @@ CREATE TABLE IF NOT EXISTS public.documents (
     file_path TEXT,
     mime_type TEXT,
     is_selected BOOLEAN DEFAULT false,
+    gemini_metadata JSONB,
+    error_message TEXT,
+    last_synced_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. VECTOR CLUSTERS
+-- 5. VECTOR GRID (CHUNK STORAGE)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -75,10 +122,93 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. INDICES
-CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- 6. SLO INTELLIGENCE DATABASE
+CREATE TABLE IF NOT EXISTS public.slo_database (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
+    slo_code TEXT NOT NULL,
+    slo_full_text TEXT NOT NULL,
+    subject TEXT,
+    grade_level TEXT,
+    bloom_level TEXT,
+    cognitive_complexity TEXT,
+    teaching_strategies TEXT[],
+    assessment_ideas TEXT[],
+    prerequisite_concepts TEXT[],
+    common_misconceptions TEXT[],
+    keywords TEXT[],
+    page_number INTEGER,
+    extraction_confidence FLOAT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(document_id, slo_code)
+);
 
--- 5. HYBRID SEARCH FUNCTION
+-- 7. PEDAGOGICAL TRACKER
+CREATE TABLE IF NOT EXISTS public.teacher_progress (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    slo_code TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'planning',
+    taught_date DATE,
+    student_mastery_percentage INTEGER,
+    notes TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. OUTPUT ARTIFACTS & FEEDBACK
+CREATE TABLE IF NOT EXISTS public.output_artifacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    content_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    metadata JSONB,
+    status TEXT DEFAULT 'generated',
+    edit_depth INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.feedback_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    artifact_id UUID REFERENCES public.output_artifacts(id) ON DELETE CASCADE,
+    event_type TEXT NOT NULL,
+    event_data JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 9. INTELLIGENT GLOBAL CACHE
+CREATE TABLE IF NOT EXISTS public.ai_generated_content (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slo_code TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    content TEXT NOT NULL,
+    generated_by TEXT,
+    usage_count INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 10. INDICES
+CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX IF NOT EXISTS idx_slo_code ON public.slo_database (slo_code);
+CREATE INDEX IF NOT EXISTS idx_progress_user ON public.teacher_progress (user_id);
+
+-- 11. DIAGNOSTIC VIEWS
+CREATE OR REPLACE VIEW public.rag_health_report AS
+SELECT 
+    d.id as document_id,
+    d.name as document_name,
+    count(dc.id) as chunk_count,
+    CASE 
+        WHEN d.status = 'ready' AND count(dc.id) > 0 THEN 'HEALTHY'
+        WHEN d.status = 'ready' AND count(dc.id) = 0 THEN 'BROKEN_INDEX'
+        ELSE 'PROCESSING'
+    END as health_status
+FROM public.documents d
+LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
+GROUP BY d.id, d.name, d.status;
+
+-- 12. RPC FUNCTIONS
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v3(
   query_text TEXT,
   query_embedding vector(768),
@@ -111,6 +241,20 @@ BEGIN
   LIMIT match_count;
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION get_extension_status(ext TEXT)
+RETURNS BOOLEAN LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN EXISTS (SELECT 1 FROM pg_extension WHERE extname = ext);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION get_vector_dimensions()
+RETURNS INTEGER LANGUAGE plpgsql AS $$
+BEGIN
+    RETURN (SELECT atttypmod - 4 FROM pg_attribute WHERE attrelid = 'public.document_chunks'::regclass AND attname = 'embedding');
+END;
+$$;
 `;
 
   const copyToClipboard = (text: string, id: string) => {
@@ -135,7 +279,7 @@ $$;
           <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
             <ShieldCheck className="text-indigo-600" /> Infrastructure Node
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic">V92.0 RAG Optimized</p>
+          <p className="text-slate-500 text-xs font-medium italic">V92.2 RAG Optimized Cluster</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
           {['logic', 'schema', 'repair', 'rag'].map(tab => (
@@ -167,7 +311,7 @@ $$;
              <div className="absolute top-0 right-0 p-8 opacity-5"><Cpu size={150} /></div>
              <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> World-Class RAG</h3>
              <p className="text-slate-400 text-xs leading-relaxed mb-6 italic">
-                Your neural infrastructure requires specific columns for high-fidelity extraction. Use the <b>REPAIR</b> tab if you see "Column not found" or "Failed to fetch" errors in the ingestion flow.
+                Your neural infrastructure requires specific columns and tables for high-fidelity extraction and adaptive learning. Use the <b>REPAIR</b> tab to patch existing instances or <b>SCHEMA</b> for fresh clusters.
              </p>
           </div>
         </div>
@@ -181,7 +325,7 @@ $$;
                   <AlertTriangle className="text-rose-600 shrink-0" />
                   <div>
                     <h4 className="text-sm font-black uppercase text-rose-700 tracking-tight">Fix Schema Cache Errors</h4>
-                    <p className="text-xs text-rose-600/80 mt-1 leading-relaxed">If the app reports missing columns like <b>document_summary</b>, copy this script and run it in your Supabase SQL Editor.</p>
+                    <p className="text-xs text-rose-600/80 mt-1 leading-relaxed">If the app reports missing columns or tables, copy this script and run it in your Supabase SQL Editor.</p>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
@@ -204,7 +348,7 @@ $$;
                   <Globe className="text-amber-600 shrink-0" />
                   <div>
                     <h4 className="text-sm font-black uppercase text-amber-700 tracking-tight">Fix "Failed to Fetch" (CORS)</h4>
-                    <p className="text-xs text-amber-600/80 mt-1 leading-relaxed">If ingestion fails with "NETWORK_BLOCK", apply this <b>Debug Mode</b> snippet. It uses wildcards to bypass strict domain matching.</p>
+                    <p className="text-xs text-amber-600/80 mt-1 leading-relaxed">If ingestion fails with "NETWORK_BLOCK", apply this <b>Debug Mode</b> snippet to your R2 storage node settings.</p>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
@@ -222,11 +366,6 @@ $$;
                 </div>
              </div>
            </div>
-           
-           <div className="p-6 bg-slate-100 dark:bg-white/5 rounded-3xl text-center space-y-2">
-             <p className="text-xs text-slate-500 font-medium italic">Apply JSON in Cloudflare R2 &gt; [Bucket Name] &gt; Settings &gt; CORS Policy.</p>
-             <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">⚠️ Note: Cloudflare may take 2-5 minutes to propagate. Perform a hard refresh (Ctrl+F5) to test.</p>
-           </div>
         </div>
       )}
 
@@ -234,13 +373,13 @@ $$;
         <div className="space-y-6">
            <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
               <div className="p-8 border-b border-white/5 flex items-center justify-between">
-                 <h3 className="text-white font-black uppercase tracking-tight">Master Schema v92.0</h3>
+                 <h3 className="text-white font-black uppercase tracking-tight">Full Master Schema v92.2</h3>
                  <button onClick={() => copyToClipboard(masterSchemaSql, 'schema')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase text-white transition-all">
                     {copiedId === 'schema' ? <Check size={12}/> : <Copy size={12}/>} Copy Master SQL
                  </button>
               </div>
               <div className="p-8 bg-black/40">
-                 <pre className="text-[10px] font-mono text-emerald-400 leading-relaxed overflow-x-auto">
+                 <pre className="text-[10px] font-mono text-emerald-400 leading-relaxed overflow-x-auto h-[500px] custom-scrollbar">
                     {masterSchemaSql}
                  </pre>
               </div>

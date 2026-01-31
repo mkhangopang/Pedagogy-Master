@@ -1,9 +1,10 @@
-
 import { Buffer } from 'buffer';
+import * as pdfjs from 'pdfjs-dist';
 
 /**
- * DOCUMENT PROCESSOR ENGINE
+ * DOCUMENT PROCESSOR ENGINE (v2.0)
  * Extracts searchable text and pedagogical metadata from curriculum assets.
+ * Optimized with pdfjs-dist for environment compatibility and stability.
  */
 export async function processDocument(file: File): Promise<{
   text: string;
@@ -13,7 +14,6 @@ export async function processDocument(file: File): Promise<{
   type: string;
 }> {
   const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
   const filename = file.name;
   const type = file.type;
   
@@ -22,15 +22,25 @@ export async function processDocument(file: File): Promise<{
 
   try {
     if (type === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
-      // Dynamic import to prevent build-time declaration errors in environments that 
-      // check for browser compatibility.
-      const pdfModule = await import('pdf-parse');
-      // Handle potential differences in ESM/CJS interop for pdf-parse
-      // Cast to any to resolve "expression is not callable" error as types may not align perfectly with dynamic ESM imports.
-      const pdf: any = pdfModule.default || pdfModule;
-      const data = await pdf(buffer);
-      text = data.text || "";
-      pageCount = data.numpages || 1;
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const loadingTask = pdfjs.getDocument({
+        data: uint8Array,
+        useSystemFonts: true,
+        disableFontFace: true,
+      });
+      
+      const pdf = await loadingTask.promise;
+      pageCount = pdf.numPages;
+      let fullText = "";
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        // @ts-ignore
+        const pageText = textContent.items.map((item: any) => item.str).join(" ");
+        fullText += pageText + "\n";
+      }
+      text = fullText.trim();
     } else if (type.startsWith('text/') || filename.toLowerCase().endsWith('.txt') || filename.toLowerCase().endsWith('.csv')) {
       text = new TextDecoder().decode(arrayBuffer);
     } else {
