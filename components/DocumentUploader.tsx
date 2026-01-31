@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText, ShieldCheck } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -15,7 +15,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   // Status Poller
   useEffect(() => {
     let poller: any;
-    if (docId && isUploading) {
+    if (docId && isUploading && progress >= 40) {
       poller = setInterval(async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -23,7 +23,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             headers: { 'Authorization': `Bearer ${session?.access_token}` }
           });
           
-          if (!res.ok) return; // Keep polling if transient error
+          if (!res.ok) return;
 
           const data = await res.json();
           
@@ -38,7 +38,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             setIsUploading(false);
           } else {
             // Simulated progress steps based on backend flags
-            const p = data.metadata?.indexed ? 85 : 45;
+            const p = data.metadata?.indexed ? 85 : 55;
             setProgress(p);
             setStatus(`Processing: ${data.summary || 'Extracting intelligence...'}`);
           }
@@ -48,60 +48,67 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       }, 3000);
     }
     return () => clearInterval(poller);
-  }, [docId, isUploading, onComplete]);
+  }, [docId, isUploading, progress, onComplete]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Client-side guard for Gateway limits
-    if (file.size > 4.5 * 1024 * 1024) {
-      setError("File exceeds 4.5MB gateway limit. Please use a smaller PDF or a optimized version for synthesis.");
+    // Enterprise Limit: 50MB (Bypassing Vercel Gateway)
+    if (file.size > 50 * 1024 * 1024) {
+      setError("File exceeds 50MB Enterprise limit.");
       return;
     }
 
     setError(null);
     setIsUploading(true);
-    setProgress(10);
-    setStatus('Archiving PDF to Cloud Vault...');
+    setProgress(5);
+    setStatus('Initializing Direct Cloud Handshake...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('name', file.name.replace(/\.[^/.]+$/, ""));
-
-      const response = await fetch('/api/docs/upload', {
+      
+      // STAGE 1: Request Pre-signed URL (The Metadata Handshake)
+      const handshakeResponse = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` },
-        body: formData
+        headers: { 
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: file.name.replace(/\.[^/.]+$/, ""),
+          contentType: file.type,
+          fileSize: file.size
+        })
       });
 
-      // SAFE JSON PARSING
-      const contentType = response.headers.get("content-type");
-      if (!response.ok) {
-        if (contentType && contentType.includes("application/json")) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Upload rejected.');
-        } else {
-          const rawText = await response.text();
-          if (response.status === 413 || rawText.includes("Too Large")) {
-            throw new Error("Payload too large: Vercel limits request bodies to 4.5MB.");
-          }
-          throw new Error(`Cloud Node Error (${response.status})`);
-        }
+      if (!handshakeResponse.ok) {
+        const errData = await handshakeResponse.json();
+        throw new Error(errData.error || 'Handshake rejected.');
       }
 
-      const data = await response.json();
-      setDocId(data.documentId);
-      setProgress(25);
-      setStatus('Triggering Neural Indexer...');
+      const { uploadUrl, documentId } = await handshakeResponse.json();
+      setDocId(documentId);
+      setProgress(20);
+      setStatus('Direct Binary Stream to R2 Vault...');
 
-      // Initiate Processing Node (Fire and forget - we poll status)
-      fetch(`/api/docs/process/${data.documentId}`, {
+      // STAGE 2: Direct Binary Upload to R2 (Bypasses Vercel Limit)
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': file.type }
+      });
+
+      if (!uploadResponse.ok) throw new Error("Cloud sync failed. The node rejected the binary stream.");
+
+      setProgress(40);
+      setStatus('Binary Anchored. Awakening Neural Indexer...');
+
+      // STAGE 3: Trigger Background Processing
+      await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
-      }).catch(err => console.warn("Background process trigger warning:", err));
+      });
 
     } catch (err: any) {
       setError(err.message || "An unexpected neural handshake error occurred.");
@@ -114,14 +121,20 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
       
       <div className="space-y-8 text-left">
-        <div className="w-20 h-20 bg-indigo-600 text-white rounded-[2.5rem] flex items-center justify-center shadow-2xl relative">
-           {isUploading ? <BrainCircuit size={40} className="animate-pulse" /> : <UploadCloud size={40} />}
-           {isUploading && <div className="absolute inset-0 border-4 border-white/20 border-t-white rounded-[2.5rem] animate-spin" />}
+        <div className="flex items-center justify-between">
+          <div className="w-20 h-20 bg-indigo-600 text-white rounded-[2.5rem] flex items-center justify-center shadow-2xl relative">
+             {isUploading ? <BrainCircuit size={40} className="animate-pulse" /> : <UploadCloud size={40} />}
+             {isUploading && <div className="absolute inset-0 border-4 border-white/20 border-t-white rounded-[2.5rem] animate-spin" />}
+          </div>
+          <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
+             <ShieldCheck size={16} className="text-emerald-500" />
+             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Enterprise Node</span>
+          </div>
         </div>
 
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Neural Ingestion</h2>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Async Cloud Architecture Node</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none">Neural Ingestion</h2>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Direct Cloud Archival Architecture</p>
         </div>
 
         {error ? (
@@ -144,7 +157,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
              </div>
              <div className="flex flex-col gap-1">
                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 animate-pulse">{status}</p>
-               <p className="text-[9px] font-bold text-slate-400">Handshake Active • Vercel Edge Node Linked</p>
+               <p className="text-[9px] font-bold text-slate-400">Direct Binary Sync Active • Gateway Bypass Enabled</p>
              </div>
           </div>
         ) : (
@@ -153,7 +166,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             <div className="p-16 border-4 border-dashed border-slate-100 dark:border-white/5 rounded-[3.5rem] group-hover:border-indigo-500/50 transition-all bg-slate-50/50 dark:bg-white/5 hover:bg-white dark:hover:bg-slate-800/50">
               <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-500 transition-all mx-auto mb-6" />
               <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight text-center">Select Curriculum PDF</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center">Max 4.5MB • Standards-Aligned Indexing</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center">Max 50MB • High-Volume Asset Support</p>
             </div>
           </label>
         )}
@@ -162,15 +175,15 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       <div className="mt-10 pt-10 border-t dark:border-white/5 grid grid-cols-3 gap-4">
          <div className="space-y-1">
             <Database size={16} className="mx-auto text-slate-300" />
-            <p className="text-[8px] font-black text-slate-400 uppercase">R2 Vault</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase">Direct R2</p>
          </div>
          <div className="space-y-1">
             <Search size={16} className="mx-auto text-slate-300" />
-            <p className="text-[8px] font-black text-slate-400 uppercase">SLO Audit</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase">SLO Sync</p>
          </div>
          <div className="space-y-1">
             <Zap size={16} className="mx-auto text-slate-300" />
-            <p className="text-[8px] font-black text-slate-400 uppercase">Vector Grid</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase">Vector Hub</p>
          </div>
       </div>
     </div>
