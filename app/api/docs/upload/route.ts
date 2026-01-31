@@ -9,8 +9,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v3.0)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v3.1)
  * Logic: Generate Signed URL -> Direct Browser-to-R2 Upload (Bypasses 4.5MB Limit)
+ * Error Handling: Guidance for missing schema columns.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
     const body = await req.json();
-    const { name, contentType, fileSize } = body;
+    const { name, contentType } = body;
 
     if (!name || !contentType) {
       return NextResponse.json({ error: 'Metadata missing (name, contentType)' }, { status: 400 });
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     const documentId = crypto.randomUUID();
     const r2Key = `raw/${user.id}/${documentId}/${name.replace(/\s+/g, '_')}`;
 
-    // 1. Generate Pre-signed URL for direct upload (Valid for 15 mins)
+    // 1. Generate Pre-signed URL
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
@@ -42,10 +43,10 @@ export async function POST(req: NextRequest) {
 
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
 
-    // 2. Initialize Database Record (Pending State)
+    // 2. Initialize Database Record
     const supabase = getSupabaseServerClient(token);
     
-    // De-select others
+    // Auto-deselect others
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -58,20 +59,27 @@ export async function POST(req: NextRequest) {
       subject: 'Identifying...',
       grade_level: 'Mixed',
       is_selected: true,
-      document_summary: 'Waiting for binary handshake...'
+      document_summary: 'Waiting for binary handshake...' // <-- Required column
     }).select().single();
 
-    if (dbError) throw new Error(dbError.message);
+    if (dbError) {
+      if (dbError.message.includes('column') || dbError.message.includes('document_summary')) {
+        throw new Error("SCHEMA_MISMATCH: Missing 'document_summary' column in Supabase. Please go to Sidebar > Master Recipe > Repair and run the SQL script.");
+      }
+      throw new Error(dbError.message);
+    }
 
     return NextResponse.json({ 
       success: true, 
       documentId: docData.id,
-      uploadUrl: uploadUrl, // Direct link to R2
+      uploadUrl: uploadUrl,
       r2Key: r2Key
     });
 
   } catch (error: any) {
     console.error("❌ [Upload Handshake Error]:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ 
+      error: error.message || 'Synthesis grid exception.' 
+    }, { status: error.message?.includes('SCHEMA_MISMATCH') ? 409 : 500 });
   }
 }

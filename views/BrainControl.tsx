@@ -1,8 +1,8 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v90.0)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v91.0)
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
-  Database, ShieldCheck, Terminal, Activity, Cpu, Sparkles, HeartPulse, FileCode
+  Database, ShieldCheck, Terminal, Activity, Cpu, Sparkles, HeartPulse, FileCode, Wrench, AlertTriangle
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
@@ -13,18 +13,25 @@ interface BrainControlProps {
 }
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'schema' | 'audit' | 'rag'>('logic');
+  const [activeTab, setActiveTab] = useState<'logic' | 'schema' | 'repair' | 'rag'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
-  const [dbStatus, setDbStatus] = useState<{table: string, exists: boolean | null}[]>([]);
-  const [ragHealth, setRagHealth] = useState<any>(null);
-  const [isChecking, setIsChecking] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const masterSchemaSql = `-- EDUNEXUS AI: WORLD-CLASS RAG SCHEMA v90.0
--- TARGET: Supabase + PGVector
+  const repairSql = `-- REPAIR SCRIPT: Run this in Supabase SQL Editor to fix missing columns
+ALTER TABLE public.documents 
+ADD COLUMN IF NOT EXISTS document_summary TEXT,
+ADD COLUMN IF NOT EXISTS difficulty_level TEXT,
+ADD COLUMN IF NOT EXISTS rag_indexed BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS extracted_text TEXT,
+ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false;
 
-DROP VIEW IF EXISTS public.rag_health_report CASCADE;
+-- Ensure Vector sync is possible
+CREATE EXTENSION IF NOT EXISTS vector;
+`;
+
+  const masterSchemaSql = `-- EDUNEXUS AI: MASTER SCHEMA v91.0
+-- TARGET: Supabase + PGVector
 
 -- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -42,6 +49,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
     subject TEXT,
     grade_level TEXT,
     file_path TEXT,
+    mime_type TEXT,
     is_selected BOOLEAN DEFAULT false,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -59,9 +67,8 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
 
 -- 4. INDICES
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON public.document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
-CREATE INDEX IF NOT EXISTS idx_chunks_slo_gin ON public.document_chunks USING GIN (slo_codes);
 
--- 5. WORLD-CLASS HYBRID SEARCH FUNCTION
+-- 5. HYBRID SEARCH FUNCTION
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v3(
   query_text TEXT,
   query_embedding vector(768),
@@ -86,10 +93,7 @@ BEGIN
     dc.chunk_text,
     dc.slo_codes,
     dc.metadata,
-    (
-      (1 - (dc.embedding <=> query_embedding)) * 0.7 +
-      ts_rank_cd(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text)) * 0.3
-    ) as combined_score
+    (1 - (dc.embedding <=> query_embedding)) as combined_score
   FROM public.document_chunks dc
   WHERE
     (filter_document_ids IS NULL OR dc.document_id = ANY(filter_document_ids))
@@ -97,20 +101,6 @@ BEGIN
   LIMIT match_count;
 END;
 $$;
-
--- 6. HEALTH VIEW
-CREATE VIEW public.rag_health_report AS
-SELECT 
-    d.id as doc_id,
-    d.name,
-    count(c.id) as chunk_count,
-    CASE 
-        WHEN d.rag_indexed = true AND count(c.id) > 0 THEN 'HEALTHY'
-        ELSE 'NEEDS_SYNC'
-    END as health_status
-FROM public.documents d
-LEFT JOIN public.document_chunks c ON d.id = c.document_id
-GROUP BY d.id, d.name;
 `;
 
   const copyToClipboard = (text: string, id: string) => {
@@ -125,7 +115,7 @@ GROUP BY d.id, d.name;
       await supabase.from('neural_brain').insert([{ master_prompt: formData.masterPrompt, version: formData.version + 1, is_active: true }]);
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
       alert("Logic deployed.");
-    } catch (err: any) { alert("Error."); } finally { setIsSaving(false); }
+    } catch (err: any) { alert("Error updating logic."); } finally { setIsSaving(false); }
   };
 
   return (
@@ -135,10 +125,10 @@ GROUP BY d.id, d.name;
           <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
             <ShieldCheck className="text-indigo-600" /> Infrastructure Node
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic">V90.0 RAG Optimized</p>
+          <p className="text-slate-500 text-xs font-medium italic">V91.0 RAG Optimized</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
-          {['logic', 'schema', 'rag'].map(tab => (
+          {['logic', 'schema', 'repair', 'rag'].map(tab => (
             <button 
               key={tab}
               onClick={() => setActiveTab(tab as any)}
@@ -157,7 +147,7 @@ GROUP BY d.id, d.name;
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-80 p-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl font-mono text-[10px] leading-relaxed resize-none"
+              className="w-full h-80 p-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl font-mono text-[10px] leading-relaxed resize-none focus:ring-2 focus:ring-indigo-500 outline-none"
             />
             <button onClick={handleSave} disabled={isSaving} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
               {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Commit Logic v{formData.version + 1}
@@ -167,10 +157,35 @@ GROUP BY d.id, d.name;
              <div className="absolute top-0 right-0 p-8 opacity-5"><Cpu size={150} /></div>
              <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> World-Class RAG</h3>
              <p className="text-slate-400 text-xs leading-relaxed mb-6 italic">
-                Our infrastructure now supports hybrid search and automated metadata extraction. 
-                The system understands Board, Subject, and Grade boundaries inherently.
+                Your neural infrastructure requires specific columns for high-fidelity extraction. Use the <b>REPAIR</b> tab if you see "Column not found" errors in the ingestion flow.
              </p>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'repair' && (
+        <div className="space-y-6">
+           <div className="bg-rose-50 dark:bg-rose-950/20 p-6 rounded-3xl border border-rose-100 dark:border-rose-900/50 flex items-start gap-4">
+              {/* Added AlertTriangle to imports to fix "Cannot find name" error */}
+              <AlertTriangle className="text-rose-600 shrink-0" />
+              <div>
+                <h4 className="text-sm font-black uppercase text-rose-700 tracking-tight">Fix Schema Cache Errors</h4>
+                <p className="text-xs text-rose-600/80 mt-1 leading-relaxed">If the app reports missing columns like <b>document_summary</b>, copy this script and run it in your Supabase SQL Editor to update your table structure safely.</p>
+              </div>
+           </div>
+           <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
+              <div className="p-8 border-b border-white/5 flex items-center justify-between">
+                 <h3 className="text-white font-black uppercase tracking-tight flex items-center gap-2"><Wrench size={16}/> Repair Script</h3>
+                 <button onClick={() => copyToClipboard(repairSql, 'repair')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase text-white transition-all">
+                    {copiedId === 'repair' ? <Check size={12}/> : <Copy size={12}/>} Copy Repair SQL
+                 </button>
+              </div>
+              <div className="p-8 bg-black/40">
+                 <pre className="text-[10px] font-mono text-emerald-400 leading-relaxed overflow-x-auto">
+                    {repairSql}
+                 </pre>
+              </div>
+           </div>
         </div>
       )}
 
@@ -178,9 +193,9 @@ GROUP BY d.id, d.name;
         <div className="space-y-6">
            <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
               <div className="p-8 border-b border-white/5 flex items-center justify-between">
-                 <h3 className="text-white font-black uppercase tracking-tight">Master Schema v90.0</h3>
+                 <h3 className="text-white font-black uppercase tracking-tight">Master Schema v91.0</h3>
                  <button onClick={() => copyToClipboard(masterSchemaSql, 'schema')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase text-white transition-all">
-                    {copiedId === 'schema' ? <Check size={12}/> : <Copy size={12}/>} Copy SQL
+                    {copiedId === 'schema' ? <Check size={12}/> : <Copy size={12}/>} Copy Master SQL
                  </button>
               </div>
               <div className="p-8 bg-black/40">
