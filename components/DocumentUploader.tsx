@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText, ShieldCheck } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText, ShieldCheck, Copy, Check } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -11,6 +11,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const [status, setStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const REPAIR_SQL = `ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS document_summary TEXT, ADD COLUMN IF NOT EXISTS difficulty_level TEXT, ADD COLUMN IF NOT EXISTS rag_indexed BOOLEAN DEFAULT false, ADD COLUMN IF NOT EXISTS extracted_text TEXT, ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false;`;
 
   // Status Poller
   useEffect(() => {
@@ -37,7 +40,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             setError(data.error || 'Neural Extraction Fault.');
             setIsUploading(false);
           } else {
-            // Simulated progress steps based on backend flags
             const p = data.metadata?.indexed ? 85 : 55;
             setProgress(p);
             setStatus(`Processing: ${data.summary || 'Extracting intelligence...'}`);
@@ -50,11 +52,16 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     return () => clearInterval(poller);
   }, [docId, isUploading, progress, onComplete]);
 
+  const copyFix = () => {
+    navigator.clipboard.writeText(REPAIR_SQL);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Enterprise Limit: 50MB (Bypassing Vercel Gateway)
     if (file.size > 50 * 1024 * 1024) {
       setError("File exceeds 50MB Enterprise limit.");
       return;
@@ -68,7 +75,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // STAGE 1: Request Pre-signed URL (The Metadata Handshake)
       const handshakeResponse = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 
@@ -92,7 +98,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(20);
       setStatus('Direct Binary Stream to R2 Vault...');
 
-      // STAGE 2: Direct Binary Upload to R2 (Bypasses Vercel Limit)
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
@@ -104,7 +109,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(40);
       setStatus('Binary Anchored. Awakening Neural Indexer...');
 
-      // STAGE 3: Trigger Background Processing
       await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
@@ -115,6 +119,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setIsUploading(false);
     }
   };
+
+  const isSchemaError = error?.includes('SCHEMA_MISMATCH') || error?.includes('column');
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 md:p-16 w-full max-w-2xl shadow-2xl border dark:border-white/5 text-center relative overflow-hidden">
@@ -138,17 +144,39 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         </div>
 
         {error ? (
-          <div className="p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-3xl space-y-4 animate-in fade-in zoom-in-95">
+          <div className="p-8 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-3xl space-y-6 animate-in fade-in zoom-in-95">
             <div className="flex items-start gap-3 text-rose-600">
-               <AlertCircle size={20} className="shrink-0 mt-0.5" />
-               <p className="text-xs font-bold leading-relaxed">{error}</p>
+               <AlertCircle size={24} className="shrink-0 mt-0.5" />
+               <div className="space-y-1">
+                 <p className="text-xs font-black uppercase tracking-widest">Ingestion Interrupted</p>
+                 <p className="text-[11px] font-bold leading-relaxed">{error}</p>
+               </div>
             </div>
-            <button 
-              onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} 
-              className="px-6 py-2.5 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
-            >
-              <RefreshCw size={12}/> Retry Ingestion
-            </button>
+            
+            <div className="flex flex-wrap gap-3">
+              <button 
+                onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} 
+                className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
+              >
+                <RefreshCw size={12}/> Retry
+              </button>
+              
+              {isSchemaError && (
+                <button 
+                  onClick={copyFix}
+                  className="px-6 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
+                >
+                  {copied ? <Check size={12} className="text-emerald-400"/> : <Copy size={12}/>} 
+                  {copied ? 'SQL Copied!' : 'Copy SQL Fix'}
+                </button>
+              )}
+            </div>
+
+            {isSchemaError && (
+              <p className="text-[9px] text-rose-400 font-bold italic leading-tight">
+                Run the copied SQL in Supabase SQL Editor, then refresh this page to proceed.
+              </p>
+            )}
           </div>
         ) : isUploading ? (
           <div className="space-y-6 py-4">

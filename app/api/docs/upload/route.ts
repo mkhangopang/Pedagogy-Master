@@ -9,9 +9,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v3.1)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v3.2)
  * Logic: Generate Signed URL -> Direct Browser-to-R2 Upload (Bypasses 4.5MB Limit)
- * Error Handling: Guidance for missing schema columns.
+ * Error Handling: Explicit guidance for missing schema columns.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -59,12 +59,14 @@ export async function POST(req: NextRequest) {
       subject: 'Identifying...',
       grade_level: 'Mixed',
       is_selected: true,
-      document_summary: 'Waiting for binary handshake...' // <-- Required column
+      document_summary: 'Waiting for binary handshake...' 
     }).select().single();
 
     if (dbError) {
-      if (dbError.message.includes('column') || dbError.message.includes('document_summary')) {
-        throw new Error("SCHEMA_MISMATCH: Missing 'document_summary' column in Supabase. Please go to Sidebar > Master Recipe > Repair and run the SQL script.");
+      // Check for common schema errors
+      const isMissingCol = dbError.message.includes('column') || dbError.code === '42703';
+      if (isMissingCol) {
+        throw new Error(`SCHEMA_MISMATCH: Missing curriculum intelligence columns (document_summary, rag_indexed, etc). Run the Repair SQL script in Sidebar > Master Recipe.`);
       }
       throw new Error(dbError.message);
     }
