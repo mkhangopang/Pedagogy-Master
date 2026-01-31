@@ -35,9 +35,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             setError(data.error || 'Neural Extraction Fault.');
             setIsUploading(false);
           } else {
-            const p = data.metadata?.indexed ? 85 : 55;
+            // Update progress based on status/summary
+            let p = 55;
+            if (data.status === 'indexing') p = 75;
+            if (data.metadata?.indexed) p = 90;
+            
             setProgress(p);
-            setStatus(`Processing: ${data.summary || 'Extracting intelligence...'}`);
+            setStatus(`In Processing: ${data.summary || 'Extracting intelligence...'}`);
           }
         } catch (e) {
           console.error("Polling Error:", e);
@@ -65,12 +69,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     setError(null);
     setIsUploading(true);
     setProgress(5);
-    setStatus('Initializing Direct Cloud Handshake...');
+    setStatus('Initializing Cloud Handshake...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      // Determine content type safely
       const detectedType = file.type || 'application/pdf';
 
       const handshakeResponse = await fetch('/api/docs/upload', {
@@ -94,9 +97,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       const { uploadUrl, documentId, contentType: signedType } = await handshakeResponse.json();
       setDocId(documentId);
       setProgress(20);
-      setStatus('Direct Binary Stream to R2 Vault...');
+      setStatus('Streaming Binary to Vault...');
 
-      // CRITICAL: The Content-Type MUST match the signedType exactly or CORS preflight might fail/be rejected.
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
@@ -104,22 +106,27 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       });
 
       if (!uploadResponse.ok) {
-        throw new Error(`The Cloud node rejected the stream (Status: ${uploadResponse.status}). Ensure R2 CORS allows PUT.`);
+        throw new Error(`The Cloud node rejected the stream (Status: ${uploadResponse.status}).`);
       }
 
       setProgress(40);
       setStatus('Binary Anchored. Awakening Neural Indexer...');
 
-      await fetch(`/api/docs/process/${documentId}`, {
+      const triggerResponse = await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
       });
+
+      if (!triggerResponse.ok) {
+        const triggerData = await triggerResponse.json().catch(() => ({}));
+        throw new Error(`Extraction trigger failed: ${triggerData.error || 'Gateway Timeout'}`);
+      }
 
     } catch (err: any) {
       let msg = err.message || "An unexpected neural handshake error occurred.";
       if (msg.includes("Failed to fetch")) {
         const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown domain';
-        msg = `NETWORK_BLOCK: Browser refused upload. Verify R2 CORS allows "${currentOrigin}". Also try clearing browser cache to reset preflight rules.`;
+        msg = `NETWORK_BLOCK: Browser refused upload. Verify R2 CORS allows "${currentOrigin}".`;
       }
       setError(msg);
       setIsUploading(false);
@@ -187,7 +194,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                 <p className="text-[9px] text-slate-500 leading-relaxed italic">
                   1. Go to <b>Brain Control &gt; Repair</b> and copy the Debug CORS JSON.<br/>
                   2. Apply it to your R2 bucket settings.<br/>
-                  3. <b>Important:</b> If you just updated it, perform a <b>Hard Refresh (Ctrl+F5)</b> to clear preflight cache.
+                  3. <b>Important:</b> Perform a <b>Hard Refresh (Ctrl+F5)</b>.
                 </p>
               </div>
             )}

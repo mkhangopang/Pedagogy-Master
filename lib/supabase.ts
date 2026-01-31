@@ -68,6 +68,22 @@ export const getSupabaseServerClient = (token?: string): SupabaseClient => {
   return createClient(url, key, options);
 };
 
+/**
+ * ADMIN CLIENT (Server-only)
+ * Uses service role key to bypass RLS for critical system processing.
+ */
+export const getSupabaseAdminClient = (): SupabaseClient => {
+  const { url } = getCredentials();
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  return createClient(url, serviceKey, {
+    auth: { 
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false
+    },
+  });
+};
+
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     const client = getSupabaseClient() as any;

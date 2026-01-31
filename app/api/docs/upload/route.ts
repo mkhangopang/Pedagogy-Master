@@ -9,9 +9,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v3.3)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v3.4)
  * Logic: Generate Signed URL -> Direct Browser-to-R2 Upload (Bypasses 4.5MB Limit)
- * Fix: Explicitly returning contentType used for signing to prevent CORS preflight header mismatch.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -60,7 +59,7 @@ export async function POST(req: NextRequest) {
       subject: 'Identifying...',
       grade_level: 'Mixed',
       is_selected: true,
-      document_summary: 'Waiting for binary handshake...' 
+      document_summary: 'Neural Handshake Initiated. Waiting for binary stream...' 
     }).select().single();
 
     if (dbError) {
@@ -76,7 +75,7 @@ export async function POST(req: NextRequest) {
       documentId: docData.id,
       uploadUrl: uploadUrl,
       r2Key: r2Key,
-      contentType: contentType // Pass back for strict header matching
+      contentType: contentType
     });
 
   } catch (error: any) {
