@@ -202,7 +202,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                   <Globe size={12}/> Browser Security Alert:
                 </p>
                 <p className="text-[9px] text-slate-500 leading-relaxed italic">
-                  The binary stream was blocked. Check <b>Brain Control > Repair</b> to verify CORS configuration on your R2 storage node.
+                  The binary stream was blocked. Check <b>Brain Control &gt; Repair</b> to verify CORS configuration on your R2 storage node.
                 </p>
               </div>
             )}
