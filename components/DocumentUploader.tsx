@@ -26,7 +26,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           if (!res.ok) return;
           const data = await res.json();
           
-          // Neural Sync complete or failed transitions
           if (data.status === 'ready' || data.status === 'completed') {
             clearInterval(poller);
             setProgress(100);
@@ -43,7 +42,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             if (data.metadata?.indexed) p = 90;
             
             setProgress(p);
-            // Prioritize backend summary for granular progress visibility
             setStatus(data.summary || 'Processing curriculum schema...');
           }
         } catch (e) {
@@ -116,7 +114,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           throw new Error(`The Cloud node rejected the stream (Status: ${uploadResponse.status}).`);
         }
       } catch (putErr: any) {
-        // Specifically detect CORS/Network issues during the heavy PUT phase
         if (putErr.message?.includes('Failed to fetch')) {
           throw new Error('NETWORK_BLOCK: Browser refused the cloud stream. Ensure R2 CORS settings allow this domain.');
         }

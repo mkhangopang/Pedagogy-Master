@@ -10,7 +10,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300; // Extend to 5 mins for massive PDFs
 
 /**
- * NEURAL PROCESSING NODE (v5.0)
+ * NEURAL PROCESSING NODE (v5.1)
  * Triggered after binary stream to perform heavy extraction, vectorization, and pedagogical analysis.
  * Fixed: 'ENOENT' error caused by pdf-parse failing to receive a valid native Buffer.
  */
@@ -52,19 +52,22 @@ export async function POST(
     
     let extractedText = "";
     try {
+      // Dynamic import with defensive check
       const pdfModule = await import('pdf-parse');
-      // Fix: Cast to any for ESM/CJS interop robustness
       const pdf: any = pdfModule.default || pdfModule;
       
       // Ensure we pass a real Node.js Buffer to prevent ENOENT test data fallback errors
-      const data = await pdf(Buffer.from(buffer));
+      const pdfBuffer = Buffer.from(buffer);
+      if (pdfBuffer.length < 100) throw new Error("Invalid PDF header detected.");
+      
+      const data = await pdf(pdfBuffer);
       extractedText = data.text || "";
     } catch (parseErr: any) {
       console.error("Primary PDF Parse Node Failed:", parseErr);
       throw new Error(`PDF extraction failed: ${parseErr.message}`);
     }
 
-    if (extractedText.length < 50) {
+    if (extractedText.length < 20) {
       throw new Error("PDF contained insufficient extractable text (Scanned image or empty node).");
     }
 
