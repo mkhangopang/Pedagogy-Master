@@ -1,190 +1,129 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, ArrowLeft, Database, RefreshCw, UploadCloud, Zap } from 'lucide-react';
-import { marked } from 'marked';
+import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
-import * as pdfjsLib from 'pdfjs-dist';
 
-if (typeof window !== 'undefined' && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-  const version = '4.4.168';
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/build/pdf.worker.min.mjs`;
-}
-
-interface DocumentUploaderProps {
-  userId: string;
-  userPlan: SubscriptionPlan;
-  docCount: number;
-  onComplete: (result: any) => void;
-  onCancel: () => void;
-}
-
-export default function DocumentUploader({ userId, userPlan, docCount, onComplete, onCancel }: DocumentUploaderProps) {
-  const [mode, setMode] = useState<'selection' | 'transition'>('selection');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [procStage, setProcStage] = useState<string>('');
-  const [progressValue, setProgressValue] = useState(0);
+export default function DocumentUploader({ userId, onComplete, onCancel }: any) {
+  const [isUploading, setIsUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  const [draftMarkdown, setDraftMarkdown] = useState('');
-  const [previewHtml, setPreviewHtml] = useState('');
+  const [docId, setDocId] = useState<string | null>(null);
 
+  // Status Poller
   useEffect(() => {
-    if (draftMarkdown) {
-      try { setPreviewHtml(marked.parse(draftMarkdown) as string); } catch (e) { console.error(e); }
+    let poller: any;
+    if (docId && isUploading) {
+      poller = setInterval(async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`/api/docs/status/${docId}`, {
+            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+          });
+          const data = await res.json();
+          
+          if (data.status === 'ready' || data.status === 'completed') {
+            clearInterval(poller);
+            setProgress(100);
+            setStatus('Neural Sync Complete!');
+            setTimeout(() => onComplete(data), 1500);
+          } else if (data.status === 'failed') {
+            clearInterval(poller);
+            setError(data.error || 'Ingestion failure.');
+            setIsUploading(false);
+          } else {
+            // Simulated progress steps based on backend flags
+            const p = data.metadata?.indexed ? 85 : 45;
+            setProgress(p);
+            setStatus(`Processing: ${data.summary || 'Extracting intelligence...'}`);
+          }
+        } catch (e) {
+          console.error("Polling Error:", e);
+        }
+      }, 3000);
     }
-  }, [draftMarkdown]);
+    return () => clearInterval(poller);
+  }, [docId, isUploading, onComplete]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setError(null);
-    setIsProcessing(true);
-    setProgressValue(5);
-    setProcStage(`Reading PDF...`);
-
-    try {
-      const arrayBuffer = await file.arrayBuffer();
-      let rawText = "";
-      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
-      const pdf = await loadingTask.promise;
-      
-      // Browser-side extraction (Offloading CPU from Vercel)
-      for (let i = 1; i <= Math.min(pdf.numPages, 185); i++) {
-        setProcStage(`Extracting: Pg ${i}/${pdf.numPages}`);
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        rawText += textContent.items.map((item: any) => item.str).join(' ') + '\n';
-        setProgressValue(5 + (i / pdf.numPages) * 10);
-      }
-
-      // VERCEL HOBBY OPTIMIZATION:
-      // Reduced chunk size to 1200 chars to ensure < 10s processing even under load
-      const chunkSize = 1200;
-      const chunks = [];
-      for (let i = 0; i < rawText.length; i += chunkSize) {
-        chunks.push(rawText.substring(i, i + chunkSize));
-      }
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || '';
-      let finalMd = "# Curriculum Processed Results\n\n";
-
-      const maxPulses = Math.min(chunks.length, 100); 
-      
-      for (let p = 0; p < maxPulses; p++) {
-        setProcStage(`Neural Clean: Node ${p + 1}/${maxPulses}...`);
-        
-        // Internal retry logic for specific chunk failures
-        let success = false;
-        let retries = 0;
-        
-        while (!success && retries < 2) {
-          try {
-            const res = await fetch('/api/docs/upload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-              body: JSON.stringify({ 
-                sourceType: 'raw_text', 
-                extractedText: chunks[p], 
-                previewOnly: true 
-              })
-            });
-
-            if (!res.ok) throw new Error(res.status === 504 ? "Gateway Timeout" : "Node Fault");
-            const data = await res.json();
-            finalMd += (data.markdown || "") + "\n\n";
-            success = true;
-          } catch (chunkErr) {
-            retries++;
-            if (retries >= 2) throw new Error(`Chunk ${p + 1} timed out after retries. Try a smaller file.`);
-            setProcStage(`Throttling... Retrying Chunk ${p + 1}`);
-            await new Promise(r => setTimeout(r, 2000));
-          }
-        }
-        
-        setProgressValue(15 + ((p + 1) / maxPulses) * 85);
-      }
-
-      setDraftMarkdown(finalMd);
-      setMode('transition');
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setIsProcessing(false);
+    if (file.size > 20 * 1024 * 1024) {
+      setError("File exceeds 20MB limit.");
+      return;
     }
-  };
 
-  const handleFinalApproval = async () => {
-    setIsProcessing(true);
-    setProcStage('Vaulting Intelligence...');
+    setError(null);
+    setIsUploading(true);
+    setProgress(10);
+    setStatus('Archiving PDF to Cloud Vault...');
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('name', file.name.replace(/\.[^/.]+$/, ""));
+
       const response = await fetch('/api/docs/upload', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ 
-          name: "Curriculum Master", 
-          sourceType: 'markdown', 
-          extractedText: draftMarkdown,
-          metadata: { subject: 'Automated', grade: 'Mixed', board: 'Sindh' }
-        })
+        headers: { 'Authorization': `Bearer ${session?.access_token}` },
+        body: formData
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      onComplete(data);
-    } catch (err: any) { setError(err.message); } finally { setIsProcessing(false); }
-  };
 
-  if (mode === 'transition') {
-    return (
-      <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-0 w-full max-w-[95vw] shadow-2xl border dark:border-white/5 flex flex-col h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b dark:border-white/5 shrink-0 bg-slate-50 dark:bg-slate-900">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setMode('selection')} className="p-3 bg-white dark:bg-slate-800 rounded-2xl shadow-sm"><ArrowLeft size={20}/></button>
-            <h3 className="text-xl font-black dark:text-white uppercase tracking-tight">Vault Preview</h3>
-          </div>
-          <button onClick={onCancel} className="p-3 text-slate-400 hover:text-rose-500"><X size={28}/></button>
-        </div>
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden bg-slate-50 dark:bg-black/20">
-          <textarea value={draftMarkdown} onChange={(e) => setDraftMarkdown(e.target.value)} className="p-8 font-mono text-[10px] bg-white dark:bg-slate-900 outline-none resize-none custom-scrollbar border-r dark:border-white/5" />
-          <div className="overflow-y-auto custom-scrollbar p-8 prose dark:prose-invert max-w-none bg-white dark:bg-slate-900" dangerouslySetInnerHTML={{ __html: previewHtml }} />
-        </div>
-        <div className="p-6 border-t dark:border-white/5 flex items-center justify-between bg-white dark:bg-slate-900">
-           <p className="text-[10px] font-black uppercase text-emerald-500 flex items-center gap-2"><Zap size={14}/> Pulse Verification Active</p>
-           <button onClick={handleFinalApproval} className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest flex items-center gap-3 shadow-xl">
-             {isProcessing ? <Loader2 className="animate-spin" size={18}/> : <Database size={18}/>} Ingest to Vault
-           </button>
-        </div>
-      </div>
-    );
-  }
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Upload rejected.');
+
+      setDocId(data.documentId);
+      setProgress(25);
+      setStatus('Triggering Neural Indexer...');
+
+      // Initiate Processing Node (Fire and forget - we poll status)
+      fetch(`/api/docs/process/${data.documentId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      }).catch(err => console.warn("Background process trigger warning:", err));
+
+    } catch (err: any) {
+      setError(err.message);
+      setIsUploading(false);
+    }
+  };
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 md:p-16 w-full max-w-2xl shadow-2xl border dark:border-white/5 text-center relative overflow-hidden">
       <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
+      
       <div className="space-y-8">
         <div className="w-24 h-24 bg-indigo-600 text-white rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl relative">
-           <BrainCircuit size={48} className={isProcessing ? 'animate-pulse' : ''} />
-           {isProcessing && <div className="absolute inset-0 border-4 border-white/20 border-t-white rounded-[2.5rem] animate-spin" />}
+           {isUploading ? <BrainCircuit size={48} className="animate-pulse" /> : <UploadCloud size={48} />}
+           {isUploading && <div className="absolute inset-0 border-4 border-white/20 border-t-white rounded-[2.5rem] animate-spin" />}
         </div>
+
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Vercel Pulse Node</h2>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Segmented Ingestion Protocol Active</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Neural Ingestion</h2>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Async Cloud Architecture Node</p>
         </div>
-        {error && (
-          <div className="p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-3xl flex flex-col items-center gap-4 text-left">
-            <div className="flex items-center gap-3"><AlertCircle className="text-rose-500" size={20} /><p className="text-xs font-bold text-rose-600 dark:text-rose-400">{error}</p></div>
-            <button onClick={() => {setError(null); setIsProcessing(false);}} className="px-6 py-2 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2"><RefreshCw size={12}/> Restart Sync</button>
+
+        {error ? (
+          <div className="p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-3xl space-y-4">
+            <div className="flex items-center justify-center gap-3 text-rose-600">
+               <AlertCircle size={20} />
+               <p className="text-xs font-bold">{error}</p>
+            </div>
+            <button onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} className="px-6 py-2 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 mx-auto"><RefreshCw size={12}/> Retry Node</button>
           </div>
-        )}
-        {isProcessing ? (
+        ) : isUploading ? (
           <div className="space-y-6 py-4">
              <div className="h-3 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-600 transition-all duration-700 rounded-full" style={{ width: `${progressValue}%` }} />
+                <div className="h-full bg-indigo-600 transition-all duration-1000 rounded-full" style={{ width: `${progress}%` }} />
              </div>
-             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 animate-pulse">{procStage}</p>
+             <div className="flex flex-col gap-1">
+               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 animate-pulse">{status}</p>
+               <p className="text-[9px] font-bold text-slate-400">Handshake Active • Estimated time: 1-2 mins</p>
+             </div>
           </div>
         ) : (
           <label className="group relative cursor-pointer block">
@@ -192,10 +131,25 @@ export default function DocumentUploader({ userId, userPlan, docCount, onComplet
             <div className="p-16 border-4 border-dashed border-slate-100 dark:border-white/5 rounded-[3.5rem] group-hover:border-indigo-500/50 transition-all bg-slate-50/50 dark:bg-white/5">
               <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-500 transition-all mx-auto mb-6" />
               <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Curriculum PDF</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Maximum 185 Pages • Recursive Ingestion</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">Max 20MB • Multi-Stage Neural Processing</p>
             </div>
           </label>
         )}
+      </div>
+
+      <div className="mt-10 pt-10 border-t dark:border-white/5 grid grid-cols-3 gap-4">
+         <div className="space-y-1">
+            <Database size={16} className="mx-auto text-slate-300" />
+            <p className="text-[8px] font-black text-slate-400 uppercase">R2 Archival</p>
+         </div>
+         <div className="space-y-1">
+            <Search size={16} className="mx-auto text-slate-300" />
+            <p className="text-[8px] font-black text-slate-400 uppercase">SLO Mapping</p>
+         </div>
+         <div className="space-y-1">
+            <Zap size={16} className="mx-auto text-slate-300" />
+            <p className="text-[8px] font-black text-slate-400 uppercase">Vector Sync</p>
+         </div>
       </div>
     </div>
   );
