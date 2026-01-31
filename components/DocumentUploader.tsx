@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText, ShieldCheck, Copy, Check } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText, ShieldCheck, Copy, Check, Globe } from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -89,8 +89,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       });
 
       if (!handshakeResponse.ok) {
-        const errData = await handshakeResponse.json();
-        throw new Error(errData.error || 'Handshake rejected.');
+        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake timeout or network error.' }));
+        throw new Error(errData.error || `Node Connection Refused (Status: ${handshakeResponse.status})`);
       }
 
       const { uploadUrl, documentId } = await handshakeResponse.json();
@@ -98,13 +98,15 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(20);
       setStatus('Direct Binary Stream to R2 Vault...');
 
+      // WORLD-CLASS ERROR DETECTION: 
+      // If uploadUrl is invalid, fetch will throw "Failed to fetch" immediately.
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': file.type }
       });
 
-      if (!uploadResponse.ok) throw new Error("Cloud sync failed. The node rejected the binary stream.");
+      if (!uploadResponse.ok) throw new Error(`Cloud sync failed. The node rejected the binary stream (Status: ${uploadResponse.status})`);
 
       setProgress(40);
       setStatus('Binary Anchored. Awakening Neural Indexer...');
@@ -115,12 +117,18 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       });
 
     } catch (err: any) {
-      setError(err.message || "An unexpected neural handshake error occurred.");
+      // INTERPRET COMMON BROWSER FETCH ERRORS
+      let msg = err.message || "An unexpected neural handshake error occurred.";
+      if (msg.includes("Failed to fetch")) {
+        msg = "NETWORK_BLOCK: Check Cloudflare R2 CORS settings. The browser is refusing the cross-origin binary upload.";
+      }
+      setError(msg);
       setIsUploading(false);
     }
   };
 
   const isSchemaError = error?.includes('SCHEMA_MISMATCH') || error?.includes('column');
+  const isCorsError = error?.includes('CORS') || error?.includes('NETWORK_BLOCK');
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 md:p-16 w-full max-w-2xl shadow-2xl border dark:border-white/5 text-center relative overflow-hidden">
@@ -158,7 +166,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                 onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} 
                 className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
               >
-                <RefreshCw size={12}/> Retry
+                <RefreshCw size={12}/> Retry Ingestion
               </button>
               
               {isSchemaError && (
@@ -172,10 +180,15 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
               )}
             </div>
 
-            {isSchemaError && (
-              <p className="text-[9px] text-rose-400 font-bold italic leading-tight">
-                Run the copied SQL in Supabase SQL Editor, then refresh this page to proceed.
-              </p>
+            {isCorsError && (
+              <div className="mt-4 p-4 bg-white/40 dark:bg-black/20 rounded-2xl border border-rose-200 dark:border-rose-900/30">
+                <p className="text-[10px] text-rose-700 dark:text-rose-300 font-bold mb-2 flex items-center gap-2">
+                  <Globe size={12}/> Admin Action Required:
+                </p>
+                <p className="text-[9px] text-slate-500 leading-relaxed italic">
+                  Ensure your Cloudflare R2 bucket CORS policy allows <b>PUT</b> requests from your current domain. Refer to Sidebar &gt; Master Recipe &gt; Repair for the exact CORS JSON snippet.
+                </p>
+              </div>
             )}
           </div>
         ) : isUploading ? (
