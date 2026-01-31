@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Fix: Added missing Buffer import to resolve "Cannot find name 'Buffer'" error
 import { Buffer } from 'buffer';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
@@ -8,9 +7,10 @@ import crypto from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Extend duration for large metadata ops
 
 /**
- * WORLD-CLASS UPLOAD GATEWAY (v2.0)
+ * WORLD-CLASS UPLOAD GATEWAY (v2.1)
  * Logic: Stream to R2 -> Create Metadata Record -> Return Polling ID
  */
 export async function POST(req: NextRequest) {
@@ -27,10 +27,15 @@ export async function POST(req: NextRequest) {
     const name = formData.get('name') as string || file.name;
 
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    
+    // Gateway Check: Next.js 15 Serverless Limit
+    if (file.size > 4.5 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Gateway Limit: Files must be under 4.5MB for serverless ingestion.' }, { status: 413 });
+    }
+
     if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Node Offline.");
 
     const documentId = crypto.randomUUID();
-    const timestamp = Date.now();
     const r2Key = `raw/${user.id}/${documentId}/${file.name.replace(/\s+/g, '_')}`;
 
     // 1. Instant Storage Sync (PDF Archival)
@@ -44,6 +49,10 @@ export async function POST(req: NextRequest) {
 
     // 2. Database Handshake (Initialization)
     const supabase = getSupabaseServerClient(token);
+    
+    // Auto-deselect others to focus new node
+    await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       id: documentId,
       user_id: user.id,
@@ -68,6 +77,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error("❌ [Async Upload Error]:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: error.message || 'Synthesis grid exception.' }, { status: 500 });
   }
 }
