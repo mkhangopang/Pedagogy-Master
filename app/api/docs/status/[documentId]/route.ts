@@ -3,10 +3,10 @@ import { getSupabaseServerClient } from '../../../../../lib/supabase';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { documentId: string } }
+  props: { params: Promise<{ documentId: string }> }
 ) {
   try {
-    const { documentId } = params;
+    const { documentId } = await props.params;
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
     

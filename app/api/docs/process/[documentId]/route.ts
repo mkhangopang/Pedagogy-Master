@@ -12,10 +12,10 @@ export const maxDuration = 300; // Extend to 5 mins for massive PDFs
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { documentId: string } }
+  props: { params: Promise<{ documentId: string }> }
 ) {
   try {
-    const { documentId } = params;
+    const { documentId } = await props.params;
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
