@@ -45,7 +45,7 @@ export interface Document {
   id: string;
   userId: string;
   name: string;
-  status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed';
+  status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed' | 'indexing';
   sourceType: 'markdown' | 'pdf_archival';
   isApproved: boolean;
   
