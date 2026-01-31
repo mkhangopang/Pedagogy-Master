@@ -25,28 +25,31 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           });
           if (!res.ok) return;
           const data = await res.json();
+          
+          // Neural Sync complete or failed transitions
           if (data.status === 'ready' || data.status === 'completed') {
             clearInterval(poller);
             setProgress(100);
             setStatus('Neural Sync Complete!');
-            setTimeout(() => onComplete(data), 1500);
+            setTimeout(() => onComplete(data), 1000);
           } else if (data.status === 'failed') {
             clearInterval(poller);
             setError(data.error || 'Neural Extraction Fault.');
             setIsUploading(false);
           } else {
-            // Update progress based on status/summary
+            // Update UI with latest summary from backend
             let p = 55;
             if (data.status === 'indexing') p = 75;
             if (data.metadata?.indexed) p = 90;
             
             setProgress(p);
-            setStatus(`In Processing: ${data.summary || 'Extracting intelligence...'}`);
+            // Prioritize backend summary for granular progress visibility
+            setStatus(data.summary || 'Processing curriculum schema...');
           }
         } catch (e) {
           console.error("Polling Error:", e);
         }
-      }, 3000);
+      }, 2500);
     }
     return () => clearInterval(poller);
   }, [docId, isUploading, progress, onComplete]);
@@ -62,20 +65,22 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     if (!file) return;
 
     if (file.size > 50 * 1024 * 1024) {
-      setError("File exceeds 50MB limit.");
+      setError("File exceeds 50MB institutional limit.");
       return;
     }
 
     setError(null);
     setIsUploading(true);
     setProgress(5);
-    setStatus('Initializing Cloud Handshake...');
+    setStatus('Initializing Neural Handshake...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Authentication node offline. Please log in.");
       
       const detectedType = file.type || 'application/pdf';
 
+      // 1. Handshake with API to get Signed URL
       const handshakeResponse = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 
@@ -90,28 +95,38 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       });
 
       if (!handshakeResponse.ok) {
-        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake timeout.' }));
-        throw new Error(errData.error || `Node Connection Refused (${handshakeResponse.status})`);
+        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake node timeout.' }));
+        throw new Error(errData.error || `Node connection refused (${handshakeResponse.status})`);
       }
 
       const { uploadUrl, documentId, contentType: signedType } = await handshakeResponse.json();
       setDocId(documentId);
       setProgress(20);
-      setStatus('Streaming Binary to Vault...');
+      setStatus('Streaming Binary Bits to Vault...');
 
-      const uploadResponse = await fetch(uploadUrl, {
-        method: 'PUT',
-        body: file,
-        headers: { 'Content-Type': signedType || detectedType }
-      });
+      // 2. Direct PUT to Cloudflare R2
+      try {
+        const uploadResponse = await fetch(uploadUrl, {
+          method: 'PUT',
+          body: file,
+          headers: { 'Content-Type': signedType || detectedType }
+        });
 
-      if (!uploadResponse.ok) {
-        throw new Error(`The Cloud node rejected the stream (Status: ${uploadResponse.status}).`);
+        if (!uploadResponse.ok) {
+          throw new Error(`The Cloud node rejected the stream (Status: ${uploadResponse.status}).`);
+        }
+      } catch (putErr: any) {
+        // Specifically detect CORS/Network issues during the heavy PUT phase
+        if (putErr.message?.includes('Failed to fetch')) {
+          throw new Error('NETWORK_BLOCK: Browser refused the cloud stream. Ensure R2 CORS settings allow this domain.');
+        }
+        throw putErr;
       }
 
       setProgress(40);
-      setStatus('Binary Anchored. Awakening Neural Indexer...');
+      setStatus('Binary Anchored. Awakening Processing Node...');
 
+      // 3. Trigger Server-side Neural Processing
       const triggerResponse = await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
@@ -119,16 +134,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
       if (!triggerResponse.ok) {
         const triggerData = await triggerResponse.json().catch(() => ({}));
-        throw new Error(`Extraction trigger failed: ${triggerData.error || 'Gateway Timeout'}`);
+        throw new Error(`Neural node trigger failed: ${triggerData.error || 'Gateway Timeout'}`);
       }
 
     } catch (err: any) {
-      let msg = err.message || "An unexpected neural handshake error occurred.";
-      if (msg.includes("Failed to fetch")) {
-        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown domain';
-        msg = `NETWORK_BLOCK: Browser refused upload. Verify R2 CORS allows "${currentOrigin}".`;
-      }
-      setError(msg);
+      setError(err.message || "An unexpected neural handshake error occurred.");
       setIsUploading(false);
     }
   };
@@ -148,13 +158,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
           <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
              <ShieldCheck size={16} className="text-emerald-500" />
-             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Node</span>
+             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Ingestion</span>
           </div>
         </div>
 
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none">Neural Ingestion</h2>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Direct Cloud Archival Architecture</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none">Curriculum Ingestion</h2>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Neural Vector Indexing Architecture</p>
         </div>
 
         {error ? (
@@ -170,7 +180,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             <div className="flex flex-wrap gap-3">
               <button 
                 onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} 
-                className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
+                className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 shadow-sm"
               >
                 <RefreshCw size={12}/> Retry Ingestion
               </button>
@@ -189,12 +199,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             {isCorsError && (
               <div className="mt-4 p-4 bg-white/40 dark:bg-black/20 rounded-2xl border border-rose-200 dark:border-rose-900/30">
                 <p className="text-[10px] text-rose-700 dark:text-rose-300 font-bold mb-2 flex items-center gap-2">
-                  <Globe size={12}/> Debug Guide:
+                  <Globe size={12}/> Browser Security Alert:
                 </p>
                 <p className="text-[9px] text-slate-500 leading-relaxed italic">
-                  1. Go to <b>Brain Control &gt; Repair</b> and copy the Debug CORS JSON.<br/>
-                  2. Apply it to your R2 bucket settings.<br/>
-                  3. <b>Important:</b> Perform a <b>Hard Refresh (Ctrl+F5)</b>.
+                  The binary stream was blocked. Check <b>Brain Control > Repair</b> to verify CORS configuration on your R2 storage node.
                 </p>
               </div>
             )}
@@ -206,7 +214,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
              </div>
              <div className="flex flex-col gap-1">
                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 animate-pulse">{status}</p>
-               <p className="text-[9px] font-bold text-slate-400">Direct Binary Sync Active • Gateway Bypass Enabled</p>
+               <p className="text-[9px] font-bold text-slate-400">Deep extraction node active • Gateway bypass enabled</p>
              </div>
           </div>
         ) : (
@@ -215,7 +223,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             <div className="p-16 border-4 border-dashed border-slate-100 dark:border-white/5 rounded-[3.5rem] group-hover:border-indigo-500/50 transition-all bg-slate-50/50 dark:bg-white/5 hover:bg-white dark:hover:bg-slate-800/50">
               <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-500 transition-all mx-auto mb-6" />
               <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight text-center">Select Curriculum PDF</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center">Max 50MB • High-Volume Asset Support</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center">Cloud Archival System • Max 50MB</p>
             </div>
           </label>
         )}
@@ -224,15 +232,15 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       <div className="mt-10 pt-10 border-t dark:border-white/5 grid grid-cols-3 gap-4">
          <div className="space-y-1">
             <Database size={16} className="mx-auto text-slate-300" />
-            <p className="text-[8px] font-black text-slate-400 uppercase">Direct R2</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase">Binary Vault</p>
          </div>
          <div className="space-y-1">
             <Search size={16} className="mx-auto text-slate-300" />
-            <p className="text-[8px] font-black text-slate-400 uppercase">SLO Sync</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase">SLO Mapping</p>
          </div>
          <div className="space-y-1">
             <Zap size={16} className="mx-auto text-slate-300" />
-            <p className="text-[8px] font-black text-slate-400 uppercase">Vector Hub</p>
+            <p className="text-[8px] font-black text-slate-400 uppercase">Vector Sync</p>
          </div>
       </div>
     </div>

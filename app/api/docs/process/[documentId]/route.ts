@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Add comment above each fix
-// Fix: Added missing Buffer import to resolve "Cannot find name 'Buffer'" error
+// Fix: Ensure native Buffer is available for pdf-parse logic
 import { Buffer } from 'buffer';
 import { getSupabaseServerClient, getSupabaseAdminClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
@@ -11,8 +10,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300; // Extend to 5 mins for massive PDFs
 
 /**
- * NEURAL PROCESSING NODE (v4.9)
- * Optimized for robustness in Vercel Serverless environment.
+ * NEURAL PROCESSING NODE (v5.0)
+ * Triggered after binary stream to perform heavy extraction, vectorization, and pedagogical analysis.
  * Fixed: 'ENOENT' error caused by pdf-parse failing to receive a valid native Buffer.
  */
 export async function POST(
@@ -23,78 +22,82 @@ export async function POST(
   const authHeader = req.headers.get('Authorization');
   const token = authHeader?.split(' ')[1];
   
+  // Use Admin client to ensure status updates persist even if user session flickers
   const adminSupabase = getSupabaseAdminClient();
 
   try {
-    if (!token) throw new Error("Auth Required");
+    if (!token) throw new Error("Authorization Required");
 
-    // 1. Initial State Update
+    // 1. Initial State Update: Kill the "Waiting for binary handshake" status immediately
     await adminSupabase.from('documents').update({ 
-      document_summary: 'Binary anchored. Initializing neural extraction...',
+      document_summary: 'Binary Anchored. Initializing neural extraction...',
       status: 'processing'
     }).eq('id', documentId);
 
     // 2. Fetch metadata
     const { data: doc, error: fetchErr } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
-    if (fetchErr || !doc) throw new Error("Document meta retrieval failed.");
+    if (fetchErr || !doc) throw new Error("Document meta retrieval node failed.");
 
-    // 3. Fetch binary from R2
-    await adminSupabase.from('documents').update({ document_summary: 'Streaming curriculum bits from vault...' }).eq('id', documentId);
+    // 3. Fetch binary from R2 Storage Node
+    await adminSupabase.from('documents').update({ document_summary: 'Streaming curriculum bits from cloud vault...' }).eq('id', documentId);
     const buffer = await getObjectBuffer(doc.file_path);
     
+    // CRITICAL: Prevent pdf-parse from triggering internal test data fallback (ENOENT)
     if (!buffer || buffer.length === 0) {
-      throw new Error("Zero-byte binary or unreachable node in Cloudflare R2.");
+      throw new Error("Zero-byte binary stream detected or cloud node unreachable.");
     }
 
-    // 4. Extract Text (Server-side)
-    await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Extraction)...' }).eq('id', documentId);
+    // 4. Extract Text (Server-side Parsing)
+    await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (PDF extraction)...' }).eq('id', documentId);
     
     let extractedText = "";
     try {
       const pdfModule = await import('pdf-parse');
-      // Add comment above each fix
-      // Fix: Cast pdf to any to resolve "expression is not callable" error in ESM/CJS interop
+      // Fix: Cast to any for ESM/CJS interop robustness
       const pdf: any = pdfModule.default || pdfModule;
       
-      // Ensure we pass a real Node.js Buffer to prevent ENOENT test fallback
+      // Ensure we pass a real Node.js Buffer to prevent ENOENT test data fallback errors
       const data = await pdf(Buffer.from(buffer));
       extractedText = data.text || "";
     } catch (parseErr: any) {
-      console.error("Primary PDF Parse Failed, attempting fallback...", parseErr);
-      // Fallback: If pdf-parse fails, it might be due to environment. 
-      // Manual text extraction from buffer as last resort for RAG if pdfjs-dist is complex to setup here
-      throw new Error(`PDF extraction node failed: ${parseErr.message}`);
+      console.error("Primary PDF Parse Node Failed:", parseErr);
+      throw new Error(`PDF extraction failed: ${parseErr.message}`);
     }
 
-    if (extractedText.length < 20) {
-      throw new Error("PDF contained insufficient extractable text. Scanned images are not supported yet.");
+    if (extractedText.length < 50) {
+      throw new Error("PDF contained insufficient extractable text (Scanned image or empty node).");
     }
 
-    // 5. Update status and start Vector Sync
+    // 5. Update status and start Vector Grid Synchronization
     await adminSupabase.from('documents').update({ 
       extracted_text: extractedText,
       status: 'indexing',
       document_summary: 'Synchronizing curriculum nodes with vector grid...'
     }).eq('id', documentId);
 
-    // 6. Build Vector Grid
+    // 6. Build Vector Grid (Heavy RAG Logic)
     await indexDocumentForRAG(documentId, extractedText, doc.file_path, adminSupabase);
 
-    // 7. Pedagogical Analysis
-    await adminSupabase.from('documents').update({ document_summary: 'Synthesizing pedagogical metadata...' }).eq('id', documentId);
+    // 7. Pedagogical Intelligence Extraction
+    await adminSupabase.from('documents').update({ document_summary: 'Synthesizing pedagogical metadata & SLO maps...' }).eq('id', documentId);
     
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
     if (user) {
+       // This step can take up to 60s for 180+ page PDFs
        await analyzeDocumentWithAI(documentId, user.id, adminSupabase);
     }
 
-    // 8. Finalize
-    await adminSupabase.from('documents').update({ status: 'ready' }).eq('id', documentId);
+    // 8. Finalize Node Ingestion
+    await adminSupabase.from('documents').update({ 
+      status: 'ready',
+      document_summary: 'Neural node anchored. Ready for synthesis.' 
+    }).eq('id', documentId);
 
-    return NextResponse.json({ success: true, message: "Ingestion finalized." });
+    return NextResponse.json({ success: true, message: "Curriculum ingestion finalized." });
 
   } catch (error: any) {
-    console.error("❌ [Processing Node Fault]:", error);
+    console.error("❌ [Neural Processing Exception]:", error);
+    // Explicitly set failure status so UI polling stops and displays the error
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,

@@ -9,17 +9,17 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v3.4)
- * Logic: Generate Signed URL -> Direct Browser-to-R2 Upload (Bypasses 4.5MB Limit)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v3.5)
+ * Logic: Generate Signed URL -> Direct Browser-to-R2 Upload (Bypasses 4.5MB Gateway Limit)
  */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Auth required' }, { status: 401 });
+    if (!token) return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
 
     const { data: { user } } = await anonClient.auth.getUser(token);
-    if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
+    if (!user) return NextResponse.json({ error: 'Invalid Identity' }, { status: 401 });
 
     const body = await req.json();
     const { name, contentType } = body;
@@ -33,20 +33,20 @@ export async function POST(req: NextRequest) {
     const documentId = crypto.randomUUID();
     const r2Key = `raw/${user.id}/${documentId}/${name.replace(/\s+/g, '_')}`;
 
-    // 1. Generate Pre-signed URL
+    // 1. Generate Pre-signed URL for direct browser stream
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
       ContentType: contentType,
     });
 
-    // Valid for 15 minutes
+    // Valid for 15 minutes to allow large uploads
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
 
-    // 2. Initialize Database Record
+    // 2. Initialize Neural Vault Record
     const supabase = getSupabaseServerClient(token);
     
-    // Auto-deselect others for the active session
+    // Auto-deselect others to focus on the new ingestion context
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -57,15 +57,15 @@ export async function POST(req: NextRequest) {
       status: 'processing',
       mime_type: contentType,
       subject: 'Identifying...',
-      grade_level: 'Mixed',
+      grade_level: 'Auto',
       is_selected: true,
-      document_summary: 'Neural Handshake Initiated. Waiting for binary stream...' 
+      document_summary: 'Binary Anchored. Waiting for neural processing node...' 
     }).select().single();
 
     if (dbError) {
       const isMissingCol = dbError.message.includes('column') || dbError.code === '42703';
       if (isMissingCol) {
-        throw new Error(`SCHEMA_MISMATCH: Missing curriculum columns. Run the Repair SQL script.`);
+        throw new Error(`SCHEMA_MISMATCH: Missing curriculum infrastructure columns. Run Repair SQL.`);
       }
       throw new Error(dbError.message);
     }
