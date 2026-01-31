@@ -1,4 +1,6 @@
 import { S3Client, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+// Add comment above each fix
+// Fix: Added missing Buffer import to resolve "Cannot find name 'Buffer'" error
 import { Buffer } from 'buffer';
 
 let r2Instance: S3Client | null = null;
@@ -63,6 +65,7 @@ export async function getObjectBuffer(key: string): Promise<Buffer | null> {
     const response = await client.send(command);
     if (!response.Body) return null;
     const bytes = await response.Body.transformToByteArray();
+    // Use native Node.js Buffer
     return Buffer.from(bytes);
   } catch (e) {
     console.error(`[R2 Binary Error] ${key}:`, e);
