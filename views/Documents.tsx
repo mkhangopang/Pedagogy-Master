@@ -37,19 +37,21 @@ const Documents: React.FC<DocumentsProps> = ({
   const isAdmin = userProfile.role === UserRole.APP_ADMIN;
 
   useEffect(() => {
-    const processingDocs = documents.filter(d => d.status === 'processing');
-    if (processingDocs.length === 0) return;
+    // FIX: Include 'indexing' in polling to ensure UI tracks the document through the entire pipeline
+    const activeDocs = documents.filter(d => d.status === 'processing' || d.status === 'indexing');
+    if (activeDocs.length === 0) return;
 
-    // Faster polling (3s) for the optimized indexing pipeline
     const interval = setInterval(async () => {
       const { data } = await supabase
         .from('documents')
         .select('id, status, document_summary, difficulty_level, rag_indexed, generated_json, extracted_text')
-        .in('id', processingDocs.map(d => d.id));
+        .in('id', activeDocs.map(d => d.id));
 
       if (data) {
         data.forEach(updated => {
-          if (updated.status !== 'processing') {
+          // Update if the status has changed or if intelligence has arrived
+          const current = documents.find(d => d.id === updated.id);
+          if (current && (updated.status !== current.status || updated.document_summary !== current.documentSummary)) {
             onUpdateDocument(updated.id, { 
               status: updated.status as any,
               documentSummary: updated.document_summary,
@@ -136,6 +138,7 @@ const Documents: React.FC<DocumentsProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {documents.map(doc => {
           const isProcessing = doc.status === 'processing';
+          const isIndexing = doc.status === 'indexing';
           const isReady = doc.status === 'ready' || doc.status === 'completed';
           const isFailed = doc.status === 'failed';
           
@@ -143,14 +146,14 @@ const Documents: React.FC<DocumentsProps> = ({
           const isLocked = isReady && !isAdmin;
 
           return (
-            <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group">
+            <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group text-left">
                <div className="flex justify-between items-start mb-6">
                   <div className={`p-5 rounded-[2rem] transition-all ${
-                    isProcessing ? 'bg-slate-100 animate-pulse text-slate-400' : 
+                    (isProcessing || isIndexing) ? 'bg-slate-100 animate-pulse text-slate-400' : 
                     isFailed ? 'bg-rose-50 text-rose-400' :
                     'bg-slate-50 dark:bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
                   }`}>
-                    {isProcessing ? <BrainCircuit size={32} className="animate-spin" /> : isLocked ? <Lock size={32} /> : <FileText size={32}/>}
+                    {(isProcessing || isIndexing) ? <BrainCircuit size={32} className="animate-spin" /> : isLocked ? <Lock size={32} /> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
                     {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform"><BookOpen size={16} /></button>}
@@ -179,6 +182,7 @@ const Documents: React.FC<DocumentsProps> = ({
                  <div className="flex flex-wrap gap-2">
                     {isReady && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Neural Anchored</span>}
                     {isProcessing && <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
+                    {isIndexing && <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Database size={10} className="animate-pulse"/> Indexing...</span>}
                     {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
                     <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full text-[9px] font-bold uppercase">{doc.gradeLevel}</span>
                  </div>
