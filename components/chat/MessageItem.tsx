@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { User, Bot, Copy, Check, Sparkles, Globe, ExternalLink, Library } from 'lucide-react';
+import { User, Bot, Copy, Check, Sparkles, Globe, ExternalLink, Library, AlertTriangle } from 'lucide-react';
 import { marked } from 'marked';
 
 interface MessageItemProps {
@@ -16,6 +16,8 @@ interface MessageItemProps {
 export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timestamp, id, metadata }) => {
   const isAi = role === 'assistant';
   const [copied, setCopied] = useState(false);
+  
+  const isGlitch = content.includes('Neural Glitch Guard');
 
   const handleCopy = async () => {
     const cleanText = content.split('--- Synthesis Node:')[0].trim();
@@ -42,15 +44,15 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
         <div className={`flex items-center gap-3 ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
           <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xl border-2 transition-all ${
             isAi 
-              ? 'bg-indigo-600 border-indigo-400 text-white' 
+              ? isGlitch ? 'bg-rose-600 border-rose-400 text-white' : 'bg-indigo-600 border-indigo-400 text-white' 
               : 'bg-indigo-950 border-indigo-700 text-white'
           }`}>
-            {isAi ? <Bot size={16} /> : <User size={16} />}
+            {isAi ? isGlitch ? <AlertTriangle size={16} /> : <Bot size={16} /> : <User size={16} />}
           </div>
-          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">
-            {isAi ? 'Pedagogy Master' : 'Educator Node'}
+          <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${isGlitch ? 'text-rose-600' : 'text-slate-600 dark:text-slate-300'}`}>
+            {isAi ? isGlitch ? 'System Override' : 'Pedagogy Master' : 'Educator Node'}
           </span>
-          {isAi && content && (
+          {isAi && content && !isGlitch && (
             <button onClick={handleCopy} className="p-1.5 text-slate-400 hover:text-indigo-600 transition-all">
               {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
             </button>
@@ -59,19 +61,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
         
         {/* Message Bubble */}
         <div className={`w-full ${isAi ? '' : 'flex justify-end'}`}>
-          <div className={`relative transition-all duration-500 ${
+          <div className={`relative transition-all duration-500 overflow-hidden ${
             isAi 
-              ? 'w-full text-slate-900 dark:text-slate-100' 
+              ? isGlitch 
+                ? 'w-full bg-rose-50 dark:bg-rose-950/20 border-2 border-rose-200 dark:border-rose-900/40 p-6 rounded-[2rem]' 
+                : 'w-full text-slate-900 dark:text-slate-100' 
               : 'bg-indigo-700 text-white px-7 py-5 rounded-[2.5rem] rounded-tr-none shadow-2xl max-w-[95%] md:max-w-[80%] border border-white/10'
           }`}>
-            {/* Fix: Specifically ensuring high contrast for user message with absolute white text and no opacity */}
+            
             {isAi ? (
               <div 
-                className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8]"
+                className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] break-words"
                 dangerouslySetInnerHTML={{ __html: renderedHtml }}
               />
             ) : (
-              /* HIGH CONTRAST USER TEXT: Explicitly bold, white, and no transparency */
               <div className="text-sm md:text-[16px] font-black leading-relaxed text-white tracking-tight selection:bg-indigo-400">
                 {content}
               </div>
@@ -102,10 +105,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
         {/* Footer: Metadata */}
         <div className={`flex items-center gap-3 ${isAi ? 'justify-start' : 'justify-end opacity-70'}`}>
           {isAi && (
-            <div className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 rounded-full border border-indigo-100 dark:border-indigo-800/50 shadow-sm">
+            <div className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1 rounded-full border shadow-sm ${
+              isGlitch 
+                ? 'text-rose-600 bg-rose-50 border-rose-200' 
+                : 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 border-indigo-100 dark:border-indigo-800/50'
+            }`}>
               <Sparkles size={8} />
-              {metadata?.isGrounded ? 'Standard Anchored' : 'Neural Grid'}
-              {metadata?.gradeIsolation && <span className="ml-2 font-black text-indigo-500">Grade {metadata.gradeIsolation} Lock</span>}
+              {isGlitch ? 'Sanity Intercept' : metadata?.isGrounded ? 'Standard Anchored' : 'Neural Grid'}
             </div>
           )}
           <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">

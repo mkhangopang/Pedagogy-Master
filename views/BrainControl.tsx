@@ -1,4 +1,4 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v92.0)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v92.1)
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, CheckCircle2, Copy, Zap, Check, 
@@ -35,7 +35,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
     "AllowedOrigins": ["*"],
     "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
     "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag"],
+    "ExposeHeaders": ["ETag", "Content-Type", "Content-Length"],
     "MaxAgeSeconds": 3000
   }
 ]`;
@@ -176,7 +176,6 @@ $$;
       {activeTab === 'repair' && (
         <div className="space-y-8">
            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-             {/* SQL FIX SECTION */}
              <div className="space-y-4">
                 <div className="bg-rose-50 dark:bg-rose-950/20 p-6 rounded-3xl border border-rose-100 dark:border-rose-900/50 flex items-start gap-4">
                   <AlertTriangle className="text-rose-600 shrink-0" />
@@ -200,19 +199,17 @@ $$;
                 </div>
              </div>
 
-             {/* CORS FIX SECTION */}
              <div className="space-y-4">
                 <div className="bg-amber-50 dark:bg-amber-950/20 p-6 rounded-3xl border border-amber-100 dark:border-amber-900/50 flex items-start gap-4">
                   <Globe className="text-amber-600 shrink-0" />
                   <div>
-                    <h4 className="text-sm font-black uppercase text-amber-700 tracking-tight">Fix "Failed to Fetch" Errors</h4>
-                    <p className="text-xs text-amber-600/80 mt-1 leading-relaxed">If ingestion fails immediately, your Cloudflare R2 bucket needs a CORS policy to allow browser uploads.</p>
+                    <h4 className="text-sm font-black uppercase text-amber-700 tracking-tight">Fix "Failed to Fetch" (CORS)</h4>
+                    <p className="text-xs text-amber-600/80 mt-1 leading-relaxed">If ingestion fails with "NETWORK_BLOCK", apply this <b>Debug Mode</b> snippet. It uses wildcards to bypass strict domain matching.</p>
                   </div>
                 </div>
                 <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
                     <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                      {/* Fix: Added Box to lucide-react imports to resolve 'Cannot find name Box' error */}
-                      <h3 className="text-white font-black uppercase tracking-tight flex items-center gap-2 text-[10px]"><Box size={14}/> R2 CORS JSON</h3>
+                      <h3 className="text-white font-black uppercase tracking-tight flex items-center gap-2 text-[10px]"><Box size={14}/> DEBUG CORS JSON</h3>
                       <button onClick={() => copyToClipboard(corsConfig, 'cors')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[9px] font-black uppercase text-white transition-all">
                           {copiedId === 'cors' ? <Check size={12}/> : <Copy size={12}/>} Copy JSON
                       </button>
@@ -226,8 +223,9 @@ $$;
              </div>
            </div>
            
-           <div className="p-6 bg-slate-100 dark:bg-white/5 rounded-3xl text-center">
-             <p className="text-xs text-slate-500 font-medium italic">Refer to Cloudflare Dashboard &gt; R2 &gt; [Bucket Name] &gt; Settings &gt; CORS Policy to apply the JSON snippet.</p>
+           <div className="p-6 bg-slate-100 dark:bg-white/5 rounded-3xl text-center space-y-2">
+             <p className="text-xs text-slate-500 font-medium italic">Apply JSON in Cloudflare R2 &gt; [Bucket Name] &gt; Settings &gt; CORS Policy.</p>
+             <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">⚠️ Note: Cloudflare may take 2-5 minutes to propagate. Perform a hard refresh (Ctrl+F5) to test.</p>
            </div>
         </div>
       )}

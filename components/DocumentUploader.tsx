@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText, ShieldCheck, Copy, Check, Globe } from 'lucide-react';
-import { SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 
 export default function DocumentUploader({ userId, onComplete, onCancel }: any) {
@@ -15,7 +14,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
   const REPAIR_SQL = `ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS document_summary TEXT, ADD COLUMN IF NOT EXISTS difficulty_level TEXT, ADD COLUMN IF NOT EXISTS rag_indexed BOOLEAN DEFAULT false, ADD COLUMN IF NOT EXISTS extracted_text TEXT, ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false;`;
 
-  // Status Poller
   useEffect(() => {
     let poller: any;
     if (docId && isUploading && progress >= 40) {
@@ -25,11 +23,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           const res = await fetch(`/api/docs/status/${docId}`, {
             headers: { 'Authorization': `Bearer ${session?.access_token}` }
           });
-          
           if (!res.ok) return;
-
           const data = await res.json();
-          
           if (data.status === 'ready' || data.status === 'completed') {
             clearInterval(poller);
             setProgress(100);
@@ -63,7 +58,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     if (!file) return;
 
     if (file.size > 50 * 1024 * 1024) {
-      setError("File exceeds 50MB Enterprise limit.");
+      setError("File exceeds 50MB limit.");
       return;
     }
 
@@ -75,6 +70,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
+      // Determine content type safely
+      const detectedType = file.type || 'application/pdf';
+
       const handshakeResponse = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 
@@ -83,30 +81,31 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         },
         body: JSON.stringify({
           name: file.name.replace(/\.[^/.]+$/, ""),
-          contentType: file.type,
+          contentType: detectedType,
           fileSize: file.size
         })
       });
 
       if (!handshakeResponse.ok) {
-        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake timeout or network error.' }));
-        throw new Error(errData.error || `Node Connection Refused (Status: ${handshakeResponse.status})`);
+        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake timeout.' }));
+        throw new Error(errData.error || `Node Connection Refused (${handshakeResponse.status})`);
       }
 
-      const { uploadUrl, documentId } = await handshakeResponse.json();
+      const { uploadUrl, documentId, contentType: signedType } = await handshakeResponse.json();
       setDocId(documentId);
       setProgress(20);
       setStatus('Direct Binary Stream to R2 Vault...');
 
-      // WORLD-CLASS ERROR DETECTION: 
-      // If uploadUrl is invalid, fetch will throw "Failed to fetch" immediately.
+      // CRITICAL: The Content-Type MUST match the signedType exactly or CORS preflight might fail/be rejected.
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
-        headers: { 'Content-Type': file.type }
+        headers: { 'Content-Type': signedType || detectedType }
       });
 
-      if (!uploadResponse.ok) throw new Error(`Cloud sync failed. The node rejected the binary stream (Status: ${uploadResponse.status})`);
+      if (!uploadResponse.ok) {
+        throw new Error(`The Cloud node rejected the stream (Status: ${uploadResponse.status}). Ensure R2 CORS allows PUT.`);
+      }
 
       setProgress(40);
       setStatus('Binary Anchored. Awakening Neural Indexer...');
@@ -117,18 +116,18 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       });
 
     } catch (err: any) {
-      // INTERPRET COMMON BROWSER FETCH ERRORS
       let msg = err.message || "An unexpected neural handshake error occurred.";
       if (msg.includes("Failed to fetch")) {
-        msg = "NETWORK_BLOCK: Check Cloudflare R2 CORS settings. The browser is refusing the cross-origin binary upload.";
+        const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'unknown domain';
+        msg = `NETWORK_BLOCK: Browser refused upload. Verify R2 CORS allows "${currentOrigin}". Also try clearing browser cache to reset preflight rules.`;
       }
       setError(msg);
       setIsUploading(false);
     }
   };
 
-  const isSchemaError = error?.includes('SCHEMA_MISMATCH') || error?.includes('column');
-  const isCorsError = error?.includes('CORS') || error?.includes('NETWORK_BLOCK');
+  const isSchemaError = error?.includes('SCHEMA_MISMATCH');
+  const isCorsError = error?.includes('NETWORK_BLOCK') || error?.includes('CORS');
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 md:p-16 w-full max-w-2xl shadow-2xl border dark:border-white/5 text-center relative overflow-hidden">
@@ -142,7 +141,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
           <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
              <ShieldCheck size={16} className="text-emerald-500" />
-             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Enterprise Node</span>
+             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Node</span>
           </div>
         </div>
 
@@ -183,10 +182,12 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             {isCorsError && (
               <div className="mt-4 p-4 bg-white/40 dark:bg-black/20 rounded-2xl border border-rose-200 dark:border-rose-900/30">
                 <p className="text-[10px] text-rose-700 dark:text-rose-300 font-bold mb-2 flex items-center gap-2">
-                  <Globe size={12}/> Admin Action Required:
+                  <Globe size={12}/> Debug Guide:
                 </p>
                 <p className="text-[9px] text-slate-500 leading-relaxed italic">
-                  Ensure your Cloudflare R2 bucket CORS policy allows <b>PUT</b> requests from your current domain. Refer to Sidebar &gt; Master Recipe &gt; Repair for the exact CORS JSON snippet.
+                  1. Go to <b>Brain Control &gt; Repair</b> and copy the Debug CORS JSON.<br/>
+                  2. Apply it to your R2 bucket settings.<br/>
+                  3. <b>Important:</b> If you just updated it, perform a <b>Hard Refresh (Ctrl+F5)</b> to clear preflight cache.
                 </p>
               </div>
             )}

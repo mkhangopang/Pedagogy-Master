@@ -31,6 +31,16 @@ function parseAIError(errorData: any): string {
   return msg || "Synthesis interrupted by cloud gateway. Please retry.";
 }
 
+/**
+ * GLITCH GUARD (v1.0)
+ * Detects if the model is repeating the same character/emoji pattern.
+ */
+function isRepeating(text: string, limit: number = 30): boolean {
+  if (text.length < limit) return false;
+  const lastN = text.slice(-limit);
+  return new Set(lastN.split('')).size <= 2; // Very low variance = loop detected
+}
+
 export const geminiService = {
   async getAuthToken(): Promise<string | undefined> {
     const { data: { session } } = await supabase.auth.getSession();
@@ -84,11 +94,22 @@ export const geminiService = {
       const decoder = new TextDecoder();
       if (!reader) return;
 
+      let fullContent = "";
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
+          
+          fullContent += chunk;
+          
+          // NEURAL REPETITION GUARD: Abort if sunflower-style glitch detected
+          if (isRepeating(fullContent)) {
+            reader.cancel();
+            yield "\n\n🚨 [Neural Glitch Guard]: Repetitive token loop detected. Synthesis aborted to protect UI integrity. Please rephrase your query.";
+            return;
+          }
+
           yield chunk;
         }
       } finally {
@@ -141,11 +162,20 @@ export const geminiService = {
       const decoder = new TextDecoder();
       if (!reader) return;
 
+      let fullContent = "";
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
+          
+          fullContent += chunk;
+          if (isRepeating(fullContent)) {
+            reader.cancel();
+            yield "\n\n🚨 [Neural Glitch Guard]: Recursive pattern detected. Process terminated.";
+            return;
+          }
+
           yield chunk;
         }
       } finally {

@@ -9,9 +9,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v3.2)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v3.3)
  * Logic: Generate Signed URL -> Direct Browser-to-R2 Upload (Bypasses 4.5MB Limit)
- * Error Handling: Explicit guidance for missing schema columns.
+ * Fix: Explicitly returning contentType used for signing to prevent CORS preflight header mismatch.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -41,12 +41,13 @@ export async function POST(req: NextRequest) {
       ContentType: contentType,
     });
 
+    // Valid for 15 minutes
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
 
     // 2. Initialize Database Record
     const supabase = getSupabaseServerClient(token);
     
-    // Auto-deselect others
+    // Auto-deselect others for the active session
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -63,10 +64,9 @@ export async function POST(req: NextRequest) {
     }).select().single();
 
     if (dbError) {
-      // Check for common schema errors
       const isMissingCol = dbError.message.includes('column') || dbError.code === '42703';
       if (isMissingCol) {
-        throw new Error(`SCHEMA_MISMATCH: Missing curriculum intelligence columns (document_summary, rag_indexed, etc). Run the Repair SQL script in Sidebar > Master Recipe.`);
+        throw new Error(`SCHEMA_MISMATCH: Missing curriculum columns. Run the Repair SQL script.`);
       }
       throw new Error(dbError.message);
     }
@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
       success: true, 
       documentId: docData.id,
       uploadUrl: uploadUrl,
-      r2Key: r2Key
+      r2Key: r2Key,
+      contentType: contentType // Pass back for strict header matching
     });
 
   } catch (error: any) {
