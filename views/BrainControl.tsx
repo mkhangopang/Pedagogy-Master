@@ -1,4 +1,4 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v94.2)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v94.5)
 import React, { useState } from 'react';
 import { 
   RefreshCw, Zap, Check, Copy, ShieldCheck, Terminal, Cpu, Sparkles, Wrench, AlertTriangle
@@ -17,7 +17,9 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const repairSql = `-- REPAIR SCRIPT: Fix existing installations for Neural Ingestion v94.2
+  const repairSql = `-- REPAIR SCRIPT: Fix existing installations for Neural Ingestion v94.5
+-- Target: Supabase / PostgreSQL
+
 ALTER TABLE public.documents 
 ADD COLUMN IF NOT EXISTS document_summary TEXT,
 ADD COLUMN IF NOT EXISTS difficulty_level TEXT,
@@ -52,6 +54,7 @@ SELECT
     CASE 
         WHEN d.status = 'ready' AND count(dc.id) > 0 THEN 'HEALTHY'
         WHEN d.status = 'ready' AND count(dc.id) = 0 THEN 'BROKEN_INDEX'
+        WHEN d.status = 'failed' THEN 'FAULTY_ASSET'
         ELSE 'PROCESSING'
     END as health_status
 FROM public.documents d
@@ -59,7 +62,7 @@ LEFT JOIN public.document_chunks dc ON d.id = dc.document_id
 GROUP BY d.id, d.name, d.status;
 `;
 
-  const masterSchemaSql = `-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v94.2
+  const masterSchemaSql = `-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA v94.5
 -- TARGET: Supabase + PGVector High-Fidelity Cluster
 
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -86,7 +89,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. NEURAL BRAIN
+-- 2. NEURAL BRAIN (Logic Storage)
 CREATE TABLE IF NOT EXISTS public.neural_brain (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     master_prompt TEXT NOT NULL,
@@ -97,7 +100,7 @@ CREATE TABLE IF NOT EXISTS public.neural_brain (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. CURRICULUM VAULT (DOCUMENTS)
+-- 3. CURRICULUM VAULT (Document Registry)
 CREATE TABLE IF NOT EXISTS public.documents (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -119,7 +122,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. VECTOR GRID
+-- 4. VECTOR GRID (Embedding Storage)
 CREATE TABLE IF NOT EXISTS public.document_chunks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     document_id UUID NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -130,7 +133,28 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. SEARCH RPC
+-- 5. SLO INTELLIGENCE DATABASE
+CREATE TABLE IF NOT EXISTS public.slo_database (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID REFERENCES public.documents(id) ON DELETE CASCADE,
+    slo_code TEXT NOT NULL,
+    slo_full_text TEXT NOT NULL,
+    subject TEXT,
+    grade_level TEXT,
+    bloom_level TEXT,
+    cognitive_complexity TEXT,
+    teaching_strategies TEXT[],
+    assessment_ideas TEXT[],
+    prerequisite_concepts TEXT[],
+    common_misconceptions TEXT[],
+    keywords TEXT[],
+    page_number INTEGER,
+    extraction_confidence FLOAT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(document_id, slo_code)
+);
+
+-- 6. SEARCH RPC
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v3(
   query_text TEXT,
   query_embedding vector(768),
@@ -187,7 +211,7 @@ $$;
           <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
             <ShieldCheck className="text-indigo-600" /> Neural Architecture
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic">RAG Optimized Node Hub v94.2</p>
+          <p className="text-slate-500 text-xs font-medium italic">RAG Optimized Node Hub v94.5</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
           {['logic', 'schema', 'repair'].map(tab => (
@@ -219,7 +243,7 @@ $$;
              <div className="absolute top-0 right-0 p-8 opacity-5"><Cpu size={150} /></div>
              <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> World-Class Extraction</h3>
              <p className="text-slate-400 text-xs leading-relaxed mb-6 italic">
-                Node v94.2 enforces strict curriculum mapping. Use the <b>REPAIR</b> script to align your database columns if document ingestion is stuck in "Syncing" mode.
+                Node v94.5 enforces strict curriculum mapping. Use the <b>REPAIR</b> script to align your database columns if document ingestion is failing due to 'Missing Column' faults.
              </p>
           </div>
         </div>
@@ -231,7 +255,7 @@ $$;
              <AlertTriangle className="text-rose-600 shrink-0" />
              <div>
                <h4 className="text-sm font-black uppercase text-rose-700 tracking-tight">Sync & Field Repair</h4>
-               <p className="text-xs text-rose-600/80 mt-1">Run this SQL in your Supabase Editor to fix "Missing Column" extraction faults.</p>
+               <p className="text-xs text-rose-600/80 mt-1">Run this SQL in your Supabase Editor to fix "Missing Column" errors during ingestion.</p>
              </div>
            </div>
            <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
@@ -251,7 +275,7 @@ $$;
       {activeTab === 'schema' && (
         <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
            <div className="p-8 border-b border-white/5 flex items-center justify-between">
-              <h3 className="text-white font-black uppercase tracking-tight">Infrastructure Schema v94.2</h3>
+              <h3 className="text-white font-black uppercase tracking-tight">Infrastructure Schema v94.5</h3>
               <button onClick={() => copyToClipboard(masterSchemaSql, 'schema')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[10px] font-black uppercase text-white transition-all">
                  {copiedId === 'schema' ? <Check size={12}/> : <Copy size={12}/>} Copy Full Schema
               </button>

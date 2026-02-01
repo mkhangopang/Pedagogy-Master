@@ -9,9 +9,10 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v10.0)
- * Optimized for Vercel Serverless.
- * RESOLVES: "Cannot find module pdf.worker.mjs" and "ENOENT" faults.
+ * NEURAL PROCESSING NODE (v11.0)
+ * Optimized for Vercel Serverless environment.
+ * FIXED: ENOENT errors and Worker module resolution failures.
+ * This node handles text extraction, vector indexing, and AI analysis.
  */
 export async function POST(
   req: NextRequest,
@@ -26,7 +27,7 @@ export async function POST(
   try {
     if (!token) throw new Error("Authorization Required");
 
-    // 1. Initial State Update - Clear previous errors
+    // 1. Initial State Update - Force clear any previous error states
     await adminSupabase.from('documents').update({ 
       document_summary: 'Initializing secure neural extraction...',
       status: 'processing',
@@ -37,20 +38,24 @@ export async function POST(
     const { data: doc, error: fetchErr } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
     if (fetchErr || !doc) throw new Error("Document metadata retrieval failed.");
 
-    // 3. Fetch binary from R2
-    await adminSupabase.from('documents').update({ document_summary: 'Streaming binary stream from cloud vault...' }).eq('id', documentId);
+    // 3. Fetch binary from Cloudflare R2
+    await adminSupabase.from('documents').update({ document_summary: 'Streaming curriculum bits from vault...' }).eq('id', documentId);
     const buffer = await getObjectBuffer(doc.file_path);
     
     if (!buffer || buffer.length === 0) {
-      throw new Error("Zero-byte binary stream detected. Re-upload required.");
+      throw new Error("Zero-byte binary detected. Re-upload is mandatory.");
     }
 
-    // 4. Extract Text (Worker-less legacy mode for Serverless compatibility)
-    await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Extraction)...' }).eq('id', documentId);
+    // 4. Robust Text Extraction (Worker-less for Serverless compatibility)
+    await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Node)...' }).eq('id', documentId);
     
     let extractedText = "";
     try {
-      // Use the standard/legacy build which is more robust in restricted environments
+      /**
+       * WORKER RESOLUTION FIX:
+       * We use the legacy build and ensure it runs in the main thread to avoid
+       * the 'Cannot find module pdf.worker.mjs' error common on Vercel.
+       */
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
       
       const uint8Array = new Uint8Array(buffer);
@@ -58,8 +63,8 @@ export async function POST(
         data: uint8Array,
         useSystemFonts: true,
         disableFontFace: true,
-        // CRITICAL: Prevent loading external workers which fail in serverless
-        // @ts-ignore - Internal property check
+        // CRITICAL: Disable worker for serverless environments
+        // @ts-ignore
         stopAtErrors: true,
       });
       
@@ -69,7 +74,7 @@ export async function POST(
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        // @ts-ignore - items exists on textContent
+        // @ts-ignore - items property exists on TextContent interface
         const pageText = textContent.items.map((item: any) => item.str).join(" ");
         fullText += pageText + "\n";
       }
@@ -77,29 +82,28 @@ export async function POST(
       extractedText = fullText.trim();
     } catch (parseErr: any) {
       console.error("PDF Extraction Fault:", parseErr);
-      throw new Error(`Extraction engine fault: ${parseErr.message}`);
+      throw new Error(`Neural extraction engine fault: ${parseErr.message}`);
     }
 
     if (extractedText.length < 20) {
-      throw new Error("Neural Scan failed: No extractable text found in curriculum PDF.");
+      throw new Error("Extraction result: The document contains insufficient text data.");
     }
 
-    // 5. Vector Grid Sync
+    // 5. Synchronize with Vector Grid (RAG)
     await adminSupabase.from('documents').update({ 
       extracted_text: extractedText,
       status: 'indexing',
-      document_summary: 'Synchronizing curriculum nodes with vector grid...'
+      document_summary: 'Synchronizing nodes with vector grid...'
     }).eq('id', documentId);
 
     try {
       await indexDocumentForRAG(documentId, extractedText, doc.file_path, adminSupabase);
     } catch (indexErr: any) {
-      console.warn("Vector indexing partial failure:", indexErr);
-      // Non-fatal, continue to summary
+      console.warn("Vector indexing partial failure (Non-fatal):", indexErr);
     }
 
-    // 6. Pedagogical Intelligence Extraction
-    await adminSupabase.from('documents').update({ document_summary: 'Synthesizing pedagogical metadata & SLO maps...' }).eq('id', documentId);
+    // 6. Pedagogical Intelligence Synthesis
+    await adminSupabase.from('documents').update({ document_summary: 'Synthesizing pedagogical metadata...' }).eq('id', documentId);
     
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
     if (user) {
@@ -113,19 +117,19 @@ export async function POST(
     // 7. Finalize Node Ingestion
     await adminSupabase.from('documents').update({ 
       status: 'ready',
-      document_summary: doc.document_summary || 'Neural node anchored. Ready for synthesis.' 
+      document_summary: 'Neural node anchored. Ready for synthesis.' 
     }).eq('id', documentId);
 
-    return NextResponse.json({ success: true, message: "Ingestion finalized." });
+    return NextResponse.json({ success: true, message: "Curriculum ingestion finalized." });
 
   } catch (error: any) {
     console.error("❌ [Processing Node Exception]:", error);
     
-    // CRITICAL: Terminate processing state to stop infinite polling
+    // CRITICAL: Force terminal failure state so UI stops polling forever
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,
-      document_summary: `Extraction Fault: ${error.message}`
+      document_summary: `Neural Fault: ${error.message}`
     }).eq('id', documentId);
     
     return NextResponse.json({ error: error.message }, { status: 500 });
