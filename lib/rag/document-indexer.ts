@@ -9,8 +9,9 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v161.0)
+ * WORLD-CLASS NEURAL INDEXER (v162.0)
  * Optimized for SLO-Centric Retrieval & Massive Documents.
+ * Features Time-Budget Protection for Serverless.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -33,18 +34,15 @@ export async function indexDocumentForRAG(
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
-      // Track Hierarchical Context
       if (line.match(/^DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      // Break chunk at SLO marker or header
       const isSloMarker = line.match(/^- SLO[:\s]*([A-Z]-\d{2}-[A-Z]-\d{2})/i);
       const isHeader = line.match(/^#{1,3}\s+/);
 
       if (isSloMarker || isHeader || i === lines.length - 1) {
         if (buffer.length > 30) {
-          // Deep Regex extraction for Sindh & Short formats
           const sloMatches = buffer.match(/([B-Z]-\d{2}-[A-Z]-\d{2})|([S]-\d{2}-[A-Z]-\d{2})/gi) || [];
           const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
 
@@ -68,16 +66,16 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // 2. CLEAR PREVIOUS NODES (Atomic Refresh)
+    // 2. CLEAR PREVIOUS NODES
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 3. BATCH EMBEDDING GRID (v35 Performance)
-    // Using a reliable batch size for Vercel edge/lambda limits
-    const BATCH_SIZE = 20; 
+    // 3. BATCH EMBEDDING GRID
+    // Reduced batch size to 10 for better serverless reliability
+    const BATCH_SIZE = 10; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      // Safety Break: Prevent function timeout (approx 60s for standard nodes)
-      if (Date.now() - startTime > 85000) {
-        console.warn(`⚠️ [Indexer] Timeout Protection triggered. Incomplete sync for doc: ${documentId}`);
+      // Hard cap at 50s to leave room for final updates in a 60s environment
+      if (Date.now() - startTime > 50000) {
+        console.warn(`⚠️ [Indexer] Hard Timeout protection engaged for doc: ${documentId}`);
         break;
       }
 
@@ -93,21 +91,18 @@ export async function indexDocumentForRAG(
       }));
 
       const { error: insertError } = await supabase.from('document_chunks').insert(records);
-      if (insertError) console.error(`❌ Batch Insert Fault:`, insertError);
+      if (insertError) throw new Error(`Vector Insert Fault: ${insertError.message}`);
     }
 
-    // 4. ANCHOR SUCCESS
+    // 4. MARK AS INDEXED
     await supabase.from('documents').update({ 
-      status: 'ready', 
       rag_indexed: true,
       last_synced_at: new Date().toISOString()
     }).eq('id', documentId);
 
-    console.log(`✅ [Indexer] Neural Handshake Success: ${processedChunks.length} nodes anchored in ${Date.now() - startTime}ms`);
     return { success: true, count: processedChunks.length };
   } catch (error: any) {
-    console.error("❌ [Indexer Fatal Fault]:", error);
-    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
+    console.error("❌ [Indexer Fault]:", error);
     throw error;
   }
 }

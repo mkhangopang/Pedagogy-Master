@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Upload, FileText, Plus, 
   Loader2, CheckCircle2,
@@ -31,45 +31,73 @@ const Documents: React.FC<DocumentsProps> = ({
   const [showUploader, setShowUploader] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [readingDoc, setReadingDoc] = useState<Document | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
   const limitReached = documents.length >= limits.docs;
   const isAdmin = userProfile.role === UserRole.APP_ADMIN;
 
+  // Derive which IDs actually need status tracking
+  const processingIds = documents
+    .filter(d => d.status === 'processing' || d.status === 'indexing' || d.status === 'draft')
+    .map(d => d.id)
+    .join(',');
+
   useEffect(() => {
-    // FIX: Include 'indexing' in polling to ensure UI tracks the document through the entire pipeline
-    const activeDocs = documents.filter(d => d.status === 'processing' || d.status === 'indexing');
-    if (activeDocs.length === 0) return;
-
-    const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from('documents')
-        .select('id, status, document_summary, difficulty_level, rag_indexed, generated_json, extracted_text')
-        .in('id', activeDocs.map(d => d.id));
-
-      if (data) {
-        data.forEach(updated => {
-          // Update if the status has changed or if intelligence has arrived
-          const current = documents.find(d => d.id === updated.id);
-          if (current && (updated.status !== current.status || updated.document_summary !== current.documentSummary)) {
-            onUpdateDocument(updated.id, { 
-              status: updated.status as any,
-              documentSummary: updated.document_summary,
-              difficultyLevel: updated.difficulty_level,
-              geminiProcessed: updated.rag_indexed,
-              generatedJson: updated.generated_json,
-              extractedText: updated.extracted_text
-            });
-          }
-        });
+    const idsToTrack = processingIds.split(',').filter(Boolean);
+    if (idsToTrack.length === 0) {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
       }
-    }, 3000);
+      return;
+    }
 
-    return () => clearInterval(interval);
-  }, [documents, onUpdateDocument]);
+    const pollStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('documents')
+          .select('id, status, document_summary, difficulty_level, rag_indexed, error_message, extracted_text')
+          .in('id', idsToTrack);
+
+        if (error) throw error;
+        if (data) {
+          data.forEach(updated => {
+            const current = documents.find(d => d.id === updated.id);
+            if (current && (updated.status !== current.status || updated.document_summary !== current.documentSummary)) {
+              onUpdateDocument(updated.id, { 
+                status: updated.status as any,
+                documentSummary: updated.document_summary,
+                difficultyLevel: updated.difficulty_level,
+                geminiProcessed: updated.rag_indexed,
+                extractedText: updated.extracted_text
+              });
+            }
+          });
+        }
+      } catch (e) {
+        console.error("Polling sync fault:", e);
+      }
+    };
+
+    // Initial poll
+    pollStatus();
+    
+    // Refresh every 3 seconds
+    if (!pollingRef.current) {
+      pollingRef.current = setInterval(pollStatus, 3000);
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [processingIds, documents, onUpdateDocument]);
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('Purge this asset from the neural grid? This action is only permitted for failed nodes or by administrators.')) {
+    if (window.confirm('Purge this asset from the neural grid?')) {
       setDeletingId(id);
       try { 
         const { data: { session } } = await supabase.auth.getSession();
@@ -137,12 +165,10 @@ const Documents: React.FC<DocumentsProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {documents.map(doc => {
-          const isProcessing = doc.status === 'processing';
+          const isProcessing = doc.status === 'processing' || doc.status === 'draft';
           const isIndexing = doc.status === 'indexing';
           const isReady = doc.status === 'ready' || doc.status === 'completed';
           const isFailed = doc.status === 'failed';
-          
-          // Policy: Successful assets are locked for non-admins
           const isLocked = isReady && !isAdmin;
 
           return (
@@ -153,12 +179,11 @@ const Documents: React.FC<DocumentsProps> = ({
                     isFailed ? 'bg-rose-50 text-rose-400' :
                     'bg-slate-50 dark:bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
                   }`}>
-                    {(isProcessing || isIndexing) ? <BrainCircuit size={32} className="animate-spin" /> : isLocked ? <Lock size={32} /> : <FileText size={32}/>}
+                    {(isProcessing || isIndexing) ? <BrainCircuit size={32} className="animate-spin" /> : isFailed ? <AlertTriangle size={32}/> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
                     {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform"><BookOpen size={16} /></button>}
                     
-                    {/* Show trash only for failed docs OR if user is admin */}
                     {(isFailed || isAdmin) && (
                       <button 
                         onClick={() => handleDelete(doc.id)} 
@@ -187,7 +212,7 @@ const Documents: React.FC<DocumentsProps> = ({
                     <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full text-[9px] font-bold uppercase">{doc.gradeLevel}</span>
                  </div>
                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed italic">
-                   {isFailed ? "This asset encountered a neural bottleneck. Delete and retry with a clean PDF." : (doc.documentSummary || "Intelligence extraction in progress...")}
+                   {isFailed ? (doc.documentSummary || "This asset encountered a neural bottleneck. Delete and retry with a clean PDF.") : (doc.documentSummary || "Intelligence extraction in progress...")}
                  </p>
                </div>
             </div>
