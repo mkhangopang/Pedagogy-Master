@@ -33,9 +33,14 @@ const Documents: React.FC<DocumentsProps> = ({
   const [readingDoc, setReadingDoc] = useState<Document | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
+  // ADMIN CHECK LOGIC
+  const adminString = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || (window as any).process?.env?.NEXT_PUBLIC_ADMIN_EMAILS || '');
+  const adminEmails = adminString.split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
+  const isOwnerByEmail = userProfile.email && adminEmails.includes(userProfile.email.toLowerCase());
+  
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
   const limitReached = documents.length >= limits.docs;
-  const isAdmin = userProfile.role === UserRole.APP_ADMIN;
+  const isAdmin = userProfile.role === UserRole.APP_ADMIN || isOwnerByEmail;
   const isEnterprise = userProfile.plan === SubscriptionPlan.ENTERPRISE;
   const canPurgeNodes = isAdmin || isEnterprise;
 
@@ -97,11 +102,11 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const handleDelete = async (id: string) => {
     if (!canPurgeNodes) {
-      alert("Administrative privilege required for grid purges.");
+      alert("Institutional permission required for grid purges.");
       return;
     }
     
-    if (window.confirm('Purge this asset from the neural grid? This action is audited and irreversible.')) {
+    if (window.confirm('Purge this asset from the neural grid? This action is irreversible.')) {
       setDeletingId(id);
       try { 
         const { data: { session } } = await supabase.auth.getSession();
@@ -126,7 +131,7 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500 pb-24 px-4">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-24 px-4 text-left">
       {showUploader && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl">
           <DocumentUploader 
@@ -148,11 +153,11 @@ const Documents: React.FC<DocumentsProps> = ({
         <div>
           <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight uppercase flex items-center gap-4">
             Library
-            {isAdmin && <span className="px-3 py-1 bg-amber-500 text-white rounded-full text-[10px] uppercase font-black">Admin Mode</span>}
+            {isAdmin && <span className="px-3 py-1 bg-amber-500 text-white rounded-full text-[10px] uppercase font-black tracking-widest shadow-lg">Admin Access</span>}
           </h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium italic text-sm">
             <Database size={18} className="text-indigo-500" />
-            Neural Quota: {documents.length} / {limits.docs} Permanent Slots
+            Neural Quota: {documents.length} / {limits.docs} Institutional Nodes
           </p>
         </div>
         <button 
@@ -175,7 +180,7 @@ const Documents: React.FC<DocumentsProps> = ({
           const isFailed = doc.status === 'failed';
 
           return (
-            <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group text-left">
+            <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group">
                <div className="flex justify-between items-start mb-6">
                   <div className={`p-5 rounded-[2rem] transition-all ${
                     (isProcessing || isIndexing) ? 'bg-slate-100 animate-pulse text-slate-400' : 
@@ -212,10 +217,9 @@ const Documents: React.FC<DocumentsProps> = ({
                     {isProcessing && <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
                     {isIndexing && <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Database size={10} className="animate-pulse"/> Indexing...</span>}
                     {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
-                    <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-full text-[9px] font-bold uppercase">{doc.gradeLevel}</span>
                  </div>
                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed italic">
-                   {isFailed ? (doc.documentSummary || "A neural bottleneck prevented extraction. Contact an Admin to purge this node.") : (doc.documentSummary || "Intelligence extraction in progress...")}
+                   {isFailed ? (doc.documentSummary || "A neural bottleneck prevented extraction. Contact Admin to purge this node.") : (doc.documentSummary || "Intelligence extraction in progress...")}
                  </p>
                </div>
             </div>
@@ -225,7 +229,7 @@ const Documents: React.FC<DocumentsProps> = ({
         {documents.length === 0 && (
           <div className="col-span-full py-40 text-center border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[4rem] opacity-30">
             <FileText size={64} className="mx-auto mb-6 text-slate-300" />
-            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Your Neural Vault is Empty</p>
+            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Vault Empty</p>
           </div>
         )}
       </div>

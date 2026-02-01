@@ -8,6 +8,7 @@ const nextConfig = {
   },
   experimental: {
     optimizePackageImports: ['@supabase/supabase-js', 'lucide-react', 'recharts'],
+    serverComponentsExternalPackages: ['pdf-parse', 'pdfjs-dist'],
     serverActions: {
       bodySizeLimit: '10mb'
     }

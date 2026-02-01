@@ -3,16 +3,16 @@ import { getSupabaseServerClient, getSupabaseAdminClient } from '../../../../../
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { analyzeDocumentWithAI } from '../../../../../lib/ai/document-analyzer';
+import pdf from 'pdf-parse';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v12.0)
- * Optimized for Vercel Serverless environment.
- * FIXED: "Cannot find module pdf.worker.mjs" fault.
- * IMPLEMENTATION: Worker-less single-threaded extraction.
+ * NEURAL PROCESSING NODE (v13.0)
+ * FIXED: 'pdf.worker.mjs' module not found error.
+ * Optimized for Vercel Serverless using pdf-parse (Main-thread mode).
  */
 export async function POST(
   req: NextRequest,
@@ -27,7 +27,7 @@ export async function POST(
   try {
     if (!token) throw new Error("Authorization Required");
 
-    // 1. Initial State Update - Force clear any previous error states
+    // 1. Initial State Update
     await adminSupabase.from('documents').update({ 
       document_summary: 'Initializing secure neural extraction...',
       status: 'processing',
@@ -43,52 +43,24 @@ export async function POST(
     const buffer = await getObjectBuffer(doc.file_path);
     
     if (!buffer || buffer.length === 0) {
-      throw new Error("Zero-byte binary detected. Re-upload is mandatory.");
+      throw new Error("Zero-byte binary detected. Ingestion aborted.");
     }
 
-    // 4. Robust Text Extraction (Worker-less for Serverless compatibility)
+    // 4. Robust Text Extraction (Using pdf-parse for Serverless stability)
     await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Node)...' }).eq('id', documentId);
     
     let extractedText = "";
     try {
-      /**
-       * VERCEL MODULE RESOLUTION FIX:
-       * We use the legacy build and DO NOT set a workerSrc.
-       * pdfjs-dist internally falls back to a "fake worker" (main thread) if workerSrc is null.
-       */
-      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      
-      const uint8Array = new Uint8Array(buffer);
-      const loadingTask = pdfjs.getDocument({
-        data: uint8Array,
-        useSystemFonts: true,
-        disableFontFace: true,
-        isEvalSupported: false,
-        // Using CDN for standard fonts to avoid filesystem ENOENT errors
-        standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.4.168/standard_fonts/',
-        // @ts-ignore - Internal property to skip worker loading
-        verbosity: 0 
-      });
-      
-      const pdf = await loadingTask.promise;
-      let fullText = "";
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        // @ts-ignore - items exists on textContent interface
-        const pageText = textContent.items.map((item: any) => item.str).join(" ");
-        fullText += pageText + "\n";
-      }
-      
-      extractedText = fullText.trim();
+      // pdf-parse uses a built-in fake worker that is much more stable on Vercel
+      const data = await pdf(buffer);
+      extractedText = data.text.trim();
     } catch (parseErr: any) {
       console.error("PDF Extraction Fault:", parseErr);
       throw new Error(`Neural extraction engine fault: ${parseErr.message}`);
     }
 
     if (extractedText.length < 20) {
-      throw new Error("Extraction result: The document contains insufficient text data.");
+      throw new Error("Extraction result: The document contains insufficient text data for synthesis.");
     }
 
     // 5. Synchronize with Vector Grid (RAG)
@@ -127,7 +99,7 @@ export async function POST(
   } catch (error: any) {
     console.error("❌ [Processing Node Exception]:", error);
     
-    // CRITICAL: Force terminal failure state so UI stops polling forever
+    // CRITICAL: Force terminal failure state so UI stops polling
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,
