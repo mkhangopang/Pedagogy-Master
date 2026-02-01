@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, AlertCircle, Loader2, BrainCircuit, RefreshCw, UploadCloud, Zap, Database, Search, FileText, ShieldCheck, Copy, Check, Globe } from 'lucide-react';
+import { BrainCircuit, RefreshCw, UploadCloud, AlertCircle, ShieldCheck, Database, Search, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 export default function DocumentUploader({ userId, onComplete, onCancel }: any) {
@@ -10,11 +10,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const [status, setStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let poller: any;
-    if (docId && isUploading && progress >= 35) {
+    if (docId && isUploading && progress >= 40) {
       poller = setInterval(async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -31,14 +30,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             setTimeout(() => onComplete(data), 800);
           } else if (data.status === 'failed') {
             clearInterval(poller);
-            setError(data.error || 'Neural Extraction Fault: The processing node failed.');
+            setError(data.error || 'The processing node encountered a critical fault.');
             setIsUploading(false);
           } else {
-            // Smooth progress calculation
-            let p = 40;
-            if (data.status === 'indexing') p = 70;
-            if (data.metadata?.indexed) p = 85;
-            
+            // Update progress based on internal status
+            let p = 50;
+            if (data.status === 'indexing') p = 75;
+            if (data.metadata?.indexed) p = 90;
             setProgress(Math.max(progress, p));
             setStatus(data.summary || 'Processing curriculum schema...');
           }
@@ -66,7 +64,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Authentication node offline.");
+      if (!session) throw new Error("Authentication offline.");
       
       const detectedType = file.type || 'application/pdf';
 
@@ -77,51 +75,44 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           'Authorization': `Bearer ${session?.access_token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          name: file.name.replace(/\.[^/.]+$/, ""),
-          contentType: detectedType,
-          fileSize: file.size
-        })
+        body: JSON.stringify({ name: file.name.replace(/\.[^/.]+$/, ""), contentType: detectedType })
       });
 
       if (!handshakeResponse.ok) {
-        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake timeout.' }));
-        throw new Error(errData.error || `Refused (${handshakeResponse.status})`);
+        const errData = await handshakeResponse.json().catch(() => ({}));
+        throw new Error(errData.error || "Handshake refused by cloud gateway.");
       }
 
       const { uploadUrl, documentId, contentType: signedType } = await handshakeResponse.json();
       setDocId(documentId);
-      setProgress(15);
-      setStatus('Streaming Binary Bits...');
+      setProgress(20);
+      setStatus('Streaming Binary Bits to Vault...');
 
-      // 2. Upload to R2
+      // 2. Direct PUT to Cloudflare R2
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
         headers: { 'Content-Type': signedType || detectedType }
       });
 
-      if (!uploadResponse.ok) throw new Error(`Cloud rejection (${uploadResponse.status})`);
+      if (!uploadResponse.ok) throw new Error("Cloud Node rejected binary stream.");
 
-      setProgress(35);
-      setStatus('Binary Anchored. Waking Node...');
+      setProgress(40);
+      setStatus('Binary Anchored. Triggering Neural Node...');
 
-      // 3. Trigger Processor
+      // 3. Trigger Serverless Processing
       const triggerResponse = await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
       });
 
-      if (!triggerResponse.ok) {
+      if (!triggerResponse.ok && triggerResponse.status !== 504) {
         const triggerData = await triggerResponse.json().catch(() => ({}));
-        // If it's a 504, we continue polling as it might be working in the background
-        if (triggerResponse.status !== 504) {
-          throw new Error(`Neural node trigger failed: ${triggerData.error || 'Gateway Error'}`);
-        }
+        throw new Error(triggerData.error || "Neural node failed to initialize.");
       }
 
     } catch (err: any) {
-      setError(err.message || "Unexpected neural fault.");
+      setError(err.message || "Unexpected neural fault during ingestion.");
       setIsUploading(false);
     }
   };
@@ -138,17 +129,17 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
           <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
              <ShieldCheck size={16} className="text-emerald-500" />
-             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Vault</span>
+             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Ingestion</span>
           </div>
         </div>
 
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none">Curriculum Ingestion</h2>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Neural Vector Indexing Architecture</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase leading-none">Curriculum Ingestion</h2>
+          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Precision Extraction Architecture</p>
         </div>
 
         {error ? (
-          <div className="p-8 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-3xl space-y-6 animate-in fade-in zoom-in-95">
+          <div className="p-8 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/50 rounded-3xl space-y-4 animate-in fade-in zoom-in-95">
             <div className="flex items-start gap-3 text-rose-600">
                <AlertCircle size={24} className="shrink-0 mt-0.5" />
                <div className="space-y-1">
@@ -156,10 +147,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                  <p className="text-[11px] font-bold leading-relaxed">{error}</p>
                </div>
             </div>
-            
             <button 
               onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} 
-              className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 shadow-sm"
+              className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
             >
               <RefreshCw size={12}/> Retry Ingestion
             </button>
@@ -180,7 +170,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             <div className="p-16 border-4 border-dashed border-slate-100 dark:border-white/5 rounded-[3.5rem] group-hover:border-indigo-500/50 transition-all bg-slate-50/50 dark:bg-white/5 hover:bg-white dark:hover:bg-slate-800/50">
               <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-500 transition-all mx-auto mb-6" />
               <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight text-center">Select Curriculum PDF</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center">Cloud Archival System • Max 50MB</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 text-center">Max 50MB • Cloud Storage</p>
             </div>
           </label>
         )}
