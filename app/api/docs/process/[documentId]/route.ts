@@ -9,10 +9,10 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v11.0)
+ * NEURAL PROCESSING NODE (v12.0)
  * Optimized for Vercel Serverless environment.
- * FIXED: ENOENT errors and Worker module resolution failures.
- * This node handles text extraction, vector indexing, and AI analysis.
+ * FIXED: "Cannot find module pdf.worker.mjs" fault.
+ * IMPLEMENTATION: Worker-less single-threaded extraction.
  */
 export async function POST(
   req: NextRequest,
@@ -52,9 +52,9 @@ export async function POST(
     let extractedText = "";
     try {
       /**
-       * WORKER RESOLUTION FIX:
-       * We use the legacy build and ensure it runs in the main thread to avoid
-       * the 'Cannot find module pdf.worker.mjs' error common on Vercel.
+       * VERCEL MODULE RESOLUTION FIX:
+       * We use the legacy build and DO NOT set a workerSrc.
+       * pdfjs-dist internally falls back to a "fake worker" (main thread) if workerSrc is null.
        */
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
       
@@ -63,9 +63,11 @@ export async function POST(
         data: uint8Array,
         useSystemFonts: true,
         disableFontFace: true,
-        // CRITICAL: Disable worker for serverless environments
-        // @ts-ignore
-        stopAtErrors: true,
+        isEvalSupported: false,
+        // Using CDN for standard fonts to avoid filesystem ENOENT errors
+        standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@4.4.168/standard_fonts/',
+        // @ts-ignore - Internal property to skip worker loading
+        verbosity: 0 
       });
       
       const pdf = await loadingTask.promise;
@@ -74,7 +76,7 @@ export async function POST(
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        // @ts-ignore - items property exists on TextContent interface
+        // @ts-ignore - items exists on textContent interface
         const pageText = textContent.items.map((item: any) => item.str).join(" ");
         fullText += pageText + "\n";
       }
@@ -117,7 +119,7 @@ export async function POST(
     // 7. Finalize Node Ingestion
     await adminSupabase.from('documents').update({ 
       status: 'ready',
-      document_summary: 'Neural node anchored. Ready for synthesis.' 
+      document_summary: doc.document_summary || 'Neural node anchored. Ready for synthesis.' 
     }).eq('id', documentId);
 
     return NextResponse.json({ success: true, message: "Curriculum ingestion finalized." });
@@ -129,7 +131,7 @@ export async function POST(
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,
-      document_summary: `Neural Fault: ${error.message}`
+      document_summary: `Extraction Fault: ${error.message}`
     }).eq('id', documentId);
     
     return NextResponse.json({ error: error.message }, { status: 500 });

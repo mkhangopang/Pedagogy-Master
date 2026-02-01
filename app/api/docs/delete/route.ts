@@ -4,8 +4,9 @@ import { r2Client, R2_BUCKET } from '../../../../lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 /**
- * NEURAL NODE PURGE PROTOCOL (v4.0)
- * RESTRICTION: Successful assets are permanent for non-admins to prevent quota cycling.
+ * NEURAL NODE PURGE PROTOCOL (v5.0)
+ * RESTRICTION: Only App Admins or Enterprise Institutions can purge assets.
+ * Standard users cannot delete even failed documents to ensure administrative oversight.
  */
 export async function DELETE(request: NextRequest) {
   try {
@@ -19,35 +20,33 @@ export async function DELETE(request: NextRequest) {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: 'Doc ID required' }, { status: 400 });
 
-    // 1. Fetch user profile for role check
+    // 1. Strict Authorization Node
     const { data: profile } = await anonClient
       .from('profiles')
-      .select('role')
+      .select('role, plan')
       .eq('id', user.id)
       .single();
 
     const isAdmin = profile?.role === 'app_admin';
+    const isEnterprise = profile?.plan === 'enterprise';
 
-    // 2. Fetch document metadata
-    const query = anonClient.from('documents').select('*').eq('id', id);
-    if (!isAdmin) {
-      query.eq('user_id', user.id);
-    }
-    
-    const { data: doc, error: fetchError } = await query.single();
-
-    if (fetchError || !doc) return NextResponse.json({ error: 'Document not found or unauthorized.' }, { status: 404 });
-
-    // 3. PERMANENCE ENFORCEMENT
-    // Only allow non-admins to delete documents that FAILED processing or are still in draft
-    const isSuccessful = doc.status === 'ready' || doc.status === 'completed' || doc.rag_indexed === true;
-    if (isSuccessful && !isAdmin) {
+    // PRIVILEGE CHECK: Only Admins/Enterprise can initiate a purge
+    if (!isAdmin && !isEnterprise) {
       return NextResponse.json({ 
-        error: 'PERMANENT VAULT POLICY: Successfully indexed curriculum assets cannot be removed. Contact administration for institutional purges.' 
+        error: 'ADMINISTRATIVE PRIVILEGE REQUIRED: Failed or successful curriculum assets can only be purged by an Institutional Admin or Developer node.' 
       }, { status: 403 });
     }
 
-    // 4. Physical File Deletion (Cloudflare R2)
+    // 2. Fetch document metadata
+    const { data: doc, error: fetchError } = await anonClient
+      .from('documents')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (fetchError || !doc) return NextResponse.json({ error: 'Document not found or unauthorized.' }, { status: 404 });
+
+    // 3. Physical File Deletion (Cloudflare R2)
     if (doc.storage_type === 'r2' && r2Client) {
       try {
         await r2Client.send(new DeleteObjectCommand({
@@ -59,10 +58,10 @@ export async function DELETE(request: NextRequest) {
       }
     }
 
-    // 5. Vector Chunk Deletion
+    // 4. Vector Chunk Deletion
     await anonClient.from('document_chunks').delete().eq('document_id', id);
 
-    // 6. Database record deletion
+    // 5. Database record deletion
     const { error: deleteError } = await anonClient
       .from('documents')
       .delete()
