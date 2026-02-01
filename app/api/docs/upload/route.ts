@@ -3,14 +3,13 @@ import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import crypto from 'crypto';
 
-export const runtime = 'nodejs';
+export const runtime = 'edge'; // Optimization: Use edge for high-speed handshake
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v3.5)
- * Logic: Generate Signed URL -> Direct Browser-to-R2 Upload (Bypasses 4.5MB Gateway Limit)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v3.6)
+ * Optimized with Edge Runtime for minimal latency.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -18,6 +17,8 @@ export async function POST(req: NextRequest) {
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
 
+    // Use a lightweight check or the provided token for Supabase
+    // On Edge, we need to ensure our supabase client handles the environment
     const { data: { user } } = await anonClient.auth.getUser(token);
     if (!user) return NextResponse.json({ error: 'Invalid Identity' }, { status: 401 });
 
@@ -33,20 +34,17 @@ export async function POST(req: NextRequest) {
     const documentId = crypto.randomUUID();
     const r2Key = `raw/${user.id}/${documentId}/${name.replace(/\s+/g, '_')}`;
 
-    // 1. Generate Pre-signed URL for direct browser stream
+    // 1. Generate Pre-signed URL
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
       ContentType: contentType,
     });
 
-    // Valid for 15 minutes to allow large uploads
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
 
-    // 2. Initialize Neural Vault Record
+    // 2. Initialize Record
     const supabase = getSupabaseServerClient(token);
-    
-    // Auto-deselect others to focus on the new ingestion context
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -59,16 +57,10 @@ export async function POST(req: NextRequest) {
       subject: 'Identifying...',
       grade_level: 'Auto',
       is_selected: true,
-      document_summary: 'Binary Anchored. Waiting for neural processing node...' 
+      document_summary: 'Waiting for binary handshake...' 
     }).select().single();
 
-    if (dbError) {
-      const isMissingCol = dbError.message.includes('column') || dbError.code === '42703';
-      if (isMissingCol) {
-        throw new Error(`SCHEMA_MISMATCH: Missing curriculum infrastructure columns. Run Repair SQL.`);
-      }
-      throw new Error(dbError.message);
-    }
+    if (dbError) throw new Error(dbError.message);
 
     return NextResponse.json({ 
       success: true, 
@@ -82,6 +74,6 @@ export async function POST(req: NextRequest) {
     console.error("❌ [Upload Handshake Error]:", error);
     return NextResponse.json({ 
       error: error.message || 'Synthesis grid exception.' 
-    }, { status: error.message?.includes('SCHEMA_MISMATCH') ? 409 : 500 });
+    }, { status: 500 });
   }
 }

@@ -33,10 +33,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             setTimeout(() => onComplete(data), 1000);
           } else if (data.status === 'failed') {
             clearInterval(poller);
-            setError(data.error || 'Neural Extraction Fault.');
+            setError(data.error || 'Neural Extraction Fault: The processing node failed.');
             setIsUploading(false);
           } else {
-            // Update UI with latest summary from backend
             let p = 55;
             if (data.status === 'indexing') p = 75;
             if (data.metadata?.indexed) p = 90;
@@ -78,7 +77,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       
       const detectedType = file.type || 'application/pdf';
 
-      // 1. Handshake with API to get Signed URL
       const handshakeResponse = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 
@@ -102,7 +100,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(20);
       setStatus('Streaming Binary Bits to Vault...');
 
-      // 2. Direct PUT to Cloudflare R2
       try {
         const uploadResponse = await fetch(uploadUrl, {
           method: 'PUT',
@@ -123,7 +120,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(40);
       setStatus('Binary Anchored. Awakening Processing Node...');
 
-      // 3. Trigger Server-side Neural Processing
       const triggerResponse = await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
@@ -131,7 +127,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
       if (!triggerResponse.ok) {
         const triggerData = await triggerResponse.json().catch(() => ({}));
-        throw new Error(`Neural node trigger failed: ${triggerData.error || 'Gateway Timeout'}`);
+        // If it's a 504, it might still be processing in the background, don't kill the UI yet
+        if (triggerResponse.status !== 504) {
+           throw new Error(`Neural node trigger failed: ${triggerData.error || 'Gateway Fault'}`);
+        }
       }
 
     } catch (err: any) {

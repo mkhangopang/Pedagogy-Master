@@ -37,7 +37,6 @@ const Documents: React.FC<DocumentsProps> = ({
   const limitReached = documents.length >= limits.docs;
   const isAdmin = userProfile.role === UserRole.APP_ADMIN;
 
-  // Derive which IDs actually need status tracking
   const processingIds = documents
     .filter(d => d.status === 'processing' || d.status === 'indexing' || d.status === 'draft')
     .map(d => d.id)
@@ -80,10 +79,8 @@ const Documents: React.FC<DocumentsProps> = ({
       }
     };
 
-    // Initial poll
     pollStatus();
     
-    // Refresh every 3 seconds
     if (!pollingRef.current) {
       pollingRef.current = setInterval(pollStatus, 3000);
     }
