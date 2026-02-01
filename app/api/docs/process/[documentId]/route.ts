@@ -3,15 +3,15 @@ import { getSupabaseServerClient, getSupabaseAdminClient } from '../../../../../
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { analyzeDocumentWithAI } from '../../../../../lib/ai/document-analyzer';
-import pdf from 'pdf-parse';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v8.0)
+ * NEURAL PROCESSING NODE (v8.1)
  * Optimized for robustness in Vercel Serverless environment.
- * Switched to pdf-parse to avoid pdf.worker.mjs bundling errors.
+ * Uses dynamic import for pdf-parse to avoid build-time filesystem errors.
  */
 export async function POST(
   req: NextRequest,
@@ -44,11 +44,13 @@ export async function POST(
       throw new Error("Zero-byte binary stream detected. Re-upload required.");
     }
 
-    // 4. Extract Text (Using serverless-friendly pdf-parse)
+    // 4. Extract Text (Using serverless-friendly pdf-parse with dynamic import)
     await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Extraction)...' }).eq('id', documentId);
     
     let extractedText = "";
     try {
+      // Dynamic import prevents pdf-parse from trying to access its internal test files during Next.js build
+      const pdf = (await import('pdf-parse')).default;
       const data = await pdf(buffer);
       extractedText = data.text || "";
     } catch (parseErr: any) {

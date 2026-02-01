@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../../lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   req: NextRequest,
   props: { params: Promise<{ documentId: string }> }
