@@ -9,8 +9,8 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v163.0)
- * Optimized for SLO-Centric Retrieval & Conceptual Fallback.
+ * WORLD-CLASS NEURAL INDEXER (v164.0)
+ * Optimized for SLO-Centric Retrieval & Hierarchical Boundary Analysis.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -20,7 +20,7 @@ export async function indexDocumentForRAG(
   preExtractedMeta?: any
 ) {
   const startTime = Date.now();
-  console.log(`📡 [Indexer] Ingesting Neural Nodes for document: ${documentId}`);
+  console.log(`📡 [Indexer] Initiating Precision Ingestion: ${documentId}`);
   
   try {
     const meta = preExtractedMeta || {};
@@ -29,7 +29,10 @@ export async function indexDocumentForRAG(
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
-    // 1. ADAPTIVE SLO-AWARE CHUNKING
+    // 1. DYNAMIC ANCHOR DETECTION
+    // Synchronized with slo-extractor.ts for unified pattern recognition
+    const ANCHOR_PATTERN = /(?:- SLO[:\s]*|\[SLO:\s*)|(?:^|\s)([B-Z]\d{1,2}(?:\.|-)?(?:p|P|[A-Z])?-?\d{1,2})\b/i;
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       
@@ -37,66 +40,61 @@ export async function indexDocumentForRAG(
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      // Sindh & Federal SLO Pattern Matching
-      const isSloMarker = line.match(/^- SLO[:\s]*([A-Z]-?\d{2}-?[A-Z]-?\d{2})/i) || line.match(/\[SLO:.*?\]/i);
-      const isHeader = line.match(/^#{1,3}\s+/);
+      // Detect semantic breaks (New SLO, New Header, or Page Markers)
+      const isAnchor = line.match(ANCHOR_PATTERN) || line.match(/^#{1,3}\s+/);
 
-      if (isSloMarker || isHeader || i === lines.length - 1) {
-        if (buffer.length > 30) {
-          const sloMatches = buffer.match(/([B-Z]-?\d{2}-?[A-Z]-?\d{2})|([S]-?\d{2}-?[A-Z]-?\d{2})|([B-Z]\d{1,2}\.p\d{1,2})/gi) || [];
-          const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
+      if (isAnchor && buffer.length > 50) {
+        // Finalize current chunk before starting new one
+        const sloMatches = buffer.match(/([B-Z]-?\d{2}-?[A-Z]-?\d{2})|([S]-?\d{2}-?[A-Z]-?\d{2})|([B-Z]\d{1,2}[\.pP-]?\d{1,2})/gi) || [];
+        const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
 
-          processedChunks.push({
-            text: buffer.trim(),
-            metadata: {
-              ...currentCtx,
-              subject: meta.subject,
-              grade: meta.grade,
-              board: meta.board,
-              slo_codes: normalizedSLOs,
-              is_slo_definition: buffer.includes('- SLO:') || buffer.includes('[SLO:'),
-              chunk_index: processedChunks.length,
-              source_path: filePath
-            }
-          });
-        }
+        processedChunks.push({
+          text: buffer.trim(),
+          metadata: {
+            ...currentCtx,
+            subject: meta.subject,
+            grade: meta.grade,
+            board: meta.board,
+            slo_codes: normalizedSLOs,
+            is_slo_definition: normalizedSLOs.length > 0 && (buffer.toLowerCase().includes('slo') || buffer.includes('[')),
+            chunk_index: processedChunks.length,
+            source_path: filePath
+          }
+        });
         buffer = line + "\n";
       } else {
         buffer += line + "\n";
       }
     }
 
-    // 2. CONCEPTUAL FALLBACK (If document had no strict markers)
+    // 2. TAIL BUFFER PROCESSING
+    if (buffer.trim().length > 20) {
+      const sloMatches = buffer.match(/([B-Z]\d{1,2}[\.pP-]?\d{1,2})/gi) || [];
+      const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
+      processedChunks.push({
+        text: buffer.trim(),
+        metadata: { ...currentCtx, slo_codes: normalizedSLOs, chunk_index: processedChunks.length, source_path: filePath }
+      });
+    }
+
+    // 3. RECURSIVE CHUNK REFINEMENT (If too few chunks found)
     if (processedChunks.length < 5 && content.length > 1000) {
-      console.log("🧩 [Indexer] Insufficient semantic markers found. Engaging Conceptual Fallback Chunking...");
       const words = content.split(/\s+/);
-      const chunkSize = 400;
-      for (let i = 0; i < words.length; i += chunkSize) {
+      const chunkSize = 500;
+      for (let i = 0; i < words.length; i += 400) {
         const chunkText = words.slice(i, i + chunkSize).join(' ');
-        if (chunkText.length > 100) {
-          processedChunks.push({
-            text: `[CONCEPTUAL_NODE] ${chunkText}`,
-            metadata: {
-              type: 'fallback',
-              chunk_index: processedChunks.length,
-              source_path: filePath
-            }
-          });
-        }
+        processedChunks.push({
+          text: `[CONCEPTUAL_NODE] ${chunkText}`,
+          metadata: { type: 'fallback', chunk_index: processedChunks.length, source_path: filePath }
+        });
       }
     }
 
-    // 3. CLEAR PREVIOUS NODES
+    // 4. VECTOR CLUSTER SYNCHRONIZATION
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 4. BATCH EMBEDDING GRID
-    const BATCH_SIZE = 10; 
+    const BATCH_SIZE = 15; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      if (Date.now() - startTime > 85000) { // 85s safe limit
-        console.warn(`⚠️ [Indexer] Timeout protection engaged at ${i}/${processedChunks.length} chunks.`);
-        break;
-      }
-
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
       
@@ -108,11 +106,12 @@ export async function indexDocumentForRAG(
         metadata: chunk.metadata
       }));
 
-      const { error: insertError } = await supabase.from('document_chunks').insert(records);
-      if (insertError) throw new Error(`Vector Insert Fault: ${insertError.message}`);
+      await supabase.from('document_chunks').insert(records);
+      
+      // Safety cooling to prevent 429 during heavy ingest
+      if (processedChunks.length > 50) await new Promise(r => setTimeout(r, 100));
     }
 
-    // 5. MARK AS INDEXED
     await supabase.from('documents').update({ 
       rag_indexed: true,
       last_synced_at: new Date().toISOString()

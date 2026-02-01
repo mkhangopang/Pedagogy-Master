@@ -8,8 +8,8 @@ import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../consta
 import { rateLimiter } from './rate-limiter';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v55.0)
- * Context Rules: Priority ID > Selected Vault > Global Discovery
+ * NEURAL SYNTHESIS ORCHESTRATOR (v56.0)
+ * Context Rules: Priority ID > Selected Vault > Relational DB > Global
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -59,19 +59,31 @@ export async function generateAIResponse(
     if (retrievedChunks.length > 0) {
       vaultContent = retrievedChunks
         .map((chunk, i) => {
-          // Check for exact code match OR semantic alignment
           const isVerbatim = chunk.is_verbatim_definition || (targetCode && chunk.slo_codes?.includes(targetCode));
           const tag = isVerbatim ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : " [CONCEPTUAL_MATCH]";
           if (isVerbatim) verbatimFound = true;
+          
           return `### VAULT_NODE_${i + 1}\n${tag}\n${chunk.chunk_text}\n---`;
         })
         .join('\n');
     } else {
-      const processing = activeDocs?.filter(d => d.status !== 'ready') || [];
-      if (processing.length > 0) {
-        vaultContent = `[SYSTEM_ALERT: SELECTED_DOCS_STILL_SYNCING] The asset "${processing[0].name}" is not yet fully anchored in the vector grid. Synthesis fidelity will be reduced.`;
-      } else {
-        vaultContent = `[SEARCH_FAILURE: NO_RELEVANT_CONTEXT_FOUND] No relevant nodes found in ${activeDocs?.[0]?.name}. Falling back to general pedagogical reasoning based on provided SLO codes.`;
+      // If no chunks, try relational DB lookup as last line of defense
+      if (targetCode) {
+        const { data: sloDb } = await supabase
+          .from('slo_database')
+          .select('slo_full_text')
+          .eq('slo_code', targetCode)
+          .in('document_id', documentIds)
+          .maybeSingle();
+        
+        if (sloDb) {
+          vaultContent = `### RELATIONAL_SLO_NODE\n[VERIFIED_FROM_METADATA_INDEX]\n${targetCode}: ${sloDb.slo_full_text}\n---`;
+          verbatimFound = true;
+        }
+      }
+
+      if (!vaultContent) {
+        vaultContent = `[SEARCH_FAILURE: NO_RELEVANT_CONTEXT_FOUND] The query did not yield specific segments in the active vault. Proceeding with synthesized pedagogical intelligence using the provided SLO standard: ${targetCode || 'General'}.`;
       }
     }
   }
@@ -83,10 +95,10 @@ export async function generateAIResponse(
   if (mode === 'VAULT' && targetCode && isCurriculumEnabled) {
     verificationLock = `
 🔴 STICKY_GROUNDING_DIRECTIVE:
-Targeting SLO Code: [${targetCode}].
-1. If [VERIFIED_VERBATIM_DEFINITION] is present in vault content, use it EXACTLY.
-2. If only [CONCEPTUAL_MATCH] is present, synthesize a high-fidelity answer based on those concepts.
-3. If vault is empty or results are unrelated, proceed with synthesis using standard pedagogical principles but acknowledge the lack of specific vault text.
+Targeting SLO: [${targetCode}].
+1. If [VERIFIED_VERBATIM_DEFINITION] is present, use that text EXACTLY.
+2. If only [CONCEPTUAL_MATCH] is present, prioritize those concepts but synthesize the missing gaps using Grade ${activeDocs?.[0]?.grade_level || 'standard'} complexity.
+3. If [SEARCH_FAILURE] is reported, synthesize a high-fidelity artifact using your internal knowledge of standard curricula, but acknowledge the vault search failure.
 `;
   }
 

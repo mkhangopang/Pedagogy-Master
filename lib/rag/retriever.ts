@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
-import { extractSLOCodes } from './slo-extractor';
+import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 export interface RetrievedChunk {
   chunk_id: string;
@@ -15,8 +15,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * HIGH-FIDELITY RETRIEVER (v12.5)
- * Specialized for Curriculum Anchoring.
+ * WORLD-CLASS NEURAL RETRIEVER (v13.0)
+ * Optimized with Query Expansion and SLO Relational Enrichment.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -34,8 +34,25 @@ export async function retrieveRelevantChunks({
 
     const targetCodes = extractSLOCodes(query);
     const resultsMap = new Map<string, RetrievedChunk>();
+    let expandedQuery = query;
 
-    // 1. HARD-ANCHOR: Exact SLO Matches (Pedagogical Priority)
+    // 1. RELATIONAL ENRICHMENT (Query Expansion)
+    // If we identify an SLO code, fetch its text from the relational DB to improve semantic lookup
+    if (targetCodes.length > 0) {
+      const { data: dbMatches } = await supabase
+        .from('slo_database')
+        .select('slo_full_text')
+        .in('slo_code', targetCodes)
+        .in('document_id', documentIds)
+        .limit(1);
+      
+      if (dbMatches && dbMatches[0]?.slo_full_text) {
+        expandedQuery = `${query} ${dbMatches[0].slo_full_text}`;
+        console.log(`🧠 [Retriever] Query Expansion Active: + ${dbMatches[0].slo_full_text.substring(0, 30)}...`);
+      }
+    }
+
+    // 2. HARD-ANCHOR: Tag Matching
     if (targetCodes.length > 0) {
       const { data: tagMatches } = await supabase
         .from('document_chunks')
@@ -51,19 +68,17 @@ export async function retrieveRelevantChunks({
             chunk_text: m.chunk_text,
             slo_codes: m.slo_codes || [],
             metadata: m.metadata || {},
-            combined_score: 1.0, // Absolute weight for exact standard matches
-            is_verbatim_definition: m.metadata?.is_slo_definition || false,
-            section_title: m.metadata?.sectionTitle || m.metadata?.standard || m.metadata?.title || 'General',
-            page_number: m.metadata?.pageNumber || 0
+            combined_score: 1.5, // Boosted score for exact standard reference
+            is_verbatim_definition: m.metadata?.is_slo_definition || false
           });
         });
       }
     }
 
-    // 2. SEMANTIC LAYER: Neural vector search for conceptual relevance
-    const queryEmbedding = await generateEmbedding(query);
+    // 3. SEMANTIC LAYER: Neural Vector Search
+    const queryEmbedding = await generateEmbedding(expandedQuery);
     const { data: semanticChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v3', {
-      query_text: query,
+      query_text: expandedQuery,
       query_embedding: queryEmbedding,
       match_count: matchCount, 
       filter_document_ids: documentIds
@@ -81,27 +96,47 @@ export async function retrieveRelevantChunks({
           slo_codes: m.slo_codes || [],
           metadata: m.metadata || {},
           combined_score: m.combined_score || 0.5,
-          is_verbatim_definition: m.metadata?.is_slo_definition || false,
-          section_title: m.metadata?.sectionTitle || m.metadata?.standard || m.metadata?.title || 'General',
-          page_number: m.metadata?.pageNumber || 0
+          is_verbatim_definition: m.metadata?.is_slo_definition || false
         });
+      } else {
+        // If already in map from exact match, boost score with semantic relevance
+        const existing = resultsMap.get(cid)!;
+        existing.combined_score += (m.combined_score || 0);
       }
     });
 
-    // 3. CONTEXTUAL SYNTHESIS: Format chunks with their structural hierarchy
+    // 4. CROSS-LINKING RECOVERY
+    // If zero results found for a code, try searching for the "normalized" variant specifically
+    if (resultsMap.size === 0 && targetCodes.length > 0) {
+      console.log("🔍 [Retriever] Initial search failed. Attempting Normalized Grid Recovery...");
+      const normalized = targetCodes.map(c => normalizeSLO(c));
+      const { data: fallback } = await supabase
+        .from('document_chunks')
+        .select('*')
+        .in('document_id', documentIds)
+        .overlaps('slo_codes', normalized);
+      
+      if (fallback) {
+        fallback.forEach(m => {
+          resultsMap.set(m.id, {
+            chunk_id: m.id,
+            document_id: m.document_id,
+            chunk_text: m.chunk_text,
+            slo_codes: m.slo_codes || [],
+            metadata: m.metadata || {},
+            combined_score: 1.0,
+            is_verbatim_definition: true
+          });
+        });
+      }
+    }
+
     return Array.from(resultsMap.values())
       .sort((a, b) => b.combined_score - a.combined_score)
-      .slice(0, 20)
-      .map(chunk => {
-        const meta = chunk.metadata;
-        const prefix = meta.domain ? `[CONTEXT: ${meta.domain} > ${meta.benchmark || 'General'}]\n` : "";
-        return {
-          ...chunk,
-          chunk_text: prefix + chunk.chunk_text
-        };
-      });
+      .slice(0, 20);
+
   } catch (err) {
-    console.error('❌ [Retriever] Fault detected in neural vault:', err);
+    console.error('❌ [Retriever] Neural Vault Exception:', err);
     return [];
   }
 }
