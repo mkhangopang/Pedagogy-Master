@@ -10,9 +10,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v13.0)
- * FIXED: 'pdf.worker.mjs' module not found error.
- * Optimized for Vercel Serverless using pdf-parse (Main-thread mode).
+ * NEURAL PROCESSING NODE (v14.0)
+ * FIXED: Stale metadata race condition in finalize step.
  */
 export async function POST(
   req: NextRequest,
@@ -46,12 +45,11 @@ export async function POST(
       throw new Error("Zero-byte binary detected. Ingestion aborted.");
     }
 
-    // 4. Robust Text Extraction (Using pdf-parse for Serverless stability)
+    // 4. Robust Text Extraction
     await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Node)...' }).eq('id', documentId);
     
     let extractedText = "";
     try {
-      // pdf-parse uses a built-in fake worker that is much more stable on Vercel
       const data = await pdf(buffer);
       extractedText = data.text.trim();
     } catch (parseErr: any) {
@@ -60,7 +58,7 @@ export async function POST(
     }
 
     if (extractedText.length < 20) {
-      throw new Error("Extraction result: The document contains insufficient text data for synthesis.");
+      throw new Error("Extraction result: The document contains insufficient text data.");
     }
 
     // 5. Synchronize with Vector Grid (RAG)
@@ -70,18 +68,15 @@ export async function POST(
       document_summary: 'Synchronizing nodes with vector grid...'
     }).eq('id', documentId);
 
-    try {
-      await indexDocumentForRAG(documentId, extractedText, doc.file_path, adminSupabase);
-    } catch (indexErr: any) {
-      console.warn("Vector indexing partial failure (Non-fatal):", indexErr);
-    }
+    await indexDocumentForRAG(documentId, extractedText, doc.file_path, adminSupabase);
 
-    // 6. Pedagogical Intelligence Synthesis
+    // 6. Pedagogical Intelligence Synthesis (Updates summary & metadata)
     await adminSupabase.from('documents').update({ document_summary: 'Synthesizing pedagogical metadata...' }).eq('id', documentId);
     
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
     if (user) {
        try {
+         // This function handles its own database updates for summary, subject, grade, etc.
          await analyzeDocumentWithAI(documentId, user.id, adminSupabase);
        } catch (aiErr: any) {
          console.error("AI Analysis Failed:", aiErr);
@@ -89,23 +84,20 @@ export async function POST(
     }
 
     // 7. Finalize Node Ingestion
+    // FIX: Do not use doc.document_summary here as it is stale. Only update status.
     await adminSupabase.from('documents').update({ 
-      status: 'ready',
-      document_summary: doc.document_summary || 'Neural node anchored. Ready for synthesis.' 
+      status: 'ready'
     }).eq('id', documentId);
 
     return NextResponse.json({ success: true, message: "Curriculum ingestion finalized." });
 
   } catch (error: any) {
     console.error("❌ [Processing Node Exception]:", error);
-    
-    // CRITICAL: Force terminal failure state so UI stops polling
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,
       document_summary: `Extraction Fault: ${error.message}`
     }).eq('id', documentId);
-    
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
