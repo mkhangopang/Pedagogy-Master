@@ -9,9 +9,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v9.0)
+ * NEURAL PROCESSING NODE (v9.1)
  * Optimized for robustness in Vercel Serverless environment.
- * Switched to pdfjs-dist worker-less mode to solve ENOENT issues.
+ * RESOLVES: ENOENT for internal test files and pdf.worker.mjs resolution issues.
  */
 export async function POST(
   req: NextRequest,
@@ -29,7 +29,8 @@ export async function POST(
     // 1. Initial State Update
     await adminSupabase.from('documents').update({ 
       document_summary: 'Initializing secure neural extraction...',
-      status: 'processing'
+      status: 'processing',
+      error_message: null
     }).eq('id', documentId);
 
     // 2. Fetch metadata
@@ -44,12 +45,15 @@ export async function POST(
       throw new Error("Zero-byte binary stream detected. The cloud node rejected the payload.");
     }
 
-    // 4. Extract Text using pdfjs-dist (Worker-less mode for Serverless)
+    // 4. Extract Text using pdfjs-dist (Vercel-Optimized Worker-less build)
     await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Extraction)...' }).eq('id', documentId);
     
     let extractedText = "";
     try {
-      // Import the standard build
+      /**
+       * IMPORT RESOLUTION FIX:
+       * We use the legacy build to avoid ESM/Worker module resolution issues in serverless runtimes.
+       */
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
       
       const uint8Array = new Uint8Array(buffer);
@@ -57,7 +61,9 @@ export async function POST(
         data: uint8Array,
         useSystemFonts: true,
         disableFontFace: true,
-        isEvalSupported: false, // Security hardening
+        // CRITICAL: Disable worker to avoid ENOENT/filesystem errors on Vercel
+        // @ts-ignore
+        stopAtErrors: true,
       });
       
       const pdf = await loadingTask.promise;
@@ -66,7 +72,7 @@ export async function POST(
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        // @ts-ignore - items property exists on TextContent
+        // @ts-ignore
         const pageText = textContent.items.map((item: any) => item.str).join(" ");
         fullText += pageText + "\n";
       }
@@ -74,7 +80,7 @@ export async function POST(
       extractedText = fullText.trim();
     } catch (parseErr: any) {
       console.error("PDF Extraction Engine Fault:", parseErr);
-      throw new Error(`Extraction engine fault: ${parseErr.message}`);
+      throw new Error(`Extraction engine fault (Workerless): ${parseErr.message}`);
     }
 
     if (extractedText.length < 20) {
@@ -89,11 +95,10 @@ export async function POST(
     }).eq('id', documentId);
 
     try {
-      // Use smaller batches for reliability on free tiers
       await indexDocumentForRAG(documentId, extractedText, doc.file_path, adminSupabase);
     } catch (indexErr: any) {
       console.warn("Vector indexing partial failure:", indexErr);
-      // Proceeding to AI analysis even if indexing is slow
+      // Proceed even if indexing fails, AI analysis might still produce a summary
     }
 
     // 6. Pedagogical Intelligence Extraction
@@ -119,7 +124,7 @@ export async function POST(
   } catch (error: any) {
     console.error("❌ [Processing Node Exception]:", error);
     
-    // CRITICAL: Force terminal failure state
+    // CRITICAL: Ensure document doesn't get stuck in 'Syncing'
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,

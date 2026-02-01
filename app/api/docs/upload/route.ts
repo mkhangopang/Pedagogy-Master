@@ -8,7 +8,7 @@ export const runtime = 'edge'; // Optimization: Use edge for high-speed handshak
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v3.6)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v3.7)
  * Optimized with Edge Runtime for minimal latency.
  */
 export async function POST(req: NextRequest) {
@@ -17,8 +17,7 @@ export async function POST(req: NextRequest) {
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
 
-    // Use a lightweight check or the provided token for Supabase
-    // On Edge, we need to ensure our supabase client handles the environment
+    // Ensure our edge client can verify the user
     const { data: { user } } = await anonClient.auth.getUser(token);
     if (!user) return NextResponse.json({ error: 'Invalid Identity' }, { status: 401 });
 
