@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
-import { normalizeSLO } from './slo-extractor';
+import { normalizeSLO, extractSLOCodes } from './slo-extractor';
 
 interface IngestionContext {
   domain?: string;
@@ -9,8 +9,8 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v164.0)
- * Optimized for SLO-Centric Retrieval & Hierarchical Boundary Analysis.
+ * WORLD-CLASS NEURAL INDEXER (v165.0)
+ * Optimized for SLO-Centric Retrieval.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -19,8 +19,7 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient,
   preExtractedMeta?: any
 ) {
-  const startTime = Date.now();
-  console.log(`📡 [Indexer] Initiating Precision Ingestion: ${documentId}`);
+  console.log(`📡 [Indexer] Precision Ingestion: ${documentId}`);
   
   try {
     const meta = preExtractedMeta || {};
@@ -29,8 +28,6 @@ export async function indexDocumentForRAG(
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
-    // 1. DYNAMIC ANCHOR DETECTION
-    // Synchronized with slo-extractor.ts for unified pattern recognition
     const ANCHOR_PATTERN = /(?:- SLO[:\s]*|\[SLO:\s*)|(?:^|\s)([B-Z]\d{1,2}(?:\.|-)?(?:p|P|[A-Z])?-?\d{1,2})\b/i;
 
     for (let i = 0; i < lines.length; i++) {
@@ -40,13 +37,11 @@ export async function indexDocumentForRAG(
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      // Detect semantic breaks (New SLO, New Header, or Page Markers)
       const isAnchor = line.match(ANCHOR_PATTERN) || line.match(/^#{1,3}\s+/);
 
-      if (isAnchor && buffer.length > 50) {
-        // Finalize current chunk before starting new one
-        const sloMatches = buffer.match(/([B-Z]-?\d{2}-?[A-Z]-?\d{2})|([S]-?\d{2}-?[A-Z]-?\d{2})|([B-Z]\d{1,2}[\.pP-]?\d{1,2})/gi) || [];
-        const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
+      if (isAnchor && buffer.length > 100) {
+        // Use canonical extractor for high-fidelity alignment
+        const normalizedSLOs = extractSLOCodes(buffer);
 
         processedChunks.push({
           text: buffer.trim(),
@@ -54,7 +49,6 @@ export async function indexDocumentForRAG(
             ...currentCtx,
             subject: meta.subject,
             grade: meta.grade,
-            board: meta.board,
             slo_codes: normalizedSLOs,
             is_slo_definition: normalizedSLOs.length > 0 && (buffer.toLowerCase().includes('slo') || buffer.includes('[')),
             chunk_index: processedChunks.length,
@@ -67,30 +61,16 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // 2. TAIL BUFFER PROCESSING
+    // Tail buffer
     if (buffer.trim().length > 20) {
-      const sloMatches = buffer.match(/([B-Z]\d{1,2}[\.pP-]?\d{1,2})/gi) || [];
-      const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
+      const normalizedSLOs = extractSLOCodes(buffer);
       processedChunks.push({
         text: buffer.trim(),
         metadata: { ...currentCtx, slo_codes: normalizedSLOs, chunk_index: processedChunks.length, source_path: filePath }
       });
     }
 
-    // 3. RECURSIVE CHUNK REFINEMENT (If too few chunks found)
-    if (processedChunks.length < 5 && content.length > 1000) {
-      const words = content.split(/\s+/);
-      const chunkSize = 500;
-      for (let i = 0; i < words.length; i += 400) {
-        const chunkText = words.slice(i, i + chunkSize).join(' ');
-        processedChunks.push({
-          text: `[CONCEPTUAL_NODE] ${chunkText}`,
-          metadata: { type: 'fallback', chunk_index: processedChunks.length, source_path: filePath }
-        });
-      }
-    }
-
-    // 4. VECTOR CLUSTER SYNCHRONIZATION
+    // Cluster Synchronization
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     const BATCH_SIZE = 15; 
@@ -107,9 +87,6 @@ export async function indexDocumentForRAG(
       }));
 
       await supabase.from('document_chunks').insert(records);
-      
-      // Safety cooling to prevent 429 during heavy ingest
-      if (processedChunks.length > 50) await new Promise(r => setTimeout(r, 100));
     }
 
     await supabase.from('documents').update({ 

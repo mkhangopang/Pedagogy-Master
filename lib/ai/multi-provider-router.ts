@@ -8,8 +8,8 @@ import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../consta
 import { rateLimiter } from './rate-limiter';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v56.0)
- * Context Rules: Priority ID > Selected Vault > Relational DB > Global
+ * NEURAL SYNTHESIS ORCHESTRATOR (v57.0)
+ * Context Rules: Priority ID > Selected Vault > Relational DB > Profile Fallback
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -27,19 +27,29 @@ export async function generateAIResponse(
   const targetCode = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
   const isCurriculumEnabled = userPrompt.includes('CURRICULUM_MODE: ACTIVE');
 
-  // 1. Scoping - Fetch selected docs OR priority ID
-  let query = supabase
+  // 1. Scoping - Fetch selected docs OR priority ID OR fallback
+  let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, version_year, rag_indexed, status')
     .eq('user_id', userId);
 
   if (priorityDocumentId) {
-    query = query.eq('id', priorityDocumentId);
+    docQuery = docQuery.eq('id', priorityDocumentId);
   } else {
-    query = query.eq('is_selected', true);
+    docQuery = docQuery.eq('is_selected', true);
   }
 
-  const { data: activeDocs } = await query;
+  let { data: activeDocs } = await docQuery;
+  
+  // FALLBACK: If no selection, check user's active_doc_id profile field
+  if ((!activeDocs || activeDocs.length === 0) && !priorityDocumentId) {
+     const { data: profile } = await supabase.from('profiles').select('active_doc_id').eq('id', userId).single();
+     if (profile?.active_doc_id) {
+        const { data: fallbackDocs } = await supabase.from('documents').select('*').eq('id', profile.active_doc_id);
+        if (fallbackDocs) activeDocs = fallbackDocs;
+     }
+  }
+
   const documentIds = activeDocs?.map(d => d.id) || [];
   
   let vaultContent = "";
@@ -67,7 +77,7 @@ export async function generateAIResponse(
         })
         .join('\n');
     } else {
-      // If no chunks, try relational DB lookup as last line of defense
+      // LAST LINE OF DEFENSE: Relational Metadata Search
       if (targetCode) {
         const { data: sloDb } = await supabase
           .from('slo_database')
@@ -83,7 +93,7 @@ export async function generateAIResponse(
       }
 
       if (!vaultContent) {
-        vaultContent = `[SEARCH_FAILURE: NO_RELEVANT_CONTEXT_FOUND] The query did not yield specific segments in the active vault. Proceeding with synthesized pedagogical intelligence using the provided SLO standard: ${targetCode || 'General'}.`;
+        vaultContent = `[SEARCH_FAILURE: NO_RELEVANT_CONTEXT_FOUND] The vault was scanned but no specific nodes for standard "${targetCode || 'General'}" were matched. Falling back to high-fidelity pedagogical reasoning.`;
       }
     }
   }
@@ -97,8 +107,8 @@ export async function generateAIResponse(
 🔴 STICKY_GROUNDING_DIRECTIVE:
 Targeting SLO: [${targetCode}].
 1. If [VERIFIED_VERBATIM_DEFINITION] is present, use that text EXACTLY.
-2. If only [CONCEPTUAL_MATCH] is present, prioritize those concepts but synthesize the missing gaps using Grade ${activeDocs?.[0]?.grade_level || 'standard'} complexity.
-3. If [SEARCH_FAILURE] is reported, synthesize a high-fidelity artifact using your internal knowledge of standard curricula, but acknowledge the vault search failure.
+2. If only [CONCEPTUAL_MATCH] is present, prioritize those concepts.
+3. If [SEARCH_FAILURE] is reported, synthesize a high-fidelity artifact using your internal knowledge of standard curricula, but acknowledge the vault search failure clearly.
 `;
   }
 
