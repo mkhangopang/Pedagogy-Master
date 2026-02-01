@@ -12,11 +12,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const [docId, setDocId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const REPAIR_SQL = `ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS document_summary TEXT, ADD COLUMN IF NOT EXISTS difficulty_level TEXT, ADD COLUMN IF NOT EXISTS rag_indexed BOOLEAN DEFAULT false, ADD COLUMN IF NOT EXISTS extracted_text TEXT, ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false;`;
-
   useEffect(() => {
     let poller: any;
-    if (docId && isUploading && progress >= 40) {
+    if (docId && isUploading && progress >= 35) {
       poller = setInterval(async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -30,32 +28,27 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             clearInterval(poller);
             setProgress(100);
             setStatus('Neural Sync Complete!');
-            setTimeout(() => onComplete(data), 1000);
+            setTimeout(() => onComplete(data), 800);
           } else if (data.status === 'failed') {
             clearInterval(poller);
             setError(data.error || 'Neural Extraction Fault: The processing node failed.');
             setIsUploading(false);
           } else {
-            let p = 55;
-            if (data.status === 'indexing') p = 75;
-            if (data.metadata?.indexed) p = 90;
+            // Smooth progress calculation
+            let p = 40;
+            if (data.status === 'indexing') p = 70;
+            if (data.metadata?.indexed) p = 85;
             
-            setProgress(p);
+            setProgress(Math.max(progress, p));
             setStatus(data.summary || 'Processing curriculum schema...');
           }
         } catch (e) {
           console.error("Polling Error:", e);
         }
-      }, 2500);
+      }, 2000);
     }
     return () => clearInterval(poller);
   }, [docId, isUploading, progress, onComplete]);
-
-  const copyFix = () => {
-    navigator.clipboard.writeText(REPAIR_SQL);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -73,10 +66,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Authentication node offline. Please log in.");
+      if (!session) throw new Error("Authentication node offline.");
       
       const detectedType = file.type || 'application/pdf';
 
+      // 1. Handshake
       const handshakeResponse = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 
@@ -91,35 +85,28 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       });
 
       if (!handshakeResponse.ok) {
-        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake node timeout.' }));
-        throw new Error(errData.error || `Node connection refused (${handshakeResponse.status})`);
+        const errData = await handshakeResponse.json().catch(() => ({ error: 'Handshake timeout.' }));
+        throw new Error(errData.error || `Refused (${handshakeResponse.status})`);
       }
 
       const { uploadUrl, documentId, contentType: signedType } = await handshakeResponse.json();
       setDocId(documentId);
-      setProgress(20);
-      setStatus('Streaming Binary Bits to Vault...');
+      setProgress(15);
+      setStatus('Streaming Binary Bits...');
 
-      try {
-        const uploadResponse = await fetch(uploadUrl, {
-          method: 'PUT',
-          body: file,
-          headers: { 'Content-Type': signedType || detectedType }
-        });
+      // 2. Upload to R2
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: file,
+        headers: { 'Content-Type': signedType || detectedType }
+      });
 
-        if (!uploadResponse.ok) {
-          throw new Error(`The Cloud node rejected the stream (Status: ${uploadResponse.status}).`);
-        }
-      } catch (putErr: any) {
-        if (putErr.message?.includes('Failed to fetch')) {
-          throw new Error('NETWORK_BLOCK: Browser refused the cloud stream. Ensure R2 CORS settings allow this domain.');
-        }
-        throw putErr;
-      }
+      if (!uploadResponse.ok) throw new Error(`Cloud rejection (${uploadResponse.status})`);
 
-      setProgress(40);
-      setStatus('Binary Anchored. Awakening Processing Node...');
+      setProgress(35);
+      setStatus('Binary Anchored. Waking Node...');
 
+      // 3. Trigger Processor
       const triggerResponse = await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
@@ -127,20 +114,17 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
       if (!triggerResponse.ok) {
         const triggerData = await triggerResponse.json().catch(() => ({}));
-        // If it's a 504, it might still be processing in the background, don't kill the UI yet
+        // If it's a 504, we continue polling as it might be working in the background
         if (triggerResponse.status !== 504) {
-           throw new Error(`Neural node trigger failed: ${triggerData.error || 'Gateway Fault'}`);
+          throw new Error(`Neural node trigger failed: ${triggerData.error || 'Gateway Error'}`);
         }
       }
 
     } catch (err: any) {
-      setError(err.message || "An unexpected neural handshake error occurred.");
+      setError(err.message || "Unexpected neural fault.");
       setIsUploading(false);
     }
   };
-
-  const isSchemaError = error?.includes('SCHEMA_MISMATCH');
-  const isCorsError = error?.includes('NETWORK_BLOCK') || error?.includes('CORS');
 
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 md:p-16 w-full max-w-2xl shadow-2xl border dark:border-white/5 text-center relative overflow-hidden">
@@ -154,7 +138,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
           <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 flex items-center gap-2">
              <ShieldCheck size={16} className="text-emerald-500" />
-             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Ingestion</span>
+             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Secure Vault</span>
           </div>
         </div>
 
@@ -173,40 +157,17 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                </div>
             </div>
             
-            <div className="flex flex-wrap gap-3">
-              <button 
-                onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} 
-                className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 shadow-sm"
-              >
-                <RefreshCw size={12}/> Retry Ingestion
-              </button>
-              
-              {isSchemaError && (
-                <button 
-                  onClick={copyFix}
-                  className="px-6 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95"
-                >
-                  {copied ? <Check size={12} className="text-emerald-400"/> : <Copy size={12}/>} 
-                  {copied ? 'SQL Copied!' : 'Copy SQL Fix'}
-                </button>
-              )}
-            </div>
-
-            {isCorsError && (
-              <div className="mt-4 p-4 bg-white/40 dark:bg-black/20 rounded-2xl border border-rose-200 dark:border-rose-900/30">
-                <p className="text-[10px] text-rose-700 dark:text-rose-300 font-bold mb-2 flex items-center gap-2">
-                  <Globe size={12}/> Browser Security Alert:
-                </p>
-                <p className="text-[9px] text-slate-500 leading-relaxed italic">
-                  The binary stream was blocked. Check <b>Brain Control &gt; Repair</b> to verify CORS configuration on your R2 storage node.
-                </p>
-              </div>
-            )}
+            <button 
+              onClick={() => {setError(null); setIsUploading(false); setProgress(0);}} 
+              className="px-6 py-3 bg-rose-100 text-rose-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all active:scale-95 shadow-sm"
+            >
+              <RefreshCw size={12}/> Retry Ingestion
+            </button>
           </div>
         ) : isUploading ? (
           <div className="space-y-6 py-4">
              <div className="h-3 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
-                <div className="h-full bg-indigo-600 transition-all duration-1000 rounded-full shadow-[0_0_10px_rgba(79,70,229,0.5)]" style={{ width: `${progress}%` }} />
+                <div className="h-full bg-indigo-600 transition-all duration-1000 rounded-full" style={{ width: `${progress}%` }} />
              </div>
              <div className="flex flex-col gap-1">
                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-600 animate-pulse">{status}</p>
