@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize, getProvidersConfig } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
@@ -8,8 +9,8 @@ import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../consta
 import { rateLimiter } from './rate-limiter';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v53.0)
- * Context Rules: Verified Vault > Global Discovery Mode
+ * NEURAL SYNTHESIS ORCHESTRATOR (v54.0)
+ * Context Rules: Verified Vault > Conceptual Fallback > Global Discovery
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -27,36 +28,47 @@ export async function generateAIResponse(
   const targetCode = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
   const isCurriculumEnabled = userPrompt.includes('CURRICULUM_MODE: ACTIVE');
 
-  // 1. Scoping - Check for active document selection
-  const { data: selectedDocs } = await supabase
+  // 1. Scoping - Fetch selected docs with high-fidelity validation
+  const { data: activeDocs } = await supabase
     .from('documents')
-    .select('id, name')
+    .select('id, name, authority, subject, grade_level, version_year, rag_indexed')
     .eq('user_id', userId)
     .eq('is_selected', true); 
-  
-  const activeDocs = selectedDocs || [];
-  const documentIds = activeDocs.map(d => d.id);
 
-  // 2. Retrieval Branching
+  const documentIds = activeDocs?.map(d => d.id) || [];
   let vaultContent = "";
   let verbatimFound = false;
-  let mode: 'VAULT' | 'GLOBAL' = activeDocs.length > 0 ? 'VAULT' : 'GLOBAL';
+  let mode: 'VAULT' | 'GLOBAL' = documentIds.length > 0 ? 'VAULT' : 'GLOBAL';
+  // Add comment above each fix
+  // Fix: Move retrievedChunks declaration outside of if-block to resolve scope error at line 121
+  let retrievedChunks: RetrievedChunk[] = [];
 
+  // 2. Retrieval Branching
   if (mode === 'VAULT') {
-    const retrievedChunks = await retrieveRelevantChunks({
+    // Fix: Remove 'const' keyword to assign to the outer scoped variable
+    retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
       documentIds,
       supabase,
       matchCount: 40
     });
 
-    vaultContent = retrievedChunks
-      .map((chunk, i) => {
-        const tag = chunk.is_verbatim_definition ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : "";
-        if (chunk.is_verbatim_definition) verbatimFound = true;
-        return `### VAULT_NODE_${i + 1}\n${tag}\n${chunk.chunk_text}\n---`;
-      })
-      .join('\n');
+    if (retrievedChunks.length > 0) {
+      vaultContent = retrievedChunks
+        .map((chunk, i) => {
+          const isVerbatim = chunk.is_verbatim_definition || (targetCode && chunk.slo_codes?.includes(targetCode));
+          const tag = isVerbatim ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : " [CONCEPTUAL_MATCH]";
+          if (isVerbatim) verbatimFound = true;
+          return `### VAULT_NODE_${i + 1}\n${tag}\n${chunk.chunk_text}\n---`;
+        })
+        .join('\n');
+    } else {
+      // If doc is selected but no chunks found, it might be unindexed
+      const unindexed = activeDocs?.filter(d => !d.rag_indexed) || [];
+      if (unindexed.length > 0) {
+        vaultContent = `[SYSTEM_ALERT: SELECTED_DOCS_UNINDEXED] The assets "${unindexed.map(d => d.name).join(', ')}" are still being processed. Synthesis will proceed with limited fidelity.`;
+      }
+    }
   }
 
   // 3. System Directives Construction
@@ -65,10 +77,8 @@ export async function generateAIResponse(
   if (mode === 'GLOBAL') {
     instructionSet += `
 ## 🌐 GLOBAL DISCOVERY MODE:
-- No curriculum document is currently selected in the teacher's vault.
-- ACTION: You MUST first ask the teacher which curriculum/board they follow (e.g., Sindh Board Pakistan, KSA Vision 2030, Japan MEXT, or Cambridge).
-- SUGGESTION: Offer to search for specific Sindh SLOs if they are in the Sindh region.
-- Do not generate complex artifacts until the Board is confirmed.
+- No curriculum document is currently selected.
+- ACTION: Prompt the teacher to select a curriculum asset from their Vault.
 `;
   }
 
@@ -77,18 +87,18 @@ export async function generateAIResponse(
     verificationLock = `
 🔴 STICKY_VERBATIM_LOCK:
 Targeting SLO: [${targetCode}].
-1. Locate [VERIFIED_VERBATIM_DEFINITION] in vault.
-2. Use that exact text.
-3. If missing, say: "SLO ${targetCode} not found in active vault." DO NOT MIMIC.
+1. Priority: Use [VERIFIED_VERBATIM_DEFINITION].
+2. Fallback: If no verbatim marker exists but [CONCEPTUAL_MATCH] is present, synthesize an answer based on the concepts.
+3. Only if ZERO context is found, say: "SLO ${targetCode} not found in active vault."
 `;
   }
 
   const queryAnalysis = analyzeUserQuery(userPrompt);
-  const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDocs[0]);
+  const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDocs ? activeDocs[0] : undefined);
 
   let finalPrompt = `
 <AUTHORITATIVE_VAULT>
-${vaultContent || (mode === 'GLOBAL' ? '[VAULT_INACTIVE: NO_DOCS_SELECTED]' : '[SEARCH_FAILURE: NO_CONTEXT_FOUND]')}
+${vaultContent || (mode === 'GLOBAL' ? '[VAULT_INACTIVE: NO_DOCS_SELECTED]' : '[SEARCH_FAILURE: NO_RELEVANT_CONTEXT_FOUND]')}
 </AUTHORITATIVE_VAULT>
 
 ${mode === 'VAULT' ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
@@ -113,24 +123,10 @@ ${responseInstructions}`;
     text: result.text,
     provider: result.provider,
     metadata: {
-      chunksUsed: mode === 'VAULT' ? 10 : 0,
+      chunksUsed: retrievedChunks?.length || 0,
       verbatimVerified: verbatimFound,
       activeMode: mode,
-      sourceDocument: activeDocs[0]?.name || 'Global Grid'
+      sourceDocument: activeDocs?.[0]?.name || 'Global Grid'
     }
-  };
-}
-
-export async function getProviderStatus() {
-  const configs = getProvidersConfig();
-  const status = await Promise.all(configs.map(async (config) => {
-    const remaining = await rateLimiter.getRemainingRequests(config.name, config);
-    return {
-      name: config.name,
-      enabled: config.enabled,
-      limits: { rpm: config.rpm, rpd: config.rpd },
-      remaining
-    };
-  }));
-  return status;
+  } as any;
 }

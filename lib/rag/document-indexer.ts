@@ -9,9 +9,8 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v162.0)
- * Optimized for SLO-Centric Retrieval & Massive Documents.
- * Features Time-Budget Protection for Serverless.
+ * WORLD-CLASS NEURAL INDEXER (v163.0)
+ * Optimized for SLO-Centric Retrieval & Conceptual Fallback.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -38,12 +37,13 @@ export async function indexDocumentForRAG(
       if (line.match(/^Standard:/i)) currentCtx.standard = line;
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      const isSloMarker = line.match(/^- SLO[:\s]*([A-Z]-\d{2}-[A-Z]-\d{2})/i);
+      // Sindh & Federal SLO Pattern Matching
+      const isSloMarker = line.match(/^- SLO[:\s]*([A-Z]-?\d{2}-?[A-Z]-?\d{2})/i) || line.match(/\[SLO:.*?\]/i);
       const isHeader = line.match(/^#{1,3}\s+/);
 
       if (isSloMarker || isHeader || i === lines.length - 1) {
         if (buffer.length > 30) {
-          const sloMatches = buffer.match(/([B-Z]-\d{2}-[A-Z]-\d{2})|([S]-\d{2}-[A-Z]-\d{2})/gi) || [];
+          const sloMatches = buffer.match(/([B-Z]-?\d{2}-?[A-Z]-?\d{2})|([S]-?\d{2}-?[A-Z]-?\d{2})|([B-Z]\d{1,2}\.p\d{1,2})/gi) || [];
           const normalizedSLOs = Array.from(new Set(sloMatches.map(c => normalizeSLO(c))));
 
           processedChunks.push({
@@ -54,7 +54,7 @@ export async function indexDocumentForRAG(
               grade: meta.grade,
               board: meta.board,
               slo_codes: normalizedSLOs,
-              is_slo_definition: buffer.includes('- SLO:'),
+              is_slo_definition: buffer.includes('- SLO:') || buffer.includes('[SLO:'),
               chunk_index: processedChunks.length,
               source_path: filePath
             }
@@ -66,16 +66,34 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // 2. CLEAR PREVIOUS NODES
+    // 2. CONCEPTUAL FALLBACK (If document had no strict markers)
+    if (processedChunks.length < 5 && content.length > 1000) {
+      console.log("🧩 [Indexer] Insufficient semantic markers found. Engaging Conceptual Fallback Chunking...");
+      const words = content.split(/\s+/);
+      const chunkSize = 400;
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const chunkText = words.slice(i, i + chunkSize).join(' ');
+        if (chunkText.length > 100) {
+          processedChunks.push({
+            text: `[CONCEPTUAL_NODE] ${chunkText}`,
+            metadata: {
+              type: 'fallback',
+              chunk_index: processedChunks.length,
+              source_path: filePath
+            }
+          });
+        }
+      }
+    }
+
+    // 3. CLEAR PREVIOUS NODES
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 3. BATCH EMBEDDING GRID
-    // Reduced batch size to 10 for better serverless reliability
+    // 4. BATCH EMBEDDING GRID
     const BATCH_SIZE = 10; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      // Hard cap at 50s to leave room for final updates in a 60s environment
-      if (Date.now() - startTime > 50000) {
-        console.warn(`⚠️ [Indexer] Hard Timeout protection engaged for doc: ${documentId}`);
+      if (Date.now() - startTime > 85000) { // 85s safe limit
+        console.warn(`⚠️ [Indexer] Timeout protection engaged at ${i}/${processedChunks.length} chunks.`);
         break;
       }
 
@@ -86,7 +104,7 @@ export async function indexDocumentForRAG(
         document_id: documentId,
         chunk_text: chunk.text,
         embedding: embeddings[j],
-        slo_codes: chunk.metadata.slo_codes,
+        slo_codes: chunk.metadata.slo_codes || [],
         metadata: chunk.metadata
       }));
 
@@ -94,7 +112,7 @@ export async function indexDocumentForRAG(
       if (insertError) throw new Error(`Vector Insert Fault: ${insertError.message}`);
     }
 
-    // 4. MARK AS INDEXED
+    // 5. MARK AS INDEXED
     await supabase.from('documents').update({ 
       rag_indexed: true,
       last_synced_at: new Date().toISOString()

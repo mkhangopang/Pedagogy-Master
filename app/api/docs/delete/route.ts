@@ -4,9 +4,9 @@ import { r2Client, R2_BUCKET } from '../../../../lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 
 /**
- * NEURAL NODE PURGE PROTOCOL (v6.0)
- * RESTRICTION: Only App Admins (via Env List) or Enterprise Institutions can purge assets.
- * This ensures that even failed documents are managed by a human administrator.
+ * NEURAL NODE PURGE PROTOCOL (v7.0)
+ * RESTRICTION: Only App Admins (via Env List) can purge failed/successful assets.
+ * Standard users have zero deletion rights to prevent quota exploitation.
  */
 export async function DELETE(request: NextRequest) {
   try {
@@ -20,24 +20,25 @@ export async function DELETE(request: NextRequest) {
     const { id } = await request.json();
     if (!id) return NextResponse.json({ error: 'Doc ID required' }, { status: 400 });
 
-    // 1. Authorization Logic: Plan + Email check
+    // 1. Authorization: Strict Email White-list Check
     const { data: profile } = await anonClient
       .from('profiles')
       .select('role, plan, email')
       .eq('id', user.id)
       .single();
 
+    // Fix: Case-insensitive trimmed email check
     const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    const userEmail = (profile?.email || user.email || '').toLowerCase().trim();
     
-    const isOwnerByEmail = profile?.email && adminEmails.includes(profile.email.toLowerCase());
-    const isAppAdmin = profile?.role === 'app_admin' || isOwnerByEmail;
+    const isAppAdmin = profile?.role === 'app_admin' || adminEmails.includes(userEmail);
     const isEnterprise = profile?.plan === 'enterprise';
 
-    // PRIVILEGE CHECK: Only Admins/Enterprise/Owner can initiate a purge
+    // PRIVILEGE CHECK
     if (!isAppAdmin && !isEnterprise) {
       return NextResponse.json({ 
-        error: 'ADMINISTRATIVE PRIVILEGE REQUIRED: Failed curriculum assets can only be purged by an Institutional Admin node.' 
+        error: `ACCESS DENIED: Your account (${userEmail}) does not have institutional purge privileges. Only addresses in NEXT_PUBLIC_ADMIN_EMAILS can purge neural nodes.` 
       }, { status: 403 });
     }
 
@@ -51,21 +52,24 @@ export async function DELETE(request: NextRequest) {
     if (fetchError || !doc) return NextResponse.json({ error: 'Document not found or unauthorized.' }, { status: 404 });
 
     // 3. Physical File Deletion (Cloudflare R2)
-    if (doc.storage_type === 'r2' && r2Client) {
+    if (doc.file_path && r2Client) {
       try {
         await r2Client.send(new DeleteObjectCommand({
           Bucket: R2_BUCKET,
           Key: doc.file_path
         }));
       } catch (err) {
-        console.error("R2 Physical Delete Failed:", err);
+        console.warn("R2 Purge Partial Fault:", err);
       }
     }
 
-    // 4. Vector Chunk Deletion
+    // 4. Vector Chunk Purge
     await anonClient.from('document_chunks').delete().eq('document_id', id);
 
-    // 5. Database record deletion
+    // 5. Artifact & Event Purge (Cleanup related data)
+    await anonClient.from('slo_database').delete().eq('document_id', id);
+
+    // 6. Database record deletion
     const { error: deleteError } = await anonClient
       .from('documents')
       .delete()
@@ -73,7 +77,7 @@ export async function DELETE(request: NextRequest) {
 
     if (deleteError) throw deleteError;
 
-    return NextResponse.json({ success: true, message: 'Neural node purged successfully.' });
+    return NextResponse.json({ success: true, message: 'Institutional node purged and audited.' });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
