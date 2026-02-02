@@ -3,6 +3,7 @@ import { getSupabaseServerClient, getSupabaseAdminClient } from '../../../../../
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { analyzeDocumentWithAI } from '../../../../../lib/ai/document-analyzer';
+import { convertToPedagogicalMarkdown } from '../../../../../lib/rag/md-converter';
 import pdf from 'pdf-parse';
 
 export const runtime = 'nodejs';
@@ -10,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v15.0)
- * AUDIT OPTIMIZED: Robust error handling and state synchronization.
+ * NEURAL PROCESSING NODE (v18.0)
+ * Protocol: PDF -> RAW TEXT -> CLEAN MD -> RAG INDEX
  */
 export async function POST(
   req: NextRequest,
@@ -26,88 +27,62 @@ export async function POST(
   try {
     if (!token) throw new Error("Authorization Required");
 
-    // 1. Initial State Update - Force clear any stale error messages
+    // 1. Initial State
     await adminSupabase.from('documents').update({ 
       document_summary: 'Initializing secure neural extraction...',
-      status: 'processing',
-      error_message: null
+      status: 'processing'
     }).eq('id', documentId);
 
     // 2. Fetch metadata
-    const { data: doc, error: fetchErr } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
-    if (fetchErr || !doc) throw new Error("Document metadata retrieval failed.");
+    const { data: doc } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
+    if (!doc) throw new Error("Document metadata retrieval failed.");
 
-    // 3. Fetch binary from Cloudflare R2
-    await adminSupabase.from('documents').update({ document_summary: 'Streaming curriculum bits from vault...' }).eq('id', documentId);
+    // 3. Fetch binary
     const buffer = await getObjectBuffer(doc.file_path);
-    
-    if (!buffer || buffer.length === 0) {
-      throw new Error("Zero-byte binary detected. Ingestion aborted.");
-    }
+    if (!buffer) throw new Error("Zero-byte binary detected.");
 
-    // 4. Robust Text Extraction
-    await adminSupabase.from('documents').update({ document_summary: 'Parsing curriculum schema (Neural Node)...' }).eq('id', documentId);
-    
-    let extractedText = "";
-    try {
-      // pdf-parse can be memory intensive, wrapped in local block
-      const data = await pdf(buffer);
-      extractedText = data.text.trim();
-    } catch (parseErr: any) {
-      console.error("PDF Extraction Fault:", parseErr);
-      throw new Error(`Neural extraction engine fault: ${parseErr.message}`);
-    }
+    // 4. Raw Text Extraction
+    await adminSupabase.from('documents').update({ document_summary: 'Parsing raw PDF bits...' }).eq('id', documentId);
+    const rawResult = await pdf(buffer);
+    const rawText = rawResult.text.trim();
 
-    if (extractedText.length < 20) {
-      throw new Error("Extraction result: The document contains insufficient text data.");
-    }
+    if (rawText.length < 20) throw new Error("Insufficient text data found.");
 
-    // 5. Synchronize with Vector Grid (RAG)
+    // 5. NEURAL MD RESTRUCTURING (The "Clean Room" Step)
+    await adminSupabase.from('documents').update({ document_summary: 'Generating Pedagogical Markdown Grid...' }).eq('id', documentId);
+    const cleanMd = await convertToPedagogicalMarkdown(rawText);
+
+    // 6. Synchronize with Vector Grid (RAG)
     await adminSupabase.from('documents').update({ 
-      extracted_text: extractedText,
+      extracted_text: cleanMd, // Save the clean MD version
       status: 'indexing',
-      document_summary: 'Synchronizing nodes with vector grid...'
+      document_summary: 'Synchronizing clean MD nodes with vector grid...'
     }).eq('id', documentId);
 
-    // This function now handles rag_indexed: true internally
-    await indexDocumentForRAG(documentId, extractedText, doc.file_path, adminSupabase);
+    await indexDocumentForRAG(documentId, cleanMd, doc.file_path, adminSupabase);
 
-    // 6. Pedagogical Intelligence Synthesis
-    await adminSupabase.from('documents').update({ document_summary: 'Synthesizing pedagogical metadata...' }).eq('id', documentId);
-    
+    // 7. Pedagogical Intelligence Synthesis
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
     if (user) {
-       try {
-         // This function handles its own database updates for summary, subject, grade, etc.
-         await analyzeDocumentWithAI(documentId, user.id, adminSupabase);
-       } catch (aiErr: any) {
-         console.warn("AI Analysis Failed (Non-Fatal):", aiErr);
-       }
+       await analyzeDocumentWithAI(documentId, user.id, adminSupabase);
     }
 
-    // 7. Finalize Node Ingestion
-    // Final sanity check: Ensure rag_indexed is definitely true and status is ready
+    // 8. Finalize
     await adminSupabase.from('documents').update({ 
       status: 'ready',
-      rag_indexed: true,
-      error_message: null
+      rag_indexed: true
     }).eq('id', documentId);
 
-    return NextResponse.json({ success: true, message: "Curriculum ingestion finalized." });
+    return NextResponse.json({ success: true, message: "Curriculum MD Ingestion Finalized." });
 
   } catch (error: any) {
     console.error("❌ [Processing Node Exception]:", error);
-    // AUDIT FIX: Ensure status is updated to 'failed' so it's not stuck in 'processing'
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,
-      document_summary: `Extraction Fault: ${error.message}`,
-      rag_indexed: false
+      document_summary: `Extraction Fault: ${error.message}`
     }).eq('id', documentId);
     
-    return NextResponse.json({ 
-      error: error.message,
-      status: 'failed'
-    }, { status: 500 });
+    return NextResponse.json({ error: error.message, status: 'failed' }, { status: 500 });
   }
 }
