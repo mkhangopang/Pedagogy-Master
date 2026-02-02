@@ -1,14 +1,14 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
-import { extractSLOCodes, normalizeSLO } from '../rag/slo-extractor';
+import { extractSLOCodes } from '../rag/slo-extractor';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
-import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
+import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v92.0)
- * Feature: Dialect-Aware Pedagogical Synthesis.
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v100.0)
+ * Signature: Multi-Dialect Context Injection.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -25,7 +25,7 @@ export async function generateAIResponse(
   const extractedSLOs = extractSLOCodes(userPrompt);
   const primarySLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
 
-  // 1. Context Resolution
+  // 1. Resolve Active Pedagogical Identity
   let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, version_year, extracted_text')
@@ -41,23 +41,23 @@ export async function generateAIResponse(
   const activeDoc = activeDocs?.[0];
   const documentIds = activeDocs?.map(d => d.id) || [];
   
-  // Detect Dialect from Master MD tag
+  // Extract Dialect metadata
   const dialectTag = activeDoc?.extracted_text?.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
-  const dialectMemo = `
-### PEDAGOGICAL_DIALECT_ACTIVE: ${dialectTag}
+  const pedagogyDNA = `
+### PEDAGOGICAL_IDENTITY: ${dialectTag}
 - AUTHORITY: ${activeDoc?.authority || 'Independent'}
-- PHILOSOPHY: ${dialectTag.includes('Cambridge') ? 'Inquiry & AO-based' : 'SLO & Benchmark-based'}
-- TERMINOLOGY: Always use "${dialectTag.includes('Cambridge') ? 'Learning Outcomes' : 'Student Learning Objectives (SLOs)'}"
+- PHILOSOPHY: ${dialectTag.includes('Pakistani') ? 'Direct SLO Alignment / 5E' : 'Inquiry-Based / Competency Focus'}
+- GRADE: ${activeDoc?.grade_level || 'General'}
+- SUBJECT: ${activeDoc?.subject || 'Interdisciplinary'}
 `;
 
   let vaultContent = "";
-  let verbatimFound = false;
-  let mode: 'VAULT' | 'GLOBAL' = documentIds.length > 0 ? 'VAULT' : 'GLOBAL';
+  let hardLockFound = false;
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 2. Multi-Stage Retrieval
-  if (mode === 'VAULT') {
+  // 2. Precision Vault Search
+  if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
       documentIds,
@@ -69,9 +69,13 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
-        const isVerbatim = chunk.is_verbatim_definition || (primarySLO && chunk.slo_codes?.includes(primarySLO));
-        if (isVerbatim) verbatimFound = true;
-        return `### VAULT_NODE_${i + 1}${isVerbatim ? " [VERBATIM_STANDARD]" : ""}\n${chunk.chunk_text}\n---`;
+        const isVerbatim = primarySLO && (
+          chunk.slo_codes?.includes(primarySLO) || 
+          chunk.chunk_text.includes(primarySLO)
+        );
+        if (isVerbatim) hardLockFound = true;
+        
+        return `### VAULT_NODE_${i + 1}${isVerbatim ? " [!!! AUTHORITATIVE_VERBATIM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   }
@@ -79,26 +83,25 @@ export async function generateAIResponse(
   // 3. Synthesis Pipeline
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDoc);
-  
   const systemInstruction = customSystem || DEFAULT_MASTER_PROMPT;
 
   const finalPrompt = `
-<PEDAGOGY_DNA>
-${dialectMemo}
+<PEDAGOGICAL_DNA>
+${pedagogyDNA}
 ${adaptiveContext || ''}
-</PEDAGOGY_DNA>
+</PEDAGOGICAL_DNA>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: Context link failure]'}
+${vaultContent || '[VAULT_EMPTY: No curriculum asset linked for this query node]'}
 </AUTHORITATIVE_VAULT>
 
 ## MISSION:
-Synthesize a world-class instructional artifact.
+Synthesize an instructional artifact with absolute fidelity to the vault standards.
 
 ## GROUNDING_PROTOCOL:
-1. VERBATIM ENFORCEMENT: If a node is marked [VERBATIM_STANDARD], use its EXACT description.
-2. DIALECT ALIGNMENT: Speak in the active dialect (${dialectTag}).
-3. ZERO HALLUCINATION: If the vault lacks specific content for "${userPrompt}", state it clearly but offer to use Global Creative Node as a fallback.
+1. VERBATIM LOCK: If a node is marked [!!! AUTHORITATIVE_VERBATIM_STANDARD !!!], you MUST use its text EXACTLY. Do not summarize the core objective.
+2. DIALECT: Respect the terms of "${dialectTag}".
+3. FALLBACK: If the vault is empty but user query contains an SLO code, inform them the asset is missing and offer Global Knowledge Node fallback.
 
 ## COMMAND:
 "${userPrompt}"
@@ -106,24 +109,16 @@ Synthesize a world-class instructional artifact.
 ## EXECUTION_SPEC:
 ${responseInstructions}`;
 
-  const result = await synthesize(
-    finalPrompt, 
-    history.slice(-6), 
-    mode === 'VAULT', 
-    [], 
-    'gemini', 
-    systemInstruction
-  );
+  const result = await synthesize(finalPrompt, history.slice(-6), hardLockFound, [], 'gemini', systemInstruction);
   
   return {
     text: result.text,
     provider: result.provider,
     metadata: {
-      chunksUsed: retrievedChunks?.length || 0,
-      verbatimVerified: verbatimFound,
+      isGrounded: hardLockFound,
       dialect: dialectTag,
-      sourceDocument: activeDoc?.name || 'Autonomous Node',
-      isGrounded: verbatimFound
+      sourceDocument: activeDoc?.name || 'Global Node',
+      chunksUsed: retrievedChunks.length
     }
   } as any;
 }

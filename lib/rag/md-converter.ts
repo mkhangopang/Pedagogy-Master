@@ -1,30 +1,32 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * NEURAL MASTER-MD CONSTRUCT (v2.0)
- * Logic: Polymorphic Ingestion -> Standardized Pedagogical Markdown.
+ * WORLD-CLASS NEURAL STRUCTURER (v4.0)
+ * Specialized for Pakistani National Curriculum (Sindh/Federal) and International (IB/CIE) grids.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `
-TASK: Convert this raw pedagogical text into a high-fidelity "Master MD" file for RAG injection.
+TASK: Convert the following scrambled OCR/PDF text into a high-fidelity "Master MD" file.
+You are a specialist in Curriculum Data Architecture.
 
-DIALECT DETECTION:
-1. SINDH/FEDERAL: Use "Domains", "Standards", "Benchmarks", and "- SLO: [CODE]: [TEXT]".
-2. CAMBRIDGE/OXFORD: Use "Assessment Objectives (AO)", "Strands", and "Learning Outcomes".
-3. IB/GLOBAL: Use "Inquiry Points", "Key Concepts", and "Competencies".
+CRITICAL LOGIC FOR PROGRESSION GRIDS:
+The text often has Grade IX, X, XI, and XII objectives scrambled together because of PDF columns. 
+You MUST re-associate each SLO code with its correct grade and description.
 
-FORMATTING PROTOCOL:
-- Level 1: # [DOMAIN / UNIT NAME]
-- Level 2: ## [STANDARD / STRAND]
-- Level 3: ### [BENCHMARK / AO]
-- LEVEL 4 (ATOMIC): Each specific objective MUST start with "- SLO:" followed by its code.
-  Example: - SLO: B-11-B-27: Describe DNA replication.
-- NOISE REMOVAL: Strip all page numbers, footers, institutional logos, and table of contents.
+FORMATTING RULES:
+1. DOMAINS: Use # [DOMAIN NAME] (e.g., # Domain B: Molecular Biology).
+2. STANDARDS: Use ## Standard: [Description].
+3. BENCHMARKS: Use ### Benchmark [Number]: [Description].
+4. ATOMIC SLOs: Every Learning Objective MUST follow this pattern:
+   - SLO: [CODE]: [DESCRIPTION]
+   Example: - SLO: B-11-B-01: Define biochemistry and molecular biology.
+5. CLEANING: Remove page numbers, footers, headers, and Table of Contents.
+6. CONTINUITY: If a description is cut off, use your logic to complete it or join the text fragments.
 
-RAW TEXT STREAM:
-${rawText.substring(0, 50000)}
+RAW DATA STREAM:
+${rawText.substring(0, 48000)}
 `;
 
   try {
@@ -33,18 +35,20 @@ ${rawText.substring(0, 50000)}
       contents: prompt,
       config: {
         temperature: 0.1,
-        systemInstruction: "You are a world-class curriculum data architect. Your output is a structured MD file that preserves 100% of the instructional intent while optimizing for machine retrieval.",
+        systemInstruction: "Strictly output structured Markdown for RAG injection. Do not include chat filler.",
       }
     });
 
     const masterMd = response.text || rawText;
     
-    // Auto-labeling logic: Inject a system header
-    const dialect = masterMd.includes('AO') ? 'Cambridge/IGCSE' : masterMd.includes('S-') || masterMd.includes('B-') ? 'Pakistani National' : 'General IB/Global';
+    // Auto-detect dialect for synthesis context
+    let dialect = 'Standard Global';
+    if (masterMd.includes('SLO') && (masterMd.includes('B-') || masterMd.includes('S-'))) dialect = 'Pakistani National (Sindh/Federal)';
+    if (masterMd.includes('AO1') || masterMd.includes('IGCSE')) dialect = 'Cambridge Assessment';
     
     return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n${masterMd}`;
   } catch (err) {
-    console.error("❌ [MD Converter] Neural structuring failed:", err);
+    console.error("❌ [MD Converter] Structuring fault:", err);
     return rawText; 
   }
 }

@@ -14,8 +14,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * TIERED NEURAL RETRIEVER (v30.0)
- * Logic: Literal Match -> Hybrid Search -> Semantic Fallback.
+ * TIERED NEURAL RETRIEVER (v35.0)
+ * Logic: Literal Locked -> Hybrid Semantic -> Global Fallback.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -34,25 +34,25 @@ export async function retrieveRelevantChunks({
     const parsed = parseUserQuery(query);
     const resultsMap = new Map<string, RetrievedChunk>();
     
-    // TIER 1: TRIPLE-LOCK LITERAL SEARCH
+    // TIER 1: MULTI-VARIANT LITERAL LOCK
     if (parsed.sloCodes.length > 0) {
       const primaryCode = parsed.sloCodes[0];
-      const normalizedPrimary = normalizeSLO(primaryCode);
+      const normalized = normalizeSLO(primaryCode);
       
-      // Multi-Variant Literal Scan (Handles formatting variance in source PDFs)
+      // Variants: B-11-B-06, B11B06, B 11 B 06, etc.
       const variants = [
-        normalizedPrimary,                             // B-11-B-27
-        normalizedPrimary.replace(/-/g, ''),          // B11B27
-        normalizedPrimary.replace(/-/g, ' '),         // B 11 B 27
-        primaryCode                                   // Original Input
+        normalized,
+        normalized.replace(/-/g, ''),
+        normalized.replace(/-/g, ' '),
+        primaryCode
       ];
 
-      // Execute literal scan across all selected documents
+      // Scan for any literal occurrences in chunks
       const { data: literalMatches } = await supabase
         .from('document_chunks')
         .select('*')
         .in('document_id', documentIds)
-        .or(`chunk_text.ilike.%${variants[0]}%,chunk_text.ilike.%${variants[1]}%,slo_codes.cs.{"${normalizedPrimary}"}`)
+        .or(`chunk_text.ilike.%${variants[0]}%,chunk_text.ilike.%${variants[1]}%,slo_codes.cs.{"${normalized}"}`)
         .limit(15);
 
       if (literalMatches) {
@@ -63,15 +63,14 @@ export async function retrieveRelevantChunks({
             chunk_text: m.chunk_text,
             slo_codes: m.slo_codes || [],
             metadata: m.metadata || {},
-            combined_score: 1.0, // Force top of results
+            combined_score: 1.0, // Hard-Lock priority
             is_verbatim_definition: true
           });
         });
       }
     }
 
-    // TIER 2: HYBRID NEURAL SEARCH (Semantic Meaning)
-    // Only proceed if we haven't filled the context with literal hits
+    // TIER 2: NEURAL SEMANTIC SEARCH
     if (resultsMap.size < 5) {
       const queryEmbedding = await generateEmbedding(query);
       const { data: hybridChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v4', {
@@ -105,7 +104,7 @@ export async function retrieveRelevantChunks({
       .slice(0, 35);
 
   } catch (err) {
-    console.error('❌ [Retriever] Fatal Sequence Failure:', err);
+    console.error('❌ [Retriever] Critical Fault:', err);
     return [];
   }
 }

@@ -8,9 +8,7 @@ export const BLOOM_LEVELS = [
 ];
 
 /**
- * PRODUCTION INFRASTRUCTURE CONSTRAINTS (v90.0)
- * SECURITY POLICY: Permanent Vault Enforcement.
- * Successful documents cannot be deleted by users to prevent quota exploitation.
+ * PRODUCTION INFRASTRUCTURE CONSTRAINTS (v100.0)
  */
 export const ROLE_LIMITS = {
   [SubscriptionPlan.FREE]: { 
@@ -31,26 +29,30 @@ export const ROLE_LIMITS = {
     docs: 200, 
     maxPagesSME_1: 500, 
     maxPagesSME_2: 300, 
-    canDeleteSuccessful: false, // SME admins can request bulk purge via support
+    canDeleteSuccessful: false,
     price: "Custom", 
     features: ["200 Document Institutional Vault", "High-Volume Page Support", "Dedicated Node Isolation"] 
   },
 };
 
-export const DEFAULT_MASTER_PROMPT = `You are the **Pedagogy Master Multi-Agent AI**, a specialized instructional designer. Your mission is to synthesize curriculum-aligned pedagogical tools.
+export const DEFAULT_MASTER_PROMPT = `You are the **EduNexus AI Pedagogy Master**, a specialized instructional designer and curriculum auditor. Your mission is to synthesize high-fidelity pedagogical tools using verified curriculum standards.
 
-## ABSOLUTE CONTEXT RULE:
-- If <AUTHORITATIVE_VAULT> nodes are present, they are the **ONLY SOURCE OF TRUTH** for curriculum standards and SLO codes.
-- Use verbatim descriptions and codes from the vault. 
+### CORE ARCHITECTURE:
+1. **THE VAULT**: Use the <AUTHORITATIVE_VAULT> as your primary source of truth. If specific SLO codes (e.g., B-11-B-27) are mentioned, retrieve their exact wording.
+2. **INSTRUCTIONAL LOGIC**:
+   - **5E Model**: Engage (Hook), Explore (Activity), Explain (Concept), Elaborate (Apply), Evaluate (Assess).
+   - **Bloom's Taxonomy**: Scaffolding from basic recall to complex creation.
+   - **Differentiation**: Provide specific scaffolds for "Support Needed" and extensions for "Advanced" learners.
 
-## MANDATORY FALLBACK:
-If the vault is empty, state that context is not synced.
+### SYNTHESIS PROTOCOL:
+- **Tone**: Academic, encouraging, and precision-oriented.
+- **Formatting**: Use clean Markdown with hierarchy (H2, H3). Use tables for lesson plans.
+- **Dialect Alignment**: If the curriculum is Sindh/Federal, use "SLO" and "Benchmark" terminology. If Cambridge, use "Assessment Objectives" and "Strands".
 
-## PEDAGOGICAL DNA:
-1. 5E INSTRUCTIONAL MODEL
-2. BLOOM’S REVISED TAXONOMY
-3. UDL`;
+### ABSOLUTE RULES:
+- NEVER hallucinate SLO descriptions. If a code is provided but the text is missing from the vault, explicitly state "Context missing from synced asset."
+- Ensure all assessments (quizzes) have a clear Bloom's level assigned to each question.`;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;
 export const STRICT_SYSTEM_INSTRUCTION = `STRICT_PEDAGOGY_ENFORCEMENT: Temp 0.1.`;
-export const DEFAULT_BLOOM_RULES = `1.Remember:Define. 2.Understand:Explain. 3.Apply:Solve. 4.Analyze:Compare. 5.Evaluate:Justify. 6.Create:Design.`;
+export const DEFAULT_BLOOM_RULES = `1.Remember:Recall. 2.Understand:Interpret. 3.Apply:Implement. 4.Analyze:Differentiate. 5.Evaluate:Critique. 6.Create:Synthesize.`;
