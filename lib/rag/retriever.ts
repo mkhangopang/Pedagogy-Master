@@ -14,8 +14,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * TIERED NEURAL RETRIEVER (v25.0)
- * Designed for 100% fidelity in Alphanumeric Curriculum Retrieval.
+ * TIERED NEURAL RETRIEVER (v28.0)
+ * Precision-tuned for Sindh 2024 and FBISE Standards.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -34,42 +34,78 @@ export async function retrieveRelevantChunks({
     const parsed = parseUserQuery(query);
     const resultsMap = new Map<string, RetrievedChunk>();
     
-    // TIER 1: LITERAL SLO ANCHOR (Bypasses Vector "Guessing")
+    // TIER 1: TRIPLE-LOCK LITERAL SEARCH
     if (parsed.sloCodes.length > 0) {
-      const { data: literalMatches } = await supabase
+      const primaryCode = parsed.sloCodes[0];
+      
+      // A. Exact Array Match
+      const { data: arrayMatches } = await supabase
         .from('document_chunks')
         .select('*')
         .in('document_id', documentIds)
         .overlaps('slo_codes', parsed.sloCodes);
       
-      if (literalMatches) {
-        literalMatches.forEach(m => {
+      // B. Multi-Variant Text Search (Handles spaces, missing hyphens, etc.)
+      const variants = [
+        primaryCode,                                  // B-11-B-27
+        primaryCode.replace(/-/g, ''),               // B11B27
+        primaryCode.replace(/-/g, ' '),              // B 11 B 27
+        primaryCode.replace(/SLO[:\s]*/i, '')        // Strip SLO prefix if present
+      ];
+
+      for (const variant of variants) {
+        const { data: textMatches } = await supabase
+          .from('document_chunks')
+          .select('*')
+          .in('document_id', documentIds)
+          .ilike('chunk_text', `%${variant}%`)
+          .limit(10);
+        
+        if (textMatches) {
+            textMatches.forEach(m => {
+                resultsMap.set(m.id, {
+                    chunk_id: m.id,
+                    document_id: m.document_id,
+                    chunk_text: m.chunk_text,
+                    slo_codes: m.slo_codes || [],
+                    metadata: m.metadata || {},
+                    combined_score: 10.0, // Absolute priority for literal hits
+                    is_verbatim_definition: true
+                });
+            });
+        }
+      }
+
+      if (arrayMatches) {
+        arrayMatches.forEach(m => {
           resultsMap.set(m.id, {
             chunk_id: m.id,
             document_id: m.document_id,
             chunk_text: m.chunk_text,
             slo_codes: m.slo_codes || [],
             metadata: m.metadata || {},
-            combined_score: 10.0, // Absolute priority
+            combined_score: 10.0,
             is_verbatim_definition: true
           });
         });
       }
     }
 
-    // TIER 2: FUZZY LEXICAL SCAN (ILIKE fallback for alphanumeric variants)
-    const codesToScan = parsed.sloCodes.map(c => `%${c.replace(/-/g, '')}%`);
-    if (codesToScan.length > 0) {
-        // Direct DB text search for variants like "S8C3" when doc says "S-08-C-03"
-        for (const pattern of codesToScan) {
-            const { data: textMatches } = await supabase
-                .from('document_chunks')
-                .select('*')
-                .in('document_id', documentIds)
-                .ilike('chunk_text', pattern)
-                .limit(5);
-            
-            textMatches?.forEach(m => {
+    // TIER 2: HYBRID NEURAL SEARCH (Semantic Meaning)
+    // Only fetch if we don't have enough literal hits
+    if (resultsMap.size < 5) {
+        const queryEmbedding = await generateEmbedding(query);
+        const { data: hybridChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v4', {
+            query_text: query,
+            query_embedding: queryEmbedding,
+            match_count: matchCount, 
+            filter_document_ids: documentIds,
+            full_text_weight: 0.3,
+            vector_weight: 0.7
+        });
+
+        if (!rpcError && hybridChunks) {
+            hybridChunks.forEach((m: any) => {
                 if (!resultsMap.has(m.id)) {
                     resultsMap.set(m.id, {
                         chunk_id: m.id,
@@ -77,54 +113,20 @@ export async function retrieveRelevantChunks({
                         chunk_text: m.chunk_text,
                         slo_codes: m.slo_codes || [],
                         metadata: m.metadata || {},
-                        combined_score: 8.0,
-                        is_verbatim_definition: true
+                        combined_score: m.combined_score || 0.5,
+                        is_verbatim_definition: false
                     });
                 }
             });
         }
     }
 
-    // TIER 3: HYBRID NEURAL SEARCH (Semantic Meaning)
-    const queryEmbedding = await generateEmbedding(query);
-    
-    // Apply Metadata Filters to RPC if possible
-    const { data: hybridChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v4', {
-      query_text: query,
-      query_embedding: queryEmbedding,
-      match_count: matchCount, 
-      filter_document_ids: documentIds,
-      full_text_weight: 0.4,
-      vector_weight: 0.6
-    });
-
-    if (!rpcError && hybridChunks) {
-      hybridChunks.forEach((m: any) => {
-        if (!resultsMap.has(m.id)) {
-          // Weight semantic matches based on Grade/Subject alignment
-          let boost = 0;
-          if (parsed.grades.includes(m.metadata?.grade_level)) boost += 0.2;
-          if (parsed.subjectHint && m.metadata?.subject?.toLowerCase().includes(parsed.subjectHint)) boost += 0.2;
-
-          resultsMap.set(m.id, {
-            chunk_id: m.id,
-            document_id: m.document_id,
-            chunk_text: m.chunk_text,
-            slo_codes: m.slo_codes || [],
-            metadata: m.metadata || {},
-            combined_score: (m.combined_score || 0.5) + boost,
-            is_verbatim_definition: false
-          });
-        }
-      });
-    }
-
     return Array.from(resultsMap.values())
       .sort((a, b) => b.combined_score - a.combined_score)
-      .slice(0, 30);
+      .slice(0, 35);
 
   } catch (err) {
-    console.error('❌ [Retriever] High-Fidelity Retrieval Failure:', err);
+    console.error('❌ [Retriever] Grid Search Failure:', err);
     return [];
   }
 }

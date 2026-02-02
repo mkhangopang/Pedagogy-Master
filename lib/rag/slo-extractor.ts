@@ -1,15 +1,18 @@
 /**
- * NEURAL SLO NORMALIZER (v22.0)
+ * NEURAL SLO NORMALIZER (v23.0)
  * Precision-tuned for Sindh 2024 [SLO:X-YY-Z-AA] and Federal S8a5 formats.
  */
 export function normalizeSLO(code: string): string {
   if (!code) return '';
   
-  // 1. Aggressive Sanitization: Remove brackets, colons, and leading/trailing junk
-  const cleanCode = code.replace(/[\[\]\:\(\)]/g, '').trim().toUpperCase();
+  // 1. Aggressive Sanitization: Normalize dashes and remove brackets/colons
+  const cleanCode = code
+    .replace(/[\u2013\u2014]/g, "-") // Normalize en-dash and em-dash to hyphen
+    .replace(/[\[\]\:\(\)]/g, '')
+    .trim()
+    .toUpperCase();
   
   // 2. Sindh 2024 Pattern Detection (B-10-J-20)
-  // Subject(1)-Grade(2)-Domain(3)-Number(4)
   const sindhMatch = cleanCode.match(/([B-Z])\s*[\-\.\s]?\s*(0?9|10|11|12)\s*[\-\.\s]?\s*([A-Z])\s*[\-\.\s]?\s*(\d{1,2})/i);
   if (sindhMatch) {
     const subject = sindhMatch[1].toUpperCase();
@@ -19,7 +22,7 @@ export function normalizeSLO(code: string): string {
     return `${subject}-${grade}-${domain}-${num}`;
   }
 
-  // 3. Shorthand Pattern (B10J20 or S8A5)
+  // 3. Shorthand Pattern (B11B27 or S8A5)
   const shorthandMatch = cleanCode.match(/([B-Z])(0?9|10|11|12)([A-Z])(\d{1,2})/i);
   if (shorthandMatch) {
     return `${shorthandMatch[1]}-${shorthandMatch[2].padStart(2, '0')}-${shorthandMatch[3].toUpperCase()}-${shorthandMatch[4].padStart(2, '0')}`;
@@ -38,8 +41,7 @@ export function extractSLOCodes(text: string): string[] {
   
   const matches = new Set<string>();
   
-  // Matches "SLO: B-10-J-20", "[SLO:B-10-J-20]", "SL0:B-10-J-20"
-  // The capturing group focuses on the alphanumeric code itself
+  // Matches "SLO: B-11-B-27", "[SLO:B-11-B-27]", "SL0:B-11-B-27"
   const pattern = /(?:SL[O0][:-\s]*)?([B-Z]\s*[\-\.\s]?\s*(?:0?9|10|11|12)\s*[\-\.\s]?\s*[A-Z]\s*[\-\.\s]?\s*\d{1,2})/gi;
   const rawMatches = Array.from(text.matchAll(pattern));
   

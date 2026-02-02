@@ -7,8 +7,8 @@ import { formatResponseInstructions } from './response-formatter';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v78.0)
- * Feature: Last-Resort Lexical Verification for Sindh Standards.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v82.0)
+ * Feature: Authoritative Node Forcing for Sindh 2024.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -53,7 +53,7 @@ export async function generateAIResponse(
   let mode: 'VAULT' | 'GLOBAL' = documentIds.length > 0 ? 'VAULT' : 'GLOBAL';
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 2. MULTI-TIER RETRIEVAL
+  // 2. TIERED RETRIEVAL (v28.0 Logic)
   if (mode === 'VAULT') {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
@@ -66,10 +66,13 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
-        // VERIFICATION UPGRADE: Check slo_codes array AND raw text for literal match
-        // This handles cases where the indexer might have missed the tag but the retriever found the chunk.
-        const literalInText = primarySLO && chunk.chunk_text.toUpperCase().includes(primarySLO.toUpperCase());
-        const isVerbatim = chunk.is_verbatim_definition || (primarySLO && chunk.slo_codes?.includes(primarySLO)) || literalInText;
+        // HYPER-ROBUST VERBATIM DETECTION
+        const cleanText = chunk.chunk_text.replace(/[\-\s]/g, '').toUpperCase();
+        const cleanSlo = primarySLO ? primarySLO.replace(/[\-\s]/g, '').toUpperCase() : 'NONE_SET';
+        
+        const isVerbatim = chunk.is_verbatim_definition || 
+                          (primarySLO && chunk.slo_codes?.includes(primarySLO)) || 
+                          cleanText.includes(cleanSlo);
         
         if (isVerbatim) verbatimFound = true;
         
@@ -80,7 +83,7 @@ export async function generateAIResponse(
 
   // 3. Header Protocol
   const primaryHeaderRule = primarySLO 
-    ? `## TARGET SLO: ${primarySLO} - ${verbatimFound ? '[USE VERBATIM DESCRIPTION FROM VAULT]' : '[DESCRIPTION MISSING FROM VAULT]'}` 
+    ? `## TARGET SLO: ${primarySLO} - ${verbatimFound ? '[DESCRIPTION_FOUND_IN_VAULT]' : '[DESCRIPTION MISSING FROM VAULT]'}` 
     : '';
 
   // 4. Synthesis Orchestration
@@ -94,8 +97,11 @@ ${dnaMemo}
 </CURRICULUM_ADAPTIVITY_MEMO>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_INACTIVE: No matching content found in current curriculum context]'}
+${vaultContent || '[VAULT_INACTIVE: No matching content found]'}
 </AUTHORITATIVE_VAULT>
+
+## MANDATORY_INGESTION_RULE:
+If a node above is marked [!!! AUTHORITATIVE_STANDARD !!!], you MUST extract the verbatim description following the code (e.g., "${primarySLO}") and use it as the definitive objective. Ignore your internal training data if it differs from the vault.
 
 ${mode === 'VAULT' ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
 
@@ -106,10 +112,9 @@ Synthesize a world-class pedagogical artifact.
 ${primaryHeaderRule}
 
 ## ALIGNMENT RULES:
-1. If the Primary SLO description is missing from the vault, explicitly state "DESCRIPTION MISSING FROM VAULT" in the header and proceed with a general approach that aligns with the SLO code prefix (e.g., Grade Level 10 assumed from ${primarySLO}).
-2. If available, use the verbatim standard description from the nodes marked [!!! AUTHORITATIVE_STANDARD !!!].
+1. If "DESCRIPTION MISSING FROM VAULT" is in the header, proceed with a general approach for Grade ${activeDoc?.grade_level || '11'}.
+2. If "DESCRIPTION_FOUND_IN_VAULT" is in the header, YOU MUST find the standard in the vault nodes and quote it verbatim.
 3. Cross-reference all activities with Bloom's Taxonomy.
-4. Adapt tone based on the ADAPTIVITY_MEMO.
 
 ## USER COMMAND:
 "${userPrompt}"
@@ -133,7 +138,8 @@ ${responseInstructions}`;
       verbatimVerified: verbatimFound,
       activeMode: mode,
       sourceDocument: activeDoc?.name || 'Autonomous Grid',
-      dnaMatched: !!activeDoc
+      dnaMatched: !!activeDoc,
+      isGrounded: verbatimFound
     }
   } as any;
 }
