@@ -1,10 +1,10 @@
-
 import { supabase } from '../lib/supabase';
 import { UserProfile, OutputArtifact } from '../types';
 
 export const adaptiveService = {
   /**
-   * LAYER 1-4: Assembles the behavioral intelligence for the prompt
+   * LAYER 1-4: Assembles behavioral intelligence from history
+   * Now includes "Success Pattern Injection" for Few-Shot learning.
    */
   async buildFullContext(userId: string, requestType: string): Promise<string> {
     const [profile, recentSuccesses] = await Promise.all([
@@ -18,24 +18,23 @@ export const adaptiveService = {
     const inferredStyle = this.inferTeachingStyle(recentSuccesses);
 
     return `
-### ACTIVE ADAPTIVE CONTEXT
-- Teaching Style: ${profile.teachingStyle || inferredStyle}
-- Pedagogical Approach: ${profile.pedagogicalApproach || 'standard'}
-- Success Rate: ${Math.round((profile.successRate || 0) * 100)}%
+### ADAPTIVE_BEHAVIOR_PROFILE
+- Primary Teaching Style: ${profile.teachingStyle || inferredStyle}
+- Preferred Approach: ${profile.pedagogicalApproach || '5E Inquiry-Based'}
+- User Efficiency Rating: ${Math.round((profile.successRate || 0) * 100)}%
 
-### BEHAVIORAL SIGNALS (LAYER 3)
+### INSTRUCTIONAL_PREFERENCES (Derived from Edits)
 ${this.formatEditInstructions(editBehavior)}
 
-### PROVEN SUCCESS PATTERNS (LAYER 4)
+### SUCCESSFUL_PATTERNS (Few-Shot Reference)
 ${recentSuccesses.length > 0 
-  ? recentSuccesses.map((s, i) => `- Used ${s.contentType} pattern from ${new Date(s.createdAt).toLocaleDateString()} (Status: ${s.status})`).join('\n') 
-  : '- Building pattern history...'}
+  ? recentSuccesses.map((s, i) => `- [Pattern ${i+1}] Previously ${s.status} ${s.contentType} from ${new Date(s.createdAt).toLocaleDateString()}.`).join('\n') 
+  : '- Building instructional history...'}
 
-### ADAPTIVE GENERATION PROTOCOL
-- Complexity: Calibrate for ${profile.gradeLevel || 'K-12'}.
-- Subjectivity: Lead with ${profile.subjectArea || 'General'} concepts.
-- Instruction: If success rate is low, include more foundational explanations.
-- Adaptivity: If user preferences indicate conciseness, omit non-essential transitions.
+### PROTOCOL_DIRECTIVE:
+- Calibrate cognitive load for ${profile.gradeLevel || 'specified'} students.
+- Prioritize ${profile.subjectArea || 'core'} concepts.
+- If user preferences indicate conciseness, omit conversational filler.
 `;
   },
 
@@ -51,7 +50,7 @@ ${recentSuccesses.length > 0
       queriesUsed: data.queries_used,
       queriesLimit: data.queries_limit,
       gradeLevel: data.grade_level,
-      subjectArea: data.subject_area, // Fixed: Database is subject_area, Type is subjectArea
+      subjectArea: data.subject_area,
       teachingStyle: data.teaching_style,
       pedagogicalApproach: data.pedagogical_approach,
       generationCount: data.generation_count || 0,
@@ -92,18 +91,17 @@ ${recentSuccesses.length > 0
     if (successes.length === 0) return 'Balanced';
     const totalLength = successes.reduce((acc, s) => acc + s.content.length, 0);
     const avgLength = totalLength / successes.length;
-    return avgLength > 2500 ? 'Comprehensive' : 'Concise';
+    return avgLength > 3000 ? 'Comprehensive' : 'Concise';
   },
 
   formatEditInstructions(behavior: any) {
     const instructions = [];
-    if (behavior.verbosity < -0.2) instructions.push("- ADAPTATION: Consistently prefers brevity. Generate 20% more concise.");
-    if (behavior.verbosity > 0.2) instructions.push("- ADAPTATION: Prefers comprehensive detail. Expand activities and tips.");
-    if (behavior.examplesAdded > 1) instructions.push("- ADAPTATION: Values concrete examples. Include 3+ real-world scenarios.");
-    return instructions.length > 0 ? instructions.join('\n') : "- No strong behavioral trends detected yet.";
+    if (behavior.verbosity < -0.2) instructions.push("- ADAPTATION: Teacher favors brevity. Synthesize 25% more concisely.");
+    if (behavior.verbosity > 0.2) instructions.push("- ADAPTATION: Teacher favors depth. Provide rich scaffolding and extensions.");
+    if (behavior.examplesAdded > 1) instructions.push("- ADAPTATION: High value on real-world examples. Ensure 3+ specific local scenarios.");
+    return instructions.length > 0 ? instructions.join('\n') : "- No strong stylistic signals yet. Maintain pedagogical balance.";
   },
 
-  // FEEDBACK CAPTURE
   async captureGeneration(userId: string, contentType: string, content: string, metadata: any) {
     const id = crypto.randomUUID();
     const { error } = await supabase.from('output_artifacts').insert({
@@ -114,7 +112,7 @@ ${recentSuccesses.length > 0
       metadata,
       status: 'generated'
     });
-    if (error) console.error("Artifact Save Error:", error);
+    if (error) console.error("Artifact Capture Failure:", error);
     return id;
   },
 
@@ -132,12 +130,10 @@ ${recentSuccesses.length > 0
       edit_depth: extraData.editDepth || 0
     }).eq('id', artifactId);
 
-    // Update global success metrics for user with Exponential Moving Average
     const { data: profile } = await supabase.from('profiles').select('success_rate, generation_count').eq('id', userId).single();
     if (profile) {
       const isSuccess = ['export', 'accept'].includes(eventType);
-      // EMA logic: Success bumps rate, Failure (abandon) drops it
-      const newRate = isSuccess ? profile.success_rate * 0.85 + 0.15 : profile.success_rate * 0.92;
+      const newRate = isSuccess ? profile.success_rate * 0.88 + 0.12 : profile.success_rate * 0.95;
       await supabase.from('profiles').update({
         success_rate: Math.min(1, newRate),
         generation_count: (profile.generation_count || 0) + 1,

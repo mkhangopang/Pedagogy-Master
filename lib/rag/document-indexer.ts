@@ -9,8 +9,9 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v170.0)
- * SLO-Atomic Mode: Forces breaks at tags to prevent 'Context Dilution'.
+ * WORLD-CLASS NEURAL INDEXER (v185.0)
+ * SLO-Atomic Structural Mode: Prioritizes logical curriculum breaks over character counts.
+ * Designed to prevent "Standard Dilution" in high-stakes RAG.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -19,7 +20,7 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient,
   preExtractedMeta?: any
 ) {
-  console.log(`📡 [Indexer] SLO-Atomic Ingestion Initiated: ${documentId}`);
+  console.log(`📡 [Indexer] Structural Ingestion Initiated: ${documentId}`);
   
   try {
     const meta = preExtractedMeta || {};
@@ -28,28 +29,35 @@ export async function indexDocumentForRAG(
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
-    // Pattern handles SLO, SL0, and standard Sindh bracket format
-    const ANCHOR_PATTERN = /(?:- SL[O0][:\s]*|\[SL[O0][:\s]*)|(?:^|\s)([B-Z]\d{1,2}(?:\.|-)?(?:p|P|[A-Z])?-?\d{1,2})\b/i;
+    // Comprehensive Anchor Detection for Sindh, Federal, and International formats
+    const ANCHOR_PATTERN = /(?:- SL[O0][:\s]*|\[SL[O0][:\s]*)|(?:^|\s)([B-S]\s?-?\s?\d{1,2}\s?-?\s?[A-Z]\s?-?\s?\d{1,2})\b/i;
+    const HEADER_PATTERN = /^#{1,4}\s+|^DOMAIN\s+[A-Z]:|^Standard:|^Benchmark\s+\d+:/i;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
       
-      // Update contextual hierarchy
-      if (line.match(/^\s*DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
-      if (line.match(/^\s*Standard:/i)) currentCtx.standard = line;
-      if (line.match(/^\s*Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
+      // Hierarchy Tracking
+      if (line.match(/^#+\s+DOMAIN\s+([A-Z]):/i)) currentCtx.domain = line;
+      if (line.match(/^#+\s+Standard:/i)) currentCtx.standard = line;
+      if (line.match(/^#+\s+Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      const isSloAnchor = line.match(ANCHOR_PATTERN);
-      const isHeaderAnchor = line.match(/^#{1,3}\s+/) || line.match(/^\s*(?:DOMAIN|Standard|Benchmark)/i);
+      const isSloAnchor = !!line.match(ANCHOR_PATTERN);
+      const isHeaderBreak = !!line.match(HEADER_PATTERN);
       
-      // LOGIC: If we find an SLO tag, we MUST break the previous chunk to keep this SLO clean.
-      // Or if the buffer is just getting too huge.
-      const shouldBreak = (isSloAnchor && buffer.length > 50) || (isHeaderAnchor && buffer.length > 800) || buffer.length > 2500;
+      /**
+       * ADAPTIVE BREAK LOGIC:
+       * 1. Force break at any new SLO if the buffer has content (Atomicity).
+       * 2. Break at headers if buffer is > 500 chars (Hierarchy).
+       * 3. Safety break at 3000 chars (Context Window protection).
+       */
+      const shouldBreak = 
+        (isSloAnchor && buffer.length > 100) || 
+        (isHeaderBreak && buffer.length > 500) || 
+        buffer.length > 3000;
 
       if (shouldBreak) {
         const normalizedSLOs = extractSLOCodes(buffer);
-
         processedChunks.push({
           text: buffer.trim(),
           metadata: {
@@ -59,7 +67,8 @@ export async function indexDocumentForRAG(
             slo_codes: normalizedSLOs,
             is_slo_definition: normalizedSLOs.length > 0,
             chunk_index: processedChunks.length,
-            source_path: filePath
+            source_path: filePath,
+            curriculum_dna: meta.curriculum_name || 'Autonomous'
           }
         });
         buffer = line + "\n";
@@ -68,19 +77,25 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // Process remainder
+    // Capture final buffer
     if (buffer.trim().length > 10) {
       const normalizedSLOs = extractSLOCodes(buffer);
       processedChunks.push({
         text: buffer.trim(),
-        metadata: { ...currentCtx, slo_codes: normalizedSLOs, chunk_index: processedChunks.length, source_path: filePath }
+        metadata: { 
+          ...currentCtx, 
+          slo_codes: normalizedSLOs, 
+          chunk_index: processedChunks.length, 
+          source_path: filePath 
+        }
       });
     }
 
-    // Atomic Sync
+    // Sync Vector Store
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    const BATCH_SIZE = 20; 
+    // Batching with 768-dim strictly enforced
+    const BATCH_SIZE = 15; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -103,7 +118,7 @@ export async function indexDocumentForRAG(
 
     return { success: true, count: processedChunks.length };
   } catch (error: any) {
-    console.error("❌ [Indexer SLO-Atomic Fault]:", error);
+    console.error("❌ [Indexer Adaptive Fault]:", error);
     throw error;
   }
 }
