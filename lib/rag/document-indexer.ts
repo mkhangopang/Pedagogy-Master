@@ -9,8 +9,8 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v165.0)
- * Optimized for SLO-Centric Retrieval.
+ * WORLD-CLASS NEURAL INDEXER (v166.0)
+ * Optimized for SLO-Centric Retrieval & High-Density Context (Audit Optimized).
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -19,7 +19,7 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient,
   preExtractedMeta?: any
 ) {
-  console.log(`📡 [Indexer] Precision Ingestion: ${documentId}`);
+  console.log(`📡 [Indexer] Precision Ingestion Initiated: ${documentId}`);
   
   try {
     const meta = preExtractedMeta || {};
@@ -38,8 +38,12 @@ export async function indexDocumentForRAG(
       if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
       const isAnchor = line.match(ANCHOR_PATTERN) || line.match(/^#{1,3}\s+/);
+      
+      // AUDIT FIX: Increased buffer threshold from 100 to 1200 for richer semantic context
+      const isBufferLargeEnough = buffer.length > 1200;
+      const isBufferTooLarge = buffer.length > 2000; // Force split if no anchor found
 
-      if (isAnchor && buffer.length > 100) {
+      if ((isAnchor && isBufferLargeEnough) || isBufferTooLarge) {
         // Use canonical extractor for high-fidelity alignment
         const normalizedSLOs = extractSLOCodes(buffer);
 
@@ -61,7 +65,7 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // Tail buffer
+    // Tail buffer processing
     if (buffer.trim().length > 20) {
       const normalizedSLOs = extractSLOCodes(buffer);
       processedChunks.push({
@@ -70,7 +74,7 @@ export async function indexDocumentForRAG(
       });
     }
 
-    // Cluster Synchronization
+    // AUDIT FIX: Batch Cluster Synchronization with explicit rag_indexed flag setting
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     const BATCH_SIZE = 15; 
@@ -89,6 +93,7 @@ export async function indexDocumentForRAG(
       await supabase.from('document_chunks').insert(records);
     }
 
+    // Finalize state in indexer to ensure atomicity
     await supabase.from('documents').update({ 
       rag_indexed: true,
       last_synced_at: new Date().toISOString()

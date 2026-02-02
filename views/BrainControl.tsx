@@ -1,4 +1,4 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v95.0)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v96.0)
 import React, { useState } from 'react';
 import { 
   RefreshCw, Zap, Check, Copy, ShieldCheck, Terminal, Cpu, Sparkles, Wrench, AlertTriangle
@@ -17,18 +17,16 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const repairSql = `-- REPAIR SCRIPT: Neural Ingestion Alignment v95.0 (WORLD CLASS RAG)
+  const repairSql = `-- REPAIR SCRIPT: Neural Ingestion Alignment v96.0 (AUDIT RECOVERY)
 -- Target: Supabase / PostgreSQL
 
 -- 1. Performance Indexes & Extensions
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE INDEX IF NOT EXISTS idx_doc_chunks_document_id ON public.document_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_doc_chunks_slo_codes ON public.document_chunks USING GIN (slo_codes);
--- Lexical index for high-precision alphanumeric matching
 CREATE INDEX IF NOT EXISTS idx_doc_chunks_fts ON public.document_chunks USING GIN (to_tsvector('english', chunk_text));
 
 -- 2. MASTER HYBRID SEARCH RPC (v4)
--- Combines Semantic (Vector) and Lexical (Keyword) scoring
 CREATE OR REPLACE FUNCTION hybrid_search_chunks_v4(
   query_text TEXT,
   query_embedding vector(768),
@@ -82,13 +80,27 @@ BEGIN
 END;
 $$;
 
--- 3. Ensure Table Integrity
+-- 3. AUDIT RECOVERY: Reset Stuck & Missing Indexes
+-- FIX: Documents stuck in processing (> 1 hour) are marked as failed for re-upload
+UPDATE public.documents 
+SET status = 'failed', 
+    error_message = 'Node timeout: Reset during system audit.'
+WHERE status = 'processing' 
+  AND created_at < NOW() - INTERVAL '1 hour';
+
+-- FIX: Sync rag_indexed flag for ready documents that have chunks
+UPDATE public.documents d
+SET rag_indexed = true
+FROM (
+  SELECT DISTINCT document_id FROM public.document_chunks
+) dc
+WHERE d.id = dc.document_id AND d.status = 'ready' AND d.rag_indexed = false;
+
+-- 4. Ensure Integrity
 ALTER TABLE public.documents 
 ADD COLUMN IF NOT EXISTS document_summary TEXT,
 ADD COLUMN IF NOT EXISTS rag_indexed BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS subject TEXT,
-ADD COLUMN IF NOT EXISTS grade_level TEXT;
+ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false;
 `;
 
   const copyToClipboard = (text: string, id: string) => {
@@ -113,7 +125,7 @@ ADD COLUMN IF NOT EXISTS grade_level TEXT;
           <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
             <ShieldCheck className="text-indigo-600" /> Neural Architecture
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic">Hybrid RAG v95.0 Operational</p>
+          <p className="text-slate-500 text-xs font-medium italic">Audit Recovery Hub v96.0 Operational</p>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
           {['logic', 'schema', 'repair'].map(tab => (
@@ -143,9 +155,9 @@ ADD COLUMN IF NOT EXISTS grade_level TEXT;
           </div>
           <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] flex flex-col justify-center shadow-2xl relative overflow-hidden">
              <div className="absolute top-0 right-0 p-8 opacity-5"><Cpu size={150} /></div>
-             <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> World-Class Extraction</h3>
+             <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> Neural Alignment</h3>
              <p className="text-slate-400 text-xs leading-relaxed mb-6 italic">
-                Node v95.0 uses Hybrid Search (FTS + Vector). If document context is failing, run the <b>REPAIR</b> script in your Supabase SQL Editor.
+                Node v96.0 focuses on Context Density. Run the <b>REPAIR</b> script to fix documents identified as "stuck" or "unindexed" in the latest RAG Audit.
              </p>
           </div>
         </div>
@@ -153,16 +165,16 @@ ADD COLUMN IF NOT EXISTS grade_level TEXT;
 
       {activeTab === 'repair' && (
         <div className="space-y-4">
-           <div className="bg-rose-50 dark:bg-rose-950/20 p-6 rounded-3xl border border-rose-100 dark:border-rose-900/50 flex items-start gap-4">
-             <AlertTriangle className="text-rose-600 shrink-0" />
+           <div className="bg-emerald-50 dark:bg-emerald-950/20 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/50 flex items-start gap-4">
+             <ShieldCheck className="text-emerald-600 shrink-0" />
              <div>
-               <h4 className="text-sm font-black uppercase text-rose-700 tracking-tight">Sync & Field Repair</h4>
-               <p className="text-xs text-rose-600/80 mt-1">Run this SQL in your Supabase Editor to enable Hybrid Search v4 and lexical indexing.</p>
+               <h4 className="text-sm font-black uppercase text-emerald-700 tracking-tight">Audit Recovery Node</h4>
+               <p className="text-xs text-emerald-600/80 mt-1">This script forces unindexed "ready" documents into the vector search pool and clears stuck processing tasks.</p>
              </div>
            </div>
            <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
                <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                 <h3 className="text-white font-black uppercase tracking-tight flex items-center gap-2 text-[10px]"><Wrench size={14}/> Repair SQL</h3>
+                 <h3 className="text-white font-black uppercase tracking-tight flex items-center gap-2 text-[10px]"><Wrench size={14}/> Recovery SQL</h3>
                  <button onClick={() => copyToClipboard(repairSql, 'repair')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[9px] font-black uppercase text-white transition-all">
                      {copiedId === 'repair' ? <Check size={12}/> : <Copy size={12}/>} Copy SQL
                  </button>

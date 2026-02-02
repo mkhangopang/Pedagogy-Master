@@ -10,8 +10,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v14.0)
- * FIXED: Stale metadata race condition in finalize step.
+ * NEURAL PROCESSING NODE (v15.0)
+ * AUDIT OPTIMIZED: Robust error handling and state synchronization.
  */
 export async function POST(
   req: NextRequest,
@@ -26,7 +26,7 @@ export async function POST(
   try {
     if (!token) throw new Error("Authorization Required");
 
-    // 1. Initial State Update
+    // 1. Initial State Update - Force clear any stale error messages
     await adminSupabase.from('documents').update({ 
       document_summary: 'Initializing secure neural extraction...',
       status: 'processing',
@@ -50,6 +50,7 @@ export async function POST(
     
     let extractedText = "";
     try {
+      // pdf-parse can be memory intensive, wrapped in local block
       const data = await pdf(buffer);
       extractedText = data.text.trim();
     } catch (parseErr: any) {
@@ -68,9 +69,10 @@ export async function POST(
       document_summary: 'Synchronizing nodes with vector grid...'
     }).eq('id', documentId);
 
+    // This function now handles rag_indexed: true internally
     await indexDocumentForRAG(documentId, extractedText, doc.file_path, adminSupabase);
 
-    // 6. Pedagogical Intelligence Synthesis (Updates summary & metadata)
+    // 6. Pedagogical Intelligence Synthesis
     await adminSupabase.from('documents').update({ document_summary: 'Synthesizing pedagogical metadata...' }).eq('id', documentId);
     
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
@@ -79,25 +81,33 @@ export async function POST(
          // This function handles its own database updates for summary, subject, grade, etc.
          await analyzeDocumentWithAI(documentId, user.id, adminSupabase);
        } catch (aiErr: any) {
-         console.error("AI Analysis Failed:", aiErr);
+         console.warn("AI Analysis Failed (Non-Fatal):", aiErr);
        }
     }
 
     // 7. Finalize Node Ingestion
-    // FIX: Do not use doc.document_summary here as it is stale. Only update status.
+    // Final sanity check: Ensure rag_indexed is definitely true and status is ready
     await adminSupabase.from('documents').update({ 
-      status: 'ready'
+      status: 'ready',
+      rag_indexed: true,
+      error_message: null
     }).eq('id', documentId);
 
     return NextResponse.json({ success: true, message: "Curriculum ingestion finalized." });
 
   } catch (error: any) {
     console.error("❌ [Processing Node Exception]:", error);
+    // AUDIT FIX: Ensure status is updated to 'failed' so it's not stuck in 'processing'
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,
-      document_summary: `Extraction Fault: ${error.message}`
+      document_summary: `Extraction Fault: ${error.message}`,
+      rag_indexed: false
     }).eq('id', documentId);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    
+    return NextResponse.json({ 
+      error: error.message,
+      status: 'failed'
+    }, { status: 500 });
   }
 }
