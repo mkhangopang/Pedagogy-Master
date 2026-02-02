@@ -8,7 +8,7 @@ import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../consta
 import { rateLimiter } from './rate-limiter';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v57.0)
+ * NEURAL SYNTHESIS ORCHESTRATOR (v58.0)
  * Context Rules: Priority ID > Selected Vault > Relational DB > Profile Fallback
  */
 export async function generateAIResponse(
@@ -27,7 +27,7 @@ export async function generateAIResponse(
   const targetCode = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
   const isCurriculumEnabled = userPrompt.includes('CURRICULUM_MODE: ACTIVE');
 
-  // 1. Scoping - Fetch selected docs OR priority ID OR fallback
+  // 1. Scoping - Fetch selected docs OR priority ID
   let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, version_year, rag_indexed, status')
@@ -40,16 +40,6 @@ export async function generateAIResponse(
   }
 
   let { data: activeDocs } = await docQuery;
-  
-  // FALLBACK: If no selection, check user's active_doc_id profile field
-  if ((!activeDocs || activeDocs.length === 0) && !priorityDocumentId) {
-     const { data: profile } = await supabase.from('profiles').select('active_doc_id').eq('id', userId).single();
-     if (profile?.active_doc_id) {
-        const { data: fallbackDocs } = await supabase.from('documents').select('*').eq('id', profile.active_doc_id);
-        if (fallbackDocs) activeDocs = fallbackDocs;
-     }
-  }
-
   const documentIds = activeDocs?.map(d => d.id) || [];
   
   let vaultContent = "";
@@ -70,31 +60,22 @@ export async function generateAIResponse(
       vaultContent = retrievedChunks
         .map((chunk, i) => {
           const isVerbatim = chunk.is_verbatim_definition || (targetCode && chunk.slo_codes?.includes(targetCode));
-          const tag = isVerbatim ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : " [CONCEPTUAL_MATCH]";
+          const tag = isVerbatim ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : " [SEMANTIC_MATCH]";
           if (isVerbatim) verbatimFound = true;
           
           return `### VAULT_NODE_${i + 1}\n${tag}\n${chunk.chunk_text}\n---`;
         })
         .join('\n');
     } else {
-      // LAST LINE OF DEFENSE: Relational Metadata Search
-      if (targetCode) {
-        const { data: sloDb } = await supabase
-          .from('slo_database')
-          .select('slo_full_text')
-          .eq('slo_code', targetCode)
-          .in('document_id', documentIds)
-          .maybeSingle();
-        
-        if (sloDb) {
-          vaultContent = `### RELATIONAL_SLO_NODE\n[VERIFIED_FROM_METADATA_INDEX]\n${targetCode}: ${sloDb.slo_full_text}\n---`;
-          verbatimFound = true;
-        }
-      }
+      vaultContent = `[SYSTEM_ALERT: NO_CONTEXT_MATCHES]
+The active vault "${activeDocs?.[0]?.name || 'Unknown'}" was scanned using Hybrid Search v4, but no specific matches for "${targetCode || userPrompt}" were found.
+DIAGNOSTIC:
+- Vector Dimension: 768
+- Search Method: Hybrid (Lexical + Semantic)
+- Document ID: ${documentIds[0]}
+- Target SLO: ${targetCode || 'None Identified'}
 
-      if (!vaultContent) {
-        vaultContent = `[SEARCH_FAILURE: NO_RELEVANT_CONTEXT_FOUND] The vault was scanned but no specific nodes for standard "${targetCode || 'General'}" were matched. Falling back to high-fidelity pedagogical reasoning.`;
-      }
+INSTRUCTION: Proceed with high-fidelity synthesis using standard Grade ${activeDocs?.[0]?.grade_level || 'HSSC'} pedagogical intelligence, but note the lack of specific vault text for this objective.`;
     }
   }
 
@@ -106,9 +87,9 @@ export async function generateAIResponse(
     verificationLock = `
 🔴 STICKY_GROUNDING_DIRECTIVE:
 Targeting SLO: [${targetCode}].
-1. If [VERIFIED_VERBATIM_DEFINITION] is present, use that text EXACTLY.
-2. If only [CONCEPTUAL_MATCH] is present, prioritize those concepts.
-3. If [SEARCH_FAILURE] is reported, synthesize a high-fidelity artifact using your internal knowledge of standard curricula, but acknowledge the vault search failure clearly.
+1. If [VERIFIED_VERBATIM_DEFINITION] is present, use it verbatim.
+2. If only [SEMANTIC_MATCH] is present, use it as the conceptual foundation.
+3. If [NO_CONTEXT_MATCHES] is reported, act as a high-fidelity instructional designer using your internal knowledge of the "${activeDocs?.[0]?.authority || 'Pakistan'}" curriculum standards.
 `;
   }
 

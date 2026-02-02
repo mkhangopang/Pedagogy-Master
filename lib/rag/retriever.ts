@@ -15,8 +15,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * WORLD-CLASS NEURAL RETRIEVER (v14.0)
- * Optimized with Query Expansion and Relational Handshakes.
+ * WORLD-CLASS NEURAL RETRIEVER (v15.0)
+ * Optimized with Hybrid Waterfall Retrieval (Lexical + Vector).
  */
 export async function retrieveRelevantChunks({
   query,
@@ -34,30 +34,14 @@ export async function retrieveRelevantChunks({
 
     const targetCodes = extractSLOCodes(query);
     const resultsMap = new Map<string, RetrievedChunk>();
-    let expandedQuery = query;
-
-    // 1. RELATIONAL ENRICHMENT
+    
+    // 1. STAGE 1: HARD-ANCHOR LOOKUP (Metadata Tag Overlap)
     if (targetCodes.length > 0) {
-      const { data: dbMatches } = await supabase
-        .from('slo_database')
-        .select('slo_full_text')
-        .in('slo_code', targetCodes)
-        .in('document_id', documentIds)
-        .limit(1);
-      
-      if (dbMatches && dbMatches[0]?.slo_full_text) {
-        expandedQuery = `${query} ${dbMatches[0].slo_full_text}`;
-      }
-    }
-
-    // 2. HARD-ANCHOR: Tag Matching (Using ANY for broad support)
-    if (targetCodes.length > 0) {
-      // Primary search for exact matches
       const { data: tagMatches } = await supabase
         .from('document_chunks')
         .select('*')
         .in('document_id', documentIds)
-        .filter('slo_codes', 'cs', `{${targetCodes.join(',')}}`); // Contains
+        .overlaps('slo_codes', targetCodes);
       
       if (tagMatches) {
         tagMatches.forEach(m => {
@@ -67,50 +51,75 @@ export async function retrieveRelevantChunks({
             chunk_text: m.chunk_text,
             slo_codes: m.slo_codes || [],
             metadata: m.metadata || {},
-            combined_score: 2.0, // High-fidelity weight
+            combined_score: 2.0, // Maximum fidelity weight for tagged standards
             is_verbatim_definition: m.metadata?.is_slo_definition || false
           });
         });
       }
     }
 
-    // 3. SEMANTIC LAYER
-    const queryEmbedding = await generateEmbedding(expandedQuery);
-    const { data: semanticChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v3', {
-      query_text: expandedQuery,
+    // 2. STAGE 2: HYBRID NEURAL SEARCH (Lexical FTS + Semantic Vector)
+    const queryEmbedding = await generateEmbedding(query);
+    const { data: hybridChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v4', {
+      query_text: query,
       query_embedding: queryEmbedding,
       match_count: matchCount, 
-      filter_document_ids: documentIds
+      filter_document_ids: documentIds,
+      full_text_weight: 0.6, // Heavy weight on lexical matching for SLO codes
+      vector_weight: 0.4
     });
 
-    if (rpcError) throw rpcError;
+    if (!rpcError && hybridChunks) {
+      hybridChunks.forEach((m: any) => {
+        if (!resultsMap.has(m.id)) {
+          resultsMap.set(m.id, {
+            chunk_id: m.id,
+            document_id: m.document_id,
+            chunk_text: m.chunk_text,
+            slo_codes: m.slo_codes || [],
+            metadata: m.metadata || {},
+            combined_score: m.combined_score || 0.5,
+            is_verbatim_definition: m.metadata?.is_slo_definition || false
+          });
+        } else {
+          // Boost existing score if semantic search also found it
+          const existing = resultsMap.get(m.id)!;
+          existing.combined_score += (m.combined_score || 0);
+        }
+      });
+    }
 
-    (semanticChunks || []).forEach((m: any) => {
-      const cid = m.id || m.chunk_id;
-      const score = m.combined_score || 0.5;
-      
-      if (!resultsMap.has(cid)) {
-        resultsMap.set(cid, {
-          chunk_id: cid,
-          document_id: m.document_id,
-          chunk_text: m.chunk_text,
-          slo_codes: m.slo_codes || [],
-          metadata: m.metadata || {},
-          combined_score: score,
-          is_verbatim_definition: m.metadata?.is_slo_definition || false
-        });
-      } else {
-        const existing = resultsMap.get(cid)!;
-        existing.combined_score += score;
-      }
-    });
+    // 3. STAGE 3: RELATIONAL RECOVERY
+    if (resultsMap.size === 0 && targetCodes.length > 0) {
+       const { data: dbMatches } = await supabase
+        .from('slo_database')
+        .select('slo_full_text, slo_code, document_id')
+        .in('slo_code', targetCodes)
+        .in('document_id', documentIds)
+        .limit(5);
+
+       if (dbMatches) {
+         dbMatches.forEach((m, i) => {
+            const virtualId = `rel_${m.slo_code}_${i}`;
+            resultsMap.set(virtualId, {
+              chunk_id: virtualId,
+              document_id: m.document_id,
+              chunk_text: `[RELATIONAL_NODE] ${m.slo_code}: ${m.slo_full_text}`,
+              slo_codes: [m.slo_code],
+              metadata: { is_relational: true },
+              combined_score: 1.5,
+              is_verbatim_definition: true
+            });
+         });
+       }
+    }
 
     return Array.from(resultsMap.values())
       .sort((a, b) => b.combined_score - a.combined_score)
-      .slice(0, 25);
+      .slice(0, 30);
 
   } catch (err) {
-    console.error('❌ [Retriever] Grid Exception:', err);
+    console.error('❌ [Retriever] Grid Inconsistency:', err);
     return [];
   }
 }
