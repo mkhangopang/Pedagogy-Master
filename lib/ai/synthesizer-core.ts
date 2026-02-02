@@ -10,7 +10,6 @@ export interface AIProvider {
   apiKeyEnv: string;
   maxTokens: number;
   thinkingBudget?: number;
-  rateLimit: number; 
   rpm: number;
   rpd: number;
   tier: 1 | 2 | 3;
@@ -38,9 +37,8 @@ export class SynthesizerCore {
       apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
       thinkingBudget: 4096,
-      rateLimit: 50,
-      rpm: 2,
-      rpd: 1000,
+      rpm: 5,
+      rpd: 2000,
       tier: 1,
       enabled: isGeminiEnabled()
     });
@@ -54,9 +52,8 @@ export class SynthesizerCore {
       apiKeyEnv: 'API_KEY',
       maxTokens: 4096,
       thinkingBudget: 1024,
-      rateLimit: 100,
       rpm: 15,
-      rpd: 2000,
+      rpd: 5000,
       tier: 1,
       enabled: isGeminiEnabled()
     });
@@ -69,9 +66,8 @@ export class SynthesizerCore {
       model: 'llama-3.3-70b-versatile',
       apiKeyEnv: 'GROQ_API_KEY',
       maxTokens: 4096,
-      rateLimit: 30,
       rpm: 30,
-      rpd: 5000,
+      rpd: 10000,
       tier: 2,
       enabled: !!process.env.GROQ_API_KEY
     });
@@ -79,16 +75,57 @@ export class SynthesizerCore {
     // NODE 4: FASTEST GRID SEGMENT (Cerebras)
     providers.set('cerebras', {
       id: 'cerebras',
-      name: 'Cerebras Node',
+      name: 'Cerebras Llama',
       endpoint: 'https://api.cerebras.ai/v1/chat/completions',
       model: 'llama3.1-70b',
       apiKeyEnv: 'CEREBRAS_API_KEY',
       maxTokens: 2048,
-      rateLimit: 60,
       rpm: 60,
-      rpd: 10000,
+      rpd: 20000,
       tier: 2,
       enabled: !!process.env.CEREBRAS_API_KEY
+    });
+
+    // NODE 5: DEEP REASONING FALLBACK (DeepSeek)
+    providers.set('deepseek', {
+      id: 'deepseek',
+      name: 'DeepSeek Node',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-chat',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      maxTokens: 4096,
+      rpm: 10,
+      rpd: 3000,
+      tier: 2,
+      enabled: !!process.env.DEEPSEEK_API_KEY
+    });
+
+    // NODE 6: TOKEN THROUGHPUT (SambaNova)
+    providers.set('sambanova', {
+      id: 'sambanova',
+      name: 'SambaNova Hub',
+      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
+      model: 'Meta-Llama-3.1-70B-Instruct',
+      apiKeyEnv: 'SAMBANOVA_API_KEY',
+      maxTokens: 8192,
+      rpm: 20,
+      rpd: 5000,
+      tier: 3,
+      enabled: !!process.env.SAMBANOVA_API_KEY
+    });
+
+    // NODE 7: DECENTRALIZED FALLBACK (Hyperbolic)
+    providers.set('hyperbolic', {
+      id: 'hyperbolic',
+      name: 'Hyperbolic Node',
+      endpoint: 'https://api.hyperbolic.xyz/v1/chat/completions',
+      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct',
+      apiKeyEnv: 'HYPERBOLIC_API_KEY',
+      maxTokens: 4096,
+      rpm: 10,
+      rpd: 2000,
+      tier: 3,
+      enabled: !!process.env.HYPERBOLIC_API_KEY
     });
 
     return providers;
@@ -100,68 +137,97 @@ export class SynthesizerCore {
       if (now > expiry) this.failedProviders.delete(id);
     }
 
+    const history = options.history || [];
+    const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
+    const isMassiveTask = prompt.length > 8000 || prompt.includes('MASTER MD');
+
     const candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id))
       .sort((a, b) => {
-        const isPulse = prompt.includes('FAST_PULSE_EXTRACTOR');
-        if (isPulse) return b.tier - a.tier;
-        return a.tier - b.tier;
+        // Massive tasks prioritize Tier 1 and high-token nodes
+        if (isMassiveTask) return a.tier - b.tier;
+        // Standard tasks prioritize high-speed Tier 2 nodes
+        return b.tier - a.tier;
       });
 
     if (candidates.length === 0) {
-      throw new Error("NEURAL_GRID_OFFLINE: All nodes are cooling down.");
+      throw new Error("NEURAL_GRID_OFFLINE: All 7 segments are cooling down. Please wait 30 seconds.");
     }
 
     for (const provider of candidates) {
       try {
         let content = "";
+        const apiKey = process.env[provider.apiKeyEnv];
+        if (!apiKey) continue;
+
         if (provider.endpoint === 'native') {
-          const ai = new GoogleGenAI({ apiKey: process.env[provider.apiKeyEnv]! });
-          
-          // FIX: Deterministic temperature for pedagogical accuracy (Audit Requirement)
+          const ai = new GoogleGenAI({ apiKey });
           const config: any = { 
-            temperature: options.temperature ?? 0.0, 
+            temperature: options.temperature ?? 0.1, 
             maxOutputTokens: provider.maxTokens 
           };
           if (provider.thinkingBudget !== undefined) {
             config.thinkingConfig = { thinkingBudget: provider.thinkingBudget };
           }
 
+          const contents = [
+            ...history.map((h: any) => ({ 
+              role: h.role === 'user' ? 'user' : 'model', 
+              parts: [{ text: h.content }] 
+            })),
+            { role: 'user', parts: [{ text: prompt }] }
+          ];
+
           const res = await ai.models.generateContent({
             model: provider.model,
-            contents: [{ role: 'user', parts: [{ text: prompt }] }],
-            config
+            contents,
+            config: {
+              ...config,
+              systemInstruction: systemPrompt
+            }
           });
           
-          // FIX: Correct property access (.text not .text())
           content = res.text || "";
         } else {
           const res = await fetch(provider.endpoint, {
             method: 'POST',
             headers: { 
-              'Authorization': `Bearer ${process.env[provider.apiKeyEnv]}`, 
+              'Authorization': `Bearer ${apiKey}`, 
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
               model: provider.model,
-              messages: [{ role: 'system', content: options.systemPrompt || 'Output Markdown.' }, { role: 'user', content: prompt }],
-              temperature: options.temperature ?? 0.0,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                ...history.map((h: any) => ({ 
+                  role: h.role === 'user' ? 'user' : 'assistant', 
+                  content: h.content 
+                })),
+                { role: 'user', content: prompt }
+              ],
+              temperature: options.temperature ?? 0.1,
               max_tokens: provider.maxTokens
             })
           });
-          if (!res.ok) throw new Error(`Node ${provider.id} Refusal: ${res.status}`);
+
+          if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`Node ${provider.id} Refusal: ${res.status} - ${errorText}`);
+          }
           const data = await res.json();
           content = data.choices[0].message.content;
         }
 
-        if (content) return { text: content, provider: provider.name };
+        if (content && content.trim().length > 0) {
+          return { text: content, provider: provider.name };
+        }
       } catch (e: any) {
-        console.warn(`[Synthesizer] Node ${provider.id} fault: ${e.message}. Switching segment...`);
-        this.failedProviders.set(provider.id, Date.now() + 30000); 
+        console.warn(`⚠️ [Synthesizer] Failover: ${provider.name} fault: ${e.message}`);
+        this.failedProviders.set(provider.id, Date.now() + 60000); // 1-minute timeout
       }
     }
 
-    throw new Error("GRID_FAILURE: All synthesis segments exhausted.");
+    throw new Error("GRID_FAILURE: All 7 neural segments exhausted or reached token limits.");
   }
 
   public getProviders(): AIProvider[] {
@@ -173,8 +239,7 @@ export class SynthesizerCore {
       id: p.id,
       name: p.name,
       status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : 'active',
-      tier: p.tier,
-      remaining: 'N/A'
+      tier: p.tier
     }));
   }
 }
@@ -185,10 +250,17 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-export function getProvidersConfig(): AIProvider[] {
-  return getSynthesizer().getProviders();
-}
-
-export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string) => {
-  return getSynthesizer().synthesize(prompt, { type: 'chat', systemPrompt: system });
+export const synthesize = (
+  prompt: string, 
+  history: any[], 
+  hasDocs: boolean, 
+  docParts?: any[], 
+  preferred?: string, 
+  system?: string
+) => {
+  return getSynthesizer().synthesize(prompt, { 
+    history, 
+    systemPrompt: system,
+    hasDocs
+  });
 };

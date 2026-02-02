@@ -8,13 +8,12 @@ export async function callDeepSeek(
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error('DEEPSEEK_API_KEY missing');
 
-  const finalSystem = hasDocuments 
-    ? "STRICT_CURRICULUM_ANALYZER: Use ONLY the <ASSET_VAULT> provided. Do not use external knowledge. No bold headings. Temperature 0.0."
-    : systemInstruction;
-
   const messages = [
-    { role: 'system', content: finalSystem },
-    ...history.slice(-2).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+    { role: 'system', content: systemInstruction },
+    ...history.slice(-6).map(m => ({ 
+      role: m.role === 'user' ? 'user' : 'assistant', 
+      content: m.content 
+    })),
     { role: 'user', content: fullPrompt }
   ];
 

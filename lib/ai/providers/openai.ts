@@ -10,7 +10,10 @@ export async function callOpenAI(
 
   const messages = [
     { role: 'system', content: systemInstruction },
-    ...history.slice(-4).map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+    ...history.slice(-10).map(m => ({ 
+      role: m.role === 'user' ? 'user' : 'assistant', 
+      content: m.content 
+    })),
     { role: 'user', content: fullPrompt }
   ];
 
@@ -20,7 +23,7 @@ export async function callOpenAI(
     body: JSON.stringify({ 
       model: 'gpt-4o', 
       messages, 
-      temperature: hasDocuments ? 0.1 : 0.7,
+      temperature: hasDocuments ? 0.0 : 0.7,
       max_tokens: 4096
     })
   });
