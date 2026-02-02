@@ -1,14 +1,15 @@
 /**
- * NEURAL SLO NORMALIZER (v19.0)
- * Expanded for Universal Multi-Separator Alignment (Sindh / Federal / International).
+ * NEURAL SLO NORMALIZER (v20.0)
+ * Expanded for Universal Multi-Separator Alignment and Typo Resilience (SLO vs SL0).
  */
 export function normalizeSLO(code: string): string {
   if (!code) return '';
   
+  // Clean brackets and handle common zero/O typos in 'SLO'
   const cleanCode = code.replace(/[\[\]]/g, '').trim().toUpperCase();
   
   // Pattern 1: Multi-Separator Sindh 2024 (B-12-P-06 or B.12.P.06 or B 12 P 06)
-  // Now handles dots and spaces as separators
+  // Handles B-12-P-06 (Physiology/Environmental) specifically
   const sindhMatch = cleanCode.match(/([B-Z])\s*[\-\.\s]?\s*(0?9|10|11|12)\s*[\-\.\s]?\s*([A-Z])\s*[\-\.\s]?\s*(\d{1,2})/i);
   if (sindhMatch) {
     const subject = sindhMatch[1].toUpperCase();
@@ -32,16 +33,15 @@ export function normalizeSLO(code: string): string {
 
 /**
  * STRATEGIC GRID EXTRACTOR
- * Universally captures both official board codes and condensed teacher shorthand.
+ * Universally captures official board codes and handles the 'SL0' typo.
  */
 export function extractSLOCodes(text: string): string[] {
   if (!text) return [];
   
   const matches = new Set<string>();
   
-  // Unified Regex: Captures B-09-A-01, B12p6, B12.p6, S8a5, etc.
-  // Updated to include dots in standard patterns
-  const pattern = /(?:SLO[:\s-]*)?([B-Z]\s*[\-\.\s]?\s*(?:0?9|10|11|12)\s*(?:[\-\.\s]?\s*[A-Z]?\s*[\-\.\s]?\s*|\.[pP]?|pP?)\d{1,2})/gi;
+  // Updated pattern to handle SL0 (zero) and SLO (letter O)
+  const pattern = /(?:SL[O0][:\s-]*)?([B-Z]\s*[\-\.\s]?\s*(?:0?9|10|11|12)\s*(?:[\-\.\s]?\s*[A-Z]?\s*[\-\.\s]?\s*|\.[pP]?|pP?)\d{1,2})/gi;
   const rawMatches = Array.from(text.matchAll(pattern));
   
   for (const match of rawMatches) {

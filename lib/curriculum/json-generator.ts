@@ -1,7 +1,6 @@
 /**
- * DEEP HIERARCHICAL CURRICULUM GENERATOR (v9.0)
- * Specialized for Sindh Progression Grids (Grades IX-XII).
- * Logic: Domain -> Standard -> Benchmark -> SLO (with Grade Attribution)
+ * DEEP HIERARCHICAL CURRICULUM GENERATOR (v10.0)
+ * Specialized for Sindh Progression Grids (Grades IX-XII) with SL0 Typo Resilience.
  */
 export function generateCurriculumJson(markdown: string) {
   const lines = markdown.split('\n');
@@ -60,8 +59,8 @@ export function generateCurriculumJson(markdown: string) {
       return;
     }
 
-    // 4. SINDH SLO EXTRACTION (Handles [SLO:B-09-A-01] and - SLO:B-09-A-01)
-    const sloPattern = /(?:- SLO\s*[:\s]*|\[SLO:\s*)([B-Z]-?\d{2}-?[A-Z]-?\d{2})(?:\]|[:\s]*)(.+)/i;
+    // 4. SINDH SLO EXTRACTION (Resilient to SLO vs SL0 typo)
+    const sloPattern = /(?:- SL[O0]\s*[:\s]*|\[SL[O0][:\s]*)([B-Z]-?\d{2}-?[A-Z]-?\d{2})(?:\]|[:\s]*)(.+)/i;
     const sloMatch = trimmed.match(sloPattern);
     
     if (sloMatch && currentBenchmark) {
@@ -73,17 +72,6 @@ export function generateCurriculumJson(markdown: string) {
         code: code,
         text: sloMatch[2].trim(),
         grade: grade
-      });
-      result.totalSLOs++;
-      return;
-    }
-
-    // 5. LEGACY FALLBACK
-    const legacySloMatch = trimmed.match(/^- SLO\s*[:\s]*([^:\n]+)[:\s]*(.+)/i);
-    if (legacySloMatch && currentBenchmark && !sloMatch) {
-      currentBenchmark.slos.push({
-        code: legacySloMatch[1].trim().toUpperCase(),
-        text: legacySloMatch[2].trim()
       });
       result.totalSLOs++;
       return;

@@ -1,15 +1,14 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { synthesize, getProvidersConfig } from './synthesizer-core';
+import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
 import { extractSLOCodes } from '../rag/slo-extractor';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
-import { rateLimiter } from './rate-limiter';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v58.0)
- * Context Rules: Priority ID > Selected Vault > Relational DB > Profile Fallback
+ * NEURAL SYNTHESIS ORCHESTRATOR (v60.0)
+ * Context Rules: Relational Code Scan > Selected Vault > Relational DB > Profile Fallback
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -27,7 +26,7 @@ export async function generateAIResponse(
   const targetCode = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
   const isCurriculumEnabled = userPrompt.includes('CURRICULUM_MODE: ACTIVE');
 
-  // 1. Scoping - Fetch selected docs OR priority ID
+  // 1. Scoping
   let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, version_year, rag_indexed, status')
@@ -47,62 +46,66 @@ export async function generateAIResponse(
   let mode: 'VAULT' | 'GLOBAL' = documentIds.length > 0 ? 'VAULT' : 'GLOBAL';
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 2. Retrieval Branching
-  if (mode === 'VAULT') {
+  // 2. RELATIONAL PRE-SCAN: If code is present, try literal DB match first
+  if (mode === 'VAULT' && targetCode) {
+    const { data: relationalMatch } = await supabase
+      .from('document_chunks')
+      .select('*')
+      .in('document_id', documentIds)
+      .contains('slo_codes', [targetCode])
+      .limit(3);
+    
+    if (relationalMatch && relationalMatch.length > 0) {
+      console.log(`✅ [Relational Match] Found literal tag for ${targetCode}`);
+      retrievedChunks = relationalMatch.map(m => ({
+        chunk_id: m.id,
+        document_id: m.document_id,
+        chunk_text: m.chunk_text,
+        slo_codes: m.slo_codes,
+        metadata: m.metadata,
+        combined_score: 10.0,
+        is_verbatim_definition: true
+      }));
+    }
+  }
+
+  // 3. HYBRID FALLBACK: If relational scan missed, use vector/FTS
+  if (mode === 'VAULT' && retrievedChunks.length === 0) {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
       documentIds,
       supabase,
       matchCount: 40
     });
-
-    if (retrievedChunks.length > 0) {
-      vaultContent = retrievedChunks
-        .map((chunk, i) => {
-          const isVerbatim = chunk.is_verbatim_definition || (targetCode && chunk.slo_codes?.includes(targetCode));
-          const tag = isVerbatim ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : " [SEMANTIC_MATCH]";
-          if (isVerbatim) verbatimFound = true;
-          
-          return `### VAULT_NODE_${i + 1}\n${tag}\n${chunk.chunk_text}\n---`;
-        })
-        .join('\n');
-    } else {
-      vaultContent = `[SYSTEM_ALERT: NO_CONTEXT_MATCHES]
-The active vault "${activeDocs?.[0]?.name || 'Unknown'}" was scanned using Hybrid Search v4, but no specific matches for "${targetCode || userPrompt}" were found.
-DIAGNOSTIC:
-- Vector Dimension: 768
-- Search Method: Hybrid (Lexical + Semantic)
-- Document ID: ${documentIds[0]}
-- Target SLO: ${targetCode || 'None Identified'}
-
-INSTRUCTION: Proceed with high-fidelity synthesis using standard Grade ${activeDocs?.[0]?.grade_level || 'HSSC'} pedagogical intelligence, but note the lack of specific vault text for this objective.`;
-    }
   }
 
-  // 3. System Directives Construction
+  if (retrievedChunks.length > 0) {
+    vaultContent = retrievedChunks
+      .map((chunk, i) => {
+        const isVerbatim = chunk.is_verbatim_definition || (targetCode && chunk.slo_codes?.includes(targetCode));
+        const tag = isVerbatim ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : " [SEMANTIC_MATCH]";
+        if (isVerbatim) verbatimFound = true;
+        
+        return `### VAULT_NODE_${i + 1}\n${tag}\n${chunk.chunk_text}\n---`;
+      })
+      .join('\n');
+  } else if (mode === 'VAULT') {
+    vaultContent = `[SYSTEM_ALERT: NO_CONTEXT_MATCHES]
+Scanned vault for "${targetCode || userPrompt}". Zero high-confidence fragments returned. 
+Proceed with pedagogical intelligence for Grade ${activeDocs?.[0]?.grade_level || 'General'}.`;
+  }
+
+  // 4. Prompt Assembly
   let instructionSet = customSystem || DEFAULT_MASTER_PROMPT;
-  
-  let verificationLock = "";
-  if (mode === 'VAULT' && targetCode && isCurriculumEnabled) {
-    verificationLock = `
-🔴 STICKY_GROUNDING_DIRECTIVE:
-Targeting SLO: [${targetCode}].
-1. If [VERIFIED_VERBATIM_DEFINITION] is present, use it verbatim.
-2. If only [SEMANTIC_MATCH] is present, use it as the conceptual foundation.
-3. If [NO_CONTEXT_MATCHES] is reported, act as a high-fidelity instructional designer using your internal knowledge of the "${activeDocs?.[0]?.authority || 'Pakistan'}" curriculum standards.
-`;
-  }
-
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDocs ? activeDocs[0] : undefined);
 
   let finalPrompt = `
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_INACTIVE: NO_DOCS_SELECTED]'}
+${vaultContent || '[VAULT_INACTIVE]'}
 </AUTHORITATIVE_VAULT>
 
 ${mode === 'VAULT' ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
-${verificationLock}
 
 ## USER COMMAND:
 "${userPrompt}"
@@ -110,14 +113,7 @@ ${verificationLock}
 ## EXECUTION PARAMETERS:
 ${responseInstructions}`;
 
-  const result = await synthesize(
-    finalPrompt, 
-    history.slice(-4), 
-    mode === 'VAULT', 
-    [], 
-    'gemini', 
-    instructionSet
-  );
+  const result = await synthesize(finalPrompt, history.slice(-4), mode === 'VAULT', [], 'gemini', instructionSet);
   
   return {
     text: result.text,

@@ -1,6 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
-import { normalizeSLO, extractSLOCodes } from './slo-extractor';
+import { extractSLOCodes } from './slo-extractor';
 
 interface IngestionContext {
   domain?: string;
@@ -9,8 +9,8 @@ interface IngestionContext {
 }
 
 /**
- * WORLD-CLASS NEURAL INDEXER (v166.0)
- * Optimized for SLO-Centric Retrieval & High-Density Context (Audit Optimized).
+ * WORLD-CLASS NEURAL INDEXER (v170.0)
+ * SLO-Atomic Mode: Forces breaks at tags to prevent 'Context Dilution'.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -19,7 +19,7 @@ export async function indexDocumentForRAG(
   supabase: SupabaseClient,
   preExtractedMeta?: any
 ) {
-  console.log(`📡 [Indexer] Precision Ingestion Initiated: ${documentId}`);
+  console.log(`📡 [Indexer] SLO-Atomic Ingestion Initiated: ${documentId}`);
   
   try {
     const meta = preExtractedMeta || {};
@@ -28,23 +28,26 @@ export async function indexDocumentForRAG(
     let currentCtx: IngestionContext = {};
     let buffer = "";
 
-    const ANCHOR_PATTERN = /(?:- SLO[:\s]*|\[SLO:\s*)|(?:^|\s)([B-Z]\d{1,2}(?:\.|-)?(?:p|P|[A-Z])?-?\d{1,2})\b/i;
+    // Pattern handles SLO, SL0, and standard Sindh bracket format
+    const ANCHOR_PATTERN = /(?:- SL[O0][:\s]*|\[SL[O0][:\s]*)|(?:^|\s)([B-Z]\d{1,2}(?:\.|-)?(?:p|P|[A-Z])?-?\d{1,2})\b/i;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
+      if (!line) continue;
       
-      if (line.match(/^DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
-      if (line.match(/^Standard:/i)) currentCtx.standard = line;
-      if (line.match(/^Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
+      // Update contextual hierarchy
+      if (line.match(/^\s*DOMAIN\s+[A-Z]:/i)) currentCtx.domain = line;
+      if (line.match(/^\s*Standard:/i)) currentCtx.standard = line;
+      if (line.match(/^\s*Benchmark\s+\d+:/i)) currentCtx.benchmark = line;
 
-      const isAnchor = line.match(ANCHOR_PATTERN) || line.match(/^#{1,3}\s+/);
+      const isSloAnchor = line.match(ANCHOR_PATTERN);
+      const isHeaderAnchor = line.match(/^#{1,3}\s+/) || line.match(/^\s*(?:DOMAIN|Standard|Benchmark)/i);
       
-      // AUDIT FIX: Increased buffer threshold from 100 to 1200 for richer semantic context
-      const isBufferLargeEnough = buffer.length > 1200;
-      const isBufferTooLarge = buffer.length > 2000; // Force split if no anchor found
+      // LOGIC: If we find an SLO tag, we MUST break the previous chunk to keep this SLO clean.
+      // Or if the buffer is just getting too huge.
+      const shouldBreak = (isSloAnchor && buffer.length > 50) || (isHeaderAnchor && buffer.length > 800) || buffer.length > 2500;
 
-      if ((isAnchor && isBufferLargeEnough) || isBufferTooLarge) {
-        // Use canonical extractor for high-fidelity alignment
+      if (shouldBreak) {
         const normalizedSLOs = extractSLOCodes(buffer);
 
         processedChunks.push({
@@ -54,7 +57,7 @@ export async function indexDocumentForRAG(
             subject: meta.subject,
             grade: meta.grade,
             slo_codes: normalizedSLOs,
-            is_slo_definition: normalizedSLOs.length > 0 && (buffer.toLowerCase().includes('slo') || buffer.includes('[')),
+            is_slo_definition: normalizedSLOs.length > 0,
             chunk_index: processedChunks.length,
             source_path: filePath
           }
@@ -65,8 +68,8 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // Tail buffer processing
-    if (buffer.trim().length > 20) {
+    // Process remainder
+    if (buffer.trim().length > 10) {
       const normalizedSLOs = extractSLOCodes(buffer);
       processedChunks.push({
         text: buffer.trim(),
@@ -74,10 +77,10 @@ export async function indexDocumentForRAG(
       });
     }
 
-    // AUDIT FIX: Batch Cluster Synchronization with explicit rag_indexed flag setting
+    // Atomic Sync
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    const BATCH_SIZE = 15; 
+    const BATCH_SIZE = 20; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -93,7 +96,6 @@ export async function indexDocumentForRAG(
       await supabase.from('document_chunks').insert(records);
     }
 
-    // Finalize state in indexer to ensure atomicity
     await supabase.from('documents').update({ 
       rag_indexed: true,
       last_synced_at: new Date().toISOString()
@@ -101,7 +103,7 @@ export async function indexDocumentForRAG(
 
     return { success: true, count: processedChunks.length };
   } catch (error: any) {
-    console.error("❌ [Indexer Fault]:", error);
+    console.error("❌ [Indexer SLO-Atomic Fault]:", error);
     throw error;
   }
 }
