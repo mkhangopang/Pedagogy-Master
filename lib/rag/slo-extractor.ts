@@ -1,4 +1,3 @@
-
 /**
  * NEURAL SLO NORMALIZER (v24.0)
  * Precision-tuned for Sindh 2024 [SLO:X-YY-Z-AA] and Federal S8a5 formats.
@@ -9,14 +8,14 @@ export function normalizeSLO(code: string): string {
   // 1. Aggressive Sanitization
   let cleanCode = code
     .replace(/[\u2013\u2014]/g, "-") // Normalize en-dash/em-dash
-    .replace(/[\[\]\:\(\)]/g, '')
+    .replace(/[\[\]:()]/g, '')
     .trim()
     .toUpperCase();
   
   // 2. Roman Numeral Grade Mapping (Sindh Specific)
   const romanMap: Record<string, string> = { 'IX': '09', 'X': '10', 'XI': '11', 'XII': '12' };
   
-  // Detect "B-XI-..." and turn into "B-11-..."
+  // Detect "-XI-" and turn into "-11-"
   Object.entries(romanMap).forEach(([roman, num]) => {
     const regex = new RegExp(`-(${roman})-`, 'g');
     cleanCode = cleanCode.replace(regex, `-${num}-`);
@@ -51,7 +50,8 @@ export function extractSLOCodes(text: string): string[] {
   const matches = new Set<string>();
   
   // Captures both [SLO: B-11...] and raw B-11...
-  const pattern = /(?:SL[O0][:\-\s]*)?([B-Z]\s*[-.\s]?\s*(?:0?9|10|11|12|IX|X|XI|XII)\s*[-.\s]?\s*[A-Z]\s*[-.\s]?\s*\d{1,2})/gi;
+  // Refined regex to avoid problematic unescaped tokens
+  const pattern = /(?:SL[O0][:-\s]*)?([B-Z]\s*[-.\s]?\s*(?:0?9|10|11|12|IX|X|XI|XII)\s*[-.\s]?\s*[A-Z]\s*[-.\s]?\s*\d{1,2})/gi;
   const rawMatches = Array.from(text.matchAll(pattern));
   
   for (const match of rawMatches) {

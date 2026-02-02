@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient, getSupabaseServerClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';

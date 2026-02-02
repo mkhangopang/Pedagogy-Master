@@ -57,10 +57,10 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error("❌ [AI Gateway Error]:", error);
-    // Propagate the specific grid error if available
+    // Propagate the specific grid error or the requested institutional error string
     const errorMsg = error.message?.includes('GRID_FAULT') || error.message?.includes('NEURAL_GRID')
       ? error.message 
-      : "Synthesis grid exception: The neural nodes are currently re-aligning. Please retry.";
+      : "AI Alert: Synthesis grid exception.";
       
     return NextResponse.json({ 
       error: errorMsg,
