@@ -1,14 +1,14 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
-import { extractSLOCodes } from '../rag/slo-extractor';
+import { extractSLOCodes, normalizeSLO } from '../rag/slo-extractor';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v75.0)
- * Protocol: High-Fidelity Header Enforcement & Missing Description Fallbacks.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v78.0)
+ * Feature: Last-Resort Lexical Verification for Sindh Standards.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -25,7 +25,7 @@ export async function generateAIResponse(
   const extractedSLOs = extractSLOCodes(userPrompt);
   const primarySLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
 
-  // 1. Context Scoping
+  // 1. Identity Resolution
   let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, version_year, document_summary')
@@ -66,14 +66,19 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
-        const isVerbatim = chunk.is_verbatim_definition || (primarySLO && chunk.slo_codes?.includes(primarySLO));
+        // VERIFICATION UPGRADE: Check slo_codes array AND raw text for literal match
+        // This handles cases where the indexer might have missed the tag but the retriever found the chunk.
+        const literalInText = primarySLO && chunk.chunk_text.toUpperCase().includes(primarySLO.toUpperCase());
+        const isVerbatim = chunk.is_verbatim_definition || (primarySLO && chunk.slo_codes?.includes(primarySLO)) || literalInText;
+        
         if (isVerbatim) verbatimFound = true;
+        
         return `### VAULT_NODE_${i + 1}${isVerbatim ? " [!!! AUTHORITATIVE_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   }
 
-  // 3. Header and Fallback Directive
+  // 3. Header Protocol
   const primaryHeaderRule = primarySLO 
     ? `## TARGET SLO: ${primarySLO} - ${verbatimFound ? '[USE VERBATIM DESCRIPTION FROM VAULT]' : '[DESCRIPTION MISSING FROM VAULT]'}` 
     : '';
@@ -89,7 +94,7 @@ ${dnaMemo}
 </CURRICULUM_ADAPTIVITY_MEMO>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_INACTIVE]'}
+${vaultContent || '[VAULT_INACTIVE: No matching content found in current curriculum context]'}
 </AUTHORITATIVE_VAULT>
 
 ${mode === 'VAULT' ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
@@ -101,9 +106,9 @@ Synthesize a world-class pedagogical artifact.
 ${primaryHeaderRule}
 
 ## ALIGNMENT RULES:
-1. If the Primary SLO description is missing from the vault, explicitly state "DESCRIPTION MISSING FROM VAULT" in the header and proceed with a general approach that aligns with the SLO code prefix (e.g., Grade Level assumed from code).
-2. If available, use the verbatim standard description.
-3. Cross-reference activities with Bloom's Taxonomy.
+1. If the Primary SLO description is missing from the vault, explicitly state "DESCRIPTION MISSING FROM VAULT" in the header and proceed with a general approach that aligns with the SLO code prefix (e.g., Grade Level 10 assumed from ${primarySLO}).
+2. If available, use the verbatim standard description from the nodes marked [!!! AUTHORITATIVE_STANDARD !!!].
+3. Cross-reference all activities with Bloom's Taxonomy.
 4. Adapt tone based on the ADAPTIVITY_MEMO.
 
 ## USER COMMAND:
