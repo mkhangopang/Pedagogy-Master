@@ -72,6 +72,7 @@ export interface Document {
   isPublic?: boolean;
   documentSummary?: string;
   difficultyLevel?: string;
+  errorMessage?: string;
   geminiProcessed?: boolean;
   isSelected?: boolean;
   base64Data?: string;
