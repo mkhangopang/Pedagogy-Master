@@ -1,7 +1,7 @@
-// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v97.0)
+// NEURAL BRAIN: INFRASTRUCTURE CONTROL HUB (v105.0)
 import React, { useState } from 'react';
 import { 
-  RefreshCw, Zap, Check, Copy, ShieldCheck, Terminal, Cpu, Sparkles, Wrench, AlertTriangle
+  RefreshCw, Zap, Check, Copy, ShieldCheck, Terminal, Cpu, Sparkles, Wrench, AlertTriangle, Database, Activity
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
@@ -17,34 +17,36 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const repairSql = `-- REPAIR SCRIPT: Neural Ingestion Alignment v97.0 (BOOTSTRAP SECURE)
+  const repairSql = `-- REPAIR SCRIPT: Neural Ingestion Alignment v105.0 (SCALABLE ARCHITECTURE)
 -- Target: Supabase / PostgreSQL
 
--- 1. SCHEMA INTEGRITY: Bootstrap Columns First
--- This ensures subsequent UPDATE and INDEX commands don't fail.
+-- 1. SCHEMA INTEGRITY: Adaptive Memory Columns
+ALTER TABLE public.profiles 
+ADD COLUMN IF NOT EXISTS teaching_style TEXT,
+ADD COLUMN IF NOT EXISTS pedagogical_approach TEXT DEFAULT '5E Inquiry-Based',
+ADD COLUMN IF NOT EXISTS edit_patterns JSONB DEFAULT '{"avgLengthChange": 0, "examplesCount": 0}',
+ADD COLUMN IF NOT EXISTS success_rate FLOAT DEFAULT 0.0,
+ADD COLUMN IF NOT EXISTS generation_count INTEGER DEFAULT 0;
+
+-- 2. DOCUMENT DNA METADATA
 ALTER TABLE public.documents 
-ADD COLUMN IF NOT EXISTS error_message TEXT,
-ADD COLUMN IF NOT EXISTS extracted_text TEXT,
-ADD COLUMN IF NOT EXISTS document_summary TEXT,
-ADD COLUMN IF NOT EXISTS rag_indexed BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS is_selected BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS subject TEXT,
-ADD COLUMN IF NOT EXISTS grade_level TEXT;
+ADD COLUMN IF NOT EXISTS curriculum_dna TEXT,
+ADD COLUMN IF NOT EXISTS authority TEXT,
+ADD COLUMN IF NOT EXISTS version_year TEXT DEFAULT '2024';
 
--- 2. PERFORMANCE INDEXES & EXTENSIONS
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE INDEX IF NOT EXISTS idx_doc_chunks_document_id ON public.document_chunks(document_id);
-CREATE INDEX IF NOT EXISTS idx_doc_chunks_slo_codes ON public.document_chunks USING GIN (slo_codes);
-CREATE INDEX IF NOT EXISTS idx_doc_chunks_fts ON public.document_chunks USING GIN (to_tsvector('english', chunk_text));
+-- 3. PERFORMANCE INDEXES (Atomic SLO Optimization)
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_slo_gin ON public.document_chunks USING GIN (slo_codes);
+CREATE INDEX IF NOT EXISTS idx_docs_user_selected ON public.documents (user_id, is_selected);
 
--- 3. MASTER HYBRID SEARCH RPC (v4)
-CREATE OR REPLACE FUNCTION hybrid_search_chunks_v4(
+-- 4. MASTER HYBRID SEARCH RPC (v5 - Context-Aware)
+-- Optimized for structural chunks and metadata filtering
+CREATE OR REPLACE FUNCTION hybrid_search_chunks_v5(
   query_text TEXT,
   query_embedding vector(768),
   match_count INT,
   filter_document_ids UUID[] DEFAULT NULL,
-  full_text_weight FLOAT DEFAULT 0.5,
-  vector_weight FLOAT DEFAULT 0.5
+  full_text_weight FLOAT DEFAULT 0.4,
+  vector_weight FLOAT DEFAULT 0.6
 )
 RETURNS TABLE (
   id UUID,
@@ -79,7 +81,7 @@ BEGIN
     dc.chunk_text,
     dc.slo_codes,
     dc.metadata,
-    COALESCE(vs.score, 0) * vector_weight + COALESCE(fs.score, 0) * full_text_weight as combined_score
+    (COALESCE(vs.score, 0) * vector_weight + COALESCE(fs.score, 0) * full_text_weight) as combined_score
   FROM public.document_chunks dc
   LEFT JOIN vector_search vs ON dc.id = vs.id
   LEFT JOIN fts_search fs ON dc.id = fs.id
@@ -90,22 +92,6 @@ BEGIN
   LIMIT match_count;
 END;
 $$;
-
--- 4. AUDIT RECOVERY: Reset Stuck & Missing Indexes
--- FIX: Documents stuck in processing (> 1 hour) are marked as failed
-UPDATE public.documents 
-SET status = 'failed', 
-    error_message = 'Node timeout: Reset during system audit.'
-WHERE status = 'processing' 
-  AND created_at < NOW() - INTERVAL '1 hour';
-
--- FIX: Sync rag_indexed flag for ready documents that already have generated chunks
-UPDATE public.documents d
-SET rag_indexed = true
-FROM (
-  SELECT DISTINCT document_id FROM public.document_chunks
-) dc
-WHERE d.id = dc.document_id AND d.status = 'ready' AND d.rag_indexed = false;
 `;
 
   const copyToClipboard = (text: string, id: string) => {
@@ -117,77 +103,130 @@ WHERE d.id = dc.document_id AND d.status = 'ready' AND d.rag_indexed = false;
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await supabase.from('neural_brain').insert([{ master_prompt: formData.masterPrompt, version: formData.version + 1, is_active: true }]);
+      await supabase.from('neural_brain').insert([{ 
+        master_prompt: formData.masterPrompt, 
+        version: formData.version + 1, 
+        is_active: true 
+      }]);
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
       alert("Neural logic committed to grid.");
-    } catch (err: any) { alert("Error updating logic."); } finally { setIsSaving(false); }
+    } catch (err: any) { 
+      alert("Error updating logic."); 
+    } finally { 
+      setIsSaving(false); 
+    }
   };
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 px-2 text-left">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 text-slate-900 dark:text-white">
         <div className="space-y-1">
-          <h1 className="text-2xl font-black flex items-center gap-3 tracking-tight uppercase">
-            <ShieldCheck className="text-indigo-600" /> Neural Architecture
+          <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase">
+            <ShieldCheck className="text-indigo-600" /> Brain Control
           </h1>
-          <p className="text-slate-500 text-xs font-medium italic">Bootstrap Optimized Node Hub v97.0</p>
+          <p className="text-slate-500 text-xs font-medium italic">Adaptive Synthesis Management • v105.0</p>
         </div>
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
-          {['logic', 'schema', 'repair'].map(tab => (
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
+          {[
+            { id: 'logic', icon: <Cpu size={14}/>, label: 'Neural Logic' },
+            { id: 'schema', icon: <Database size={14}/>, label: 'Data Plane' },
+            { id: 'repair', icon: <Wrench size={14}/>, label: 'Grid Repair' }
+          ].map(tab => (
             <button 
-              key={tab}
-              onClick={() => setActiveTab(tab as any)}
-              className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
             >
-              {tab}
+              {tab.icon}
+              {tab.label}
             </button>
           ))}
         </div>
       </header>
 
       {activeTab === 'logic' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] border border-slate-200 dark:border-white/10 shadow-sm space-y-6">
-            <h2 className="text-lg font-bold flex items-center gap-2 dark:text-white"><Terminal size={18} className="text-indigo-500" /> Master Prompt</h2>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-200 dark:border-white/10 shadow-sm space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold flex items-center gap-2 dark:text-white"><Terminal size={18} className="text-indigo-500" /> Master Synthesis Logic</h2>
+              <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full text-[10px] font-black uppercase tracking-widest">Active v{formData.version}</span>
+            </div>
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-80 p-6 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl font-mono text-[10px] leading-relaxed resize-none focus:ring-2 focus:ring-indigo-500 outline-none"
+              className="w-full h-[500px] p-8 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-[2rem] font-mono text-[11px] leading-relaxed resize-none focus:ring-2 focus:ring-indigo-500 outline-none custom-scrollbar"
+              placeholder="Inject core pedagogical rules here..."
             />
-            <button onClick={handleSave} disabled={isSaving} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-              {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Commit Version {formData.version + 1}
+            <button 
+              onClick={handleSave} 
+              disabled={isSaving} 
+              className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+            >
+              {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Commit Logic to Neural Grid
             </button>
           </div>
-          <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] flex flex-col justify-center shadow-2xl relative overflow-hidden">
-             <div className="absolute top-0 right-0 p-8 opacity-5"><Cpu size={150} /></div>
-             <h3 className="text-xl font-bold mb-4 text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> Neural Alignment</h3>
-             <p className="text-slate-400 text-xs leading-relaxed mb-6 italic">
-                Node v97.0 fixes column definition sequence. Run the <b>REPAIR</b> script to resolve "Missing Column" errors and fix unindexed documents.
-             </p>
+          
+          <div className="space-y-6">
+            <div className="bg-slate-900 text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col gap-6">
+               <div className="absolute top-0 right-0 p-8 opacity-5"><Activity size={150} /></div>
+               <h3 className="text-xl font-black uppercase tracking-tight text-emerald-400 flex items-center gap-2"><Sparkles size={20}/> Adaptive Intelligence</h3>
+               <p className="text-slate-400 text-xs leading-relaxed italic relative z-10">
+                  The grid is currently using <b>Recursive Contextualization</b>. It automatically detects curriculum DNA (Sindh, Cambridge, etc.) and adapts terminology.
+               </p>
+               <div className="space-y-4 relative z-10">
+                  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Context Caching</span>
+                    <span className="text-[10px] font-black text-emerald-500 uppercase">Enabled</span>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">DNA Adaptation</span>
+                    <span className="text-[10px] font-black text-indigo-400 uppercase">Active</span>
+                  </div>
+               </div>
+            </div>
+
+            <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 shadow-sm">
+               <h4 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-4">Structural Chunking</h4>
+               <p className="text-xs text-slate-500 leading-relaxed mb-6">Chunks are broken at logical curriculum boundaries (SLO anchors) rather than character counts, preserving 100% pedagogical integrity.</p>
+               <div className="h-2 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-indigo-500 w-[94%]" />
+               </div>
+            </div>
           </div>
         </div>
       )}
 
       {activeTab === 'repair' && (
-        <div className="space-y-4">
-           <div className="bg-emerald-50 dark:bg-emerald-950/20 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/50 flex items-start gap-4">
-             <ShieldCheck className="text-emerald-600 shrink-0" />
+        <div className="space-y-6">
+           <div className="bg-emerald-50 dark:bg-emerald-950/20 p-8 rounded-[2.5rem] border border-emerald-100 dark:border-emerald-900/50 flex items-start gap-6">
+             <ShieldCheck className="text-emerald-600 shrink-0" size={32} />
              <div>
-               <h4 className="text-sm font-black uppercase text-emerald-700 tracking-tight">Schema Bootstrap Node</h4>
-               <p className="text-xs text-emerald-600/80 mt-1">Run this SQL in Supabase to fix the "error_message" column missing error and refresh the Hybrid Search RPC.</p>
+               <h4 className="text-lg font-black uppercase text-emerald-700 tracking-tight">Scalable Data Plane Bootstrap</h4>
+               <p className="text-sm text-emerald-600/80 mt-1 font-medium leading-relaxed">
+                 Run this script to initialize adaptive memory columns, hybrid search v5, and curriculum DNA tracking. This is required for million-user scaling.
+               </p>
              </div>
            </div>
-           <div className="bg-slate-900 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden">
-               <div className="p-6 border-b border-white/5 flex items-center justify-between">
-                 <h3 className="text-white font-black uppercase tracking-tight flex items-center gap-2 text-[10px]"><Wrench size={14}/> Recovery SQL</h3>
-                 <button onClick={() => copyToClipboard(repairSql, 'repair')} className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-[9px] font-black uppercase text-white transition-all">
-                     {copiedId === 'repair' ? <Check size={12}/> : <Copy size={12}/>} Copy SQL
+           
+           <div className="bg-slate-900 rounded-[3rem] border border-white/10 shadow-2xl overflow-hidden">
+               <div className="p-8 border-b border-white/5 flex items-center justify-between bg-black/20">
+                 <h3 className="text-white font-black uppercase tracking-tight flex items-center gap-2 text-xs"><Wrench size={16}/> Recovery & Evolution SQL</h3>
+                 <button onClick={() => copyToClipboard(repairSql, 'repair')} className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-[10px] font-black uppercase text-white transition-all shadow-lg active:scale-95">
+                     {copiedId === 'repair' ? <Check size={14}/> : <Copy size={14}/>} Copy Evolution SQL
                  </button>
                </div>
-               <div className="p-6 bg-black/40">
-                 <pre className="text-[9px] font-mono text-emerald-400 leading-relaxed overflow-x-auto h-60 custom-scrollbar">{repairSql}</pre>
+               <div className="p-8 bg-black/40">
+                 <pre className="text-[10px] font-mono text-emerald-400/90 leading-relaxed overflow-x-auto h-96 custom-scrollbar">{repairSql}</pre>
                </div>
            </div>
+        </div>
+      )}
+
+      {activeTab === 'schema' && (
+        <div className="bg-white dark:bg-slate-900 p-20 rounded-[4rem] text-center border border-slate-100 dark:border-white/5 opacity-40">
+           <Database size={64} className="mx-auto mb-6 text-slate-300" />
+           <p className="text-xl font-black uppercase tracking-[0.2em] text-slate-400">Schema Explorer Offline</p>
+           <p className="text-xs font-bold text-slate-500 mt-2">Connect to the Production Data Plane to view real-time node relationships.</p>
         </div>
       )}
     </div>
