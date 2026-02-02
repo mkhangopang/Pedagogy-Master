@@ -7,8 +7,9 @@ import { formatResponseInstructions } from './response-formatter';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v115.0)
- * Signature: Multi-Dialect Context Locking & Hallucination Suppression.
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v116.0)
+ * Signature: Multi-Dialect Context Locking & Master MD Scan.
+ * FEATURE: Direct Master MD Literal Scanning for High-Fidelity Retrieval.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -42,46 +43,68 @@ export async function generateAIResponse(
   const activeDoc = activeDocs?.[0];
   const documentIds = activeDocs?.map(d => d.id) || [];
   
-  // Extract Dialect metadata for Native Pedagogical Alignment
+  // Extract Dialect metadata
   const dialectTag = activeDoc?.extracted_text?.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
   const pedagogyDNA = `
 ### PEDAGOGICAL_IDENTITY: ${dialectTag}
 - AUTHORITY: ${activeDoc?.authority || 'Independent'}
 - DIALECT: ${dialectTag.includes('Pakistani') ? 'Sindh/Federal (SLO-Based)' : 'International (Criteria-Based)'}
-- TERMINOLOGY: Use native terms like "${dialectTag.includes('Pakistani') ? 'Benchmarks' : 'Strands'}".
 `;
 
   let vaultContent = "";
   let hardLockFound = false;
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 3. Dual-Stage Vault Retrieval
+  // 3. ENHANCED MASTER MD SCAN (Literal Logic Priority)
+  // If we have a Master MD and a specific SLO, we perform a sliding window scan for the exact text block.
+  if (activeDoc?.extracted_text && primarySLO) {
+    const md = activeDoc.extracted_text;
+    const sloIndices: number[] = [];
+    let pos = md.indexOf(primarySLO);
+    while (pos !== -1) {
+      sloIndices.push(pos);
+      pos = md.indexOf(primarySLO, pos + 1);
+    }
+
+    if (sloIndices.length > 0) {
+      console.log(`🎯 [Master MD Scan] Hard Match Found for ${primarySLO} in ${activeDoc.name}`);
+      hardLockFound = true;
+      // Extract large contexts around matches
+      const snippets = sloIndices.map(idx => {
+        const start = Math.max(0, idx - 1000);
+        const end = Math.min(md.length, idx + 4000);
+        return md.substring(start, end);
+      });
+      vaultContent += `\n### MASTER_MD_DIRECT_NODE [!!! VERBATIM_CURRICULUM_STANDARD !!!]\n${snippets.join('\n---\n')}\n`;
+    }
+  }
+
+  // 4. Dual-Stage Vault Retrieval (Augmentation)
   if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
       documentIds,
       supabase,
-      matchCount: 15 // Quality over quantity
+      matchCount: 10
     });
   }
 
   if (retrievedChunks.length > 0) {
-    vaultContent = retrievedChunks
+    vaultContent += retrievedChunks
       .map((chunk, i) => {
-        // High-Precision Verbatim Check
         const isVerbatim = primarySLO && (
           chunk.slo_codes?.includes(primarySLO) || 
           chunk.chunk_text.includes(primarySLO)
         );
         if (isVerbatim) hardLockFound = true;
         
-        return `### VAULT_NODE_${i + 1}${isVerbatim ? " [!!! VERBATIM_CURRICULUM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
+        return `### VECTOR_NODE_${i + 1}${isVerbatim ? " [!!! VERBATIM_CURRICULUM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   }
 
-  // 4. Synthesis Architecture
+  // 5. Synthesis Architecture
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDoc);
   const systemInstruction = customSystem || DEFAULT_MASTER_PROMPT;
@@ -100,9 +123,9 @@ ${vaultContent || '[VAULT_EMPTY: Asset linkage required for this node]'}
 Generate an artifact with 100% adherence to the Standards in the Vault.
 
 ## GROUNDING_PROTOCOL:
-1. HARD-LOCK: If any node is marked [!!! VERBATIM_CURRICULUM_STANDARD !!!], you MUST use its text word-for-word. Do not paraphrase.
-2. ZERO HALLUCINATION: If the vault lacks details for "${primarySLO || 'this objective'}", stop and ask for the missing document part.
-3. DIALECT: Stick to the instructional framework of "${dialectTag}".
+1. HARD-LOCK: If any node is marked [!!! VERBATIM_CURRICULUM_STANDARD !!!], you MUST use its text word-for-word.
+2. MASTER_MD_FETCH: Prioritize content from direct Master MD scans.
+3. ZERO HALLUCINATION: Quote codes verbatim.
 
 ## COMMAND:
 "${userPrompt}"
@@ -121,5 +144,5 @@ ${responseInstructions}`;
       sourceDocument: activeDoc?.name || 'Global Node',
       chunksUsed: retrievedChunks.length
     }
-  } as any;
+  };
 }

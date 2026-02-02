@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -139,20 +138,20 @@ export class SynthesizerCore {
 
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
-    const isMassiveTask = prompt.length > 8000 || prompt.includes('MASTER MD');
+    const isMassiveTask = prompt.length > 8000 || prompt.includes('MASTER MD') || prompt.includes('LINEARIZATION');
 
     const candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id))
       .sort((a, b) => {
-        // Massive tasks prioritize Tier 1 and high-token nodes
         if (isMassiveTask) return a.tier - b.tier;
-        // Standard tasks prioritize high-speed Tier 2 nodes
         return b.tier - a.tier;
       });
 
     if (candidates.length === 0) {
-      throw new Error("NEURAL_GRID_OFFLINE: All 7 segments are cooling down. Please wait 30 seconds.");
+      throw new Error("NEURAL_GRID_SATURATED: All 7 segments are in temporary cooldown. Please wait 15 seconds.");
     }
+
+    const errors: string[] = [];
 
     for (const provider of candidates) {
       try {
@@ -212,7 +211,7 @@ export class SynthesizerCore {
 
           if (!res.ok) {
             const errorText = await res.text();
-            throw new Error(`Node ${provider.id} Refusal: ${res.status} - ${errorText}`);
+            throw new Error(`Node ${provider.id} Refusal: ${res.status} - ${errorText.substring(0, 100)}`);
           }
           const data = await res.json();
           content = data.choices[0].message.content;
@@ -222,16 +221,13 @@ export class SynthesizerCore {
           return { text: content, provider: provider.name };
         }
       } catch (e: any) {
-        console.warn(`⚠️ [Synthesizer] Failover: ${provider.name} fault: ${e.message}`);
-        this.failedProviders.set(provider.id, Date.now() + 60000); // 1-minute timeout
+        console.warn(`⚠️ [Synthesizer] Failover from ${provider.name}: ${e.message}`);
+        errors.push(`${provider.name}: ${e.message}`);
+        this.failedProviders.set(provider.id, Date.now() + 60000); 
       }
     }
 
-    throw new Error("GRID_FAILURE: All 7 neural segments exhausted or reached token limits.");
-  }
-
-  public getProviders(): AIProvider[] {
-    return Array.from(this.providers.values());
+    throw new Error(`GRID_FAULT: All providers failed. Logs: ${errors.join(' | ')}`);
   }
 
   public getProviderStatus() {

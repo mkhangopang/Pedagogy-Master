@@ -9,18 +9,16 @@ function parseAIError(errorData: any): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
   const lowerMsg = msg.toLowerCase();
   
-  if (
-    lowerMsg.includes('429') || 
-    lowerMsg.includes('resource_exhausted') || 
-    lowerMsg.includes('saturated') ||
-    lowerMsg.includes('too many requests') ||
-    lowerMsg.includes('limit reached')
-  ) {
-    globalCooldownUntil = Date.now() + 15000; // 15s lock
-    return "Neural Grid Saturated: All processing nodes for this task are busy. This usually happens during peak academic hours. Please wait 15 seconds.";
+  if (lowerMsg.includes('grid_saturated') || lowerMsg.includes('saturated') || lowerMsg.includes('429')) {
+    globalCooldownUntil = Date.now() + 15000;
+    return "Neural Grid Saturated: All processing nodes are busy. Please wait 15 seconds for the grid to re-align.";
+  }
+
+  if (lowerMsg.includes('grid_fault')) {
+    return `Synthesis Node Error: ${msg.split('Logs:')[1] || 'Communication failure between grid segments.'}`;
   }
   
-  if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('interrupted')) {
+  if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('504')) {
     return "Handshake Interrupted: The current node took too long. Retrying will automatically route you to a faster grid segment.";
   }
 
@@ -28,7 +26,7 @@ function parseAIError(errorData: any): string {
     return "Security Violation: Your session has expired. Please refresh the app.";
   }
 
-  return msg || "Synthesis interrupted by cloud gateway. Please retry.";
+  return msg || "Synthesis interrupted by cloud gateway. Please retry your request.";
 }
 
 /**
@@ -103,10 +101,9 @@ export const geminiService = {
           
           fullContent += chunk;
           
-          // NEURAL REPETITION GUARD: Abort if sunflower-style glitch detected
           if (isRepeating(fullContent)) {
             reader.cancel();
-            yield "\n\n🚨 [Neural Glitch Guard]: Repetitive token loop detected. Synthesis aborted to protect UI integrity. Please rephrase your query.";
+            yield "\n\n🚨 [Neural Glitch Guard]: Repetitive token loop detected. Synthesis aborted to protect UI integrity.";
             return;
           }
 
@@ -182,7 +179,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: Heavy curriculum analysis caused a bottleneck. Switch to a smaller asset segment.`;
+      yield `AI Alert: Heavy curriculum analysis caused a bottleneck. Verify node connectivity.`;
     }
   }
 };

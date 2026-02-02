@@ -7,8 +7,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v46.0)
+ * UNIFIED SYNTHESIS GATEWAY (v47.0)
  * Signature: v4.0 Ultra-Deterministic Architecture.
+ * FIX: Enhanced Error Propagation to bypass generic gateway faults.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -43,8 +44,8 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(text));
         
         // Final Signature Alignment
-        const groundedNote = metadata?.activeMode === 'VAULT' 
-          ? ` | 🏛️ Anchored to ${metadata.sourceDocument}` 
+        const groundedNote = metadata?.isGrounded 
+          ? ` | 🏛️ Anchored to Master MD: ${metadata.sourceDocument}` 
           : ' | 🌐 Global Knowledge Node';
         
         const footer = `\n\n---\n*Synthesis Node: ${provider}${groundedNote} | v4.0 Ultra-Deterministic Architecture*`;
@@ -56,6 +57,14 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error("❌ [AI Gateway Error]:", error);
-    return NextResponse.json({ error: "Synthesis grid exception." }, { status: 500 });
+    // Propagate the specific grid error if available
+    const errorMsg = error.message?.includes('GRID_FAULT') || error.message?.includes('NEURAL_GRID')
+      ? error.message 
+      : "Synthesis grid exception: The neural nodes are currently re-aligning. Please retry.";
+      
+    return NextResponse.json({ 
+      error: errorMsg,
+      status: 'failed' 
+    }, { status: 500 });
   }
 }
