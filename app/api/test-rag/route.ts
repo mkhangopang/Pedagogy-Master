@@ -53,13 +53,14 @@ export async function GET(req: NextRequest) {
       activeVault: selectedDocs,
       resultsFound: chunks.length,
       // Fix: Implement null safety with coalescing operators to prevent build failure
+      // Fix: Property 'section_title' and 'page_number' exist within metadata, not directly on RetrievedChunk
       chunks: chunks.map(c => ({
         id: c.chunk_id,
         text: (c.chunk_text || '').substring(0, 300) + '...',
         similarity: ((c.combined_score ?? 0) * 100).toFixed(1) + '%',
         slos: c.slo_codes ?? [],
-        section: c.section_title ?? 'General',
-        page: c.page_number ?? 0
+        section: c.metadata?.section_title ?? 'General',
+        page: c.metadata?.page_number ?? 0
       }))
     });
 

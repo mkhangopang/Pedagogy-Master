@@ -6,55 +6,55 @@ export interface ParsedQuery {
   topics: string[];
   bloomLevel?: string;
   difficultyPreference?: string;
+  subjectHint?: string;
   raw: string;
 }
 
 /**
- * NEURAL QUERY PARSER (v4.0)
- * Decodes teacher intent with canonical SLO support.
+ * WORLD-CLASS NEURAL QUERY PARSER (v5.0)
+ * Optimized for Alphanumeric Identifiers and Fuzzy Grade Mapping.
  */
 export function parseUserQuery(query: string): ParsedQuery {
   const lower = query.toLowerCase();
   
-  // 1. SLO Extraction (Normalized format S08C03)
+  // 1. ADVANCED SLO EXTRACTION
   const sloCodes = extractSLOCodes(query);
 
-  // 2. Grade Level Extraction
-  const gradePatterns = [
-    /(?:grade|class|level|yr|year|gr)\s*(\d{1,2})/gi,
-    /(?:grade|class|level|yr|year|gr)\s*(IV|V|VI|VII|VIII|IX|X)/gi
-  ];
+  // 2. FUZZY GRADE MAPPING (ix -> 9, xi -> 11, etc.)
+  const gradeMap: Record<string, string> = {
+    'ix': '09', '9': '09', 'x': '10', '10': '10',
+    'xi': '11', '11': '11', 'xii': '12', '12': '12',
+    'iv': '04', '4': '04', 'v': '05', '5': '05',
+    'vi': '06', '6': '06', 'vii': '07', '7': '07',
+    'viii': '08', '8': '08'
+  };
   
   const gradesSet = new Set<string>();
-  gradePatterns.forEach(pattern => {
-    const matches = Array.from(query.matchAll(pattern));
-    matches.forEach(m => {
-      const g = m[1].toUpperCase();
-      if (g === 'IV') gradesSet.add('4');
-      else if (g === 'V') gradesSet.add('5');
-      else if (g === 'VI') gradesSet.add('6');
-      else if (g === 'VII') gradesSet.add('7');
-      else if (g === 'VIII') gradesSet.add('8');
-      else gradesSet.add(g);
-    });
+  const gradeWords = lower.match(/\b(ix|x|xi|xii|iv|v|vi|vii|viii|\d{1,2})\b/g) || [];
+  gradeWords.forEach(w => {
+    if (gradeMap[w]) gradesSet.add(gradeMap[w]);
   });
 
-  // 3. STEM Topic Extraction
+  // 3. SUBJECT DISCOVERY
+  const subjects = ['biology', 'physics', 'chemistry', 'science', 'math', 'english'];
+  const subjectHint = subjects.find(s => lower.includes(s));
+
+  // 4. STEM TOPIC EXTRACTION
   const commonTopics = [
     'photosynthesis', 'energy', 'force', 'cells', 'ecosystem', 'matter', 
     'water cycle', 'weather', 'space', 'electricity', 'human body', 
-    'plants', 'animals', 'chemistry', 'physics', 'biology', 'gravity', 'dna', 'genetics'
+    'plants', 'animals', 'gravity', 'dna', 'genetics', 'metabolism'
   ];
   const topics = commonTopics.filter(t => lower.includes(t));
 
-  // 4. Bloom's Taxonomy Detection
+  // 5. BLOOM'S TAXONOMY DETECTION (High-Fidelity)
   const bloomVerbs: Record<string, string[]> = {
-    'Remember': ['define', 'list', 'what is', 'recall', 'identify'],
-    'Understand': ['explain', 'describe', 'summarize', 'classify'],
-    'Apply': ['solve', 'apply', 'demonstrate', 'how to use'],
-    'Analyze': ['analyze', 'compare', 'contrast', 'differentiate'],
-    'Evaluate': ['evaluate', 'justify', 'critique', 'assess'],
-    'Create': ['design', 'develop', 'create', 'synthesize']
+    'Remember': ['define', 'list', 'state', 'recall', 'identify'],
+    'Understand': ['explain', 'describe', 'summarize', 'classify', 'interpret'],
+    'Apply': ['solve', 'apply', 'demonstrate', 'calculate'],
+    'Analyze': ['analyze', 'compare', 'contrast', 'differentiate', 'examine'],
+    'Evaluate': ['evaluate', 'justify', 'critique', 'assess', 'defend'],
+    'Create': ['design', 'develop', 'create', 'synthesize', 'formulate']
   };
 
   let bloomLevel: string | undefined;
@@ -65,20 +65,12 @@ export function parseUserQuery(query: string): ParsedQuery {
     }
   }
 
-  // 5. Difficulty preference
-  let difficultyPreference: string | undefined;
-  if (lower.includes('struggling') || lower.includes('support') || lower.includes('easy')) {
-    difficultyPreference = 'Low';
-  } else if (lower.includes('advanced') || lower.includes('challenge') || lower.includes('gifted')) {
-    difficultyPreference = 'High';
-  }
-
   return {
     sloCodes,
     grades: Array.from(gradesSet),
     topics,
     bloomLevel,
-    difficultyPreference,
+    subjectHint,
     raw: query
   };
 }

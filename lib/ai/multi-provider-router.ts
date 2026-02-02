@@ -7,8 +7,8 @@ import { formatResponseInstructions } from './response-formatter';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v60.0)
- * Context Rules: Relational Code Scan > Selected Vault > Relational DB > Profile Fallback
+ * NEURAL SYNTHESIS ORCHESTRATOR (v65.0)
+ * Designed for World-Class Pedagogical Fidelity.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -24,12 +24,11 @@ export async function generateAIResponse(
   
   const extractedSLOs = extractSLOCodes(userPrompt);
   const targetCode = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
-  const isCurriculumEnabled = userPrompt.includes('CURRICULUM_MODE: ACTIVE');
 
-  // 1. Scoping
+  // 1. Context Scoping
   let docQuery = supabase
     .from('documents')
-    .select('id, name, authority, subject, grade_level, version_year, rag_indexed, status')
+    .select('id, name, authority, subject, grade_level, version_year')
     .eq('user_id', userId);
 
   if (priorityDocumentId) {
@@ -38,7 +37,7 @@ export async function generateAIResponse(
     docQuery = docQuery.eq('is_selected', true);
   }
 
-  let { data: activeDocs } = await docQuery;
+  const { data: activeDocs } = await docQuery;
   const documentIds = activeDocs?.map(d => d.id) || [];
   
   let vaultContent = "";
@@ -46,31 +45,8 @@ export async function generateAIResponse(
   let mode: 'VAULT' | 'GLOBAL' = documentIds.length > 0 ? 'VAULT' : 'GLOBAL';
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 2. RELATIONAL PRE-SCAN: If code is present, try literal DB match first
-  if (mode === 'VAULT' && targetCode) {
-    const { data: relationalMatch } = await supabase
-      .from('document_chunks')
-      .select('*')
-      .in('document_id', documentIds)
-      .contains('slo_codes', [targetCode])
-      .limit(3);
-    
-    if (relationalMatch && relationalMatch.length > 0) {
-      console.log(`✅ [Relational Match] Found literal tag for ${targetCode}`);
-      retrievedChunks = relationalMatch.map(m => ({
-        chunk_id: m.id,
-        document_id: m.document_id,
-        chunk_text: m.chunk_text,
-        slo_codes: m.slo_codes,
-        metadata: m.metadata,
-        combined_score: 10.0,
-        is_verbatim_definition: true
-      }));
-    }
-  }
-
-  // 3. HYBRID FALLBACK: If relational scan missed, use vector/FTS
-  if (mode === 'VAULT' && retrievedChunks.length === 0) {
+  // 2. MULTI-TIER RETRIEVAL
+  if (mode === 'VAULT') {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
       documentIds,
@@ -83,29 +59,38 @@ export async function generateAIResponse(
     vaultContent = retrievedChunks
       .map((chunk, i) => {
         const isVerbatim = chunk.is_verbatim_definition || (targetCode && chunk.slo_codes?.includes(targetCode));
-        const tag = isVerbatim ? " [!!! VERIFIED_VERBATIM_DEFINITION !!!]" : " [SEMANTIC_MATCH]";
+        const status = isVerbatim ? " [!!! AUTHORITATIVE_STANDARD !!!]" : " [PEDAGOGICAL_CONTEXT]";
         if (isVerbatim) verbatimFound = true;
         
-        return `### VAULT_NODE_${i + 1}\n${tag}\n${chunk.chunk_text}\n---`;
+        return `### VAULT_NODE_${i + 1}${status}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   } else if (mode === 'VAULT') {
-    vaultContent = `[SYSTEM_ALERT: NO_CONTEXT_MATCHES]
-Scanned vault for "${targetCode || userPrompt}". Zero high-confidence fragments returned. 
-Proceed with pedagogical intelligence for Grade ${activeDocs?.[0]?.grade_level || 'General'}.`;
+    vaultContent = `[SYSTEM_WARNING: ZERO_RELEVANT_CONTEXT_IN_VAULT]
+No high-confidence matches found for identifiers or topics. Proceed using general pedagogical frameworks (5E/Bloom) but flag the missing alignment to the user.`;
   }
 
-  // 4. Prompt Assembly
+  // 3. Synthesis Parameters
   let instructionSet = customSystem || DEFAULT_MASTER_PROMPT;
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDocs ? activeDocs[0] : undefined);
 
+  // 4. World-Class Synthesis Prompt
   let finalPrompt = `
 <AUTHORITATIVE_VAULT>
 ${vaultContent || '[VAULT_INACTIVE]'}
 </AUTHORITATIVE_VAULT>
 
 ${mode === 'VAULT' ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
+
+## MISSION:
+Synthesize a world-class pedagogical artifact. 
+
+## ALIGNMENT RULES:
+1. If an [AUTHORITATIVE_STANDARD] is in the vault, you MUST use its verbatim description.
+2. Cross-reference activities with Bloom's Taxonomy.
+3. If creating a lesson plan, provide specific teacher scripts for the "Explain" phase.
+4. Omit all conversational filler (e.g., "Sure, I can help with that").
 
 ## USER COMMAND:
 "${userPrompt}"
@@ -122,7 +107,7 @@ ${responseInstructions}`;
       chunksUsed: retrievedChunks?.length || 0,
       verbatimVerified: verbatimFound,
       activeMode: mode,
-      sourceDocument: activeDocs?.[0]?.name || 'Global Grid'
+      sourceDocument: activeDocs?.[0]?.name || 'Autonomous Grid'
     }
   } as any;
 }
