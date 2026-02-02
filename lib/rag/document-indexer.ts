@@ -4,9 +4,9 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * NEURAL VECTOR INDEXER (v206.1 - Production Optimized)
+ * NEURAL VECTOR INDEXER (v206.2 - Production Optimized)
  * Feature: Semantic Chunk Scaling & Recursive Hierarchy Injection.
- * FIX: Stabilized vector sync to prevent invalid syntax faults.
+ * FIX: Resolved NOT NULL constraint violation for "chunk_index".
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -100,11 +100,12 @@ export async function indexDocumentForRAG(
           chunk_text: chunk.text,
           embedding: embedding,
           slo_codes: chunk.metadata.slo_codes || [],
-          metadata: chunk.metadata
+          metadata: chunk.metadata,
+          chunk_index: i + j // CRITICAL FIX: Explicitly set chunk_index to satisfy DB schema
         };
       }).filter(Boolean);
 
-      if (records.length > 0) {
+      if (records && records.length > 0) {
         const { error: insertError } = await supabase.from('document_chunks').insert(records);
         if (insertError) {
           console.error("❌ [Vector Insert Fault]:", insertError.message);
