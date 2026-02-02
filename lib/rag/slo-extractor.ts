@@ -1,14 +1,15 @@
 /**
- * NEURAL SLO NORMALIZER (v18.0)
- * Unified for Sindh (B-09-A-01) and Condensed (B12p6) standards.
+ * NEURAL SLO NORMALIZER (v19.0)
+ * Expanded for Universal Multi-Separator Alignment (Sindh / Federal / International).
  */
 export function normalizeSLO(code: string): string {
   if (!code) return '';
   
   const cleanCode = code.replace(/[\[\]]/g, '').trim().toUpperCase();
   
-  // Pattern 1: Sindh 2024 / Standard Hyphenated (B-09-A-01)
-  const sindhMatch = cleanCode.match(/([B-Z])\s*-?\s*(0?9|10|11|12)\s*-?\s*([A-Z])\s*-?\s*(\d{1,2})/i);
+  // Pattern 1: Multi-Separator Sindh 2024 (B-12-P-06 or B.12.P.06 or B 12 P 06)
+  // Now handles dots and spaces as separators
+  const sindhMatch = cleanCode.match(/([B-Z])\s*[\-\.\s]?\s*(0?9|10|11|12)\s*[\-\.\s]?\s*([A-Z])\s*[\-\.\s]?\s*(\d{1,2})/i);
   if (sindhMatch) {
     const subject = sindhMatch[1].toUpperCase();
     const grade = sindhMatch[2].padStart(2, '0');
@@ -23,11 +24,10 @@ export function normalizeSLO(code: string): string {
     const subject = condensedMatch[1].toUpperCase();
     const grade = condensedMatch[2].padStart(2, '0');
     const num = condensedMatch[3].padStart(2, '0');
-    // Map to a pseudo-domain 'P' for Page/Condensed if no domain exists
     return `${subject}-${grade}-P-${num}`;
   }
 
-  return cleanCode.replace(/\s+/g, '-');
+  return cleanCode.replace(/[\s\.]+/g, '-');
 }
 
 /**
@@ -39,8 +39,9 @@ export function extractSLOCodes(text: string): string[] {
   
   const matches = new Set<string>();
   
-  // Unified Regex: Captures B-09-A-01, B12p6, B12.p6, S8a5
-  const pattern = /(?:SLO[:\s-]*)?([B-Z]\s*-?\s*(?:0?9|10|11|12)\s*(?:-?\s*[A-Z]?\s*-?\s*|\.[pP]?|pP?)\d{1,2})/gi;
+  // Unified Regex: Captures B-09-A-01, B12p6, B12.p6, S8a5, etc.
+  // Updated to include dots in standard patterns
+  const pattern = /(?:SLO[:\s-]*)?([B-Z]\s*[\-\.\s]?\s*(?:0?9|10|11|12)\s*(?:[\-\.\s]?\s*[A-Z]?\s*[\-\.\s]?\s*|\.[pP]?|pP?)\d{1,2})/gi;
   const rawMatches = Array.from(text.matchAll(pattern));
   
   for (const match of rawMatches) {
