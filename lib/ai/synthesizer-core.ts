@@ -13,6 +13,7 @@ export interface AIProvider {
   rpd: number;
   tier: 1 | 2 | 3;
   enabled: boolean;
+  lastError?: string;
 }
 
 export class SynthesizerCore {
@@ -27,7 +28,6 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // NODE 1: PREMIER REASONING (Gemini 3 Pro)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
       name: 'Gemini 3 Pro',
@@ -42,7 +42,6 @@ export class SynthesizerCore {
       enabled: isGeminiEnabled()
     });
 
-    // NODE 2: HIGH-SPEED VERSATILITY (Gemini 3 Flash)
     providers.set('gemini-flash', {
       id: 'gemini-flash',
       name: 'Gemini 3 Flash',
@@ -57,7 +56,6 @@ export class SynthesizerCore {
       enabled: isGeminiEnabled()
     });
 
-    // NODE 3: INSTANT INFERENCE (Groq)
     providers.set('groq', {
       id: 'groq',
       name: 'Groq Llama 3.3',
@@ -71,7 +69,6 @@ export class SynthesizerCore {
       enabled: !!process.env.GROQ_API_KEY
     });
 
-    // NODE 4: FASTEST GRID SEGMENT (Cerebras)
     providers.set('cerebras', {
       id: 'cerebras',
       name: 'Cerebras Llama',
@@ -85,7 +82,6 @@ export class SynthesizerCore {
       enabled: !!process.env.CEREBRAS_API_KEY
     });
 
-    // NODE 5: DEEP REASONING FALLBACK (DeepSeek)
     providers.set('deepseek', {
       id: 'deepseek',
       name: 'DeepSeek Node',
@@ -99,7 +95,6 @@ export class SynthesizerCore {
       enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
-    // NODE 6: TOKEN THROUGHPUT (SambaNova)
     providers.set('sambanova', {
       id: 'sambanova',
       name: 'SambaNova Hub',
@@ -113,7 +108,6 @@ export class SynthesizerCore {
       enabled: !!process.env.SAMBANOVA_API_KEY
     });
 
-    // NODE 7: DECENTRALIZED FALLBACK (Hyperbolic)
     providers.set('hyperbolic', {
       id: 'hyperbolic',
       name: 'Hyperbolic Node',
@@ -148,7 +142,7 @@ export class SynthesizerCore {
       });
 
     if (candidates.length === 0) {
-      throw new Error("NEURAL_GRID_SATURATED: All 7 segments are in temporary cooldown. Please wait 15 seconds.");
+      throw new Error("NEURAL_GRID_SATURATED: All 7 segments are in temporary cooldown. Retrying with Tier-1 priority...");
     }
 
     const errors: string[] = [];
@@ -218,12 +212,16 @@ export class SynthesizerCore {
         }
 
         if (content && content.trim().length > 0) {
+          // Clear previous errors on success
+          provider.lastError = undefined;
           return { text: content, provider: provider.name };
         }
       } catch (e: any) {
         console.warn(`⚠️ [Synthesizer] Failover from ${provider.name}: ${e.message}`);
         errors.push(`${provider.name}: ${e.message}`);
-        this.failedProviders.set(provider.id, Date.now() + 60000); 
+        provider.lastError = e.message;
+        // Reduced cooling time for faster grid re-alignment
+        this.failedProviders.set(provider.id, Date.now() + 20000); 
       }
     }
 
@@ -235,7 +233,8 @@ export class SynthesizerCore {
       id: p.id,
       name: p.name,
       status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : 'active',
-      tier: p.tier
+      tier: p.tier,
+      lastError: p.lastError
     }));
   }
 }

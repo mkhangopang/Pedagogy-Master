@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  RefreshCw, Zap, Check, Copy, ShieldCheck, Terminal, Cpu, Sparkles, Wrench, Globe, BookOpen, CheckCircle2, Activity, Database
+  RefreshCw, Zap, Check, Copy, ShieldCheck, Terminal, Cpu, Sparkles, Wrench, Globe, BookOpen, CheckCircle2, Activity, Database, AlertCircle, Server, AlertTriangle
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
@@ -11,9 +11,23 @@ interface BrainControlProps {
 }
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'dialects' | 'sql'>('logic');
+  const [activeTab, setActiveTab] = useState<'logic' | 'dialects' | 'pulse' | 'sql'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
+  const [gridStatus, setGridStatus] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch('/api/ai-status');
+        const data = await res.json();
+        setGridStatus(data.providers || []);
+      } catch (e) {}
+    };
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -27,27 +41,27 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     } finally { setIsSaving(false); }
   };
 
-  const migrationSql = `-- EVOLUTION v115: Master MD & Hard-Lock Integration
-ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS master_md_dialect TEXT DEFAULT 'Standard';
-ALTER TABLE public.document_chunks ADD COLUMN IF NOT EXISTS cognitive_tier TEXT;
-CREATE INDEX IF NOT EXISTS idx_docs_dialect ON public.documents(master_md_dialect);`;
+  const migrationSql = `-- EVOLUTION v118: Master MD Hybrid & Diagnostic Pulse
+ALTER TABLE public.documents ADD COLUMN IF NOT EXISTS last_grounding_method TEXT;
+CREATE INDEX IF NOT EXISTS idx_docs_rag_method ON public.documents(last_grounding_method);`;
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 px-2 text-left">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
-            <ShieldCheck className="text-indigo-600" /> Brain v115.0
+            <ShieldCheck className="text-indigo-600" /> Brain v118.0
           </h1>
-          <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Master MD Control Grid</p>
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Master MD & Grid Diagnostic Hub</p>
         </div>
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5">
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto no-scrollbar">
           {[
             { id: 'logic', icon: <Cpu size={14}/>, label: 'Logic' },
+            { id: 'pulse', icon: <Activity size={14}/>, label: 'Grid Pulse' },
             { id: 'dialects', icon: <Globe size={14}/>, label: 'Dialects' },
-            { id: 'sql', icon: <Terminal size={14}/>, label: 'SQL Pulse' }
+            { id: 'sql', icon: <Terminal size={14}/>, label: 'SQL' }
           ].map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}`}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-50'}`}>
               {tab.icon} {tab.label}
             </button>
           ))}
@@ -73,15 +87,15 @@ CREATE INDEX IF NOT EXISTS idx_docs_dialect ON public.documents(master_md_dialec
                 <div className="absolute top-0 right-0 p-8 opacity-5"><Activity size={150} /></div>
                 <h3 className="text-lg font-black uppercase tracking-tight text-emerald-400">Neural Status</h3>
                 <div className="space-y-4 relative z-10">
-                   <StatusRow label="Master MD Converter" status="Operational" />
-                   <StatusRow label="Hard-Lock RAG" status="Active" color="text-indigo-400" />
-                   <StatusRow label="Dialect Ingestion" status="Ready" />
+                   <StatusRow label="Master MD Topic Scan" status="Enabled" color="text-indigo-400" />
+                   <StatusRow label="Failover Protocol" status="20s Cool" color="text-amber-400" />
+                   <StatusRow label="RAG Reliability" status="High" />
                 </div>
              </div>
 
              <div className="p-8 bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-100 dark:border-white/5">
                 <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-4">Ingestion Engine</h4>
-                <p className="text-xs text-slate-500 italic leading-relaxed">System now automatically transforms garbled PDF extractions into Structured Master MD nodes before indexing.</p>
+                <p className="text-xs text-slate-500 italic leading-relaxed">Reading specific queries from the Master MD involves literal keyword windowing before vector fallback.</p>
                 <div className="mt-6 flex items-center gap-2">
                    <div className="flex-1 h-1 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
                       <div className="h-full bg-emerald-500 w-full" />
@@ -90,6 +104,40 @@ CREATE INDEX IF NOT EXISTS idx_docs_dialect ON public.documents(master_md_dialec
                 </div>
              </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'pulse' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+           {gridStatus.map(node => (
+             <div key={node.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm space-y-6">
+                <div className="flex justify-between items-start">
+                   <div className={`p-3 rounded-xl ${node.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                      <Server size={20} />
+                   </div>
+                   <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${node.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                      {node.status}
+                   </span>
+                </div>
+                <div>
+                   <h3 className="text-sm font-black uppercase dark:text-white">{node.name}</h3>
+                   <p className="text-[10px] text-slate-400 uppercase font-bold mt-1">Tier {node.tier} Architecture</p>
+                </div>
+                {node.lastError && (
+                  <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/40 rounded-2xl">
+                     {/* Fix: AlertTriangle is now correctly imported from lucide-react */}
+                     <p className="text-[9px] font-black text-rose-600 uppercase mb-1 flex items-center gap-1"><AlertTriangle size={10}/> Logic Exception</p>
+                     <p className="text-[10px] font-medium text-slate-600 dark:text-slate-400 line-clamp-2">{node.lastError}</p>
+                  </div>
+                )}
+                {!node.lastError && node.status === 'active' && (
+                  <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 rounded-2xl flex items-center gap-3">
+                     <Zap size={14} className="text-emerald-500 animate-pulse" />
+                     <span className="text-[10px] font-black text-emerald-600 uppercase">Node Synced</span>
+                  </div>
+                )}
+             </div>
+           ))}
         </div>
       )}
 

@@ -6,9 +6,9 @@ import { BrainCircuit, RefreshCw, UploadCloud, AlertCircle, ShieldCheck, Databas
 import { supabase } from '../lib/supabase';
 import * as pdfjs from 'pdfjs-dist';
 
-// Initialize PDF.js worker
+// Initialize PDF.js worker with a fixed, reliable source
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.mjs`;
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs`;
 }
 
 export default function DocumentUploader({ userId, onComplete, onCancel }: any) {
@@ -65,20 +65,25 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   }, [docId, isUploading, progress, onComplete]);
 
   const extractTextLocally = async (file: File): Promise<string> => {
-    if (file.type !== 'application/pdf') return "";
-    
-    const arrayBuffer = await file.arrayBuffer();
-    const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
-    const pdf = await loadingTask.promise;
-    let fullText = "";
-    
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(" ");
-      fullText += pageText + "\n";
+    try {
+      if (file.type !== 'application/pdf') return "";
+      
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+      const pdf = await loadingTask.promise;
+      let fullText = "";
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => 'str' in item ? item.str : "").join(" ");
+        fullText += pageText + "\n";
+      }
+      return fullText;
+    } catch (err) {
+      console.error("Local extraction node fault:", err);
+      return ""; // Fallback to server-side extraction
     }
-    return fullText;
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

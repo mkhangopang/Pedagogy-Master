@@ -10,12 +10,16 @@ function parseAIError(errorData: any): string {
   const lowerMsg = msg.toLowerCase();
   
   if (lowerMsg.includes('grid_saturated') || lowerMsg.includes('saturated') || lowerMsg.includes('429')) {
+    // If it mentions tier-1 retry, we inform the user to stay on the line
+    if (lowerMsg.includes('tier-1')) {
+       return "Grid Saturated: Re-routing your request to Tier-1 Reasoning Node. Please wait...";
+    }
     globalCooldownUntil = Date.now() + 15000;
     return "Neural Grid Saturated: All processing nodes are busy. Please wait 15 seconds for the grid to re-align.";
   }
 
   if (lowerMsg.includes('grid_fault')) {
-    return `Synthesis Node Error: ${msg.split('Logs:')[1] || 'Communication failure between grid segments.'}`;
+    return `Synthesis Node Error: Communication failure between grid segments. Retrying...`;
   }
   
   if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('504')) {

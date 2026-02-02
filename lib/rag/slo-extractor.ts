@@ -1,3 +1,4 @@
+
 /**
  * NEURAL SLO NORMALIZER (v24.0)
  * Precision-tuned for Sindh 2024 [SLO:X-YY-Z-AA] and Federal S8a5 formats.
@@ -22,7 +23,7 @@ export function normalizeSLO(code: string): string {
   });
 
   // 3. Sindh 2024 Pattern Detection (B-11-B-27)
-  const sindhMatch = cleanCode.match(/([B-Z])\s*[\-\.\s]?\s*(0?9|10|11|12)\s*[\-\.\s]?\s*([A-Z])\s*[\-\.\s]?\s*(\d{1,2})/i);
+  const sindhMatch = cleanCode.match(/([B-Z])\s*[-.\s]?\s*(0?9|10|11|12)\s*[-.\s]?\s*([A-Z])\s*[-.\s]?\s*(\d{1,2})/i);
   if (sindhMatch) {
     const subject = sindhMatch[1].toUpperCase();
     const grade = sindhMatch[2].padStart(2, '0');
@@ -37,7 +38,7 @@ export function normalizeSLO(code: string): string {
     return `${shorthandMatch[1]}-${shorthandMatch[2].padStart(2, '0')}-${shorthandMatch[3].toUpperCase()}-${shorthandMatch[4].padStart(2, '0')}`;
   }
 
-  return cleanCode.replace(/[\s\.]+/g, '-');
+  return cleanCode.replace(/[\s.]+/g, '-');
 }
 
 /**
@@ -50,7 +51,7 @@ export function extractSLOCodes(text: string): string[] {
   const matches = new Set<string>();
   
   // Captures both [SLO: B-11...] and raw B-11...
-  const pattern = /(?:SL[O0][:-\s]*)?([B-Z]\s*[\-\.\s]?\s*(?:0?9|10|11|12|IX|X|XI|XII)\s*[\-\.\s]?\s*[A-Z]\s*[\-\.\s]?\s*\d{1,2})/gi;
+  const pattern = /(?:SL[O0][:\-\s]*)?([B-Z]\s*[-.\s]?\s*(?:0?9|10|11|12|IX|X|XI|XII)\s*[-.\s]?\s*[A-Z]\s*[-.\s]?\s*\d{1,2})/gi;
   const rawMatches = Array.from(text.matchAll(pattern));
   
   for (const match of rawMatches) {
