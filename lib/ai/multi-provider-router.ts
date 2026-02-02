@@ -7,8 +7,8 @@ import { formatResponseInstructions } from './response-formatter';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v110.0)
- * Signature: Multi-Dialect Pedagogical Intelligence.
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v115.0)
+ * Signature: Multi-Dialect Context Locking & Hallucination Suppression.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -22,10 +22,11 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
+  // 1. Identify Target Standards (SLOs)
   const extractedSLOs = extractSLOCodes(userPrompt);
   const primarySLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
 
-  // 1. Resolve Pedagogical Identity from active document
+  // 2. Resolve Active Institutional Identity
   let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, extracted_text')
@@ -41,34 +42,34 @@ export async function generateAIResponse(
   const activeDoc = activeDocs?.[0];
   const documentIds = activeDocs?.map(d => d.id) || [];
   
-  // Extract Dialect metadata from the Master MD tag
+  // Extract Dialect metadata for Native Pedagogical Alignment
   const dialectTag = activeDoc?.extracted_text?.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
   const pedagogyDNA = `
-### ACTIVE_PEDAGOGY_PROTOCOL: ${dialectTag}
+### PEDAGOGICAL_IDENTITY: ${dialectTag}
 - AUTHORITY: ${activeDoc?.authority || 'Independent'}
-- DIALECT: ${dialectTag.includes('Pakistani') ? 'Sindh/Federal (SLO-Based)' : 'Cambridge/IB (Criteria-Based)'}
-- TERMINOLOGY: Always use "${dialectTag.includes('Pakistani') ? 'SLOs and Benchmarks' : 'Learning Outcomes and Strands'}".
-- CORE_STRENGTH: 5E Instructional Cycle with Bloom's Alignment.
+- DIALECT: ${dialectTag.includes('Pakistani') ? 'Sindh/Federal (SLO-Based)' : 'International (Criteria-Based)'}
+- TERMINOLOGY: Use native terms like "${dialectTag.includes('Pakistani') ? 'Benchmarks' : 'Strands'}".
 `;
 
   let vaultContent = "";
   let hardLockFound = false;
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 2. High-Precision Context Retrieval
+  // 3. Dual-Stage Vault Retrieval
   if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
       documentIds,
       supabase,
-      matchCount: 40
+      matchCount: 15 // Quality over quantity
     });
   }
 
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
+        // High-Precision Verbatim Check
         const isVerbatim = primarySLO && (
           chunk.slo_codes?.includes(primarySLO) || 
           chunk.chunk_text.includes(primarySLO)
@@ -80,7 +81,7 @@ export async function generateAIResponse(
       .join('\n');
   }
 
-  // 3. Synthesis Preparation
+  // 4. Synthesis Architecture
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDoc);
   const systemInstruction = customSystem || DEFAULT_MASTER_PROMPT;
@@ -92,18 +93,18 @@ ${adaptiveContext || ''}
 </PEDAGOGICAL_DNA>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: No curriculum node selected. Fallback to global node.]'}
+${vaultContent || '[VAULT_EMPTY: Asset linkage required for this node]'}
 </AUTHORITATIVE_VAULT>
 
 ## MISSION:
-Synthesize an instructional artifact with 100% fidelity to the curriculum standards in the vault.
+Generate an artifact with 100% adherence to the Standards in the Vault.
 
 ## GROUNDING_PROTOCOL:
-1. VERBATIM FORCE: If a node is marked [!!! VERBATIM_CURRICULUM_STANDARD !!!], you MUST use its text word-for-word. DO NOT paraphrase the standard.
-2. DIALECT ALIGNMENT: Stick to the instructional vocabulary of "${dialectTag}".
-3. TRUNCATION GUARD: If the vault text for "${primarySLO || 'the objective'}" is incomplete, state: "Warning: SLO description truncated in source document."
+1. HARD-LOCK: If any node is marked [!!! VERBATIM_CURRICULUM_STANDARD !!!], you MUST use its text word-for-word. Do not paraphrase.
+2. ZERO HALLUCINATION: If the vault lacks details for "${primarySLO || 'this objective'}", stop and ask for the missing document part.
+3. DIALECT: Stick to the instructional framework of "${dialectTag}".
 
-## USER COMMAND:
+## COMMAND:
 "${userPrompt}"
 
 ## EXECUTION_SPEC:
@@ -117,7 +118,7 @@ ${responseInstructions}`;
     metadata: {
       isGrounded: hardLockFound,
       dialect: dialectTag,
-      sourceDocument: activeDoc?.name || 'Global Creativity Node',
+      sourceDocument: activeDoc?.name || 'Global Node',
       chunksUsed: retrievedChunks.length
     }
   } as any;
