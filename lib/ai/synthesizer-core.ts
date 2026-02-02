@@ -36,7 +36,7 @@ export class SynthesizerCore {
       apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
       thinkingBudget: 4096,
-      rpm: 5,
+      rpm: 10,
       rpd: 2000,
       tier: 1,
       enabled: isGeminiEnabled()
@@ -124,8 +124,19 @@ export class SynthesizerCore {
     return providers;
   }
 
+  /**
+   * Emergency Grid Realignment
+   * Clears all temporary cooldowns.
+   */
+  public realignGrid() {
+    this.failedProviders.clear();
+    return true;
+  }
+
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
     const now = Date.now();
+    
+    // 1. Housekeeping: Remove expired failures
     for (const [id, expiry] of this.failedProviders.entries()) {
       if (now > expiry) this.failedProviders.delete(id);
     }
@@ -133,17 +144,39 @@ export class SynthesizerCore {
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
     const isMassiveTask = prompt.length > 8000 || prompt.includes('MASTER MD') || prompt.includes('LINEARIZATION');
+    const preferredProviderId = options.preferred;
 
-    const candidates = Array.from(this.providers.values())
-      .filter(p => p.enabled && !this.failedProviders.has(p.id))
-      .sort((a, b) => {
-        if (isMassiveTask) return a.tier - b.tier;
-        return b.tier - a.tier;
-      });
+    // 2. Identify Candidates
+    let candidates = Array.from(this.providers.values())
+      .filter(p => p.enabled && !this.failedProviders.has(p.id));
+
+    // 3. Grid Exhaustion Logic: Auto-Realignment
+    // If we have enabled providers but they are ALL cooling down, clear the grid.
+    if (candidates.length === 0) {
+      const anyEnabled = Array.from(this.providers.values()).some(p => p.enabled);
+      if (anyEnabled) {
+        console.log("🔄 [Grid] All nodes cooling. Auto-realigning grid for immediate retry...");
+        this.failedProviders.clear();
+        candidates = Array.from(this.providers.values()).filter(p => p.enabled);
+      }
+    }
 
     if (candidates.length === 0) {
-      throw new Error("AI Alert: Synthesis grid exception.");
+      throw new Error("GRID_FAULT: All neural segments are offline. Verify environment keys.");
     }
+
+    // 4. Prioritization
+    candidates.sort((a, b) => {
+      // Priority 1: User Preference
+      if (preferredProviderId) {
+        if (a.id.includes(preferredProviderId)) return -1;
+        if (b.id.includes(preferredProviderId)) return 1;
+      }
+      
+      // Priority 2: Task Scaling
+      if (isMassiveTask) return a.tier - b.tier; // Tier 1 first for massive tasks
+      return b.tier - a.tier; // Tier 3 (cheaper/faster) first for small tasks
+    });
 
     const errors: string[] = [];
 
@@ -219,12 +252,12 @@ export class SynthesizerCore {
         console.warn(`⚠️ [Synthesizer] Failover from ${provider.name}: ${e.message}`);
         errors.push(`${provider.name}: ${e.message}`);
         provider.lastError = e.message;
-        // Ultra-low cooldown (5s) for instant failover retry
+        // 5s Cooldown
         this.failedProviders.set(provider.id, Date.now() + 5000); 
       }
     }
 
-    throw new Error(`AI Alert: Synthesis grid exception.`);
+    throw new Error(`GRID_FAULT: All providers failed. Logs: ${errors.join(' | ')}`);
   }
 
   public getProviderStatus() {
@@ -255,6 +288,7 @@ export const synthesize = (
   return getSynthesizer().synthesize(prompt, { 
     history, 
     systemPrompt: system,
-    hasDocs
+    hasDocs,
+    preferred
   });
 };

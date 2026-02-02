@@ -7,9 +7,9 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v47.0)
- * Signature: v4.0 Ultra-Deterministic Architecture.
- * FIX: Enhanced Error Propagation to bypass generic gateway faults.
+ * UNIFIED SYNTHESIS GATEWAY (v48.0)
+ * Signature: Multi-Node Resilient Architecture.
+ * FIX: Enhanced Error Propagation to ensure grid diagnostics are visible.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -57,13 +57,18 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error("❌ [AI Gateway Error]:", error);
-    // Propagate the specific grid error or the requested institutional error string
-    const errorMsg = error.message?.includes('GRID_FAULT') || error.message?.includes('NEURAL_GRID')
-      ? error.message 
-      : "AI Alert: Synthesis grid exception.";
+    
+    // Propagate GRID_FAULT errors as institutional alerts
+    if (error.message?.includes('GRID_FAULT')) {
+      return NextResponse.json({ 
+        error: `AI Alert: ${error.message}`,
+        status: 'failed' 
+      }, { status: 503 });
+    }
       
     return NextResponse.json({ 
-      error: errorMsg,
+      error: "AI Alert: Synthesis grid exception.",
+      details: error.message,
       status: 'failed' 
     }, { status: 500 });
   }
