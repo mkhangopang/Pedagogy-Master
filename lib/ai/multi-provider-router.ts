@@ -7,9 +7,8 @@ import { formatResponseInstructions } from './response-formatter';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v118.0)
- * Signature: Multi-Dialect Context Locking & Master MD Topic Scanning.
- * FEATURE: Hybrid Literal/Semantic Search across Master MD for maximum grounding.
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v120.0)
+ * FEATURE: Aggressive Direct Master MD Query Reading & Literal Snippet Selection.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -23,12 +22,12 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Analysis Architecture
+  // 1. Core Analysis
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const extractedSLOs = extractSLOCodes(userPrompt);
   const primarySLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
 
-  // 2. Resolve Active Institutional Identity
+  // 2. Resource Resolution
   let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, extracted_text')
@@ -44,7 +43,6 @@ export async function generateAIResponse(
   const activeDoc = activeDocs?.[0];
   const documentIds = activeDocs?.map(d => d.id) || [];
   
-  // Extract Dialect metadata
   const dialectTag = activeDoc?.extracted_text?.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
   const pedagogyDNA = `
@@ -55,54 +53,39 @@ export async function generateAIResponse(
 
   let vaultContent = "";
   let hardLockFound = false;
-  let retrievedChunks: RetrievedChunk[] = [];
 
-  // 3. ENHANCED MASTER MD SCAN (Literal Priority)
+  // 3. MASTER MD DIRECT FETCH (LITERAL GRID SCAN)
   if (activeDoc?.extracted_text) {
     const md = activeDoc.extracted_text;
-    const matches: { index: number; trigger: string }[] = [];
-
-    // Protocol A: SLO Code Scan
-    if (primarySLO) {
-      let pos = md.indexOf(primarySLO);
-      while (pos !== -1) {
-        matches.push({ index: pos, trigger: `SLO_CODE:${primarySLO}` });
-        pos = md.indexOf(primarySLO, pos + 1);
-      }
-    }
-
-    // Protocol B: Topical Keyword Scan (Reading the Master MD specifically for the query)
+    const targets: string[] = [];
+    
+    if (primarySLO) targets.push(primarySLO);
+    
+    // Add significant keywords from analysis for literal matching
     const keywords = queryAnalysis.keywords || [];
-    keywords.forEach(kw => {
-      if (kw.length < 3) return;
-      let pos = md.indexOf(kw);
-      // We only take the first few topical matches to avoid vault overflow
+    keywords.forEach(k => { if (k.length > 4) targets.push(k); });
+
+    const snippets: string[] = [];
+    targets.forEach(target => {
+      let pos = md.indexOf(target);
       let count = 0;
-      while (pos !== -1 && count < 2) {
-        matches.push({ index: pos, trigger: `TOPIC:${kw}` });
-        pos = md.indexOf(kw, pos + 1);
+      while (pos !== -1 && count < 3) {
+        const start = Math.max(0, pos - 1500);
+        const end = Math.min(md.length, pos + 4000);
+        snippets.push(`[DIRECT_MASTER_MD_FETCH: "${target}"]\n${md.substring(start, end)}`);
+        pos = md.indexOf(target, pos + target.length + 100);
         count++;
+        hardLockFound = true;
       }
     });
 
-    if (matches.length > 0) {
-      console.log(`🎯 [Master MD Scan] ${matches.length} Matches Found via ${matches.map(m => m.trigger).join(', ')}`);
-      hardLockFound = true;
-      
-      // Sort matches by index to merge overlapping windows
-      matches.sort((a, b) => a.index - b.index);
-      
-      const snippets = matches.map(match => {
-        const start = Math.max(0, match.index - 1200);
-        const end = Math.min(md.length, match.index + 3500);
-        return `[TRIGGER: ${match.trigger}]\n${md.substring(start, end)}`;
-      });
-      
-      vaultContent += `\n### MASTER_MD_DIRECT_EXTRACTION [!!! AUTHORITATIVE_SOURCE_TRUTH !!!]\n${snippets.join('\n---\n')}\n`;
+    if (snippets.length > 0) {
+      vaultContent += `\n### MASTER_MD_LITERAL_EXTRACTION [!!! HIGH_FIDELITY_SOURCE !!!]\n${snippets.join('\n---\n')}\n`;
     }
   }
 
-  // 4. Dual-Stage Vault Retrieval (Vector Augmentation)
+  // 4. Vector Augmentation
+  let retrievedChunks: RetrievedChunk[] = [];
   if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
@@ -115,12 +98,8 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent += retrievedChunks
       .map((chunk, i) => {
-        const isVerbatim = primarySLO && (
-          chunk.slo_codes?.includes(primarySLO) || 
-          chunk.chunk_text.includes(primarySLO)
-        );
+        const isVerbatim = primarySLO && chunk.chunk_text.includes(primarySLO);
         if (isVerbatim) hardLockFound = true;
-        
         return `### VECTOR_NODE_${i + 1}${isVerbatim ? " [!!! VERBATIM_CURRICULUM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
@@ -137,19 +116,15 @@ ${adaptiveContext || ''}
 </PEDAGOGICAL_DNA>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: Asset linkage required for this node. Use Global Knowledge Fallback.]'}
+${vaultContent || '[VAULT_EMPTY: No direct matches found in Master MD or Vector Nodes]'}
 </AUTHORITATIVE_VAULT>
 
 ## MISSION:
-Generate an artifact with 100% fidelity to the AUTHORITATIVE_VAULT.
+Synthesize content based ONLY on the provided AUTHORITATIVE_VAULT snippets.
 
 ## GROUNDING_PROTOCOL:
-1. MASTER_MD_READ: You have been provided with literal snippets from the curriculum's "Master MD" file. Use these as the primary source for all definitions and standards.
-2. HARD-LOCK: Quote verbatim codes and descriptions found in the vault.
-3. ZERO HALLUCINATION: If the vault doesn't cover the specific SLO or topic requested, proceed with "GLOBAL KNOWLEDGE FALLBACK".
-
-## COMMAND:
-"${userPrompt}"
+1. MASTER_MD_READ: You have been given literal blocks extracted from the Master MD file for the query: "${userPrompt}".
+2. FIDELITY: Maintain 100% adherence to codes and definitions found in the vault.
 
 ## EXECUTION_SPEC:
 ${responseInstructions}`;
@@ -163,8 +138,7 @@ ${responseInstructions}`;
       isGrounded: hardLockFound,
       dialect: dialectTag,
       sourceDocument: activeDoc?.name || 'Global Node',
-      chunksUsed: retrievedChunks.length,
-      groundingMethod: hardLockFound ? 'Master MD Literal' : 'Vector Semantic'
+      groundingMethod: hardLockFound ? 'Master MD Direct Read' : 'Semantic Vector'
     }
   };
 }

@@ -142,7 +142,7 @@ export class SynthesizerCore {
       });
 
     if (candidates.length === 0) {
-      throw new Error("NEURAL_GRID_SATURATED: All 7 segments are in temporary cooldown. Retrying with Tier-1 priority...");
+      throw new Error("AI Alert: Synthesis grid exception.");
     }
 
     const errors: string[] = [];
@@ -212,7 +212,6 @@ export class SynthesizerCore {
         }
 
         if (content && content.trim().length > 0) {
-          // Clear previous errors on success
           provider.lastError = undefined;
           return { text: content, provider: provider.name };
         }
@@ -220,12 +219,12 @@ export class SynthesizerCore {
         console.warn(`⚠️ [Synthesizer] Failover from ${provider.name}: ${e.message}`);
         errors.push(`${provider.name}: ${e.message}`);
         provider.lastError = e.message;
-        // Reduced cooling time for faster grid re-alignment
-        this.failedProviders.set(provider.id, Date.now() + 20000); 
+        // Ultra-low cooldown (5s) for instant failover retry
+        this.failedProviders.set(provider.id, Date.now() + 5000); 
       }
     }
 
-    throw new Error(`GRID_FAULT: All providers failed. Logs: ${errors.join(' | ')}`);
+    throw new Error(`AI Alert: Synthesis grid exception.`);
   }
 
   public getProviderStatus() {

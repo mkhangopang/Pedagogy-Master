@@ -7,30 +7,25 @@ let globalCooldownUntil = 0;
 
 function parseAIError(errorData: any): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
+  
+  // If the error is already formatted as an institutional alert, pass it through
+  if (msg.startsWith('AI Alert:')) return msg;
+
   const lowerMsg = msg.toLowerCase();
   
   if (lowerMsg.includes('grid_saturated') || lowerMsg.includes('saturated') || lowerMsg.includes('429')) {
-    // If it mentions tier-1 retry, we inform the user to stay on the line
-    if (lowerMsg.includes('tier-1')) {
-       return "Grid Saturated: Re-routing your request to Tier-1 Reasoning Node. Please wait...";
-    }
-    globalCooldownUntil = Date.now() + 15000;
-    return "Neural Grid Saturated: All processing nodes are busy. Please wait 15 seconds for the grid to re-align.";
+    return "AI Alert: Synthesis grid exception.";
   }
 
   if (lowerMsg.includes('grid_fault')) {
-    return `Synthesis Node Error: Communication failure between grid segments. Retrying...`;
+    return "AI Alert: Synthesis grid exception.";
   }
   
   if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('504')) {
-    return "Handshake Interrupted: The current node took too long. Retrying will automatically route you to a faster grid segment.";
+    return "AI Alert: Handshake Interrupted. Retrying...";
   }
 
-  if (lowerMsg.includes('auth') || lowerMsg.includes('unauthorized') || lowerMsg.includes('session')) {
-    return "Security Violation: Your session has expired. Please refresh the app.";
-  }
-
-  return msg || "Synthesis interrupted by cloud gateway. Please retry your request.";
+  return "AI Alert: Synthesis grid exception.";
 }
 
 /**
@@ -87,8 +82,8 @@ export const geminiService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Synthesis node failure." }));
-        yield `AI Alert: ${parseAIError(errorData)}`;
+        const errorData = await response.json().catch(() => ({ error: "AI Alert: Synthesis grid exception." }));
+        yield parseAIError(errorData);
         return;
       }
 
@@ -107,7 +102,7 @@ export const geminiService = {
           
           if (isRepeating(fullContent)) {
             reader.cancel();
-            yield "\n\n🚨 [Neural Glitch Guard]: Repetitive token loop detected. Synthesis aborted to protect UI integrity.";
+            yield "\n\n🚨 [Neural Glitch Guard]: Repetitive token loop detected. Synthesis aborted.";
             return;
           }
 
@@ -117,7 +112,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: Synthesis gateway unreachable. Verify your connection.`;
+      yield `AI Alert: Synthesis grid exception.`;
     }
   },
 
@@ -154,8 +149,8 @@ export const geminiService = {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "Synthesis nodes busy." }));
-        yield `AI Alert: ${parseAIError(errorData)}`;
+        const errorData = await response.json().catch(() => ({ error: "AI Alert: Synthesis grid exception." }));
+        yield parseAIError(errorData);
         return;
       }
 
@@ -173,7 +168,7 @@ export const geminiService = {
           fullContent += chunk;
           if (isRepeating(fullContent)) {
             reader.cancel();
-            yield "\n\n🚨 [Neural Glitch Guard]: Recursive pattern detected. Process terminated.";
+            yield "\n\n🚨 [Neural Glitch Guard]: Recursive pattern detected.";
             return;
           }
 
@@ -183,7 +178,7 @@ export const geminiService = {
         reader.releaseLock();
       }
     } catch (err) {
-      yield `AI Alert: Heavy curriculum analysis caused a bottleneck. Verify node connectivity.`;
+      yield `AI Alert: Synthesis grid exception.`;
     }
   }
 };
