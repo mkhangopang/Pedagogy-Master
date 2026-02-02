@@ -7,8 +7,8 @@ import { formatResponseInstructions } from './response-formatter';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v100.0)
- * Signature: Multi-Dialect Context Injection.
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v110.0)
+ * Signature: Multi-Dialect Pedagogical Intelligence.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -25,10 +25,10 @@ export async function generateAIResponse(
   const extractedSLOs = extractSLOCodes(userPrompt);
   const primarySLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
 
-  // 1. Resolve Active Pedagogical Identity
+  // 1. Resolve Pedagogical Identity from active document
   let docQuery = supabase
     .from('documents')
-    .select('id, name, authority, subject, grade_level, version_year, extracted_text')
+    .select('id, name, authority, subject, grade_level, extracted_text')
     .eq('user_id', userId);
 
   if (priorityDocumentId) {
@@ -41,22 +41,22 @@ export async function generateAIResponse(
   const activeDoc = activeDocs?.[0];
   const documentIds = activeDocs?.map(d => d.id) || [];
   
-  // Extract Dialect metadata
+  // Extract Dialect metadata from the Master MD tag
   const dialectTag = activeDoc?.extracted_text?.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
   const pedagogyDNA = `
-### PEDAGOGICAL_IDENTITY: ${dialectTag}
+### ACTIVE_PEDAGOGY_PROTOCOL: ${dialectTag}
 - AUTHORITY: ${activeDoc?.authority || 'Independent'}
-- PHILOSOPHY: ${dialectTag.includes('Pakistani') ? 'Direct SLO Alignment / 5E' : 'Inquiry-Based / Competency Focus'}
-- GRADE: ${activeDoc?.grade_level || 'General'}
-- SUBJECT: ${activeDoc?.subject || 'Interdisciplinary'}
+- DIALECT: ${dialectTag.includes('Pakistani') ? 'Sindh/Federal (SLO-Based)' : 'Cambridge/IB (Criteria-Based)'}
+- TERMINOLOGY: Always use "${dialectTag.includes('Pakistani') ? 'SLOs and Benchmarks' : 'Learning Outcomes and Strands'}".
+- CORE_STRENGTH: 5E Instructional Cycle with Bloom's Alignment.
 `;
 
   let vaultContent = "";
   let hardLockFound = false;
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 2. Precision Vault Search
+  // 2. High-Precision Context Retrieval
   if (documentIds.length > 0) {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
@@ -75,12 +75,12 @@ export async function generateAIResponse(
         );
         if (isVerbatim) hardLockFound = true;
         
-        return `### VAULT_NODE_${i + 1}${isVerbatim ? " [!!! AUTHORITATIVE_VERBATIM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
+        return `### VAULT_NODE_${i + 1}${isVerbatim ? " [!!! VERBATIM_CURRICULUM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   }
 
-  // 3. Synthesis Pipeline
+  // 3. Synthesis Preparation
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDoc);
   const systemInstruction = customSystem || DEFAULT_MASTER_PROMPT;
@@ -92,18 +92,18 @@ ${adaptiveContext || ''}
 </PEDAGOGICAL_DNA>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: No curriculum asset linked for this query node]'}
+${vaultContent || '[VAULT_EMPTY: No curriculum node selected. Fallback to global node.]'}
 </AUTHORITATIVE_VAULT>
 
 ## MISSION:
-Synthesize an instructional artifact with absolute fidelity to the vault standards.
+Synthesize an instructional artifact with 100% fidelity to the curriculum standards in the vault.
 
 ## GROUNDING_PROTOCOL:
-1. VERBATIM LOCK: If a node is marked [!!! AUTHORITATIVE_VERBATIM_STANDARD !!!], you MUST use its text EXACTLY. Do not summarize the core objective.
-2. DIALECT: Respect the terms of "${dialectTag}".
-3. FALLBACK: If the vault is empty but user query contains an SLO code, inform them the asset is missing and offer Global Knowledge Node fallback.
+1. VERBATIM FORCE: If a node is marked [!!! VERBATIM_CURRICULUM_STANDARD !!!], you MUST use its text word-for-word. DO NOT paraphrase the standard.
+2. DIALECT ALIGNMENT: Stick to the instructional vocabulary of "${dialectTag}".
+3. TRUNCATION GUARD: If the vault text for "${primarySLO || 'the objective'}" is incomplete, state: "Warning: SLO description truncated in source document."
 
-## COMMAND:
+## USER COMMAND:
 "${userPrompt}"
 
 ## EXECUTION_SPEC:
@@ -117,7 +117,7 @@ ${responseInstructions}`;
     metadata: {
       isGrounded: hardLockFound,
       dialect: dialectTag,
-      sourceDocument: activeDoc?.name || 'Global Node',
+      sourceDocument: activeDoc?.name || 'Global Creativity Node',
       chunksUsed: retrievedChunks.length
     }
   } as any;
