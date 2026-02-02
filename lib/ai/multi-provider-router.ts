@@ -7,8 +7,8 @@ import { formatResponseInstructions } from './response-formatter';
 import { NUCLEAR_GROUNDING_DIRECTIVE, DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * NEURAL SYNTHESIS ORCHESTRATOR (v82.0)
- * Feature: Authoritative Node Forcing for Sindh 2024.
+ * NEURAL SYNTHESIS ORCHESTRATOR (v85.0)
+ * Signature: Precision-First Grounding for Sindh 2024.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -53,7 +53,7 @@ export async function generateAIResponse(
   let mode: 'VAULT' | 'GLOBAL' = documentIds.length > 0 ? 'VAULT' : 'GLOBAL';
   let retrievedChunks: RetrievedChunk[] = [];
 
-  // 2. TIERED RETRIEVAL (v28.0 Logic)
+  // 2. Precision Retrieval (v30.0)
   if (mode === 'VAULT') {
     retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
@@ -66,9 +66,9 @@ export async function generateAIResponse(
   if (retrievedChunks.length > 0) {
     vaultContent = retrievedChunks
       .map((chunk, i) => {
-        // HYPER-ROBUST VERBATIM DETECTION
+        // Robust Verbatim Cross-Check
         const cleanText = chunk.chunk_text.replace(/[\-\s]/g, '').toUpperCase();
-        const cleanSlo = primarySLO ? primarySLO.replace(/[\-\s]/g, '').toUpperCase() : 'NONE_SET';
+        const cleanSlo = primarySLO ? primarySLO.replace(/[\-\s]/g, '').toUpperCase() : '___';
         
         const isVerbatim = chunk.is_verbatim_definition || 
                           (primarySLO && chunk.slo_codes?.includes(primarySLO)) || 
@@ -76,14 +76,14 @@ export async function generateAIResponse(
         
         if (isVerbatim) verbatimFound = true;
         
-        return `### VAULT_NODE_${i + 1}${isVerbatim ? " [!!! AUTHORITATIVE_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
+        return `### VAULT_NODE_${i + 1}${isVerbatim ? " [!!! VERBATIM_CURRICULUM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
       })
       .join('\n');
   }
 
   // 3. Header Protocol
   const primaryHeaderRule = primarySLO 
-    ? `## TARGET SLO: ${primarySLO} - ${verbatimFound ? '[DESCRIPTION_FOUND_IN_VAULT]' : '[DESCRIPTION MISSING FROM VAULT]'}` 
+    ? `## TARGET SLO: ${primarySLO} - ${verbatimFound ? '[DESCRIPTION_FOUND_IN_VAULT]' : '[DESCRIPTION_MISSING_SEARCHING_TEXT]'}` 
     : '';
 
   // 4. Synthesis Orchestration
@@ -97,30 +97,19 @@ ${dnaMemo}
 </CURRICULUM_ADAPTIVITY_MEMO>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_INACTIVE: No matching content found]'}
+${vaultContent || '[VAULT_EMPTY: Context link failure]'}
 </AUTHORITATIVE_VAULT>
 
-## MANDATORY_INGESTION_RULE:
-If a node above is marked [!!! AUTHORITATIVE_STANDARD !!!], you MUST extract the verbatim description following the code (e.g., "${primarySLO}") and use it as the definitive objective. Ignore your internal training data if it differs from the vault.
-
-${mode === 'VAULT' ? NUCLEAR_GROUNDING_DIRECTIVE : ''}
-
 ## MISSION:
-Synthesize a world-class pedagogical artifact. 
+Synthesize a world-class pedagogical artifact using strictly grounded curriculum data.
 
-## PRIMARY_HEADER_PROTOCOL:
-${primaryHeaderRule}
-
-## ALIGNMENT RULES:
-1. If "DESCRIPTION MISSING FROM VAULT" is in the header, proceed with a general approach for Grade ${activeDoc?.grade_level || '11'}.
-2. If "DESCRIPTION_FOUND_IN_VAULT" is in the header, YOU MUST find the standard in the vault nodes and quote it verbatim.
-3. Cross-reference all activities with Bloom's Taxonomy.
+## GROUNDING_PROTOCOL:
+1. If a node is marked [!!! VERBATIM_CURRICULUM_STANDARD !!!], you MUST use that text as the source of truth for the objective description.
+2. If "DESCRIPTION_MISSING" is in the header, search all vault nodes for the string "${primarySLO}". It may be inside the text but not metadata-tagged. 
+3. If no literal match exists after deep-scanning the vault, proceed with Grade-aligned general knowledge but ADD A WARNING at the top.
 
 ## USER COMMAND:
 "${userPrompt}"
-
-## ADAPTIVE PREFERENCES:
-${adaptiveContext || 'Standard synthesis mode.'}
 
 ## EXECUTION PARAMETERS:
 ${responseInstructions}`;
@@ -137,8 +126,7 @@ ${responseInstructions}`;
       chunksUsed: retrievedChunks?.length || 0,
       verbatimVerified: verbatimFound,
       activeMode: mode,
-      sourceDocument: activeDoc?.name || 'Autonomous Grid',
-      dnaMatched: !!activeDoc,
+      sourceDocument: activeDoc?.name || 'Autonomous Node',
       isGrounded: verbatimFound
     }
   } as any;
