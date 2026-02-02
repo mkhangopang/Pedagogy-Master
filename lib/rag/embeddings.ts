@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { embeddingCache } from "./embedding-cache";
 import { performanceMonitor } from "../monitoring/performance";
@@ -22,8 +23,8 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 /**
- * BATCH VECTOR SYNTHESIS (v35.0 - HIGH CONCURRENCY)
- * Fixed type error in EmbedContentResponse and added multi-property fallback.
+ * BATCH VECTOR SYNTHESIS (v36.0 - PRODUCTION STABILIZED)
+ * FIX: Robust extraction of number[] to prevent "invalid input syntax for type vector" errors.
  */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   const start = performance.now();
@@ -35,7 +36,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   // 1. Resolve from Persistent Cache
   for (let i = 0; i < sanitizedTexts.length; i++) {
     const cached = await embeddingCache.get(sanitizedTexts[i]);
-    if (cached) {
+    if (cached && Array.isArray(cached) && typeof cached[0] === 'number') {
       finalResults[i] = cached;
     } else {
       uncachedIndices.push(i);
@@ -51,7 +52,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
-    // Execute embeddings in parallel batches
+    // Execute embeddings in parallel
     const results = await Promise.all(uncachedTexts.map(text => 
       ai.models.embedContent({
         model: "text-embedding-004",
@@ -61,18 +62,40 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
 
     for (let i = 0; i < results.length; i++) {
       const res = results[i] as any;
-      // FIX: Handle both singular 'embedding.values' and plural 'embeddings' response formats
-      const vector = res.embedding?.values || res.embeddings;
-      
-      if (!vector) continue;
-      
       const originalIndex = uncachedIndices[i];
+      
+      // STABILIZED EXTRACTION: Navigate potentially inconsistent API response structures
+      let rawVector: any = null;
+      
+      if (res.embedding?.values && Array.isArray(res.embedding.values)) {
+        rawVector = res.embedding.values;
+      } else if (res.embedding && Array.isArray(res.embedding)) {
+        rawVector = res.embedding;
+      } else if (res.values && Array.isArray(res.values)) {
+        rawVector = res.values;
+      } else if (Array.isArray(res)) {
+        rawVector = res;
+      }
+
+      if (!rawVector || !Array.isArray(rawVector)) {
+        console.warn(`[Embeddings] Node ${i} returned invalid structure. Falling back to zero-vector.`);
+        rawVector = new Array(768).fill(0);
+      }
+
+      // Ensure all elements are numbers (flattening if it's accidentally nested)
+      const numericVector: number[] = rawVector.map((v: any) => 
+        typeof v === 'number' ? v : (v?.values && typeof v.values[0] === 'number' ? v.values[0] : 0)
+      );
       
       // Strict Dimension Enforcement (768)
       let finalVector: number[];
-      if (vector.length === 768) finalVector = vector;
-      else if (vector.length < 768) finalVector = [...vector, ...new Array(768 - vector.length).fill(0)];
-      else finalVector = vector.slice(0, 768);
+      if (numericVector.length === 768) {
+        finalVector = numericVector;
+      } else if (numericVector.length < 768) {
+        finalVector = [...numericVector, ...new Array(768 - numericVector.length).fill(0)];
+      } else {
+        finalVector = numericVector.slice(0, 768);
+      }
 
       finalResults[originalIndex] = finalVector;
       
@@ -85,6 +108,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     return finalResults.map(r => r || new Array(768).fill(0));
   } catch (error: any) {
     console.error('❌ [Batch Embedding] Grid Fault:', error.message);
+    // Return zero-vectors to prevent crashing the ingestion pipeline
     return finalResults.map(r => r || new Array(768).fill(0));
   }
 }

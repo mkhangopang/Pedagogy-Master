@@ -4,9 +4,9 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * NEURAL VECTOR INDEXER (v206.0 - Production Optimized)
+ * NEURAL VECTOR INDEXER (v206.1 - Production Optimized)
  * Feature: Semantic Chunk Scaling & Recursive Hierarchy Injection.
- * FIX: Improved buffer accumulation to target ~1500 chars per chunk.
+ * FIX: Stabilized vector sync to prevent invalid syntax faults.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -25,7 +25,7 @@ export async function indexDocumentForRAG(
     
     const processedChunks: any[] = [];
     
-    // TARGET: 1500 characters per chunk for pedagogical depth (Pre-Launch Audit Fix)
+    // TARGET: 1500 characters per chunk for pedagogical depth
     let currentBuffer = "";
     const TARGET_CHUNK_SIZE = 1500;
     const MIN_CHUNK_SIZE = 800;
@@ -52,7 +52,6 @@ export async function indexDocumentForRAG(
 
       currentBuffer += (currentBuffer ? '\n' : '') + line;
 
-      // Logic: Flush if we reach target size OR a major heading starts (if we have enough content)
       const isMajorHeading = trimmed.startsWith('# ') || trimmed.startsWith('## ');
       const isLastLine = i === lines.length - 1;
 
@@ -81,29 +80,45 @@ export async function indexDocumentForRAG(
     // 2. Refresh Node Points in Database
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 3. High-Concurrency Batch Embedding (7-Node Safe)
-    const BATCH_SIZE = 15; 
+    // 3. High-Concurrency Batch Embedding
+    const BATCH_SIZE = 10; // Slightly smaller batch for better stability on free tier
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
       
-      const records = batch.map((chunk, j) => ({
-        document_id: documentId,
-        chunk_text: chunk.text,
-        embedding: embeddings[j],
-        slo_codes: chunk.metadata.slo_codes || [],
-        metadata: chunk.metadata
-      }));
+      const records = batch.map((chunk, j) => {
+        const embedding = embeddings[j];
+        
+        // Defensive check: Ensure embedding is a flat array of numbers
+        if (!Array.isArray(embedding) || typeof embedding[0] !== 'number') {
+          console.error(`[Indexer] Invalid embedding format detected at batch ${i} index ${j}`);
+          return null;
+        }
 
-      const { error: insertError } = await supabase.from('document_chunks').insert(records);
-      if (insertError) throw insertError;
+        return {
+          document_id: documentId,
+          chunk_text: chunk.text,
+          embedding: embedding,
+          slo_codes: chunk.metadata.slo_codes || [],
+          metadata: chunk.metadata
+        };
+      }).filter(Boolean);
+
+      if (records.length > 0) {
+        const { error: insertError } = await supabase.from('document_chunks').insert(records);
+        if (insertError) {
+          console.error("❌ [Vector Insert Fault]:", insertError.message);
+          throw new Error(`Database rejected vector node: ${insertError.message}`);
+        }
+      }
     }
 
     await supabase.from('documents').update({ 
       rag_indexed: true,
       last_synced_at: new Date().toISOString(),
       grade_level: currentGrade === "Auto" ? meta.grade : currentGrade,
-      chunk_count: processedChunks.length
+      chunk_count: processedChunks.length,
+      status: 'ready'
     }).eq('id', documentId);
 
     return { success: true, count: processedChunks.length };

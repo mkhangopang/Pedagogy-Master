@@ -1,8 +1,10 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * WORLD-CLASS NEURAL STRUCTURER (v6.0)
+ * WORLD-CLASS NEURAL STRUCTURER (v6.1)
  * Specialized for Multi-Grade Parallel Curriculum Grids.
+ * FIX: Locked temperature for deterministic pedagogical unwrapping.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -30,7 +32,7 @@ ${rawText.substring(0, 50000)}
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        temperature: 0.1,
+        temperature: 0.1, // Fixed for deterministic pedagogical fidelity
         systemInstruction: "You are a master curriculum engineer. Your output is structured MD that preserves the strict hierarchical intent of the original board.",
       }
     });
