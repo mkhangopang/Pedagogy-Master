@@ -1,28 +1,30 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * NEURAL MARKDOWN STRUCTURER (v1.0)
- * Logic: Meshy PDF Soup -> Pedagogical Markdown Grid.
+ * NEURAL MASTER-MD CONSTRUCT (v2.0)
+ * Logic: Polymorphic Ingestion -> Standardized Pedagogical Markdown.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const prompt = `
-TASK: Convert the following messy OCR/PDF text into a structured Markdown Curriculum Progression Grid.
+TASK: Convert this raw pedagogical text into a high-fidelity "Master MD" file for RAG injection.
 
-FORMAT RULES:
-1. Identify DOMAINS as # H1 Headers.
-2. Identify STANDARDS as ## H2 Headers.
-3. Identify BENCHMARKS as ### H3 Headers.
-4. IMPORTANT: Format every Student Learning Objective (SLO) exactly like this:
-   - SLO: [CODE]: [FULL VERBATIM DESCRIPTION]
-   Example: - SLO: B-11-B-27: Describe the structure and function of RNA.
+DIALECT DETECTION:
+1. SINDH/FEDERAL: Use "Domains", "Standards", "Benchmarks", and "- SLO: [CODE]: [TEXT]".
+2. CAMBRIDGE/OXFORD: Use "Assessment Objectives (AO)", "Strands", and "Learning Outcomes".
+3. IB/GLOBAL: Use "Inquiry Points", "Key Concepts", and "Competencies".
 
-5. Do not skip any codes. If a table has multiple grades, list them sequentially.
-6. Remove all headers, footers, page numbers, and redundant institutional logos.
+FORMATTING PROTOCOL:
+- Level 1: # [DOMAIN / UNIT NAME]
+- Level 2: ## [STANDARD / STRAND]
+- Level 3: ### [BENCHMARK / AO]
+- LEVEL 4 (ATOMIC): Each specific objective MUST start with "- SLO:" followed by its code.
+  Example: - SLO: B-11-B-27: Describe DNA replication.
+- NOISE REMOVAL: Strip all page numbers, footers, institutional logos, and table of contents.
 
-MESSY TEXT:
-${rawText.substring(0, 45000)}
+RAW TEXT STREAM:
+${rawText.substring(0, 50000)}
 `;
 
   try {
@@ -30,14 +32,19 @@ ${rawText.substring(0, 45000)}
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        temperature: 0.1, // High precision
-        thinkingConfig: { thinkingBudget: 0 }
+        temperature: 0.1,
+        systemInstruction: "You are a world-class curriculum data architect. Your output is a structured MD file that preserves 100% of the instructional intent while optimizing for machine retrieval.",
       }
     });
 
-    return response.text || rawText;
+    const masterMd = response.text || rawText;
+    
+    // Auto-labeling logic: Inject a system header
+    const dialect = masterMd.includes('AO') ? 'Cambridge/IGCSE' : masterMd.includes('S-') || masterMd.includes('B-') ? 'Pakistani National' : 'General IB/Global';
+    
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Neural structuring failed:", err);
-    return rawText; // Fallback to raw if AI fails
+    return rawText; 
   }
 }

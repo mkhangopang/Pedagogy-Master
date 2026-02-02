@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; 
 
 /**
- * NEURAL PROCESSING NODE (v18.0)
- * Protocol: PDF -> RAW TEXT -> CLEAN MD -> RAG INDEX
+ * NEURAL PROCESSING NODE (v19.0)
+ * Protocol: PDF -> RAW TEXT -> MASTER MD -> DIALECT SYNC
  */
 export async function POST(
   req: NextRequest,
@@ -27,41 +27,40 @@ export async function POST(
   try {
     if (!token) throw new Error("Authorization Required");
 
-    // 1. Initial State
+    // 1. Handshake
     await adminSupabase.from('documents').update({ 
-      document_summary: 'Initializing secure neural extraction...',
+      document_summary: 'Re-structuring Curriculum Hierarchy...',
       status: 'processing'
     }).eq('id', documentId);
 
     // 2. Fetch metadata
     const { data: doc } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
-    if (!doc) throw new Error("Document metadata retrieval failed.");
+    if (!doc) throw new Error("Asset retrieval failed.");
 
     // 3. Fetch binary
     const buffer = await getObjectBuffer(doc.file_path);
-    if (!buffer) throw new Error("Zero-byte binary detected.");
+    if (!buffer) throw new Error("Binary node unreachable.");
 
     // 4. Raw Text Extraction
-    await adminSupabase.from('documents').update({ document_summary: 'Parsing raw PDF bits...' }).eq('id', documentId);
     const rawResult = await pdf(buffer);
     const rawText = rawResult.text.trim();
 
-    if (rawText.length < 20) throw new Error("Insufficient text data found.");
-
-    // 5. NEURAL MD RESTRUCTURING (The "Clean Room" Step)
-    await adminSupabase.from('documents').update({ document_summary: 'Generating Pedagogical Markdown Grid...' }).eq('id', documentId);
+    // 5. MASTER MD RESTRUCTURING
+    await adminSupabase.from('documents').update({ document_summary: 'Constructing Master MD File...' }).eq('id', documentId);
     const cleanMd = await convertToPedagogicalMarkdown(rawText);
+    const dialect = cleanMd.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
-    // 6. Synchronize with Vector Grid (RAG)
+    // 6. Vector Synchronization
     await adminSupabase.from('documents').update({ 
-      extracted_text: cleanMd, // Save the clean MD version
+      extracted_text: cleanMd,
       status: 'indexing',
-      document_summary: 'Synchronizing clean MD nodes with vector grid...'
+      document_summary: `Synchronizing ${dialect} logic with hybrid grid...`,
+      master_md_dialect: dialect as any // Cast for schema if needed
     }).eq('id', documentId);
 
     await indexDocumentForRAG(documentId, cleanMd, doc.file_path, adminSupabase);
 
-    // 7. Pedagogical Intelligence Synthesis
+    // 7. Intelligence Analysis
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
     if (user) {
        await analyzeDocumentWithAI(documentId, user.id, adminSupabase);
@@ -73,10 +72,14 @@ export async function POST(
       rag_indexed: true
     }).eq('id', documentId);
 
-    return NextResponse.json({ success: true, message: "Curriculum MD Ingestion Finalized." });
+    return NextResponse.json({ 
+      success: true, 
+      message: "Pedagogical Master MD ingestion finalized.",
+      dialect: dialect
+    });
 
   } catch (error: any) {
-    console.error("❌ [Processing Node Exception]:", error);
+    console.error("❌ [Processing Node Fault]:", error);
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
       error_message: error.message,
