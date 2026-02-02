@@ -1,8 +1,15 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { BrainCircuit, RefreshCw, UploadCloud, AlertCircle, ShieldCheck, Database, Search, Zap, CheckCircle2 } from 'lucide-react';
+import { BrainCircuit, RefreshCw, UploadCloud, AlertCircle, ShieldCheck, Database, Search, Zap, CheckCircle2, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import * as pdfjs from 'pdfjs-dist';
+
+// Initialize PDF.js worker
+if (typeof window !== 'undefined') {
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.mjs`;
+}
 
 export default function DocumentUploader({ userId, onComplete, onCancel }: any) {
   const [isUploading, setIsUploading] = useState(false);
@@ -37,13 +44,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           } else {
             // High-fidelity progress mapping
             let p = 50;
-            let currentStatus = 'Parsing binary bits...';
+            let currentStatus = 'Synthesizing Master MD...';
             
-            if (data.summary?.includes('Pedagogical Markdown')) {
-              p = 70;
-              currentStatus = 'Constructing Master MD Source...';
-            }
-            if (data.status === 'indexing') {
+            if (data.summary?.includes('Neural Sync Complete')) {
+               p = 95;
+            } else if (data.status === 'indexing') {
               p = 85;
               currentStatus = 'Sychronizing Dialect Chunks...';
             }
@@ -59,6 +64,23 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     return () => clearInterval(poller);
   }, [docId, isUploading, progress, onComplete]);
 
+  const extractTextLocally = async (file: File): Promise<string> => {
+    if (file.type !== 'application/pdf') return "";
+    
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+    let fullText = "";
+    
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map((item: any) => item.str).join(" ");
+      fullText += pageText + "\n";
+    }
+    return fullText;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -71,21 +93,31 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     setError(null);
     setIsUploading(true);
     setProgress(5);
-    setStatus('Initializing Neural Handshake...');
+    setStatus('Client-side Extraction...');
 
     try {
+      // 1. Extract text locally to offload server
+      const extractedText = await extractTextLocally(file);
+      
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Authentication offline.");
       
       const detectedType = file.type || 'application/pdf';
 
+      // 2. Handshake with server (passing extracted text)
+      setProgress(15);
+      setStatus('Initializing Neural Handshake...');
       const handshakeResponse = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 
           'Authorization': `Bearer ${session?.access_token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ name: file.name.replace(/\.[^/.]+$/, ""), contentType: detectedType })
+        body: JSON.stringify({ 
+          name: file.name.replace(/\.[^/.]+$/, ""), 
+          contentType: detectedType,
+          extractedText: extractedText 
+        })
       });
 
       if (!handshakeResponse.ok) {
@@ -95,9 +127,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
       const { uploadUrl, documentId, contentType: signedType } = await handshakeResponse.json();
       setDocId(documentId);
-      setProgress(20);
+      
+      // 3. Upload binary to R2
+      setProgress(25);
       setStatus('Streaming Binary Bits to Vault...');
-
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
         body: file,
@@ -106,14 +139,16 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
       if (!uploadResponse.ok) throw new Error("Cloud Node rejected binary stream.");
 
+      // 4. Trigger server-side process (AI synthesis)
       setProgress(40);
-      setStatus('Re-structuring Curriculum Hierarchy...');
+      setStatus('Initializing Background Synthesis...');
 
       const triggerResponse = await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
       });
 
+      // On Vercel, a 504 is common for long AI tasks. We ignore it and rely on the poller.
       if (!triggerResponse.ok && triggerResponse.status !== 504) {
         const triggerData = await triggerResponse.json().catch(() => ({}));
         throw new Error(triggerData.error || "Neural node failed to initialize.");

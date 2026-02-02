@@ -11,9 +11,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * NEURAL PROCESSING GATEWAY (v24.0)
- * Protocol: PDF -> RAW -> MASTER MD (LINEARIZED) -> VECTOR SYNC
- * FIX: Expanded context window and reasoning model for high-fidelity conversion.
+ * NEURAL PROCESSING GATEWAY (v25.0 - OPTIMIZED)
+ * Protocol: [RAW_TEXT] -> MASTER MD (LINEARIZED) -> VECTOR SYNC
+ * FIX: Skips server-side PDF parsing if text is pre-extracted by client.
  */
 export async function POST(
   req: NextRequest,
@@ -29,37 +29,32 @@ export async function POST(
   try {
     if (!token) throw new Error("Security handshake failed: No token.");
 
-    // 1. Initial State Handshake
-    await adminSupabase.from('documents').update({ 
-      document_summary: 'Linearizing Curriculum Grids...',
-      status: 'processing'
-    }).eq('id', documentId);
+    // 1. Fetch document record (includes pre-extracted text if client-side extraction worked)
+    const { data: doc, error: fetchError } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
+    if (fetchError || !doc) throw new Error("Target asset not found in grid.");
 
-    // 2. Binary Retrieval
-    const { data: doc } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
-    if (!doc) throw new Error("Target asset not found in grid.");
+    let rawText = doc.extracted_text || "";
 
-    const buffer = await getObjectBuffer(doc.file_path);
-    if (!buffer) throw new Error("R2 Node unreachable.");
-
-    // 3. Multi-Grade Text Extraction
-    // No page limit: extract the entire curriculum
-    const rawResult = await pdf(buffer);
-    const rawText = rawResult.text.trim();
+    // 2. Fallback: Parse PDF if text is missing (e.g. API upload or old flow)
+    if (!rawText || rawText.length < 50) {
+      await adminSupabase.from('documents').update({ document_summary: 'Extracting binary nodes (Legacy Fallback)...' }).eq('id', documentId);
+      const buffer = await getObjectBuffer(doc.file_path);
+      if (!buffer) throw new Error("R2 Node unreachable.");
+      const rawResult = await pdf(buffer);
+      rawText = rawResult.text.trim();
+    }
 
     if (rawText.length < 50) throw new Error("Extraction yielded insufficient content.");
 
-    // Checkpoint: Approaching limit? We still push forward because md-converter v7.0 is much faster.
-    if (Date.now() - startTime > 9000) {
-       console.warn(`[Processor] Heavy load detected for ${documentId}. Entering High-Performance Mode.`);
-    }
-
-    // 4. NEURAL MASTER-MD CONVERSION (v7.0 Self-Correcting Node)
+    // 3. NEURAL MASTER-MD CONVERSION (v7.0 Self-Correcting Node)
+    // This part is intensive, we ensure we have as much time as possible.
+    await adminSupabase.from('documents').update({ document_summary: 'Linearizing Curriculum Grids...' }).eq('id', documentId);
+    
     const cleanMd = await convertToPedagogicalMarkdown(rawText);
     const dialectMatch = cleanMd.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/);
     const dialect = dialectMatch ? dialectMatch[1] : 'Standard';
 
-    // 5. High-Precision Vector Synchronization
+    // 4. High-Precision Vector Synchronization
     await adminSupabase.from('documents').update({ 
       extracted_text: cleanMd,
       status: 'indexing',
@@ -67,27 +62,27 @@ export async function POST(
       master_md_dialect: dialect as any
     }).eq('id', documentId);
 
-    // This is the heavy lifting - handles 1500 char chunks
+    // handles 1500 char chunks
     await indexDocumentForRAG(documentId, cleanMd, doc.file_path, adminSupabase);
 
-    // 6. Institutional Intelligence Pass
+    // 5. Institutional Intelligence Pass
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
     if (user) {
-       // Deep analysis in background
+       // Fire-and-forget background analysis
        analyzeDocumentWithAI(documentId, user.id, adminSupabase).catch(e => console.error("Background Intelligence Fail:", e));
     }
 
-    // 7. Final Completion State
+    // 6. Final Completion State
     await adminSupabase.from('documents').update({ 
       status: 'ready',
       rag_indexed: true,
-      document_summary: `Neural Sync Complete. Dialect: ${dialect}. Fully Reconstructed.`
+      document_summary: `Neural Sync Complete. Dialect: ${dialect}.`
     }).eq('id', documentId);
 
     return NextResponse.json({ 
       success: true, 
       dialect: dialect,
-      message: "Curriculum linearized, reconstructed and indexed."
+      message: "Curriculum linearized and indexed."
     });
 
   } catch (error: any) {

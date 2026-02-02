@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
@@ -8,9 +9,9 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v4.0)
+ * WORLD-CLASS UPLOAD HANDSHAKE (v4.1)
  * Optimized with Edge Runtime for minimal latency.
- * This route now handles the initial record creation and signed URL generation.
+ * FEATURE: Pre-extracted text support for timeout mitigation.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: 'Invalid Identity' }, { status: 401 });
 
     const body = await req.json();
-    const { name, contentType } = body;
+    const { name, contentType, extractedText } = body;
 
     if (!name || !contentType) {
       return NextResponse.json({ error: 'Metadata missing (name, contentType)' }, { status: 400 });
@@ -63,7 +64,8 @@ export async function POST(req: NextRequest) {
       grade_level: 'Auto',
       is_selected: true,
       document_summary: 'Waiting for binary handshake...',
-      rag_indexed: false
+      rag_indexed: false,
+      extracted_text: extractedText || ""
     }).select().single();
 
     if (dbError) throw new Error(dbError.message);
