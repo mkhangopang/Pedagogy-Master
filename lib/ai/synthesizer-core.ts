@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -90,51 +91,6 @@ export class SynthesizerCore {
       enabled: !!process.env.CEREBRAS_API_KEY
     });
 
-    // NODE 5: MASSIVE CONTEXT (SambaNova)
-    providers.set('sambanova', {
-      id: 'sambanova',
-      name: 'SambaNova 405B',
-      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
-      model: 'Meta-Llama-3.1-405B-Instruct',
-      apiKeyEnv: 'SAMBANOVA_API_KEY',
-      maxTokens: 4096,
-      rateLimit: 10,
-      rpm: 5,
-      rpd: 500,
-      tier: 1,
-      enabled: !!process.env.SAMBANOVA_API_KEY
-    });
-
-    // NODE 6: LOGICAL EXTRACTION (DeepSeek)
-    providers.set('deepseek', {
-      id: 'deepseek',
-      name: 'DeepSeek Logic',
-      endpoint: 'https://api.deepseek.com/v1/chat/completions',
-      model: 'deepseek-chat',
-      apiKeyEnv: 'DEEPSEEK_API_KEY',
-      maxTokens: 4096,
-      rateLimit: 20,
-      rpm: 10,
-      rpd: 1000,
-      tier: 2,
-      enabled: !!process.env.DEEPSEEK_API_KEY
-    });
-
-    // NODE 7: DISTRIBUTED RESILIENCE (Hyperbolic)
-    providers.set('hyperbolic', {
-      id: 'hyperbolic',
-      name: 'Hyperbolic Grid',
-      endpoint: 'https://api.hyperbolic.xyz/v1/chat/completions',
-      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct',
-      apiKeyEnv: 'HYPERBOLIC_API_KEY',
-      maxTokens: 4096,
-      rateLimit: 20,
-      rpm: 10,
-      rpd: 2000,
-      tier: 3,
-      enabled: !!process.env.HYPERBOLIC_API_KEY
-    });
-
     return providers;
   }
 
@@ -147,10 +103,9 @@ export class SynthesizerCore {
     const candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id))
       .sort((a, b) => {
-        // Prefer tiered relevance: If complex task, tier 1 first. If pulse, tier 2 first.
         const isPulse = prompt.includes('FAST_PULSE_EXTRACTOR');
-        if (isPulse) return b.tier - a.tier; // Try tier 2/3 first for pulses
-        return a.tier - b.tier; // Try tier 1 first for complex
+        if (isPulse) return b.tier - a.tier;
+        return a.tier - b.tier;
       });
 
     if (candidates.length === 0) {
@@ -162,6 +117,8 @@ export class SynthesizerCore {
         let content = "";
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey: process.env[provider.apiKeyEnv]! });
+          
+          // FIX: Deterministic temperature for pedagogical accuracy (Audit Requirement)
           const config: any = { 
             temperature: options.temperature ?? 0.0, 
             maxOutputTokens: provider.maxTokens 
@@ -175,6 +132,8 @@ export class SynthesizerCore {
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             config
           });
+          
+          // FIX: Correct property access (.text not .text())
           content = res.text || "";
         } else {
           const res = await fetch(provider.endpoint, {
@@ -198,7 +157,7 @@ export class SynthesizerCore {
         if (content) return { text: content, provider: provider.name };
       } catch (e: any) {
         console.warn(`[Synthesizer] Node ${provider.id} fault: ${e.message}. Switching segment...`);
-        this.failedProviders.set(provider.id, Date.now() + 30000); // 30s cooling
+        this.failedProviders.set(provider.id, Date.now() + 30000); 
       }
     }
 
@@ -215,7 +174,7 @@ export class SynthesizerCore {
       name: p.name,
       status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : 'active',
       tier: p.tier,
-      remaining: 'N/A' // Managed by internal rate limiter if implemented
+      remaining: 'N/A'
     }));
   }
 }

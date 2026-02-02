@@ -1,10 +1,12 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * NEURAL VECTOR INDEXER (v205.0 - Production Optimized)
+ * NEURAL VECTOR INDEXER (v206.0 - Production Optimized)
  * Feature: Semantic Chunk Scaling & Recursive Hierarchy Injection.
+ * FIX: Improved buffer accumulation to target ~1500 chars per chunk.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -16,20 +18,21 @@ export async function indexDocumentForRAG(
   try {
     const meta = preExtractedMeta || {};
     
-    // 1. Process Hierarchy with Grade & Domain Locking
     const lines = content.split('\n');
     let currentDomain = "General";
     let currentStandard = "Standard Curriculum";
     let currentGrade = meta.grade || "Auto";
     
-    const rawChunks: string[] = [];
     const processedChunks: any[] = [];
     
-    // TARGET: 1500 characters per chunk for pedagogical depth
+    // TARGET: 1500 characters per chunk for pedagogical depth (Pre-Launch Audit Fix)
     let currentBuffer = "";
     const TARGET_CHUNK_SIZE = 1500;
+    const MIN_CHUNK_SIZE = 800;
+    let accumulatedSLOs: string[] = [];
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const trimmed = line.trim();
       if (!trimmed) continue;
 
@@ -42,28 +45,36 @@ export async function indexDocumentForRAG(
          currentStandard = trimmed.replace('## ', '').trim();
       }
       
-      currentBuffer += line + "\n";
+      const lineCodes = extractSLOCodes(line);
+      lineCodes.forEach(code => {
+        if (!accumulatedSLOs.includes(code)) accumulatedSLOs.push(code);
+      });
 
-      // If buffer reaches target size or we hit a new SLO, create a chunk
-      if (currentBuffer.length >= TARGET_CHUNK_SIZE || trimmed.startsWith('- SLO:')) {
-        const codes = extractSLOCodes(currentBuffer);
+      currentBuffer += (currentBuffer ? '\n' : '') + line;
+
+      // Logic: Flush if we reach target size OR a major heading starts (if we have enough content)
+      const isMajorHeading = trimmed.startsWith('# ') || trimmed.startsWith('## ');
+      const isLastLine = i === lines.length - 1;
+
+      if (currentBuffer.length >= TARGET_CHUNK_SIZE || (isMajorHeading && currentBuffer.length >= MIN_CHUNK_SIZE) || isLastLine) {
+        if (currentBuffer.trim().length > 50) {
+          const enrichedText = `[GRADE: ${currentGrade}] [DOMAIN: ${currentDomain}] [STANDARD: ${currentStandard}]\n${currentBuffer.trim()}`;
+          
+          processedChunks.push({
+            text: enrichedText,
+            metadata: {
+              subject: meta.subject,
+              grade: currentGrade,
+              slo_codes: [...accumulatedSLOs],
+              source_path: filePath,
+              hierarchy: { domain: currentDomain, standard: currentStandard },
+              is_atomic_slo: accumulatedSLOs.length > 0
+            }
+          });
+        }
         
-        // CONTEXT INJECTION: We embed the hierarchy directly into the text for the vector engine
-        const enrichedText = `[GRADE: ${currentGrade}] [DOMAIN: ${currentDomain}] [STANDARD: ${currentStandard}]\n${currentBuffer.trim()}`;
-        
-        processedChunks.push({
-          text: enrichedText,
-          metadata: {
-            subject: meta.subject,
-            grade: currentGrade,
-            slo_codes: codes,
-            source_path: filePath,
-            hierarchy: { domain: currentDomain, standard: currentStandard },
-            is_atomic_slo: codes.length > 0
-          }
-        });
-        
-        currentBuffer = ""; // Reset buffer
+        currentBuffer = ""; 
+        accumulatedSLOs = [];
       }
     }
 
@@ -71,7 +82,7 @@ export async function indexDocumentForRAG(
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     // 3. High-Concurrency Batch Embedding (7-Node Safe)
-    const BATCH_SIZE = 12; 
+    const BATCH_SIZE = 15; 
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));

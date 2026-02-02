@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
@@ -14,8 +15,9 @@ export interface RetrievedChunk {
 }
 
 /**
- * TIERED NEURAL RETRIEVER (v35.0)
+ * TIERED NEURAL RETRIEVER (v36.0)
  * Logic: Literal Locked -> Hybrid Semantic -> Global Fallback.
+ * FIX: Aggressive OCR-resilient literal matching.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -34,44 +36,48 @@ export async function retrieveRelevantChunks({
     const parsed = parseUserQuery(query);
     const resultsMap = new Map<string, RetrievedChunk>();
     
-    // TIER 1: MULTI-VARIANT LITERAL LOCK
+    // TIER 1: MULTI-VARIANT LITERAL LOCK (Audit Fix)
     if (parsed.sloCodes.length > 0) {
-      const primaryCode = parsed.sloCodes[0];
-      const normalized = normalizeSLO(primaryCode);
-      
-      // Variants: B-11-B-06, B11B06, B 11 B 06, etc.
-      const variants = [
-        normalized,
-        normalized.replace(/-/g, ''),
-        normalized.replace(/-/g, ' '),
-        primaryCode
-      ];
+      for (const primaryCode of parsed.sloCodes) {
+        const normalized = normalizeSLO(primaryCode);
+        
+        // Variants for OCR resilience: B-11-B-06, B11B06, SL0-B-11-B-06
+        const variants = [
+          normalized,
+          normalized.replace(/-/g, ''),
+          normalized.replace(/O/g, '0'),
+          normalized.replace(/0/g, 'O'),
+          primaryCode.toUpperCase()
+        ];
 
-      // Scan for any literal occurrences in chunks
-      const { data: literalMatches } = await supabase
-        .from('document_chunks')
-        .select('*')
-        .in('document_id', documentIds)
-        .or(`chunk_text.ilike.%${variants[0]}%,chunk_text.ilike.%${variants[1]}%,slo_codes.cs.{"${normalized}"}`)
-        .limit(15);
+        // Construct ILIKE filter for variants
+        const filterOr = variants.map(v => `chunk_text.ilike.%${v}%`).join(',');
+        
+        const { data: literalMatches } = await supabase
+          .from('document_chunks')
+          .select('*')
+          .in('document_id', documentIds)
+          .or(`${filterOr},slo_codes.cs.{"${normalized}"}`)
+          .limit(20);
 
-      if (literalMatches) {
-        literalMatches.forEach(m => {
-          resultsMap.set(m.id, {
-            chunk_id: m.id,
-            document_id: m.document_id,
-            chunk_text: m.chunk_text,
-            slo_codes: m.slo_codes || [],
-            metadata: m.metadata || {},
-            combined_score: 1.0, // Hard-Lock priority
-            is_verbatim_definition: true
+        if (literalMatches) {
+          literalMatches.forEach(m => {
+            resultsMap.set(m.id, {
+              chunk_id: m.id,
+              document_id: m.document_id,
+              chunk_text: m.chunk_text,
+              slo_codes: m.slo_codes || [],
+              metadata: m.metadata || {},
+              combined_score: 1.0, // Hard-Lock priority
+              is_verbatim_definition: true
+            });
           });
-        });
+        }
       }
     }
 
-    // TIER 2: NEURAL SEMANTIC SEARCH
-    if (resultsMap.size < 5) {
+    // TIER 2: NEURAL SEMANTIC SEARCH (Hybrid Scaling)
+    if (resultsMap.size < matchCount) {
       const queryEmbedding = await generateEmbedding(query);
       const { data: hybridChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v4', {
         query_text: query,
@@ -100,8 +106,13 @@ export async function retrieveRelevantChunks({
     }
 
     return Array.from(resultsMap.values())
-      .sort((a, b) => (b.is_verbatim_definition ? 1 : 0) - (a.is_verbatim_definition ? 1 : 0) || b.combined_score - a.combined_score)
-      .slice(0, 35);
+      .sort((a, b) => {
+        // Verbatim definitions always float to the top
+        if (a.is_verbatim_definition && !b.is_verbatim_definition) return -1;
+        if (!a.is_verbatim_definition && b.is_verbatim_definition) return 1;
+        return b.combined_score - a.combined_score;
+      })
+      .slice(0, matchCount);
 
   } catch (err) {
     console.error('❌ [Retriever] Critical Fault:', err);
