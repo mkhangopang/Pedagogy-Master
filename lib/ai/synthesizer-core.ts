@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -35,7 +36,7 @@ export class SynthesizerCore {
       model: 'gemini-3-pro-preview',
       apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
-      thinkingBudget: 2048, // Balanced for institutional quality
+      thinkingBudget: 2048, 
       rpm: 10,
       rpd: 2000,
       tier: 1,
@@ -49,7 +50,7 @@ export class SynthesizerCore {
       model: 'gemini-3-flash-preview',
       apiKeyEnv: 'API_KEY',
       maxTokens: 4096,
-      thinkingBudget: 512, // Minimal thinking for speed
+      thinkingBudget: 512, 
       rpm: 15,
       rpd: 5000,
       tier: 1,
@@ -113,7 +114,8 @@ export class SynthesizerCore {
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
     
     // Determine if task needs heavy thinking
-    const needsDeepReasoning = prompt.includes('SURGICAL_PRECISION_VAULT_EXTRACT') ? false : true;
+    const isSurgicalExtract = prompt.includes('SURGICAL_PRECISION_VAULT_EXTRACT');
+    const isConversion = prompt.includes('Linearize Curriculum Grids');
 
     let candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id));
@@ -138,13 +140,17 @@ export class SynthesizerCore {
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
           const config: any = { 
-            temperature: 0.1, 
+            temperature: (isSurgicalExtract || isConversion) ? 0.0 : 0.7, 
             maxOutputTokens: provider.maxTokens 
           };
           
-          // Only use thinking budget if necessary
-          if (provider.thinkingBudget !== undefined && needsDeepReasoning) {
-            config.thinkingConfig = { thinkingBudget: provider.thinkingBudget };
+          // Scaled thinking for different tasks
+          if (provider.thinkingBudget !== undefined) {
+            let budget = provider.thinkingBudget;
+            if (isConversion) budget = Math.min(budget * 2, 8192);
+            if (isSurgicalExtract) budget = 0; // Skip thinking for literal lookups
+            
+            config.thinkingConfig = { thinkingBudget: budget };
           }
 
           const contents = [
@@ -176,7 +182,7 @@ export class SynthesizerCore {
                 ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
                 { role: 'user', content: prompt }
               ],
-              temperature: 0.1,
+              temperature: (isSurgicalExtract || isConversion) ? 0.0 : 0.7,
               max_tokens: provider.maxTokens
             })
           });
@@ -190,7 +196,8 @@ export class SynthesizerCore {
           return { text: content, provider: provider.name };
         }
       } catch (e: any) {
-        this.failedProviders.set(provider.id, Date.now() + 3000); 
+        this.failedProviders.set(provider.id, Date.now() + 5000); 
+        console.warn(`[Synthesizer] Failover from ${provider.name}:`, e.message);
       }
     }
 

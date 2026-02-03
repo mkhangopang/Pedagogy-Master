@@ -1,3 +1,4 @@
+
 import { NeuralBrain, UserProfile } from "../types";
 import { adaptiveService } from "./adaptiveService";
 import { supabase } from "../lib/supabase";
@@ -8,7 +9,6 @@ let globalCooldownUntil = 0;
 function parseAIError(errorData: any): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
   
-  // If the error is already formatted as an institutional alert, pass it through
   if (msg.startsWith('AI Alert:')) return msg;
 
   const lowerMsg = msg.toLowerCase();
@@ -35,7 +35,7 @@ function parseAIError(errorData: any): string {
 function isRepeating(text: string, limit: number = 30): boolean {
   if (text.length < limit) return false;
   const lastN = text.slice(-limit);
-  return new Set(lastN.split('')).size <= 2; // Very low variance = loop detected
+  return new Set(lastN.split('')).size <= 2; 
 }
 
 export const geminiService = {
@@ -92,6 +92,8 @@ export const geminiService = {
       if (!reader) return;
 
       let fullContent = "";
+      let lastChunkTime = Date.now();
+      
       try {
         while (true) {
           const { done, value } = await reader.read();
@@ -99,6 +101,7 @@ export const geminiService = {
           const chunk = decoder.decode(value, { stream: true });
           
           fullContent += chunk;
+          lastChunkTime = Date.now();
           
           if (isRepeating(fullContent)) {
             reader.cancel();

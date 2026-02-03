@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -42,7 +43,7 @@ export default function App() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  // Persistence: Initial Theme Sync (FIX: No reset on refresh)
+  // Persistence: Initial Theme Sync
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
     if (savedTheme) {
@@ -65,6 +66,13 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   };
+
+  const incrementUsage = useCallback(() => {
+    setUserProfile(prev => {
+      if (!prev) return null;
+      return { ...prev, queriesUsed: prev.queriesUsed + 1 };
+    });
+  }, []);
 
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
     getSupabaseHealth().then(setHealthStatus);
@@ -125,7 +133,7 @@ export default function App() {
       } else {
         setTimeout(() => {
           setIsAuthResolving(false);
-        }, 500); // Allow slight buffer for PKCE recovery
+        }, 500);
       }
     };
 
@@ -191,20 +199,33 @@ export default function App() {
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600 hover:bg-slate-50 rounded-xl"><Menu size={24} /></button>
             <span className="font-black text-indigo-950 dark:text-white tracking-tight text-sm uppercase">{currentView.replace('-', ' ')}</span>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
-            <div className={`w-2 h-2 rounded-full ${healthStatus.status === 'checking' ? 'bg-amber-400 animate-pulse' : isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-rose-500'}`} />
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{healthStatus.status === 'checking' ? 'Syncing...' : isActuallyConnected ? 'Linked' : 'Offline'}</span>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex flex-col items-end">
+              <span className="text-[8px] font-black uppercase text-slate-400">Node Quota</span>
+              <span className="text-[10px] font-bold text-indigo-600">{safeProfile.queriesUsed} / {safeProfile.queriesLimit}</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
+              <div className={`w-2 h-2 rounded-full ${healthStatus.status === 'checking' ? 'bg-amber-400 animate-pulse' : isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-rose-500'}`} />
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{healthStatus.status === 'checking' ? 'Syncing...' : isActuallyConnected ? 'Linked' : 'Offline'}</span>
+            </div>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           <div className="max-w-6xl mx-auto w-full">
             <Suspense fallback={<div className="flex justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
               {(() => {
-                const props = { user: safeProfile, documents, onProfileUpdate: setUserProfile, health: healthStatus as any, onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true), onViewChange: setCurrentView };
+                const props = { 
+                  user: safeProfile, 
+                  documents, 
+                  onProfileUpdate: setUserProfile, 
+                  health: healthStatus as any, 
+                  onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true), 
+                  onViewChange: setCurrentView 
+                };
                 switch (currentView) {
                   case 'dashboard': return <Dashboard {...props} />;
                   case 'documents': return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => { fetchAppData(safeProfile.id, safeProfile.email); }} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={isActuallyConnected} />;
-                  case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={() => {}} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} />;
+                  case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={incrementUsage} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} />;
                   case 'tracker': return <TrackerView user={safeProfile} documents={documents} />;
                   case 'brain': return safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
                   case 'audit': return safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} />;
