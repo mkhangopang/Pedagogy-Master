@@ -36,7 +36,7 @@ const Documents: React.FC<DocumentsProps> = ({
   
   // FOUNDER/ADMIN CHECK (Direct link to Vercel Env)
   const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
+  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
   const isAdmin = userProfile.role === UserRole.APP_ADMIN || (userProfile.email && adminEmails.includes(userProfile.email.toLowerCase()));
   
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
@@ -112,22 +112,25 @@ const Documents: React.FC<DocumentsProps> = ({
       setDeletingId(id);
       try { 
         const { data: { session } } = await supabase.auth.getSession();
+        
+        // Optimistic UI update: remove from local list immediately
+        const previousDocs = [...documents];
+        await onDeleteDocument(id);
+
         const response = await fetch('/api/docs/delete', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ id })
         });
         
-        // FIX: If response is 200 (Success) OR 404 (Already purged/Ghost node), remove it from the UI.
-        if (response.ok || response.status === 404) {
-          await onDeleteDocument(id);
-        } else {
+        if (!response.ok && response.status !== 404) {
           const err = await response.json();
           alert(`Policy Restriction: ${err.error}`);
+          // Rollback if needed, though usually admin deletions should not be rolled back once confirmed
+          window.location.reload(); 
         }
       } catch (err) {
         console.error(err);
-        // Fallback: Just remove from UI if network fails during delete to clean up view
         await onDeleteDocument(id);
       } finally { 
         setDeletingId(null); 
