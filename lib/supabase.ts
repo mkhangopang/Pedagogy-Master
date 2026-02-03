@@ -1,3 +1,4 @@
+
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan } from '../types';
 import { DEFAULT_MASTER_PROMPT } from '../constants';
@@ -97,10 +98,22 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   
   const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
   const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  const isAdminUser = email && adminEmails.includes(email.toLowerCase());
+  const isAdminUser = email && adminEmails.includes(email.toLowerCase().trim());
 
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
+    
+    // Even if profile exists, re-verify Admin role in case environment variables changed
+    if (profile && isAdminUser && profile.role !== 'app_admin') {
+      const { data: updated } = await supabase
+        .from('profiles')
+        .update({ role: 'app_admin', plan: 'enterprise', queries_limit: 999999 })
+        .eq('id', userId)
+        .select()
+        .single();
+      return updated;
+    }
+    
     if (profile) return profile;
 
     const { data: { user } } = await supabase.auth.getUser();

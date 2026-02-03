@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Upload, FileText, Plus, 
@@ -33,19 +34,21 @@ const Documents: React.FC<DocumentsProps> = ({
   const [readingDoc, setReadingDoc] = useState<Document | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
-  // FOUNDER/ADMIN CHECK (Linked to Vercel Environment Variables)
+  // FOUNDER/ADMIN CHECK (Direct link to Vercel Env)
   const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
   const adminEmails = adminString.split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
   const isAdmin = userProfile.role === UserRole.APP_ADMIN || (userProfile.email && adminEmails.includes(userProfile.email.toLowerCase()));
   
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
-  const limitReached = documents.length >= limits.docs;
   
-  // Admins can delete ANYTHING. Standard users can't delete successful ones (Permanent Vault Policy).
+  // FOUNDER EXCEPTION: Admins have effectively infinite slots (999,999)
+  const limitReached = isAdmin ? false : documents.length >= limits.docs;
+  
+  // FOUNDER PRIVILEGE: Admins can delete ANY node. Users can only delete failed ones.
   const canDeleteNode = (doc: Document) => {
-    if (isAdmin) return true; // Founder always has full control
-    if (doc.status === 'failed') return true; // Let anyone purge their own errors
-    return false; // Users cannot delete successful nodes to maintain curriculum integrity
+    if (isAdmin) return true; 
+    if (doc.status === 'failed') return true; 
+    return false; 
   };
 
   const processingIds = documents
@@ -115,7 +118,8 @@ const Documents: React.FC<DocumentsProps> = ({
           body: JSON.stringify({ id })
         });
         
-        if (response.ok) {
+        // FIX: If response is 200 (Success) OR 404 (Already purged/Ghost node), remove it from the UI.
+        if (response.ok || response.status === 404) {
           await onDeleteDocument(id);
         } else {
           const err = await response.json();
@@ -123,6 +127,8 @@ const Documents: React.FC<DocumentsProps> = ({
         }
       } catch (err) {
         console.error(err);
+        // Fallback: Just remove from UI if network fails during delete to clean up view
+        await onDeleteDocument(id);
       } finally { 
         setDeletingId(null); 
       }
@@ -156,18 +162,18 @@ const Documents: React.FC<DocumentsProps> = ({
           </h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium italic text-sm">
             <Database size={18} className="text-indigo-500" />
-            Neural Quota: {documents.length} / {limits.docs} Active Segments
+            Neural Quota: {documents.length} / {isAdmin ? '∞' : limits.docs} Active Segments
           </p>
         </div>
         <button 
           onClick={() => setShowUploader(true)}
-          disabled={limitReached || !isConnected}
+          disabled={!isAdmin && (limitReached || !isConnected)}
           className={`flex items-center gap-4 px-12 py-5 rounded-[2.5rem] font-black shadow-2xl transition-all active:scale-95 ${
-            limitReached ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            (!isAdmin && limitReached) ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
           }`}
         >
           <Plus size={20} />
-          {limitReached ? 'Vault Saturated' : 'Ingest Document'}
+          {(!isAdmin && limitReached) ? 'Vault Saturated' : 'Ingest Document'}
         </button>
       </header>
 
