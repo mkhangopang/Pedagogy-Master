@@ -35,7 +35,7 @@ export class SynthesizerCore {
       model: 'gemini-3-pro-preview',
       apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
-      thinkingBudget: 4096,
+      thinkingBudget: 2048, // Balanced for institutional quality
       rpm: 10,
       rpd: 2000,
       tier: 1,
@@ -49,7 +49,7 @@ export class SynthesizerCore {
       model: 'gemini-3-flash-preview',
       apiKeyEnv: 'API_KEY',
       maxTokens: 4096,
-      thinkingBudget: 1024,
+      thinkingBudget: 512, // Minimal thinking for speed
       rpm: 15,
       rpd: 5000,
       tier: 1,
@@ -95,39 +95,9 @@ export class SynthesizerCore {
       enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
-    providers.set('sambanova', {
-      id: 'sambanova',
-      name: 'SambaNova Hub',
-      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
-      model: 'Meta-Llama-3.1-70B-Instruct',
-      apiKeyEnv: 'SAMBANOVA_API_KEY',
-      maxTokens: 8192,
-      rpm: 20,
-      rpd: 5000,
-      tier: 3,
-      enabled: !!process.env.SAMBANOVA_API_KEY
-    });
-
-    providers.set('hyperbolic', {
-      id: 'hyperbolic',
-      name: 'Hyperbolic Node',
-      endpoint: 'https://api.hyperbolic.xyz/v1/chat/completions',
-      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct',
-      apiKeyEnv: 'HYPERBOLIC_API_KEY',
-      maxTokens: 4096,
-      rpm: 10,
-      rpd: 2000,
-      tier: 3,
-      enabled: !!process.env.HYPERBOLIC_API_KEY
-    });
-
     return providers;
   }
 
-  /**
-   * Emergency Grid Realignment
-   * Clears all temporary cooldowns.
-   */
   public realignGrid() {
     this.failedProviders.clear();
     return true;
@@ -135,50 +105,29 @@ export class SynthesizerCore {
 
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
     const now = Date.now();
-    
-    // 1. Housekeeping: Remove expired failures
     for (const [id, expiry] of this.failedProviders.entries()) {
       if (now > expiry) this.failedProviders.delete(id);
     }
 
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
-    const isMassiveTask = prompt.length > 8000 || prompt.includes('MASTER MD') || prompt.includes('LINEARIZATION');
-    const preferredProviderId = options.preferred;
+    
+    // Determine if task needs heavy thinking
+    const needsDeepReasoning = prompt.includes('SURGICAL_PRECISION_VAULT_EXTRACT') ? false : true;
 
-    // 2. Identify Candidates
     let candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id));
 
-    // 3. Grid Exhaustion Logic: Auto-Realignment
-    // If we have enabled providers but they are ALL cooling down, clear the grid.
     if (candidates.length === 0) {
-      const anyEnabled = Array.from(this.providers.values()).some(p => p.enabled);
-      if (anyEnabled) {
-        console.log("🔄 [Grid] All nodes cooling. Auto-realigning grid for immediate retry...");
-        this.failedProviders.clear();
-        candidates = Array.from(this.providers.values()).filter(p => p.enabled);
-      }
+      this.failedProviders.clear();
+      candidates = Array.from(this.providers.values()).filter(p => p.enabled);
     }
 
     if (candidates.length === 0) {
-      throw new Error("GRID_FAULT: All neural segments are offline. Verify environment keys.");
+      throw new Error("AI Alert: Synthesis grid exception.");
     }
 
-    // 4. Prioritization
-    candidates.sort((a, b) => {
-      // Priority 1: User Preference
-      if (preferredProviderId) {
-        if (a.id.includes(preferredProviderId)) return -1;
-        if (b.id.includes(preferredProviderId)) return 1;
-      }
-      
-      // Priority 2: Task Scaling
-      if (isMassiveTask) return a.tier - b.tier; // Tier 1 first for massive tasks
-      return b.tier - a.tier; // Tier 3 (cheaper/faster) first for small tasks
-    });
-
-    const errors: string[] = [];
+    candidates.sort((a, b) => a.tier - b.tier);
 
     for (const provider of candidates) {
       try {
@@ -189,10 +138,12 @@ export class SynthesizerCore {
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
           const config: any = { 
-            temperature: options.temperature ?? 0.1, 
+            temperature: 0.1, 
             maxOutputTokens: provider.maxTokens 
           };
-          if (provider.thinkingBudget !== undefined) {
+          
+          // Only use thinking budget if necessary
+          if (provider.thinkingBudget !== undefined && needsDeepReasoning) {
             config.thinkingConfig = { thinkingBudget: provider.thinkingBudget };
           }
 
@@ -207,10 +158,7 @@ export class SynthesizerCore {
           const res = await ai.models.generateContent({
             model: provider.model,
             contents,
-            config: {
-              ...config,
-              systemInstruction: systemPrompt
-            }
+            config: { ...config, systemInstruction: systemPrompt }
           });
           
           content = res.text || "";
@@ -225,39 +173,28 @@ export class SynthesizerCore {
               model: provider.model,
               messages: [
                 { role: 'system', content: systemPrompt },
-                ...history.map((h: any) => ({ 
-                  role: h.role === 'user' ? 'user' : 'assistant', 
-                  content: h.content 
-                })),
+                ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
                 { role: 'user', content: prompt }
               ],
-              temperature: options.temperature ?? 0.1,
+              temperature: 0.1,
               max_tokens: provider.maxTokens
             })
           });
 
-          if (!res.ok) {
-            const errorText = await res.text();
-            throw new Error(`Node ${provider.id} Refusal: ${res.status} - ${errorText.substring(0, 100)}`);
-          }
+          if (!res.ok) throw new Error(`Node Refusal: ${res.status}`);
           const data = await res.json();
           content = data.choices[0].message.content;
         }
 
         if (content && content.trim().length > 0) {
-          provider.lastError = undefined;
           return { text: content, provider: provider.name };
         }
       } catch (e: any) {
-        console.warn(`⚠️ [Synthesizer] Failover from ${provider.name}: ${e.message}`);
-        errors.push(`${provider.name}: ${e.message}`);
-        provider.lastError = e.message;
-        // 5s Cooldown
-        this.failedProviders.set(provider.id, Date.now() + 5000); 
+        this.failedProviders.set(provider.id, Date.now() + 3000); 
       }
     }
 
-    throw new Error(`GRID_FAULT: All providers failed. Logs: ${errors.join(' | ')}`);
+    throw new Error(`AI Alert: Synthesis grid exception.`);
   }
 
   public getProviderStatus() {
@@ -277,18 +214,6 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-export const synthesize = (
-  prompt: string, 
-  history: any[], 
-  hasDocs: boolean, 
-  docParts?: any[], 
-  preferred?: string, 
-  system?: string
-) => {
-  return getSynthesizer().synthesize(prompt, { 
-    history, 
-    systemPrompt: system,
-    hasDocs,
-    preferred
-  });
+export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string) => {
+  return getSynthesizer().synthesize(prompt, { history, systemPrompt: system, hasDocs });
 };

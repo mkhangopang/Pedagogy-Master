@@ -1,14 +1,15 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
-import { extractSLOCodes } from '../rag/slo-extractor';
+import { extractSLOCodes, normalizeSLO } from '../rag/slo-extractor';
 import { analyzeUserQuery } from './query-analyzer';
 import { formatResponseInstructions } from './response-formatter';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v120.0)
- * FEATURE: Aggressive Direct Master MD Query Reading & Literal Snippet Selection.
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v122.0)
+ * FEATURE: Surgical Precision Extraction & Vector Bypass.
+ * STRATEGY: Find the exact SLO line -> Stop -> Synthesize.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -22,10 +23,10 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Core Analysis
+  // 1. Precise Code Analysis
   const queryAnalysis = analyzeUserQuery(userPrompt);
-  const extractedSLOs = extractSLOCodes(userPrompt);
-  const primarySLO = extractedSLOs.length > 0 ? extractedSLOs[0] : null;
+  const rawCodes = extractSLOCodes(userPrompt);
+  const primaryCode = rawCodes.length > 0 ? normalizeSLO(rawCodes[0]) : null;
 
   // 2. Resource Resolution
   let docQuery = supabase
@@ -41,104 +42,112 @@ export async function generateAIResponse(
 
   const { data: activeDocs } = await docQuery;
   const activeDoc = activeDocs?.[0];
-  const documentIds = activeDocs?.map(d => d.id) || [];
   
   const dialectTag = activeDoc?.extracted_text?.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
-  const pedagogyDNA = `
-### PEDAGOGICAL_IDENTITY: ${dialectTag}
-- AUTHORITY: ${activeDoc?.authority || 'Independent'}
-- DIALECT: ${dialectTag.includes('Pakistani') ? 'Sindh/Federal (SLO-Based)' : 'International (Criteria-Based)'}
-`;
-
   let vaultContent = "";
-  let hardLockFound = false;
+  let groundingMethod = 'None';
+  let isGrounded = false;
 
-  // 3. MASTER MD DIRECT FETCH (LITERAL GRID SCAN)
-  if (activeDoc?.extracted_text) {
-    const md = activeDoc.extracted_text;
-    const targets: string[] = [];
+  // 3. SURGICAL EXTRACTION (DMMR v3.0) - Exact Line Match
+  if (activeDoc?.extracted_text && primaryCode) {
+    const lines = activeDoc.extracted_text.split('\n');
+    let targetIndex = -1;
     
-    if (primarySLO) targets.push(primarySLO);
-    
-    // Add significant keywords from analysis for literal matching
-    const keywords = queryAnalysis.keywords || [];
-    keywords.forEach(k => { if (k.length > 4) targets.push(k); });
-
-    const snippets: string[] = [];
-    targets.forEach(target => {
-      let pos = md.indexOf(target);
-      let count = 0;
-      while (pos !== -1 && count < 3) {
-        const start = Math.max(0, pos - 1500);
-        const end = Math.min(md.length, pos + 4000);
-        snippets.push(`[DIRECT_MASTER_MD_FETCH: "${target}"]\n${md.substring(start, end)}`);
-        pos = md.indexOf(target, pos + target.length + 100);
-        count++;
-        hardLockFound = true;
+    // Find the exact line containing the SLO code
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].toUpperCase().includes(primaryCode)) {
+        targetIndex = i;
+        break;
       }
-    });
+    }
 
-    if (snippets.length > 0) {
-      vaultContent += `\n### MASTER_MD_LITERAL_EXTRACTION [!!! HIGH_FIDELITY_SOURCE !!!]\n${snippets.join('\n---\n')}\n`;
+    if (targetIndex !== -1) {
+      // Trace hierarchy backwards to get context headers without the bulk
+      let domain = "General";
+      let standard = "Standard";
+      let benchmark = "Benchmark";
+      
+      for (let j = targetIndex; j >= 0; j--) {
+        const line = lines[j].trim();
+        if (line.startsWith('# GRADE')) continue;
+        if (line.startsWith('# DOMAIN')) domain = line;
+        else if (line.startsWith('## DOMAIN')) domain = line;
+        else if (line.startsWith('**Standard:**')) standard = line;
+        else if (line.startsWith('### BENCHMARK')) benchmark = line;
+        
+        // Stop tracing once we have the immediate structure
+        if (domain !== "General" && standard !== "Standard") break;
+      }
+
+      vaultContent = `
+### SURGICAL_PRECISION_VAULT_EXTRACT [HIGH FIDELITY]
+${domain}
+${standard}
+${benchmark}
+- ${lines[targetIndex]}
+`;
+      isGrounded = true;
+      groundingMethod = 'Master MD Surgical Line-Match';
     }
   }
 
-  // 4. Vector Augmentation
-  let retrievedChunks: RetrievedChunk[] = [];
-  if (documentIds.length > 0) {
-    retrievedChunks = await retrieveRelevantChunks({
+  // 4. VECTOR AUGMENTATION (Conditional Bypass)
+  // If we found the exact SLO line, we skip the heavy vector search to save tokens.
+  if (!isGrounded && activeDoc) {
+    const retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
-      documentIds,
+      documentIds: [activeDoc.id],
       supabase,
-      matchCount: 15
+      matchCount: 6 // Small count for concept-only queries
     });
+
+    if (retrievedChunks.length > 0) {
+      vaultContent = retrievedChunks
+        .map((chunk, i) => `### CONCEPTUAL_NODE_${i+1}\n${chunk.chunk_text}\n---`)
+        .join('\n');
+      isGrounded = true;
+      groundingMethod = 'Semantic Vector Fallback';
+    }
   }
 
-  if (retrievedChunks.length > 0) {
-    vaultContent += retrievedChunks
-      .map((chunk, i) => {
-        const isVerbatim = primarySLO && chunk.chunk_text.includes(primarySLO);
-        if (isVerbatim) hardLockFound = true;
-        return `### VECTOR_NODE_${i + 1}${isVerbatim ? " [!!! VERBATIM_CURRICULUM_STANDARD !!!]" : ""}\n${chunk.chunk_text}\n---`;
-      })
-      .join('\n');
-  }
-
-  // 5. Synthesis Architecture
+  // 5. Synthesis Execution
   const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDoc);
   const systemInstruction = customSystem || DEFAULT_MASTER_PROMPT;
 
+  // We set thinkingBudget based on task complexity to avoid model timeout
+  const complexityLevel = isGrounded && primaryCode ? 'low' : 'medium';
+
   const finalPrompt = `
-<PEDAGOGICAL_DNA>
-${pedagogyDNA}
+<PEDAGOGICAL_CONTEXT>
+DIALECT: ${dialectTag}
+AUTHORITY: ${activeDoc?.authority || 'Independent'}
 ${adaptiveContext || ''}
-</PEDAGOGICAL_DNA>
+</PEDAGOGICAL_CONTEXT>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: No direct matches found in Master MD or Vector Nodes]'}
+${vaultContent || '[VAULT_EMPTY: Use standard pedagogical knowledge]'}
 </AUTHORITATIVE_VAULT>
 
 ## MISSION:
-Synthesize content based ONLY on the provided AUTHORITATIVE_VAULT snippets.
+Produce pedagogical artifacts strictly following the AUTHORITATIVE_VAULT.
 
-## GROUNDING_PROTOCOL:
-1. MASTER_MD_READ: You have been given literal blocks extracted from the Master MD file for the query: "${userPrompt}".
-2. FIDELITY: Maintain 100% adherence to codes and definitions found in the vault.
+## COMMAND:
+"${userPrompt}"
 
 ## EXECUTION_SPEC:
 ${responseInstructions}`;
 
-  const result = await synthesize(finalPrompt, history.slice(-6), hardLockFound, [], 'gemini', systemInstruction);
+  const result = await synthesize(finalPrompt, history.slice(-4), isGrounded, [], 'gemini', systemInstruction);
   
   return {
     text: result.text,
     provider: result.provider,
     metadata: {
-      isGrounded: hardLockFound,
+      isGrounded,
       dialect: dialectTag,
       sourceDocument: activeDoc?.name || 'Global Node',
-      groundingMethod: hardLockFound ? 'Master MD Direct Read' : 'Semantic Vector'
+      groundingMethod
     }
   };
 }
