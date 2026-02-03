@@ -33,16 +33,20 @@ const Documents: React.FC<DocumentsProps> = ({
   const [readingDoc, setReadingDoc] = useState<Document | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
-  // ADMIN CHECK LOGIC
-  const adminString = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || (window as any).process?.env?.NEXT_PUBLIC_ADMIN_EMAILS || '');
+  // FOUNDER/ADMIN CHECK (Linked to Vercel Environment Variables)
+  const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
   const adminEmails = adminString.split(',').map((e: string) => e.trim().toLowerCase()).filter(Boolean);
-  const isOwnerByEmail = userProfile.email && adminEmails.includes(userProfile.email.toLowerCase());
+  const isAdmin = userProfile.role === UserRole.APP_ADMIN || (userProfile.email && adminEmails.includes(userProfile.email.toLowerCase()));
   
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
   const limitReached = documents.length >= limits.docs;
-  const isAdmin = userProfile.role === UserRole.APP_ADMIN || isOwnerByEmail;
-  const isEnterprise = userProfile.plan === SubscriptionPlan.ENTERPRISE;
-  const canPurgeNodes = isAdmin || isEnterprise;
+  
+  // Admins can delete ANYTHING. Standard users can't delete successful ones (Permanent Vault Policy).
+  const canDeleteNode = (doc: Document) => {
+    if (isAdmin) return true; // Founder always has full control
+    if (doc.status === 'failed') return true; // Let anyone purge their own errors
+    return false; // Users cannot delete successful nodes to maintain curriculum integrity
+  };
 
   const processingIds = documents
     .filter(d => d.status === 'processing' || d.status === 'indexing' || d.status === 'draft')
@@ -101,12 +105,7 @@ const Documents: React.FC<DocumentsProps> = ({
   }, [processingIds, documents, onUpdateDocument]);
 
   const handleDelete = async (id: string) => {
-    if (!canPurgeNodes) {
-      alert("Institutional permission required for grid purges.");
-      return;
-    }
-    
-    if (window.confirm('Purge this asset from the neural grid? This action is irreversible.')) {
+    if (window.confirm('PURGE NODE: Are you sure you want to permanently remove this asset from the grid?')) {
       setDeletingId(id);
       try { 
         const { data: { session } } = await supabase.auth.getSession();
@@ -153,11 +152,11 @@ const Documents: React.FC<DocumentsProps> = ({
         <div>
           <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight uppercase flex items-center gap-4">
             Library
-            {isAdmin && <span className="px-3 py-1 bg-amber-500 text-white rounded-full text-[10px] uppercase font-black tracking-widest shadow-lg">Admin Access</span>}
+            {isAdmin && <span className="px-3 py-1 bg-rose-600 text-white rounded-full text-[10px] uppercase font-black tracking-widest shadow-lg">Founder Node</span>}
           </h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium italic text-sm">
             <Database size={18} className="text-indigo-500" />
-            Neural Quota: {documents.length} / {limits.docs} Institutional Nodes
+            Neural Quota: {documents.length} / {limits.docs} Active Segments
           </p>
         </div>
         <button 
@@ -168,7 +167,7 @@ const Documents: React.FC<DocumentsProps> = ({
           }`}
         >
           <Plus size={20} />
-          {limitReached ? 'Vault Full' : 'Ingest Asset'}
+          {limitReached ? 'Vault Saturated' : 'Ingest Document'}
         </button>
       </header>
 
@@ -178,6 +177,7 @@ const Documents: React.FC<DocumentsProps> = ({
           const isIndexing = doc.status === 'indexing';
           const isReady = doc.status === 'ready' || doc.status === 'completed';
           const isFailed = doc.status === 'failed';
+          const showDelete = canDeleteNode(doc);
 
           return (
             <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group">
@@ -192,18 +192,19 @@ const Documents: React.FC<DocumentsProps> = ({
                   <div className="flex flex-col gap-3">
                     {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform shadow-lg"><BookOpen size={16} /></button>}
                     
-                    {canPurgeNodes && (
+                    {showDelete && (
                       <button 
                         onClick={() => handleDelete(doc.id)} 
                         disabled={deletingId === doc.id}
                         className="p-2.5 bg-rose-50 text-rose-500 rounded-full opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50 shadow-sm"
+                        title={isAdmin ? "FOUNDER OVERRIDE: Purge Node" : "Clear failed node"}
                       >
                         {deletingId === doc.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                       </button>
                     )}
 
-                    {!canPurgeNodes && isReady && (
-                      <div className="p-2.5 bg-slate-50 text-slate-300 rounded-full cursor-not-allowed opacity-0 group-hover:opacity-100 transition-all" title="Successful nodes are permanent.">
+                    {!showDelete && isReady && (
+                      <div className="p-2.5 bg-slate-50 text-slate-300 rounded-full cursor-not-allowed opacity-0 group-hover:opacity-100 transition-all" title="Verified nodes are permanent to protect curriculum integrity.">
                         <Lock size={16} />
                       </div>
                     )}
@@ -219,8 +220,13 @@ const Documents: React.FC<DocumentsProps> = ({
                     {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
                  </div>
                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed italic">
-                   {isFailed ? (doc.documentSummary || "A neural bottleneck prevented extraction. Contact Admin to purge this node.") : (doc.documentSummary || "Intelligence extraction in progress...")}
+                   {isFailed ? (doc.documentSummary || "Critical fault during extraction. Purge this node and try again.") : (doc.documentSummary || "Master MD extraction in progress...")}
                  </p>
+                 {isFailed && isAdmin && (
+                   <p className="text-[9px] font-bold text-rose-500 bg-rose-50 p-2 rounded-xl border border-rose-100 mt-2">
+                     <b>DIAGNOSTIC:</b> {doc.errorMessage || "Unknown Neural Bottleneck"}
+                   </p>
+                 )}
                </div>
             </div>
           );
@@ -229,7 +235,7 @@ const Documents: React.FC<DocumentsProps> = ({
         {documents.length === 0 && (
           <div className="col-span-full py-40 text-center border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[4rem] opacity-30">
             <FileText size={64} className="mx-auto mb-6 text-slate-300" />
-            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Vault Empty</p>
+            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Grid Empty</p>
           </div>
         )}
       </div>
