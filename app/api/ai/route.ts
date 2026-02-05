@@ -1,16 +1,16 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
+import { detectToolIntent, ToolType } from '../../../lib/ai/tool-router';
+import { getFullPrompt } from '../../../lib/ai/prompt-manager';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v51.0)
- * Signature: Founder-Secured Neural Routing.
- * FEATURE: Server-side Brain Logic Lookup (Zero-Leak Prompting).
- * PRIVACY: Explicitly instruct models not to train on this input.
+ * UNIFIED SYNTHESIS GATEWAY (v52.0 - TOOL SPECIALIZED)
  */
 export async function POST(req: NextRequest) {
   try {
@@ -24,20 +24,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { toolType, userInput, priorityDocumentId, message, adaptiveContext, history } = body;
     
-    const supabase = getSupabaseServerClient(token);
+    const promptText = message || userInput || "";
     
-    // FETCH SECURE BRAIN PROMPT (Prevents prompt injection/leaks and protects IP)
-    const { data: brainData } = await supabase
-      .from('neural_brain')
-      .select('master_prompt')
-      .eq('is_active', true)
-      .order('version', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    // 1. NEURAL ROUTING
+    // If toolType is not provided (General Chat), detect it.
+    const effectiveTool = (toolType as ToolType) || detectToolIntent(promptText).tool;
+    
+    // 2. MODULAR PROMPT ASSEMBLY
+    const masterPromptOverride = await getFullPrompt(effectiveTool);
 
-    const masterPromptOverride = brainData?.master_prompt || "You are a specialized curriculum AI. Strictly follow document grounding.";
-    const promptText = message || userInput || body.message;
-
+    const supabase = getSupabaseServerClient(token);
     const { text, provider, metadata } = await generateAIResponse(
       promptText,
       history || [],
@@ -45,7 +41,7 @@ export async function POST(req: NextRequest) {
       supabase,
       adaptiveContext,
       undefined,
-      toolType,
+      effectiveTool,
       masterPromptOverride, 
       priorityDocumentId
     );
@@ -55,12 +51,11 @@ export async function POST(req: NextRequest) {
       start(controller) {
         controller.enqueue(encoder.encode(text));
         
-        // Institutional Signature
         const groundedNote = metadata?.isGrounded 
           ? ` | 🏛️ Anchored: ${metadata.sourceDocument}` 
           : ' | 🌐 Creative Intelligence Node';
         
-        const footer = `\n\n---\n*Synthesis Node: ${provider}${groundedNote} | Founder-Locked Architecture v5.1*`;
+        const footer = `\n\n---\n*Synthesis Node: ${provider} [Expert: ${effectiveTool}] | Founder-Locked v52.0*`;
         
         controller.enqueue(encoder.encode(footer));
         controller.close();
@@ -68,11 +63,10 @@ export async function POST(req: NextRequest) {
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error("❌ [Founder Grid Alert]:", error);
+    console.error("❌ [Neural Gateway Fault]:", error);
     return NextResponse.json({ 
       error: "Synthesis grid exception. Please check your Node Quota.",
-      details: error.message,
-      status: 'failed' 
+      details: error.message
     }, { status: 500 });
   }
 }
