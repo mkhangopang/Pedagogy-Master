@@ -113,25 +113,25 @@ const Documents: React.FC<DocumentsProps> = ({
       try { 
         const { data: { session } } = await supabase.auth.getSession();
         
-        // Optimistic UI update: remove from local list immediately
-        const previousDocs = [...documents];
-        await onDeleteDocument(id);
-
         const response = await fetch('/api/docs/delete', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
           body: JSON.stringify({ id })
         });
         
-        if (!response.ok && response.status !== 404) {
+        if (response.ok) {
+          // Document was successfully deleted in DB, now update UI
+          await onDeleteDocument(id);
+        } else {
           const err = await response.json();
-          alert(`Policy Restriction: ${err.error}`);
-          // Rollback if needed, though usually admin deletions should not be rolled back once confirmed
-          window.location.reload(); 
+          alert(`Policy Restriction: ${err.error || 'The neural grid rejected the purge command.'}`);
+          // Force a reload to synchronize state if something went wrong
+          window.location.reload();
         }
       } catch (err) {
-        console.error(err);
-        await onDeleteDocument(id);
+        console.error("Purge failure:", err);
+        alert("Connectivity Fault: Unable to reach the purge gateway.");
+        window.location.reload();
       } finally { 
         setDeletingId(null); 
       }
