@@ -5,12 +5,12 @@ import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-export const runtime = 'edge'; 
+export const runtime = 'nodejs'; 
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v4.1)
- * Optimized with Edge Runtime for minimal latency.
+ * WORLD-CLASS UPLOAD HANDSHAKE (v4.2)
+ * PROTOCOL: NODEJS RUNTIME
  * FEATURE: Pre-extracted text support for timeout mitigation.
  */
 export async function POST(req: NextRequest) {
@@ -65,7 +65,9 @@ export async function POST(req: NextRequest) {
       is_selected: true,
       document_summary: 'Waiting for binary handshake...',
       rag_indexed: false,
-      extracted_text: extractedText || ""
+      extracted_text: extractedText || "",
+      is_approved: false,
+      version: 1
     }).select().single();
 
     if (dbError) throw new Error(dbError.message);

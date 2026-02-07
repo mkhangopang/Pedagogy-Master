@@ -5,10 +5,13 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileText, Zap, Target, 
   Activity, GraduationCap,
-  BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer, Users, Gift, Share2, BarChart
+  BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer, Users, Gift, Share2, BarChart, Settings, Save,
+  // Added Loader2 import to fix line 181 error
+  Loader2
 } from 'lucide-react';
 import { UserProfile, Document, SubscriptionPlan } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
+import { supabase } from '../lib/supabase';
 
 interface DashboardProps {
   user: UserProfile;
@@ -19,12 +22,15 @@ interface DashboardProps {
   onViewChange: (view: string) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth, onViewChange }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth, onViewChange, onProfileUpdate }) => {
   const [latency, setLatency] = useState('240ms');
   const [showReferral, setShowReferral] = useState(false);
+  const [isEditingBranding, setIsEditingBranding] = useState(false);
+  const [tempWorkspaceName, setTempWorkspaceName] = useState(user.workspaceName || '');
+  const [isSavingBranding, setIsSavingBranding] = useState(false);
 
-  const brandName = (user as any).tenant_config?.brand_name || 'EduNexus AI';
-  const primaryColor = (user as any).tenant_config?.primary_color || '#4f46e5';
+  const brandName = user.workspaceName || 'EduNexus AI';
+  const isPro = user.plan !== SubscriptionPlan.FREE;
 
   useEffect(() => {
     // Simulated realtime grid monitoring for efficiency reporting
@@ -35,6 +41,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
     return () => clearInterval(interval);
   }, []);
 
+  const handleSaveBranding = async () => {
+    setIsSavingBranding(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ workspace_name: tempWorkspaceName })
+        .eq('id', user.id);
+      
+      if (!error) {
+        onProfileUpdate({ ...user, workspaceName: tempWorkspaceName });
+        setIsEditingBranding(false);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSavingBranding(false);
+    }
+  };
+
   const displayName = user.name || user.email.split('@')[0];
   const isConnected = health.status === 'connected';
   const isChecking = health.status === 'checking';
@@ -44,7 +69,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   const hoursSaved = Math.round((user.generationCount || 0) * 0.5);
 
   return (
-    <div className="space-y-8 md:space-y-12 animate-in fade-in duration-500 pb-20 px-2 md:px-0">
+    <div className="space-y-8 md:space-y-12 animate-in fade-in duration-500 pb-20 px-2 md:px-0 text-left">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
@@ -56,16 +81,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </div>
         
         <div className="flex gap-3">
-          {isFreeUser && (
-            <button 
-              onClick={() => setShowReferral(true)}
-              className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 text-indigo-600 dark:text-indigo-400 hover:scale-105 transition-all shadow-sm"
-            >
-              <Gift size={16} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Expand Grid</span>
-            </button>
-          )}
-          
+          <button 
+            onClick={() => setIsEditingBranding(true)}
+            className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:scale-105 transition-all shadow-sm"
+          >
+            <Settings size={16} />
+            <span className="text-[10px] font-black uppercase tracking-widest">Institutional Settings</span>
+          </button>
+
           <button 
             onClick={() => onCheckHealth()}
             disabled={isChecking}
@@ -92,11 +115,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
       </section>
 
       <div className="grid grid-cols-1 gap-8">
-        {/* Main Action Card: Fixed Unresponsiveness */}
+        {/* Main Action Card */}
         <section 
           onClick={() => onViewChange('tools')}
           className="bg-indigo-600 rounded-[3rem] p-10 md:p-16 shadow-2xl relative overflow-hidden text-white group cursor-pointer hover:shadow-indigo-500/20 transition-all border border-white/10" 
-          style={{ backgroundColor: primaryColor }}
         >
           <div className="absolute top-0 right-0 p-8 opacity-[0.05] text-white group-hover:scale-110 transition-transform duration-700"><BookOpen size={300} /></div>
           <div className="relative z-10 max-w-2xl space-y-8">
@@ -116,58 +138,52 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
             </div>
           </div>
         </section>
-
-        {/* Real-time Grid Map Promotional Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="bg-slate-900 rounded-[3rem] p-10 text-white relative overflow-hidden border border-white/5 shadow-xl">
-               <div className="absolute top-0 right-0 p-6 opacity-10"><Database size={120} /></div>
-               <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Global Grid Stats</h3>
-               <div className="space-y-6">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold opacity-60">Indexed SLOs</span>
-                    <span className="text-lg font-black text-indigo-400">1.2M+</span>
-                  </div>
-                  <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
-                     <div className="h-full bg-indigo-500 w-[94%]" />
-                  </div>
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Institutional Compliance: 99.9%</p>
-               </div>
-            </div>
-            
-            <div className="bg-emerald-600 rounded-[3rem] p-10 text-white relative overflow-hidden shadow-xl border border-white/10 flex flex-col justify-center">
-               <div className="absolute top-0 right-0 p-6 opacity-10"><GraduationCap size={140} /></div>
-               <h3 className="text-2xl font-black tracking-tight mb-2">Pedagogical Guardrails</h3>
-               <p className="text-emerald-100 text-sm font-medium leading-relaxed mb-6">EduNexus AI uses Deterministic RAG logic to ensure zero-hallucination standards alignment.</p>
-               <div className="px-4 py-2 bg-white/10 rounded-xl text-[9px] font-black uppercase tracking-[0.2em] w-fit">Engine v9.4 Linked</div>
-            </div>
-        </div>
       </div>
 
-      {/* Referral Modal - Strictly for Free Tier */}
-      {showReferral && isFreeUser && (
+      {/* Institutional Branding Modal */}
+      {isEditingBranding && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
-           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8 text-center">
-              <div className="w-20 h-20 bg-indigo-600 text-white rounded-[2rem] flex items-center justify-center mx-auto shadow-2xl"><Users size={40} /></div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black dark:text-white tracking-tight uppercase">Expand the Grid</h3>
-                <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                   Share your unique node ID. When a colleague completes their first synthesis, you both receive <b>+1 Permanent Vault Slot</b>.
-                </p>
+           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white"><Settings size={24} /></div>
+                <div>
+                  <h3 className="text-2xl font-black dark:text-white tracking-tight uppercase">Branding Config</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Personalize Artifacts</p>
+                </div>
               </div>
-              <div className="p-5 bg-slate-50 dark:bg-slate-800 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/10 font-mono text-sm text-indigo-600 font-bold">
-                 EDU-NODE-{user.id.substring(0, 8).toUpperCase()}
+
+              <div className="space-y-6">
+                <div className="space-y-2">
+                   <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workspace / School Name</label>
+                   <input 
+                    type="text" 
+                    disabled={!isPro}
+                    value={tempWorkspaceName}
+                    onChange={(e) => setTempWorkspaceName(e.target.value)}
+                    placeholder={isPro ? "e.g. Sindh Model School" : "Pro Upgrade Required for Branding"}
+                    className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-white/5 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold dark:text-white"
+                   />
+                   {!isPro && <p className="text-[9px] font-bold text-amber-500 px-1 italic">Free Tier is locked to 'EduNexus AI' brand node.</p>}
+                </div>
+
+                <div className="p-5 bg-indigo-50 dark:bg-indigo-900/20 rounded-[2rem] border border-indigo-100 dark:border-indigo-900/30">
+                   <h4 className="text-[10px] font-black uppercase text-indigo-600 mb-2 flex items-center gap-2"><CheckCircle size={12}/> Branding Protocol</h4>
+                   <p className="text-[10px] text-indigo-700/70 font-medium leading-relaxed">
+                     Your School Name will appear in the Header of all generated lesson plans and in the "Paper Artifact" Print View.
+                   </p>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                   <button onClick={() => setIsEditingBranding(false)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest">Cancel</button>
+                   <button 
+                    onClick={handleSaveBranding}
+                    disabled={isSavingBranding || !isPro}
+                    className="flex-[2] py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl flex items-center justify-center gap-2"
+                   >
+                     {isSavingBranding ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Commit Changes
+                   </button>
+                </div>
               </div>
-              <button 
-                onClick={() => {
-                  navigator.clipboard.writeText(`Join the Neural Pedagogical Grid: EDU-NODE-${user.id.substring(0, 8).toUpperCase()}`);
-                  alert('Node sync link copied to clipboard.');
-                  setShowReferral(false);
-                }}
-                className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95"
-              >
-                Copy Invite Link
-              </button>
-              <button onClick={() => setShowReferral(false)} className="text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-slate-600">Close</button>
            </div>
         </div>
       )}

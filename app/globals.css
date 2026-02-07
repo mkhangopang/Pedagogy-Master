@@ -33,6 +33,75 @@
   }
 }
 
+/* 🖨️ HIGH-FIDELITY PRINT ENGINE (v1.0) */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide UI elements */
+  header, nav, aside, footer, button, .no-print, .shrink-0 {
+    display: none !important;
+  }
+
+  /* Reset layout for print */
+  #root, main {
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .print-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 1in !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .prose {
+    font-family: 'Times New Roman', serif !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+    color: black !important;
+  }
+
+  .prose h1, .prose h2, .prose h3 {
+    color: black !important;
+    margin-top: 20pt !important;
+    margin-bottom: 10pt !important;
+    page-break-after: avoid;
+  }
+
+  .artifact-canvas-container table {
+    display: table !important;
+    width: 100% !important;
+    border: 1pt solid #ccc !important;
+  }
+
+  .print-header {
+    display: block !important;
+    border-bottom: 2pt solid #000;
+    margin-bottom: 20pt;
+    padding-bottom: 10pt;
+  }
+
+  .print-footer {
+    display: block !important;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 8pt;
+    color: #666;
+    padding-top: 10pt;
+    border-top: 1pt solid #eee;
+  }
+}
+
 /* Neural Animations */
 @keyframes gradient-x {
   0%, 100% { background-position: 0% 50%; }

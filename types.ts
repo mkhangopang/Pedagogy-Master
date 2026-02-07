@@ -27,6 +27,8 @@ export interface UserProfile {
   queriesUsed: number;
   queriesLimit: number;
   name: string;
+  workspaceName?: string;
+  workspaceLogo?: string;
   generationCount: number;
   successRate: number;
   // Added fields for adaptive learning and profile management

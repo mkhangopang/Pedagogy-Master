@@ -83,19 +83,6 @@ export class SynthesizerCore {
       enabled: !!process.env.CEREBRAS_API_KEY
     });
 
-    providers.set('deepseek', {
-      id: 'deepseek',
-      name: 'DeepSeek Node',
-      endpoint: 'https://api.deepseek.com/v1/chat/completions',
-      model: 'deepseek-chat',
-      apiKeyEnv: 'DEEPSEEK_API_KEY',
-      maxTokens: 4096,
-      rpm: 10,
-      rpd: 3000,
-      tier: 2,
-      enabled: !!process.env.DEEPSEEK_API_KEY
-    });
-
     return providers;
   }
 
@@ -113,7 +100,6 @@ export class SynthesizerCore {
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
     
-    // Determine if task needs heavy thinking
     const isSurgicalExtract = prompt.includes('SURGICAL_PRECISION_VAULT_EXTRACT');
     const isConversion = prompt.includes('Linearize Curriculum Grids');
 
@@ -144,12 +130,10 @@ export class SynthesizerCore {
             maxOutputTokens: provider.maxTokens 
           };
           
-          // Scaled thinking for different tasks
           if (provider.thinkingBudget !== undefined) {
             let budget = provider.thinkingBudget;
             if (isConversion) budget = Math.min(budget * 2, 8192);
-            if (isSurgicalExtract) budget = 0; // Skip thinking for literal lookups
-            
+            if (isSurgicalExtract) budget = 0; 
             config.thinkingConfig = { thinkingBudget: budget };
           }
 
@@ -201,7 +185,7 @@ export class SynthesizerCore {
       }
     }
 
-    throw new Error(`AI Alert: Synthesis grid exception.`);
+    throw new Error(`AI Alert: Synthesis grid saturated.`);
   }
 
   public getProviderStatus() {
