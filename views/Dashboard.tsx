@@ -3,13 +3,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  FileText, Zap, Target, 
-  Activity, GraduationCap,
-  BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer, Users, Gift, Share2, BarChart, Settings, Save,
-  Loader2, Globe, SearchCheck, ShieldCheck, Eye, TrendingUp
+  FileText, Zap, Activity, GraduationCap,
+  BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Building, Cloud, CloudOff, Timer, Users, BarChart, Settings, Save,
+  Loader2, SearchCheck, ShieldCheck, Eye, TrendingUp, UserPlus, ClipboardList
 } from 'lucide-react';
 import { UserProfile, Document, SubscriptionPlan, StakeholderRole } from '../types';
-import { curriculumService } from '../lib/curriculum-service';
 import { supabase } from '../lib/supabase';
 
 interface DashboardProps {
@@ -75,16 +73,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </div>
         
         <div className="flex gap-3">
-          {user.stakeholderRole === StakeholderRole.GOVT_AUDITOR && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-100 rounded-2xl">
-              <ShieldCheck size={14} className="text-blue-600" />
-              <span className="text-[9px] font-black uppercase tracking-widest text-blue-600">Sovereign Audit Node</span>
-            </div>
-          )}
-          {user.stakeholderRole === StakeholderRole.NGO_OBSERVER && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-2xl">
-              <Eye size={14} className="text-emerald-600" />
-              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Impact Observation Lens</span>
+          {user.stakeholderRole === StakeholderRole.INST_LEAD && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-purple-50 border border-purple-100 rounded-2xl">
+              <Building size={14} className="text-purple-600" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-purple-600">Institutional Cluster Lead</span>
             </div>
           )}
           <button 
@@ -119,8 +111,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         <StatCard title="Success Metric" value={`${hoursSaved}h`} icon={<Timer className="text-purple-600" />} color="purple" />
       </section>
 
-      {/* 📊 PERSPECTIVE CARDS: Stakeholder Specific Insights */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {user.stakeholderRole === StakeholderRole.INST_LEAD && (
+          <PerspectiveCard 
+            title="Cluster Performance" 
+            desc="Oversee lesson plan quality and curriculum adherence across all teachers in your school cluster."
+            value="12 Nodes"
+            icon={<Users size={32} className="text-purple-600" />}
+            btnLabel="Manage Teachers"
+            onClick={() => onViewChange('mission')}
+          />
+        )}
         {user.stakeholderRole === StakeholderRole.GOVT_AUDITOR && (
           <PerspectiveCard 
             title="Alignment Compliance" 

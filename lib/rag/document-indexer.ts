@@ -81,7 +81,7 @@ export async function indexDocumentForRAG(
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     // 3. High-Concurrency Batch Embedding
-    const BATCH_SIZE = 10; // Slightly smaller batch for better stability on free tier
+    const BATCH_SIZE = 10;
     for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
       const batch = processedChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
@@ -89,9 +89,7 @@ export async function indexDocumentForRAG(
       const records = batch.map((chunk, j) => {
         const embedding = embeddings[j];
         
-        // Defensive check: Ensure embedding is a flat array of numbers
         if (!Array.isArray(embedding) || typeof embedding[0] !== 'number') {
-          console.error(`[Indexer] Invalid embedding format detected at batch ${i} index ${j}`);
           return null;
         }
 
@@ -101,7 +99,7 @@ export async function indexDocumentForRAG(
           embedding: embedding,
           slo_codes: chunk.metadata.slo_codes || [],
           metadata: chunk.metadata,
-          chunk_index: i + j // CRITICAL FIX: Explicitly set chunk_index to satisfy DB schema
+          chunk_index: i + j // SATISFY DB SCHEMA
         };
       }).filter(Boolean);
 

@@ -1,14 +1,14 @@
 
 export enum UserRole {
   TEACHER = 'teacher',
-  ENTERPRISE_ADMIN = 'enterprise_admin',
+  ENTERPRISE_ADMIN = 'enterprise_admin', // Used for School Chain Managers
   APP_ADMIN = 'app_admin'
 }
 
 export enum StakeholderRole {
   GOVT_AUDITOR = 'auditor_govt',
   NGO_OBSERVER = 'observer_ngo',
-  INST_LEAD = 'admin_inst'
+  INST_LEAD = 'admin_inst' // The Principal/Head of Academics for a chain
 }
 
 export enum SubscriptionPlan {
@@ -17,23 +17,16 @@ export enum SubscriptionPlan {
   ENTERPRISE = 'enterprise'
 }
 
-export interface SLO {
-  id: string;
-  code: string;
-  description: string;
-  level?: string;
-  bloomLevel?: string;
-}
-
 export interface UserProfile {
   id: string;
   email: string;
   role: UserRole;
-  stakeholderRole?: StakeholderRole; // New stakeholder identifier
+  stakeholderRole?: StakeholderRole;
   plan: SubscriptionPlan;
   queriesUsed: number;
   queriesLimit: number;
   name: string;
+  workspaceId?: string; // Links teachers to a specific school chain
   workspaceName?: string;
   workspaceLogo?: string;
   generationCount: number;
@@ -52,6 +45,7 @@ export interface UserProfile {
 export interface Document {
   id: string;
   userId: string;
+  workspaceId?: string; // If set, this doc is "Global" for that school chain
   name: string;
   status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed' | 'indexing';
   sourceType: 'markdown' | 'pdf_archival';
@@ -68,8 +62,6 @@ export interface Document {
   extractedText?: string;
   createdAt: string;
   chunkCount?: number;
-  sloTags?: any[];
-  storageType?: 'r2' | 'supabase';
   isPublic?: boolean;
   documentSummary?: string;
   difficultyLevel?: string;
@@ -84,7 +76,6 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
-  groundingNodes?: string[];
 }
 
 export interface NeuralBrain {
@@ -96,17 +87,6 @@ export interface NeuralBrain {
   updatedAt: string;
 }
 
-export interface OutputArtifact {
-  id: string;
-  userId: string;
-  contentType: string;
-  content: string;
-  metadata: any;
-  status: string;
-  editDepth: number;
-  createdAt: string;
-}
-
 export interface TeacherProgress {
   id: string;
   userId: string;
@@ -115,5 +95,24 @@ export interface TeacherProgress {
   taughtDate?: string;
   studentMasteryPercentage?: number;
   notes?: string;
+  createdAt: string;
+}
+
+export interface SLO {
+  code: string;
+  description: string;
+  fullText?: string;
+  bloomLevel?: string;
+  grade?: string;
+}
+
+export interface OutputArtifact {
+  id: string;
+  userId: string;
+  contentType: string;
+  content: string;
+  metadata: any;
+  status: string;
+  editDepth: number;
   createdAt: string;
 }
