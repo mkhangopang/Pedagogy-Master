@@ -2,8 +2,10 @@
 import katex from 'katex';
 
 /**
- * NEURAL MATH RENDERER (v1.0)
+ * NEURAL MATH RENDERER (v1.1)
  * Specialized for Science, Technology, and Math (STEM) artifact fidelity.
+ * 
+ * FIX: Set output to 'html' to prevent double-rendering of symbols (MathML + HTML fallback).
  */
 export function processLaTeX(text: string): string {
   if (!text) return '';
@@ -15,7 +17,8 @@ export function processLaTeX(text: string): string {
     try {
       return katex.renderToString(formula.trim(), {
         displayMode: true,
-        throwOnError: false
+        throwOnError: false,
+        output: 'html' // CRITICAL: Only output HTML to avoid text duplication
       });
     } catch (e) {
       return match;
@@ -31,7 +34,8 @@ export function processLaTeX(text: string): string {
     try {
       return katex.renderToString(formula.trim(), {
         displayMode: false,
-        throwOnError: false
+        throwOnError: false,
+        output: 'html' // CRITICAL: Only output HTML to avoid text duplication
       });
     } catch (e) {
       return match;
