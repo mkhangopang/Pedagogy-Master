@@ -5,6 +5,12 @@ export enum UserRole {
   APP_ADMIN = 'app_admin'
 }
 
+export enum StakeholderRole {
+  GOVT_AUDITOR = 'auditor_govt',
+  NGO_OBSERVER = 'observer_ngo',
+  INST_LEAD = 'admin_inst'
+}
+
 export enum SubscriptionPlan {
   FREE = 'free',
   PRO = 'pro',
@@ -23,6 +29,7 @@ export interface UserProfile {
   id: string;
   email: string;
   role: UserRole;
+  stakeholderRole?: StakeholderRole; // New stakeholder identifier
   plan: SubscriptionPlan;
   queriesUsed: number;
   queriesLimit: number;
@@ -31,7 +38,6 @@ export interface UserProfile {
   workspaceLogo?: string;
   generationCount: number;
   successRate: number;
-  // Added fields for adaptive learning and profile management
   gradeLevel?: string;
   subjectArea?: string;
   teachingStyle?: string;
@@ -50,25 +56,18 @@ export interface Document {
   status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed' | 'indexing';
   sourceType: 'markdown' | 'pdf_archival';
   isApproved: boolean;
-  
-  // Institutional Metadata
   curriculumName: string;
-  authority: string; // e.g., Sindh, FBISE
+  authority: string;
   subject: string;
   gradeLevel: string;
   versionYear: string;
-  
-  // System Generated
   generatedJson?: any;
   version: number;
-  
   filePath?: string;
   mimeType?: string;
   extractedText?: string;
   createdAt: string;
   chunkCount?: number;
-
-  // Added fields for UI state and metadata
   sloTags?: any[];
   storageType?: 'r2' | 'supabase';
   isPublic?: boolean;
@@ -88,9 +87,6 @@ export interface ChatMessage {
   groundingNodes?: string[];
 }
 
-/**
- * Neural brain configuration for system-wide logic prompts.
- */
 export interface NeuralBrain {
   id: string;
   masterPrompt: string;
@@ -100,9 +96,6 @@ export interface NeuralBrain {
   updatedAt: string;
 }
 
-/**
- * Output artifacts representing generated content with feedback metadata.
- */
 export interface OutputArtifact {
   id: string;
   userId: string;
@@ -114,9 +107,6 @@ export interface OutputArtifact {
   createdAt: string;
 }
 
-/**
- * Progress tracking for curriculum objectives.
- */
 export interface TeacherProgress {
   id: string;
   userId: string;

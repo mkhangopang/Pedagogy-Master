@@ -6,9 +6,9 @@ import {
   FileText, Zap, Target, 
   Activity, GraduationCap,
   BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer, Users, Gift, Share2, BarChart, Settings, Save,
-  Loader2, Globe
+  Loader2, Globe, SearchCheck, ShieldCheck, Eye, TrendingUp
 } from 'lucide-react';
-import { UserProfile, Document, SubscriptionPlan } from '../types';
+import { UserProfile, Document, SubscriptionPlan, StakeholderRole } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
 import { supabase } from '../lib/supabase';
 
@@ -38,17 +38,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
     return () => clearInterval(interval);
   }, []);
 
-  // 🏛️ INSTITUTIONAL DOMAIN LOGIC
-  const suggestWorkspace = () => {
-    if (user.workspaceName) return;
-    const domain = user.email.split('@')[1];
-    const restricted = ['gmail.com', 'outlook.com', 'yahoo.com', 'hotmail.com'];
-    if (domain && !restricted.includes(domain)) {
-      const name = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
-      setTempWorkspaceName(`${name} Institutional Node`);
-    }
-  };
-
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
     try {
@@ -71,7 +60,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   const displayName = user.name || user.email.split('@')[0];
   const isConnected = health.status === 'connected';
   const isChecking = health.status === 'checking';
-
   const hoursSaved = Math.round((user.generationCount || 0) * 0.5);
 
   return (
@@ -87,8 +75,20 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </div>
         
         <div className="flex gap-3">
+          {user.stakeholderRole === StakeholderRole.GOVT_AUDITOR && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-100 rounded-2xl">
+              <ShieldCheck size={14} className="text-blue-600" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-blue-600">Sovereign Audit Node</span>
+            </div>
+          )}
+          {user.stakeholderRole === StakeholderRole.NGO_OBSERVER && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-100 rounded-2xl">
+              <Eye size={14} className="text-emerald-600" />
+              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Impact Observation Lens</span>
+            </div>
+          )}
           <button 
-            onClick={() => { setIsEditingBranding(true); suggestWorkspace(); }}
+            onClick={() => { setIsEditingBranding(true); }}
             className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:scale-105 transition-all shadow-sm"
           >
             <Settings size={16} />
@@ -118,6 +118,30 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         <MetricCard title="App Efficiency" value="98.4%" icon={<Zap className="text-amber-500" />} color="amber" trend="+2.1%" />
         <StatCard title="Success Metric" value={`${hoursSaved}h`} icon={<Timer className="text-purple-600" />} color="purple" />
       </section>
+
+      {/* 📊 PERSPECTIVE CARDS: Stakeholder Specific Insights */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {user.stakeholderRole === StakeholderRole.GOVT_AUDITOR && (
+          <PerspectiveCard 
+            title="Alignment Compliance" 
+            desc="Surgical audit of every AI interaction against the National Curriculum Framework."
+            value="99.2%"
+            icon={<SearchCheck size={32} className="text-blue-600" />}
+            btnLabel="View Audit Logs"
+            onClick={() => onViewChange('audit_logs')}
+          />
+        )}
+        {user.stakeholderRole === StakeholderRole.NGO_OBSERVER && (
+          <PerspectiveCard 
+            title="Pedagogical Uplift" 
+            desc="Tracking the shift from 'Remembering' to 'Creating' level content generation."
+            value="+42%"
+            icon={<TrendingUp size={32} className="text-emerald-600" />}
+            btnLabel="Impact Dashboard"
+            onClick={() => onViewChange('impact_metrics')}
+          />
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-8">
         <section 
@@ -159,9 +183,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                 <div className="space-y-2">
                    <div className="flex items-center justify-between">
                      <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workspace / School Name</label>
-                     {user.email.includes('@') && !user.workspaceName && (
-                       <span className="text-[8px] font-black text-indigo-500 uppercase flex items-center gap-1"><Globe size={10}/> Domain Detected</span>
-                     )}
                    </div>
                    <input 
                     type="text" 
@@ -171,14 +192,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
                     placeholder={isPro ? "e.g. Sindh Model School" : "Pro Upgrade Required for Branding"}
                     className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-white/5 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none font-bold dark:text-white"
                    />
-                   {!isPro && <p className="text-[9px] font-bold text-amber-500 px-1 italic">Free Tier is locked to 'EduNexus AI' brand node.</p>}
-                </div>
-
-                <div className="p-5 bg-indigo-50 dark:bg-indigo-900/20 rounded-[2rem] border border-indigo-100 dark:border-indigo-900/30">
-                   <h4 className="text-[10px] font-black uppercase text-indigo-600 mb-2 flex items-center gap-2"><CheckCircle size={12}/> Branding Protocol</h4>
-                   <p className="text-[10px] text-indigo-700/70 font-medium leading-relaxed">
-                     Your School Name will appear in the Header of all generated lesson plans and in the "Paper Artifact" Print View.
-                   </p>
                 </div>
 
                 <div className="flex gap-3 pt-4">
@@ -198,6 +211,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
     </div>
   );
 };
+
+const PerspectiveCard = ({ title, desc, value, icon, btnLabel, onClick }: any) => (
+  <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] shadow-xl border-2 border-slate-50 dark:border-white/5 flex flex-col gap-6 group hover:border-indigo-400 transition-all">
+    <div className="flex justify-between items-start">
+      <div className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl">{icon}</div>
+      <div className="text-right">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{title}</p>
+        <div className="text-3xl font-black text-slate-900 dark:text-white">{value}</div>
+      </div>
+    </div>
+    <p className="text-xs font-medium text-slate-500 leading-relaxed">{desc}</p>
+    <button onClick={onClick} className="mt-auto flex items-center gap-2 text-indigo-600 font-black text-[10px] uppercase tracking-widest hover:underline">
+      {btnLabel} <ArrowRight size={14} />
+    </button>
+  </div>
+);
 
 const StatCard = ({ title, value, icon, color }: { title: string, value: string, icon: React.ReactNode, color: string }) => (
   <div className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] shadow-sm border border-slate-100 dark:border-white/5 flex flex-col gap-6 hover:shadow-xl transition-all group">

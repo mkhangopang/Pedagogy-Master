@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -18,9 +19,12 @@ import {
   Moon,
   ClipboardCheck,
   Scale,
-  ShieldAlert
+  ShieldAlert,
+  SearchCheck,
+  BarChart3,
+  Eye
 } from 'lucide-react';
-import { UserRole, UserProfile, SubscriptionPlan } from '../types';
+import { UserRole, UserProfile, StakeholderRole, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 import { APP_NAME } from '../constants';
 
@@ -48,16 +52,27 @@ const Sidebar: React.FC<SidebarProps> = ({
   if (!userProfile) return null;
 
   const isDev = userProfile.role === UserRole.APP_ADMIN;
+  const isStakeholder = !!userProfile.stakeholderRole;
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'documents', label: 'Curriculum Vault', icon: FileText },
-    { id: 'tools', label: 'Neural Tools', icon: Wrench }, // Moved up for direct funnel optimization
+    { id: 'tools', label: 'Neural Tools', icon: Wrench },
     { id: 'tracker', label: 'Progress Tracker', icon: ClipboardCheck },
-    { id: 'pricing', label: 'Pricing Tiers', icon: CreditCard },
   ];
 
-  // STRICT ACCESS CONTROL: SECRET RECIPE
+  // 🏛️ STAKEHOLDER LENS INJECTION (ZERO COST)
+  if (userProfile.stakeholderRole === StakeholderRole.GOVT_AUDITOR) {
+    navItems.push({ id: 'audit_logs', label: 'Alignment Registry', icon: SearchCheck });
+  }
+  if (userProfile.stakeholderRole === StakeholderRole.NGO_OBSERVER) {
+    navItems.push({ id: 'impact_metrics', label: 'Impact Narrative', icon: BarChart3 });
+  }
+
+  if (userProfile.role !== UserRole.APP_ADMIN) {
+    navItems.push({ id: 'pricing', label: 'Pricing Tiers', icon: CreditCard });
+  }
+
   if (isDev) {
     navItems.push({ id: 'brain', label: 'Master Recipe', icon: BrainCircuit });
     navItems.push({ id: 'audit', label: 'System Audit', icon: Scale });
@@ -73,6 +88,9 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const getRoleDisplay = () => {
+    if (userProfile.stakeholderRole === StakeholderRole.GOVT_AUDITOR) return { icon: <Scale size={18} />, color: 'bg-blue-600', label: 'Govt Auditor' };
+    if (userProfile.stakeholderRole === StakeholderRole.NGO_OBSERVER) return { icon: <Eye size={18} />, color: 'bg-emerald-600', label: 'NGO Observer' };
+    
     switch(userProfile.role) {
       case UserRole.APP_ADMIN: return { icon: <Shield size={18} />, color: 'bg-amber-500', label: 'Developer' };
       case UserRole.ENTERPRISE_ADMIN: return { icon: <Building2 size={18} />, color: 'bg-cyan-500', label: 'SME Node' };
@@ -119,7 +137,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${roleInfo.color} shadow-sm text-white`}>{roleInfo.icon}</div>
           {!isCollapsed && (
             <div className="overflow-hidden">
-              <p className="text-[10px] font-black uppercase tracking-tighter text-indigo-300">{userProfile.plan} Identity</p>
+              <p className="text-[10px] font-black uppercase tracking-tighter text-indigo-300">{roleInfo.label}</p>
               <p className="text-[11px] font-medium truncate opacity-60 text-indigo-100">{userProfile.email}</p>
             </div>
           )}
