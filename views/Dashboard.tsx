@@ -6,8 +6,7 @@ import {
   FileText, Zap, Target, 
   Activity, GraduationCap,
   BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Database, Building, Cloud, CloudOff, Timer, Users, Gift, Share2, BarChart, Settings, Save,
-  // Added Loader2 import to fix line 181 error
-  Loader2
+  Loader2, Globe
 } from 'lucide-react';
 import { UserProfile, Document, SubscriptionPlan } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -24,7 +23,6 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth, onViewChange, onProfileUpdate }) => {
   const [latency, setLatency] = useState('240ms');
-  const [showReferral, setShowReferral] = useState(false);
   const [isEditingBranding, setIsEditingBranding] = useState(false);
   const [tempWorkspaceName, setTempWorkspaceName] = useState(user.workspaceName || '');
   const [isSavingBranding, setIsSavingBranding] = useState(false);
@@ -33,13 +31,23 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   const isPro = user.plan !== SubscriptionPlan.FREE;
 
   useEffect(() => {
-    // Simulated realtime grid monitoring for efficiency reporting
     const interval = setInterval(() => {
       const val = Math.floor(Math.random() * (280 - 210) + 210);
       setLatency(`${val}ms`);
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  // 🏛️ INSTITUTIONAL DOMAIN LOGIC
+  const suggestWorkspace = () => {
+    if (user.workspaceName) return;
+    const domain = user.email.split('@')[1];
+    const restricted = ['gmail.com', 'outlook.com', 'yahoo.com', 'hotmail.com'];
+    if (domain && !restricted.includes(domain)) {
+      const name = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
+      setTempWorkspaceName(`${name} Institutional Node`);
+    }
+  };
 
   const handleSaveBranding = async () => {
     setIsSavingBranding(true);
@@ -63,9 +71,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   const displayName = user.name || user.email.split('@')[0];
   const isConnected = health.status === 'connected';
   const isChecking = health.status === 'checking';
-  const isFreeUser = user.plan === SubscriptionPlan.FREE;
-  
-  // Calculate real metrics based on actual generation history
+
   const hoursSaved = Math.round((user.generationCount || 0) * 0.5);
 
   return (
@@ -82,7 +88,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         
         <div className="flex gap-3">
           <button 
-            onClick={() => setIsEditingBranding(true)}
+            onClick={() => { setIsEditingBranding(true); suggestWorkspace(); }}
             className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:scale-105 transition-all shadow-sm"
           >
             <Settings size={16} />
@@ -106,7 +112,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </div>
       </header>
 
-      {/* Real-time App Efficiency Metrics */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         <StatCard title="Curriculum Vault" value={documents.length.toString()} icon={<FileText className="text-indigo-600" />} color="indigo" />
         <MetricCard title="Grid Latency" value={latency} icon={<Activity className="text-emerald-500" />} color="emerald" trend="Optimal" />
@@ -115,7 +120,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
       </section>
 
       <div className="grid grid-cols-1 gap-8">
-        {/* Main Action Card */}
         <section 
           onClick={() => onViewChange('tools')}
           className="bg-indigo-600 rounded-[3rem] p-10 md:p-16 shadow-2xl relative overflow-hidden text-white group cursor-pointer hover:shadow-indigo-500/20 transition-all border border-white/10" 
@@ -140,7 +144,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </section>
       </div>
 
-      {/* Institutional Branding Modal */}
       {isEditingBranding && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8">
@@ -154,7 +157,12 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
 
               <div className="space-y-6">
                 <div className="space-y-2">
-                   <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workspace / School Name</label>
+                   <div className="flex items-center justify-between">
+                     <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Workspace / School Name</label>
+                     {user.email.includes('@') && !user.workspaceName && (
+                       <span className="text-[8px] font-black text-indigo-500 uppercase flex items-center gap-1"><Globe size={10}/> Domain Detected</span>
+                     )}
+                   </div>
                    <input 
                     type="text" 
                     disabled={!isPro}

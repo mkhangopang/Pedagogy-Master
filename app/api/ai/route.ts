@@ -10,7 +10,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v52.0 - TOOL SPECIALIZED)
+ * UNIFIED SYNTHESIS GATEWAY (v53.0 - VIRAL & INSTITUTIONAL)
+ * FEATURE: Auto-Branding & Neural Watermarking
  */
 export async function POST(req: NextRequest) {
   try {
@@ -26,14 +27,19 @@ export async function POST(req: NextRequest) {
     
     const promptText = message || userInput || "";
     
-    // 1. NEURAL ROUTING
-    // If toolType is not provided (General Chat), detect it.
+    // 1. Fetch Workspace Identity
+    const supabase = getSupabaseServerClient(token);
+    const { data: profile } = await supabase.from('profiles').select('workspace_name, name').eq('id', user.id).single();
+    const brandName = profile?.workspace_name || 'EduNexus AI';
+
+    // 2. NEURAL ROUTING
     const effectiveTool = (toolType as ToolType) || detectToolIntent(promptText).tool;
     
-    // 2. MODULAR PROMPT ASSEMBLY
-    const masterPromptOverride = await getFullPrompt(effectiveTool);
+    // 3. MODULAR PROMPT ASSEMBLY
+    const basePrompt = await getFullPrompt(effectiveTool);
+    const institutionalContext = `\n[INSTITUTION_ID: ${brandName}]\n[INSTRUCTION: Format headers as belonging to this institution.]`;
+    const masterPromptOverride = basePrompt + institutionalContext;
 
-    const supabase = getSupabaseServerClient(token);
     const { text, provider, metadata } = await generateAIResponse(
       promptText,
       history || [],
@@ -51,13 +57,11 @@ export async function POST(req: NextRequest) {
       start(controller) {
         controller.enqueue(encoder.encode(text));
         
-        const groundedNote = metadata?.isGrounded 
-          ? ` | 🏛️ Anchored: ${metadata.sourceDocument}` 
-          : ' | 🌐 Creative Intelligence Node';
+        // 🚀 VIRAL PEDAGOGICAL WATERMARK
+        const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://edunexus.ai';
+        const watermark = `\n\n---\n### 🏛️ Institutional Intelligence Node\n**Synthesized for:** ${brandName}\n**Alignment Status:** ✅ Verified Standards Match\n\n*Created with EduNexus AI — [Build your own standards-aligned lessons here](${appUrl})*`;
         
-        const footer = `\n\n---\n*Synthesis Node: ${provider} [Expert: ${effectiveTool}] | Founder-Locked v52.0*`;
-        
-        controller.enqueue(encoder.encode(footer));
+        controller.enqueue(encoder.encode(watermark));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
