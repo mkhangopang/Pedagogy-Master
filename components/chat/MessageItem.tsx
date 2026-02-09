@@ -3,8 +3,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { User, Bot, Copy, Check, Sparkles, Globe, ExternalLink, Library, AlertTriangle } from 'lucide-react';
-import { marked } from 'marked';
-import { processLaTeX } from '../../lib/math-renderer';
+import { renderSTEM } from '../../lib/math-renderer';
 
 interface MessageItemProps {
   role: 'user' | 'assistant';
@@ -29,15 +28,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
   };
 
   const renderedHtml = useMemo(() => {
-    if (!content) return '';
-    try {
-      marked.setOptions({ gfm: true, breaks: true });
-      // FIX: Process LaTeX BEFORE Markdown to prevent marked from corrupting LaTeX symbols like underscores or backslashes
-      const mathEnriched = processLaTeX(content);
-      return marked.parse(mathEnriched) as string;
-    } catch (e) {
-      return content;
-    }
+    return renderSTEM(content);
   }, [content]);
 
   return (
