@@ -7,6 +7,7 @@
     <title>EduNexus AI | Neural Pedagogical Intelligence</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234f46e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M22 10v6M2 10l10-5 10 5-10 5z'/><path d='M6 12v5c3 3 9 3 12 0v-5'/></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-n8MVd4RsNIU0tAv4ct0nTaAbDJwPJzDEaqSD1odI+WdtXRGWt2kTvGFas9Dcbe9R" crossorigin="anonymous">
     <link rel="stylesheet" href="/app/globals.css">
     <script src="https://app.lemonsqueezy.com/js/lemon.js" defer></script>
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -25,6 +26,10 @@
       /* Smooth transitions for view switching */
       .view-enter { opacity: 0; transform: translateY(10px); }
       .view-enter-active { opacity: 1; transform: translateY(0); transition: all 400ms ease-out; }
+
+      /* KaTeX Overrides for dark mode */
+      .dark .katex { color: #e2e8f0; }
+      .katex-display { margin: 1.5em 0; overflow-x: auto; overflow-y: hidden; }
     </style>
 </head>
 <body>
@@ -45,6 +50,7 @@
     "buffer": "https://esm.sh/buffer@6.0.3",
     "@aws-sdk/client-s3": "https://esm.sh/@aws-sdk/client-s3@3.714.0",
     "marked": "https://esm.sh/marked@15.0.0",
+    "katex": "https://esm.sh/katex@0.16.11",
     "pdfjs-dist": "https://esm.sh/pdfjs-dist@4.4.168",
     "mammoth": "https://esm.sh/mammoth@1.8.0",
     "axios": "https://esm.sh/axios@1.7.0",

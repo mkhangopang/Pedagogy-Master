@@ -1,9 +1,11 @@
+
 'use client';
 
 import React, { useMemo } from 'react';
 import { X, FileText, Download, Copy, Share2, ZoomIn, ZoomOut, Search, Maximize2 } from 'lucide-react';
 import { marked } from 'marked';
 import { Document } from '../types';
+import { processLaTeX } from '../lib/math-renderer';
 
 interface DocumentReaderProps {
   document: Document;
@@ -15,8 +17,12 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
     if (!document.extractedText) return '<p class="text-center opacity-50 py-20 italic">Intelligence not yet extracted for this node.</p>';
     
     marked.setOptions({ gfm: true, breaks: true });
-    // Process the text to highlight SLO codes within the reader
-    const processedText = document.extractedText.replace(
+    
+    // 1. First process LaTeX math formulas
+    let processedText = processLaTeX(document.extractedText);
+
+    // 2. Then highlight SLO codes
+    processedText = processedText.replace(
       /(SLO[:\s]*[A-Z0-9\.-]{3,15})/gi, 
       '<span class="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-md font-bold">$1</span>'
     );

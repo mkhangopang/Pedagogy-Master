@@ -18,6 +18,7 @@ import { MessageItem } from '../components/chat/MessageItem';
 import { marked } from 'marked';
 import { supabase } from '../lib/supabase';
 import { ToolType, getToolDisplayName } from '../lib/ai/tool-router';
+import { processLaTeX } from '../lib/math-renderer';
 
 interface ToolsProps {
   brain: NeuralBrain;
@@ -183,8 +184,10 @@ USER_QUERY: ${userInput}`;
   const getRenderedContent = () => {
     if (!canvasContent) return '';
     try {
-      // Ensuring sync parse for canvas rendering
-      return marked.parse(canvasContent.split('--- Synthesis Hub:')[0].trim()) as string;
+      // FIX: Process LaTeX BEFORE Markdown for the Expert Artifact Canvas
+      const contentToParse = canvasContent.split('--- Synthesis Hub:')[0].trim();
+      const mathEnriched = processLaTeX(contentToParse);
+      return marked.parse(mathEnriched) as string;
     } catch (e) {
       return canvasContent;
     }
