@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
         
         // 🚀 VIRAL PEDAGOGICAL WATERMARK
         const groundedNote = metadata?.isGrounded ? ` | Standards anchored to: ${metadata.sourceDocument}` : '';
-        const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence\n*Synthesized via EduNexus AI Grid (${provider}${groundedNote})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
+        const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via EduNexus AI Grid (${provider}${groundedNote})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
         
         controller.enqueue(encoder.encode(watermark));
         controller.close();
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("❌ Unified Chat API Error:", error);
     return NextResponse.json({ 
-      error: 'Synthesis node error',
+      error: 'Synthesis engine error',
       details: error.message 
     }, { status: 500 });
   }

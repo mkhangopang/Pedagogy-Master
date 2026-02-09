@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { Activity, ShieldCheck, Zap, Server, Cpu, Layers, AlertCircle } from 'lucide-react';
 
@@ -26,7 +27,7 @@ export const ProviderStatusBar: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]" />
-           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">7-Node Multi-Provider Neural Grid v10.0</span>
+           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">7-Engine Multi-Provider Synthesis Grid v10.0</span>
         </div>
         <button onClick={() => setShow(false)} className="text-slate-500 hover:text-white transition-colors">✕</button>
       </div>
@@ -48,7 +49,7 @@ export const ProviderStatusBar: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                    <span className="text-[8px] font-bold text-slate-500 uppercase">{p.status}</span>
-                   {p.status === 'active' && <span className="text-[8px] font-black text-indigo-400">NODE_ONLINE</span>}
+                   {p.status === 'active' && <span className="text-[8px] font-black text-indigo-400">SERVICE_ONLINE</span>}
                 </div>
              </div>
           </div>

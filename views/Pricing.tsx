@@ -134,9 +134,9 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
                 }`}
               >
                 {isLoading ? <Loader2 className="animate-spin" size={18} /> : null}
-                {isCurrent ? 'Active Node' : (
+                {isCurrent ? 'Active Plan' : (
                   <>
-                    Upgrade Node
+                    Upgrade License
                     <ArrowRight size={14} />
                   </>
                 )}
@@ -151,7 +151,7 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
         <div className="max-w-lg relative z-10 text-center md:text-left space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-widest">Enterprise Sync</div>
           <h2 className="text-4xl font-black leading-none tracking-tight">Institutional Licensing</h2>
-          <p className="text-indigo-100 text-lg font-medium">Standardize instructional quality across your campus with dedicated cloud namespaces and priority grid access.</p>
+          <p className="text-indigo-100 text-lg font-medium">Standardize instructional quality across your campus with dedicated cloud namespaces and priority service access.</p>
         </div>
         <button className="px-12 py-6 bg-white text-indigo-950 rounded-[2rem] font-black text-lg shadow-2xl hover:scale-105 transition-all active:scale-95 shrink-0 relative z-10">
           Request Quote
@@ -162,7 +162,7 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8">
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-black dark:text-white tracking-tight uppercase">Local Node Access</h3>
+                <h3 className="text-2xl font-black dark:text-white tracking-tight uppercase">Manual Payment Portal</h3>
                 <button onClick={() => setShowLocalModal(false)} className="text-slate-400 hover:text-slate-900">✕</button>
               </div>
 
@@ -188,7 +188,7 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
                    1. Transfer <b>PKR 2,500</b> for lifetime Beta Access.<br />
                    2. Take a screenshot of the confirmation.<br />
                    3. Email screenshot to <b>support@edunexus.ai</b>.<br />
-                   Your node will be activated within 4 hours.
+                   Your workspace will be activated within 4 hours.
                  </p>
                  <button onClick={() => setShowLocalModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl">Return to Workspace</button>
               </div>

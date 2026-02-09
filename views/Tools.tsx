@@ -90,7 +90,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 [CONTEXT_MODES]
 CURRICULUM_MODE: ${isCurriculumEnabled ? 'ACTIVE' : 'INACTIVE'}
 GLOBAL_RESOURCES_MODE: ${isGlobalEnabled ? 'ACTIVE' : 'INACTIVE'}
-EXPERT_NODE: ${getToolDisplayName(effectiveTool)}
+EXPERT_MODULE: ${getToolDisplayName(effectiveTool)}
 
 [PERSONA_OVERLAY]
 ${persona === 'creative' ? '[CREATIVE_MODE: ON] Use highly engaging, active learning strategies.' : persona === 'auditor' ? '[AUDIT_MODE: ON] Focus on standards rigor.' : ''}
@@ -123,11 +123,11 @@ USER_QUERY: ${userInput}`;
   // 1. Lightweight Google Docs Bridge (Export Markdown for direct import)
   const saveToGoogleDrive = () => {
     if (!isPro) {
-      alert("Pro Node Required for Google Drive Integration.");
+      alert("Pro License Required for Google Drive Integration.");
       return;
     }
     
-    const cleanText = canvasContent.split('--- Synthesis Node:')[0].trim();
+    const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     if (!cleanText) {
       alert("Synthesis Canvas is empty. Generate content first.");
       return;
@@ -154,7 +154,7 @@ USER_QUERY: ${userInput}`;
 
   // 3. Social Sharing Snapshot (Growth Hack)
   const shareSnapshot = async () => {
-    const cleanText = canvasContent.split('--- Synthesis Node:')[0].trim();
+    const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     const summary = `🚀 EduNexus AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'Standardized'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: edunexus.ai`;
     
     if (navigator.share) {
@@ -184,7 +184,7 @@ USER_QUERY: ${userInput}`;
     if (!canvasContent) return '';
     try {
       // Ensuring sync parse for canvas rendering
-      return marked.parse(canvasContent.split('--- Synthesis Node:')[0].trim()) as string;
+      return marked.parse(canvasContent.split('--- Synthesis Hub:')[0].trim()) as string;
     } catch (e) {
       return canvasContent;
     }
@@ -217,14 +217,14 @@ USER_QUERY: ${userInput}`;
             </button>
 
             <button 
-              onClick={() => isPro ? setIsGlobalEnabled(!isGlobalEnabled) : alert("PRO UPGRADE REQUIRED")}
+              onClick={() => isPro ? setIsGlobalEnabled(!isGlobalEnabled) : alert("PRO LICENSE REQUIRED")}
               className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border relative ${isGlobalEnabled ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
             >
               {!isPro && <Crown size={10} className="absolute -top-1 -right-1 text-amber-500 bg-white rounded-full p-0.5 shadow-sm" />}
               <Globe2 size={16} />
               <div className="text-left">
                 <p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Global</p>
-                <p className="text-[10px] font-bold">Creative Node</p>
+                <p className="text-[10px] font-bold">Creative Library</p>
               </div>
             </button>
 
@@ -244,7 +244,7 @@ USER_QUERY: ${userInput}`;
               <div><h3 className="font-black text-xl md:text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3><p className="text-slate-500 dark:text-slate-400 text-sm md:text-base mt-2 font-medium leading-relaxed">{tool.desc}</p></div>
               <div className="flex items-center justify-between mt-auto">
                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1">
-                    <Sparkles size={10} /> Expert Node Active
+                    <Sparkles size={10} /> Expert Logic Active
                  </span>
                  <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
               </div>
@@ -300,7 +300,7 @@ USER_QUERY: ${userInput}`;
                 <button onClick={shareSnapshot} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0"><Share2 size={14}/> Share</button>
                 <div className="w-px h-4 bg-slate-200 dark:bg-white/10 mx-1 shrink-0" />
                 <button onClick={() => {
-                  const cleanText = canvasContent.split('--- Synthesis Node:')[0].trim();
+                  const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
                   navigator.clipboard.writeText(cleanText);
                 }} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0"><Copy size={14}/> Copy</button>
               </div>

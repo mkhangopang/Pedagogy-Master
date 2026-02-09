@@ -66,7 +66,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         <div>
           <div className="flex items-center gap-2 mb-2">
              <Building size={14} className="text-slate-400" />
-             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{brandName} Platform Node</span>
+             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{brandName} Platform Workspace</span>
           </div>
           <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Workspace</h1>
           <p className="text-slate-500 mt-1 font-medium text-sm">Linked Identity: <span className="text-indigo-600 font-bold">{displayName}</span></p>
@@ -98,7 +98,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
           >
             {isConnected ? <Cloud size={14} /> : <CloudOff size={14} />}
             <span className="text-[10px] font-black uppercase tracking-widest">
-              {isChecking ? 'Syncing...' : isConnected ? 'Grid Operational' : 'Node Offline'}
+              {isChecking ? 'Syncing...' : isConnected ? 'Service Operational' : 'System Offline'}
             </span>
           </button>
         </div>
@@ -116,7 +116,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
           <PerspectiveCard 
             title="Cluster Performance" 
             desc="Oversee lesson plan quality and curriculum adherence across all teachers in your school cluster."
-            value="12 Nodes"
+            value="12 Accounts"
             icon={<Users size={32} className="text-purple-600" />}
             btnLabel="Manage Teachers"
             onClick={() => onViewChange('mission')}
@@ -152,9 +152,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
           <div className="absolute top-0 right-0 p-8 opacity-[0.05] text-white group-hover:scale-110 transition-transform duration-700"><BookOpen size={300} /></div>
           <div className="relative z-10 max-w-2xl space-y-8">
             <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full text-[10px] font-black uppercase tracking-[0.2em]">
-              <Sparkles size={12} className="text-emerald-300" /> Neural Hub Access Active
+              <Sparkles size={12} className="text-emerald-300" /> Intelligence Hub Access Active
             </div>
-            <h2 className="text-4xl md:text-7xl font-black tracking-tighter leading-[0.85]">Launch <br />Synthesis <span className="text-emerald-300">Node.</span></h2>
+            <h2 className="text-4xl md:text-7xl font-black tracking-tighter leading-[0.85]">Launch <br />Synthesis <span className="text-emerald-300">Hub.</span></h2>
             <p className="text-indigo-100 text-lg md:text-xl leading-relaxed font-medium opacity-90">
               Access high-fidelity tools for 5E lesson planning, Bloom-scaled assessments, and curriculum alignment auditing.
             </p>

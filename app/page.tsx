@@ -169,7 +169,7 @@ export default function App() {
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" />
         </div>
       </div>
-      <p className="mt-8 text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] opacity-50">Neural Handshake</p>
+      <p className="mt-8 text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] opacity-50">Initializing Workspace</p>
     </div>
   );
   
@@ -201,7 +201,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-6">
             <div className="hidden md:flex flex-col items-end">
-              <span className="text-[8px] font-black uppercase text-slate-400">Node Quota</span>
+              <span className="text-[8px] font-black uppercase text-slate-400">Usage Limit</span>
               <span className="text-[10px] font-bold text-indigo-600">{safeProfile.queriesUsed} / {safeProfile.queriesLimit}</span>
             </div>
             <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">

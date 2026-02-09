@@ -44,7 +44,7 @@ const Documents: React.FC<DocumentsProps> = ({
   // FOUNDER EXCEPTION: Admins have effectively infinite slots (999,999)
   const limitReached = isAdmin ? false : documents.length >= limits.docs;
   
-  // FOUNDER PRIVILEGE: Admins can delete ANY node. Users can only delete failed ones.
+  // FOUNDER PRIVILEGE: Admins can delete ANY record. Users can only delete failed ones.
   const canDeleteNode = (doc: Document) => {
     if (isAdmin) return true; 
     if (doc.status === 'failed') return true; 
@@ -108,7 +108,7 @@ const Documents: React.FC<DocumentsProps> = ({
   }, [processingIds, documents, onUpdateDocument]);
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('PURGE NODE: Are you sure you want to permanently remove this asset from the grid?')) {
+    if (window.confirm('PURGE RECORD: Are you sure you want to permanently remove this asset from the library?')) {
       setDeletingId(id);
       try { 
         const { data: { session } } = await supabase.auth.getSession();
@@ -161,11 +161,11 @@ const Documents: React.FC<DocumentsProps> = ({
         <div>
           <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight uppercase flex items-center gap-4">
             Library
-            {isAdmin && <span className="px-3 py-1 bg-rose-600 text-white rounded-full text-[10px] uppercase font-black tracking-widest shadow-lg">Founder Node</span>}
+            {isAdmin && <span className="px-3 py-1 bg-rose-600 text-white rounded-full text-[10px] uppercase font-black tracking-widest shadow-lg">System Founder</span>}
           </h1>
           <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium italic text-sm">
             <Database size={18} className="text-indigo-500" />
-            Neural Quota: {documents.length} / {isAdmin ? '∞' : limits.docs} Active Segments
+            Curriculum Quota: {documents.length} / {isAdmin ? '∞' : limits.docs} Active Segments
           </p>
         </div>
         <button 
@@ -206,14 +206,14 @@ const Documents: React.FC<DocumentsProps> = ({
                         onClick={() => handleDelete(doc.id)} 
                         disabled={deletingId === doc.id}
                         className="p-2.5 bg-rose-50 text-rose-500 rounded-full opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50 shadow-sm"
-                        title={isAdmin ? "FOUNDER OVERRIDE: Purge Node" : "Clear failed node"}
+                        title={isAdmin ? "FOUNDER OVERRIDE: Purge Record" : "Remove failed document"}
                       >
                         {deletingId === doc.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                       </button>
                     )}
 
                     {!showDelete && isReady && (
-                      <div className="p-2.5 bg-slate-50 text-slate-300 rounded-full cursor-not-allowed opacity-0 group-hover:opacity-100 transition-all" title="Verified nodes are permanent to protect curriculum integrity.">
+                      <div className="p-2.5 bg-slate-50 text-slate-300 rounded-full cursor-not-allowed opacity-0 group-hover:opacity-100 transition-all" title="Verified records are permanent to protect curriculum integrity.">
                         <Lock size={16} />
                       </div>
                     )}
@@ -223,13 +223,13 @@ const Documents: React.FC<DocumentsProps> = ({
                <div className="space-y-4">
                  <h3 className="font-bold text-slate-900 dark:text-white truncate text-lg uppercase tracking-tight">{doc.name}</h3>
                  <div className="flex flex-wrap gap-2">
-                    {isReady && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Neural Anchored</span>}
+                    {isReady && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Standard Anchored</span>}
                     {isProcessing && <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
                     {isIndexing && <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Database size={10} className="animate-pulse"/> Indexing...</span>}
                     {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
                  </div>
                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed italic">
-                   {isFailed ? (doc.documentSummary || "Critical fault during extraction. Purge this node and try again.") : (doc.documentSummary || "Master MD extraction in progress...")}
+                   {isFailed ? (doc.documentSummary || "Critical fault during extraction. Remove this item and try again.") : (doc.documentSummary || "Master MD extraction in progress...")}
                  </p>
                  {isFailed && isAdmin && (
                    <p className="text-[9px] font-bold text-rose-500 bg-rose-50 p-2 rounded-xl border border-rose-100 mt-2">
@@ -244,7 +244,7 @@ const Documents: React.FC<DocumentsProps> = ({
         {documents.length === 0 && (
           <div className="col-span-full py-40 text-center border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[4rem] opacity-30">
             <FileText size={64} className="mx-auto mb-6 text-slate-300" />
-            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Grid Empty</p>
+            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Library Empty</p>
           </div>
         )}
       </div>

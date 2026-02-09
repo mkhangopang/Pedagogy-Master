@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
         
         // 🚀 VIRAL PEDAGOGICAL WATERMARK
         const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://edunexus.ai';
-        const watermark = `\n\n---\n### 🏛️ Institutional Intelligence Node\n**Synthesized for:** ${brandName}\n**Alignment Status:** ✅ Verified Standards Match\n\n*Created with EduNexus AI — [Build your own standards-aligned lessons here](${appUrl})*`;
+        const watermark = `\n\n---\n### 🏛️ Institutional Intelligence Hub\n**Synthesized for:** ${brandName}\n**Alignment Status:** ✅ Verified Standards Match\n\n*Created with EduNexus AI — [Build your own standards-aligned lessons here](${appUrl})*`;
         
         controller.enqueue(encoder.encode(watermark));
         controller.close();
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("❌ [Neural Gateway Fault]:", error);
     return NextResponse.json({ 
-      error: "Synthesis grid exception. Please check your Node Quota.",
+      error: "Synthesis grid exception. Please check your Usage Limit.",
       details: error.message
     }, { status: 500 });
   }
