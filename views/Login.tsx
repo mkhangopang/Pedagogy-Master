@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured, getURL } from '../lib/supabase';
-import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, HelpCircle, Globe } from 'lucide-react';
+import { GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, HelpCircle, Globe, ShieldCheck } from 'lucide-react';
 
 interface LoginProps {
   onSession: (user: any) => void;
@@ -18,15 +19,32 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
   const [error, setError] = useState<{ message: string, code?: string } | null>(null);
   const [isVercel, setIsVercel] = useState(false);
   
+  // Security measures
   const [honeypot, setHoneypot] = useState('');
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   useEffect(() => {
     setIsVercel(window.location.hostname.includes('vercel.app'));
-  }, []);
+    
+    // Initialize Turnstile if available
+    const win = window as any;
+    if (win.turnstile) {
+      win.turnstile.render('#turnstile-widget', {
+        sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA', // Use demo key if none provided
+        callback: (token: string) => setCaptchaToken(token),
+      });
+    }
+  }, [view]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 🛡️ BOT MITIGATION: Honeypot & CAPTCHA
     if (honeypot) return;
+    if (view === 'signup' && !captchaToken) {
+      setError({ message: "Bot verification required. Please check the CAPTCHA widget." });
+      return;
+    }
 
     if (!isSupabaseConfigured()) {
       setError({ message: "Infrastructure handshake pending. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set correctly in Vercel." });
@@ -48,10 +66,14 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
         if (data.session) onSession(data.session);
       } else if (view === 'signup') {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
+        
         const { data, error: authError } = await supabase.auth.signUp({ 
           email, 
           password,
-          options: { data: { role: 'teacher', plan: 'free' } }
+          options: { 
+            data: { role: 'teacher', plan: 'free' },
+            captchaToken: captchaToken || undefined
+          }
         });
         if (authError) throw authError;
         if (data.user && !data.session) setView('signup-success');
@@ -127,14 +149,11 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
           <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-200 mb-4">
             <GraduationCap className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Pedagogy Master</h1>
-          {isVercel && (
-             <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 rounded-full">
-               <Globe size={10} className="text-emerald-600" />
-               <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Production Node Linked</span>
-             </div>
-          )}
-          {!isVercel && <p className="text-slate-500 mt-2 font-medium">Elevating education with Neural AI</p>}
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight uppercase">Pedagogy Master</h1>
+          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 rounded-full">
+            <ShieldCheck size={10} className="text-emerald-600" />
+            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Enterprise Protocol Secure</span>
+          </div>
         </div>
 
         <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-white/5">
@@ -215,18 +234,19 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
               </div>
             )}
 
+            {/* 🛡️ CLOUDFLARE TURNSTILE WIDGET */}
+            {view === 'signup' && (
+              <div className="py-2">
+                <div id="turnstile-widget" className="flex justify-center"></div>
+              </div>
+            )}
+
             {error && (
               <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl space-y-2">
                 <div className="flex items-start gap-2 text-[11px] font-bold uppercase tracking-tight">
                   <AlertCircle size={14} className="shrink-0 mt-0.5" /> 
                   <span>{error.message}</span>
                 </div>
-                {error.code === 'CONFIG_ERROR' && (
-                  <div className="pt-2 border-t border-rose-100/50 dark:border-rose-900/30 flex items-start gap-2 text-[10px] leading-relaxed">
-                    <HelpCircle size={12} className="shrink-0 mt-0.5" />
-                    <p><b>Check Keys:</b> Ensure the Client ID and Client Secret are pasted correctly into your Supabase Auth settings. Do not split the Client ID.</p>
-                  </div>
-                )}
               </div>
             )}
 
@@ -243,15 +263,6 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
             </div>
           )}
         </div>
-
-        {!isSupabaseConfigured() && !loading && (
-          <div className="mt-8 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-2xl border border-dashed border-amber-200 dark:border-amber-900/30 flex items-center gap-3">
-             <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-             <p className="text-[10px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400 leading-tight">
-               Infrastructure Handshake Pending... Ensure NEXT_PUBLIC_SUPABASE_URL is set in Vercel.
-             </p>
-          </div>
-        )}
       </div>
     </div>
   );

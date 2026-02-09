@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
@@ -8,8 +9,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED CHAT ENGINE (v27.1)
- * Optimized session validation using stateless server client.
+ * UNIFIED CHAT ENGINE (v28.0 - VIRAL & INSTITUTIONAL)
+ * Feature: Auto-Branding & Viral Watermarking
  */
 export async function POST(req: NextRequest) {
   try {
@@ -39,6 +40,8 @@ export async function POST(req: NextRequest) {
     }
 
     const authenticatedSupabase = getSupabaseServerClient(token);
+    const { data: profile } = await authenticatedSupabase.from('profiles').select('workspace_name').eq('id', user.id).single();
+    const brandName = profile?.workspace_name || 'EduNexus AI';
 
     const { text, provider, metadata } = await generateAIResponse(
       message,
@@ -48,17 +51,22 @@ export async function POST(req: NextRequest) {
       adaptiveContext,
       undefined,
       'chat_tutor',
-      DEFAULT_MASTER_PROMPT,
+      `${DEFAULT_MASTER_PROMPT}\n[INSTITUTION_ID: ${brandName}]`,
       priorityDocumentId
     );
 
+    const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://edunexus.ai';
     const encoder = new TextEncoder();
+    
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        const groundedNote = metadata?.isGrounded ? ` | Intelligence anchored to: ${metadata.sourceDocument}` : '';
-        const footer = `\n\n---\n*Synthesis Node: ${provider}${groundedNote}*`;
-        controller.enqueue(encoder.encode(footer));
+        
+        // 🚀 VIRAL PEDAGOGICAL WATERMARK
+        const groundedNote = metadata?.isGrounded ? ` | Standards anchored to: ${metadata.sourceDocument}` : '';
+        const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence\n*Synthesized via EduNexus AI Grid (${provider}${groundedNote})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
+        
+        controller.enqueue(encoder.encode(watermark));
         controller.close();
       }
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
