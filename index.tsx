@@ -1,23 +1,18 @@
 
 /**
- * NEURAL INITIALIZATION LAYER (v8.4)
+ * NEURAL INITIALIZATION LAYER (v8.5)
  * Optimized for Public Repository Safety and Next.js 15 Runtime.
  */
 if (typeof window !== 'undefined') {
   const win = window as any;
   win.process = win.process || { env: {} };
+  win.process.env = win.process.env || {};
   
-  let envSource: any = {};
-  try {
-    envSource = process.env;
-  } catch (e) {
-    envSource = {};
-  }
-
-  const publicVars = {
-    NEXT_PUBLIC_SUPABASE_URL: envSource.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: envSource.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    NEXT_PUBLIC_R2_PUBLIC_URL: envSource.NEXT_PUBLIC_R2_PUBLIC_URL
+  // Explicitly map NEXT_PUBLIC vars to window to bridge standard Next.js behavior with preview environments
+  const publicVars: Record<string, string | undefined> = {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_R2_PUBLIC_URL: process.env.NEXT_PUBLIC_R2_PUBLIC_URL
   };
 
   Object.entries(publicVars).forEach(([k, v]) => {
@@ -39,7 +34,6 @@ if (container) {
   
   if (!isHydrated) {
     const root = createRoot(container);
-    // Removed StrictMode to prevent double-initialization logs/warnings in Studio environment
     root.render(
       <App />
     );

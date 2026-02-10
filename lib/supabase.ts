@@ -22,20 +22,22 @@ let supabaseInstance: SupabaseClient | null = null;
 export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   
-  // Try to find URL and Key from multiple potential locations
-  // 1. process.env (Polyfilled or injected)
-  // 2. window.process.env (Set by index.tsx)
-  // 3. window directly (Legacy/Fallback)
+  /**
+   * CRITICAL: Next.js only injects variables statically at build time.
+   * Dynamic access like process.env[name] will ALWAYS return undefined in the browser.
+   */
+  const staticUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const staticKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   
-  const getVar = (name: string): string => {
-    if (process.env[name]) return process.env[name] as string;
-    if (isBrowser && (window as any).process?.env?.[name]) return (window as any).process.env[name];
-    if (isBrowser && (window as any)[name]) return (window as any)[name];
-    return '';
+  // Fallback for non-standard environments (like AI Studio preview or if window injection is used)
+  const getFallbackVar = (name: string): string => {
+    if (!isBrowser) return '';
+    const win = window as any;
+    return win.process?.env?.[name] || win[name] || '';
   };
 
-  const url = getVar('NEXT_PUBLIC_SUPABASE_URL').trim();
-  const key = getVar('NEXT_PUBLIC_SUPABASE_ANON_KEY').trim();
+  const url = (staticUrl || getFallbackVar('NEXT_PUBLIC_SUPABASE_URL')).trim();
+  const key = (staticKey || getFallbackVar('NEXT_PUBLIC_SUPABASE_ANON_KEY')).trim();
   
   return { url, key };
 };
@@ -49,25 +51,26 @@ export const getURL = () => {
 
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  return !!(url && url.startsWith('https://') && key && key.length > 20);
+  // Valid URL and a key that looks like a Supabase Anon Key (long JWT)
+  return !!(url && url.startsWith('https://') && key && key.length > 30);
 };
 
 export const getSupabaseClient = (): SupabaseClient => {
-  // Priority: Global instance from window (prevents GoTrue warnings)
   const globalClient = getGlobalSupabase();
   if (globalClient) return globalClient;
   
-  // Secondary: Module level singleton
   if (supabaseInstance) return supabaseInstance;
 
   const { url, key } = getCredentials();
+  
+  // If not configured, we return a dummy client to prevent crashes, but isSupabaseConfigured() will catch it
   if (!isSupabaseConfigured()) {
-    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+    console.warn("⚠️ Infrastructure handshake incomplete: Missing Supabase credentials.");
+    return createClient('https://placeholder-node.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
   }
   
   const isServer = typeof window === 'undefined';
   
-  // Standard Client
   const client = createClient(url, key, {
     auth: { 
       persistSession: true,
@@ -90,7 +93,7 @@ export const getSupabaseClient = (): SupabaseClient => {
  */
 export const getSupabaseServerClient = (token?: string): SupabaseClient => {
   const { url, key } = getCredentials();
-  if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'placeholder-key');
+  if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
 
   const options: any = {
     auth: { 
