@@ -33,59 +33,114 @@
   }
 }
 
-/* 🖨️ HIGH-FIDELITY PRINT ENGINE (v1.0) */
+/* 🖨️ WORLD-CLASS HIGH-FIDELITY PRINT ENGINE (v2.0) */
 @media print {
-  body {
+  @page {
+    margin: 2cm;
+    size: auto;
+  }
+
+  html, body {
     background: white !important;
     color: black !important;
+    height: auto !important;
+    overflow: visible !important;
+    font-size: 11pt !important;
   }
 
-  /* Hide UI elements */
-  header, nav, aside, footer, button, .no-print, .shrink-0 {
+  /* Hide UI elements with absolute certainty */
+  header, nav, aside, footer, button, .no-print, .shrink-0, 
+  [role="button"], .sidebar-wrapper, .input-container {
     display: none !important;
+    visibility: hidden !important;
   }
 
-  /* Reset layout for print */
-  #root, main {
+  /* Break the Flex/Grid constraints for vertical flow */
+  #root, main, .flex, .grid {
+    display: block !important;
+    float: none !important;
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+
+  /* Artifact Container Reset */
+  .print-container {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
     padding: 0 !important;
     margin: 0 !important;
-    display: block !important;
-    overflow: visible !important;
-  }
-
-  .print-container {
-    width: 100% !important;
-    max-width: 100% !important;
-    padding: 1in !important;
     box-shadow: none !important;
     border: none !important;
+    background: white !important;
   }
 
+  /* Prose Enhancements for Paper */
   .prose {
-    font-family: 'Times New Roman', serif !important;
-    font-size: 11pt !important;
-    line-height: 1.5 !important;
+    font-family: 'Inter', 'Segoe UI', serif !important;
     color: black !important;
+    line-height: 1.6 !important;
+    max-width: 100% !important;
   }
 
   .prose h1, .prose h2, .prose h3 {
-    color: black !important;
-    margin-top: 20pt !important;
-    margin-bottom: 10pt !important;
+    color: #1a1a1a !important;
+    margin-top: 1.5em !important;
+    margin-bottom: 0.5em !important;
     page-break-after: avoid;
+    break-after: avoid;
   }
 
+  .prose p, .prose li {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 0.8em !important;
+  }
+
+  /* Table Fidelity */
   .artifact-canvas-container table {
     display: table !important;
     width: 100% !important;
-    border: 1pt solid #ccc !important;
+    border: 0.5pt solid #ddd !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto !important;
   }
 
+  .artifact-canvas-container tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .artifact-canvas-container th {
+    background-color: #f8fafc !important;
+    border: 0.5pt solid #ddd !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .artifact-canvas-container td {
+    border: 0.5pt solid #ddd !important;
+    padding: 8pt !important;
+  }
+
+  /* Horizontal Rule for Page Separation */
+  .prose hr {
+    border-top: 1pt solid #eee !important;
+    margin: 2em 0 !important;
+  }
+
+  /* Header/Footer repetition logic */
   .print-header {
-    display: block !important;
-    border-bottom: 2pt solid #000;
-    margin-bottom: 20pt;
-    padding-bottom: 10pt;
+    display: flex !important;
+    border-bottom: 2pt solid #4f46e5;
+    margin-bottom: 30pt;
+    padding-bottom: 15pt;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .print-footer {
@@ -96,9 +151,10 @@
     right: 0;
     text-align: center;
     font-size: 8pt;
-    color: #666;
+    color: #64748b;
     padding-top: 10pt;
-    border-top: 1pt solid #eee;
+    border-top: 0.5pt solid #e2e8f0;
+    background: white;
   }
 }
 

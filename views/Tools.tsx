@@ -7,7 +7,7 @@ import {
   FileText, Copy, ArrowRight, Printer, Share2, 
   MessageSquare, FileEdit, Zap, GraduationCap,
   ShieldCheck, Library,
-  ChevronLeft, Crown, Mail,
+  ChevronLeft, Crown, Mail, Check,
   PenTool, Compass, SearchCode, BookMarked, Globe2, Globe
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
@@ -42,6 +42,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [isSliderOpen, setIsSliderOpen] = useState(false);
   const [localDocs, setLocalDocs] = useState<Document[]>(documents);
   const [isSwitchingContext, setIsSwitchingContext] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
@@ -120,55 +121,86 @@ USER_QUERY: ${userInput}`;
     } finally { setIsGenerating(false); }
   };
 
-  const saveToGoogleDrive = () => {
+  /**
+   * WORLD-CLASS RICH TEXT COPY
+   * Preserves formatting for Google Docs / Microsoft Word
+   */
+  const handleRichCopy = async () => {
+    if (!canvasContent) return;
+    const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
+    const renderedHtml = renderSTEM(cleanText);
+
+    // Create a styled wrapper for the HTML copy to ensure fonts look decent in the target doc
+    const styledHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        ${renderedHtml}
+      </div>
+    `;
+
+    try {
+      const textBlob = new Blob([cleanText], { type: 'text/plain' });
+      const htmlBlob = new Blob([styledHtml], { type: 'text/html' });
+      
+      const clipboardItem = new ClipboardItem({
+        'text/plain': textBlob,
+        'text/html': htmlBlob
+      });
+
+      await navigator.clipboard.write([clipboardItem]);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (err) {
+      // Fallback for browsers that don't support ClipboardItem
+      await navigator.clipboard.writeText(cleanText);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    }
+  };
+
+  const handleGDriveExport = () => {
     if (!isPro) {
       alert("Pro License Required for Google Drive Integration.");
       return;
     }
     
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
-    if (!cleanText) {
-      alert("Synthesis Canvas is empty. Generate content first.");
-      return;
-    }
+    if (!cleanText) return;
 
-    const blob = new Blob([cleanText], { type: 'text/markdown' });
+    // We generate a specialized HTML file that G-Drive converts perfectly to a Doc
+    const docTitle = `${getToolDisplayName(activeTool || 'master_plan')}_${new Date().toISOString().slice(0,10)}`;
+    const htmlWrapper = `
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>${docTitle}</title>
+          <style>
+            body { font-family: 'Calibri', 'Arial', sans-serif; padding: 1in; }
+            h1 { color: #1e1b4b; border-bottom: 2px solid #4f46e5; }
+            table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+            th { background-color: #f3f4f6; }
+          </style>
+        </head>
+        <body>
+          <div style="text-align: right; font-size: 10px; color: #999;">Synthesized via EduNexus AI</div>
+          ${renderSTEM(cleanText)}
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([htmlWrapper], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${activeTool || 'Artifact'}_${new Date().toISOString().slice(0,10)}.md`;
+    a.download = `${docTitle}.html`;
     a.click();
     
-    alert("Pedagogical Artifact downloaded. Upload this .md file to Google Drive or paste it into a Doc to finalize.");
+    alert("Artifact optimized for Google Docs. Upload the downloaded .html file to Google Drive and 'Open with Google Docs' for perfect formatting.");
   };
 
   const handlePrint = () => {
-    if (!canvasContent) {
-      alert("Synthesis Canvas is empty.");
-      return;
-    }
+    if (!canvasContent) return;
     window.print();
-  };
-
-  const shareSnapshot = async () => {
-    const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
-    const appBaseUrl = 'pedagogy-master.vercel.app';
-    const summary = `🚀 EduNexus AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'General'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: ${appBaseUrl}`;
-    
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'EduNexus AI Lesson Plan',
-          text: summary,
-          url: `https://${appBaseUrl}`
-        });
-      } catch (e) { 
-        console.log("Sharing cancelled"); 
-      }
-    } else {
-      navigator.clipboard.writeText(summary);
-      alert("Synthesis metadata card copied to clipboard. Ready for WhatsApp/Messenger sharing.");
-    }
   };
 
   const toolDefinitions: { id: ToolType, name: string, icon: any, desc: string, color: string }[] = [
@@ -289,42 +321,48 @@ USER_QUERY: ${userInput}`;
                 <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Expert Artifact</span>
               </div>
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-                <button onClick={handlePrint} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0"><Printer size={14}/> Print</button>
-                <button onClick={saveToGoogleDrive} className="px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border border-indigo-100 dark:border-indigo-900/40 shrink-0"><Globe size={14}/> G-Drive</button>
-                <button onClick={shareSnapshot} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0"><Share2 size={14}/> Share</button>
+                <button onClick={handlePrint} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0">
+                  <Printer size={14}/> Print
+                </button>
+                <button onClick={handleGDriveExport} className="px-4 py-2 bg-[#1db954]/10 text-[#1db954] hover:bg-[#1db954]/20 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border border-[#1db954]/20 shrink-0">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.502L1.15 14.782L4.44 20.492L11 9.212L7.71 3.502ZM9.73 15L6.44 20.5H19.56L22.85 15H9.73ZM16.29 3.502L9.73 14.782L13.02 20.492L19.58 9.212L16.29 3.502Z"/></svg>
+                  G-Drive
+                </button>
                 <div className="w-px h-4 bg-slate-200 dark:bg-white/10 mx-1 shrink-0" />
-                <button onClick={() => {
-                  const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
-                  navigator.clipboard.writeText(cleanText);
-                }} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0"><Copy size={14}/> Copy</button>
+                <button 
+                  onClick={handleRichCopy} 
+                  className={`px-4 py-2 ${copySuccess ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 border dark:border-white/5'} rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0`}
+                >
+                  {copySuccess ? <Check size={14}/> : <Copy size={14}/>} {copySuccess ? 'Copied' : 'Rich Copy'}
+                </button>
               </div>
            </div>
            
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a]">
+           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] artifact-wrapper">
               <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full overflow-x-hidden print-container">
                 {/* 🏷️ INSTITUTIONAL BRANDING */}
                 <div className="hidden print-header space-y-4">
-                   <div className="flex items-center justify-between">
+                   <div className="flex items-center justify-between w-full">
                       <div className="flex items-center gap-3">
                          <div className="p-2 bg-indigo-600 rounded-lg text-white"><GraduationCap size={32} /></div>
                          <div>
-                            <h1 className="text-2xl font-black uppercase tracking-tight">{user.workspaceName || 'EduNexus AI Workspace'}</h1>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]">Institutional Pedagogical Intelligence</p>
+                            <h1 className="text-2xl font-black uppercase tracking-tight" style={{margin: 0}}>{user.workspaceName || 'EduNexus AI Workspace'}</h1>
+                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]" style={{margin: 0}}>Institutional Pedagogical Intelligence</p>
                          </div>
                       </div>
                       <div className="text-right">
-                         <p className="text-[9px] font-bold text-slate-400 uppercase">Artifact Synthesized By</p>
-                         <p className="text-xs font-black uppercase text-indigo-600">{user.name}</p>
+                         <p className="text-[9px] font-bold text-slate-400 uppercase" style={{margin: 0}}>Synthesized By</p>
+                         <p className="text-xs font-black uppercase text-indigo-600" style={{margin: 0}}>{user.name}</p>
                       </div>
                    </div>
-                   <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+                   <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 w-full">
                       <div>
-                         <p className="text-[8px] font-bold text-slate-400 uppercase">Curriculum Authority</p>
-                         <p className="text-sm font-bold">{activeDoc?.authority || 'Verified Standard'}</p>
+                         <p className="text-[8px] font-bold text-slate-400 uppercase" style={{margin: 0}}>Authority</p>
+                         <p className="text-sm font-bold" style={{margin: 0}}>{activeDoc?.authority || 'Verified Standard'}</p>
                       </div>
                       <div className="text-right">
-                         <p className="text-[8px] font-bold text-slate-400 uppercase">Subject / Grade</p>
-                         <p className="text-sm font-bold">{activeDoc?.subject || 'General'} / {activeDoc?.gradeLevel || 'Mixed'}</p>
+                         <p className="text-[8px] font-bold text-slate-400 uppercase" style={{margin: 0}}>Subject / Grade</p>
+                         <p className="text-sm font-bold" style={{margin: 0}}>{activeDoc?.subject || 'General'} / {activeDoc?.gradeLevel || 'Mixed'}</p>
                       </div>
                    </div>
                 </div>
@@ -342,7 +380,7 @@ USER_QUERY: ${userInput}`;
                 )}
 
                 <div className="hidden print-footer">
-                   <p>© {new Date().getFullYear()} {user.workspaceName || 'EduNexus AI'} • Authenticity Verified through Neural Audit</p>
+                   <p>© {new Date().getFullYear()} {user.workspaceName || 'EduNexus AI'} • Authentic Standards-Aligned Artifact • Neural Verified</p>
                 </div>
               </div>
            </div>
