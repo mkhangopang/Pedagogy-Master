@@ -7,7 +7,7 @@ import {
   FileText, Copy, ArrowRight, Printer, Share2, 
   MessageSquare, FileEdit, Zap, GraduationCap,
   ShieldCheck, Library,
-  ChevronLeft, Crown, Mail, Check,
+  ChevronLeft, Crown, Mail, Check, X,
   PenTool, Compass, SearchCode, BookMarked, Globe2, Globe
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
@@ -67,8 +67,13 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       if (updated.find(d => d.id === docId)?.isSelected) {
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
-      setTimeout(() => setIsSliderOpen(false), 200);
-    } catch (e) { console.error(e); } finally { setIsSwitchingContext(false); }
+      // Keep slider open for a moment to show feedback then close
+      setTimeout(() => setIsSliderOpen(false), 300);
+    } catch (e) { 
+      console.error(e); 
+    } finally { 
+      setIsSwitchingContext(false); 
+    }
   };
 
   const handleGenerate = async (userInput: string) => {
@@ -121,36 +126,20 @@ USER_QUERY: ${userInput}`;
     } finally { setIsGenerating(false); }
   };
 
-  /**
-   * WORLD-CLASS RICH TEXT COPY
-   * Preserves formatting for Google Docs / Microsoft Word
-   */
   const handleRichCopy = async () => {
     if (!canvasContent) return;
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     const renderedHtml = renderSTEM(cleanText);
-
-    // Create a styled wrapper for the HTML copy to ensure fonts look decent in the target doc
-    const styledHtml = `
-      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-        ${renderedHtml}
-      </div>
-    `;
+    const styledHtml = `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${renderedHtml}</div>`;
 
     try {
       const textBlob = new Blob([cleanText], { type: 'text/plain' });
       const htmlBlob = new Blob([styledHtml], { type: 'text/html' });
-      
-      const clipboardItem = new ClipboardItem({
-        'text/plain': textBlob,
-        'text/html': htmlBlob
-      });
-
+      const clipboardItem = new ClipboardItem({ 'text/plain': textBlob, 'text/html': htmlBlob });
       await navigator.clipboard.write([clipboardItem]);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     } catch (err) {
-      // Fallback for browsers that don't support ClipboardItem
       await navigator.clipboard.writeText(cleanText);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
@@ -158,43 +147,17 @@ USER_QUERY: ${userInput}`;
   };
 
   const handleGDriveExport = () => {
-    if (!isPro) {
-      alert("Pro License Required for Google Drive Integration.");
-      return;
-    }
-    
+    if (!isPro) { alert("Pro License Required for Google Drive Integration."); return; }
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     if (!cleanText) return;
-
-    // We generate a specialized HTML file that G-Drive converts perfectly to a Doc
     const docTitle = `${getToolDisplayName(activeTool || 'master_plan')}_${new Date().toISOString().slice(0,10)}`;
-    const htmlWrapper = `
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>${docTitle}</title>
-          <style>
-            body { font-family: 'Calibri', 'Arial', sans-serif; padding: 1in; }
-            h1 { color: #1e1b4b; border-bottom: 2px solid #4f46e5; }
-            table { border-collapse: collapse; width: 100%; margin: 1em 0; }
-            th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-            th { background-color: #f3f4f6; }
-          </style>
-        </head>
-        <body>
-          <div style="text-align: right; font-size: 10px; color: #999;">Synthesized via EduNexus AI</div>
-          ${renderSTEM(cleanText)}
-        </body>
-      </html>
-    `;
-
+    const htmlWrapper = `<html><head><meta charset="utf-8"><title>${docTitle}</title><style>body { font-family: 'Calibri', 'Arial', sans-serif; padding: 1in; } h1 { color: #1e1b4b; border-bottom: 2px solid #4f46e5; } table { border-collapse: collapse; width: 100%; margin: 1em 0; } th, td { border: 1px solid #ddd; padding: 10px; text-align: left; } th { background-color: #f3f4f6; }</style></head><body><div style="text-align: right; font-size: 10px; color: #999;">Synthesized via EduNexus AI</div>${renderSTEM(cleanText)}</body></html>`;
     const blob = new Blob([htmlWrapper], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${docTitle}.html`;
     a.click();
-    
     alert("Artifact optimized for Google Docs. Upload the downloaded .html file to Google Drive and 'Open with Google Docs' for perfect formatting.");
   };
 
@@ -216,9 +179,59 @@ USER_QUERY: ${userInput}`;
     return renderSTEM(contentToParse);
   };
 
+  const shareSnapshot = async () => {
+    const appBaseUrl = 'pedagogy-master.vercel.app';
+    const summary = `🚀 EduNexus AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'General'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: ${appBaseUrl}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'EduNexus AI Lesson Plan', text: summary, url: `https://${appBaseUrl}` });
+      } catch (e) { console.log("Sharing cancelled"); }
+    } else {
+      navigator.clipboard.writeText(summary);
+      alert("Synthesis metadata card copied to clipboard.");
+    }
+  };
+
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
+        {/* Document Slider / Sidebar */}
+        <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+           <div className="p-8 flex flex-col h-full">
+              <div className="flex items-center justify-between mb-8">
+                 <div className="flex items-center gap-3">
+                    <Library size={20} className="text-indigo-600" />
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Curriculum Vault</h3>
+                 </div>
+                 <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
+              </div>
+              <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
+                 {localDocs.length > 0 ? localDocs.map(doc => (
+                   <button 
+                    key={doc.id} 
+                    onClick={() => toggleDocContext(doc.id)}
+                    className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 group relative overflow-hidden ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}
+                   >
+                     <div className="flex items-center justify-between">
+                       <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Node ID: {doc.id.slice(0,8)}</span>
+                       {doc.isSelected && <Check size={12} className="text-white" />}
+                     </div>
+                     <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
+                     <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} • {doc.subject}</p>
+                   </button>
+                 )) : (
+                   <div className="py-20 text-center opacity-40">
+                      <FileText size={32} className="mx-auto mb-4" />
+                      <p className="text-[10px] font-black uppercase tracking-widest">No assets linked.</p>
+                   </div>
+                 )}
+              </div>
+              <div className="pt-6 border-t dark:border-white/5 mt-auto">
+                 <p className="text-[9px] text-slate-400 font-bold uppercase leading-relaxed">Select a curriculum node to focus the neural synthesis on that specific standard.</p>
+              </div>
+           </div>
+        </div>
+        {isSliderOpen && <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[190]" onClick={() => setIsSliderOpen(false)} />}
+
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
           <div className="flex items-center gap-4 md:gap-6">
             <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={24} className="md:size-8" /></div>
@@ -256,7 +269,7 @@ USER_QUERY: ${userInput}`;
 
             <button 
               onClick={() => setIsSliderOpen(true)}
-              className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600 rounded-full transition-all ml-1 shadow-inner"
+              className={`p-3 rounded-full transition-all ml-1 shadow-inner ${isSliderOpen ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}
             >
               <Library size={20} />
             </button>

@@ -3,16 +3,43 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan } from '../types';
 import { DEFAULT_MASTER_PROMPT } from '../constants';
 
+// Use a truly global singleton to survive HMR and module re-evaluation
+const getGlobalSupabase = (): SupabaseClient | null => {
+  if (typeof window !== 'undefined') {
+    return (window as any).__supabaseInstance || null;
+  }
+  return null;
+};
+
+const setGlobalSupabase = (client: SupabaseClient) => {
+  if (typeof window !== 'undefined') {
+    (window as any).__supabaseInstance = client;
+  }
+};
+
 let supabaseInstance: SupabaseClient | null = null;
 
 export const getCredentials = () => {
-  const isServer = typeof window === 'undefined';
-  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || (!isServer ? (window as any).NEXT_PUBLIC_SUPABASE_URL : '') || '').trim();
-  const key = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || (!isServer ? (window as any).NEXT_PUBLIC_SUPABASE_ANON_KEY : '') || '').trim();
+  const isBrowser = typeof window !== 'undefined';
+  
+  // Try to find URL and Key from multiple potential locations
+  // 1. process.env (Polyfilled or injected)
+  // 2. window.process.env (Set by index.tsx)
+  // 3. window directly (Legacy/Fallback)
+  
+  const getVar = (name: string): string => {
+    if (process.env[name]) return process.env[name] as string;
+    if (isBrowser && (window as any).process?.env?.[name]) return (window as any).process.env[name];
+    if (isBrowser && (window as any)[name]) return (window as any)[name];
+    return '';
+  };
+
+  const url = getVar('NEXT_PUBLIC_SUPABASE_URL').trim();
+  const key = getVar('NEXT_PUBLIC_SUPABASE_ANON_KEY').trim();
+  
   return { url, key };
 };
 
-// Helper to get the correct redirect URL for OAuth - ensuring absolute consistency
 export const getURL = () => {
   if (typeof window !== 'undefined') {
     return window.location.origin;
@@ -26,14 +53,22 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 export const getSupabaseClient = (): SupabaseClient => {
+  // Priority: Global instance from window (prevents GoTrue warnings)
+  const globalClient = getGlobalSupabase();
+  if (globalClient) return globalClient;
+  
+  // Secondary: Module level singleton
   if (supabaseInstance) return supabaseInstance;
+
   const { url, key } = getCredentials();
-  if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'placeholder-key');
+  if (!isSupabaseConfigured()) {
+    return createClient('https://placeholder.supabase.co', 'placeholder-key');
+  }
   
   const isServer = typeof window === 'undefined';
   
-  // Use standard localStorage with a stable key to maximize cross-mode persistence
-  supabaseInstance = createClient(url, key, {
+  // Standard Client
+  const client = createClient(url, key, {
     auth: { 
       persistSession: true,
       autoRefreshToken: true, 
@@ -43,9 +78,16 @@ export const getSupabaseClient = (): SupabaseClient => {
       storage: !isServer ? window.localStorage : undefined
     },
   });
-  return supabaseInstance;
+
+  setGlobalSupabase(client);
+  supabaseInstance = client;
+  return client;
 };
 
+/**
+ * Server-specific client. 
+ * persistSession: false is CRITICAL here to prevent storage clashes on client side.
+ */
 export const getSupabaseServerClient = (token?: string): SupabaseClient => {
   const { url, key } = getCredentials();
   if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'placeholder-key');
@@ -103,7 +145,6 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     
-    // Even if profile exists, re-verify Admin role in case environment variables changed
     if (profile && isAdminUser && profile.role !== 'app_admin') {
       const { data: updated } = await supabase
         .from('profiles')

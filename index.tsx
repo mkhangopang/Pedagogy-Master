@@ -39,11 +39,9 @@ if (container) {
   
   if (!isHydrated) {
     const root = createRoot(container);
+    // Removed StrictMode to prevent double-initialization logs/warnings in Studio environment
     root.render(
-      <React.StrictMode>
-        {/* Render App directly. RootLayout is used by Next.js or provides shell via index.html */}
-        <App />
-      </React.StrictMode>
+      <App />
     );
   }
 }
