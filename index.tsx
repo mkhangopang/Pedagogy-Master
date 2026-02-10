@@ -1,6 +1,7 @@
 /**
- * NEURAL INITIALIZATION LAYER (v9.0)
+ * NEURAL INITIALIZATION LAYER (v10.0)
  * Optimized for Public Repository Safety and Runtime Credential Bridging.
+ * This MUST execute before any other imports to correctly shim the environment.
  */
 if (typeof window !== 'undefined') {
   const win = window as any;
@@ -8,18 +9,21 @@ if (typeof window !== 'undefined') {
   win.process.env = win.process.env || {};
   
   // Bridge statically replaced Next.js variables to the global window scope
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // These variables are replaced as string literals by the compiler.
+  const buildUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const buildKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   
-  if (url) win.process.env.NEXT_PUBLIC_SUPABASE_URL = url;
-  if (key) win.process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = key;
+  if (buildUrl) win.process.env.NEXT_PUBLIC_SUPABASE_URL = buildUrl;
+  if (buildKey) win.process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = buildKey;
 
-  console.log('📡 [System] Infrastructure Handshake:', {
-    node: 'Verified',
-    url_linked: !!url,
-    key_linked: !!key && key.length > 20,
-    timestamp: new Date().toISOString()
-  });
+  // Final validation log
+  const hasUrl = !!(buildUrl || win.NEXT_PUBLIC_SUPABASE_URL);
+  const hasKey = !!(buildKey || win.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+
+  console.log(`📡 [System] Infrastructure Handshake: ${hasUrl && hasKey ? 'VERIFIED' : 'PENDING'}`);
+  if (!hasUrl || !hasKey) {
+    console.warn('⚠️ [System] Supabase credentials missing from runtime context.');
+  }
 }
 
 import React from 'react';

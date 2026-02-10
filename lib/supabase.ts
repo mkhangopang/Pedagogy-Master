@@ -5,33 +5,28 @@ import { UserRole, SubscriptionPlan } from '../types';
 declare global {
   interface Window {
     __supabaseInstance?: SupabaseClient;
-    __isDummyInstance?: boolean;
   }
 }
 
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v6.0)
- * CRITICAL: References must be EXPLICIT dot-notation for Next.js compiler replacement.
+ * PRODUCTION CREDENTIAL RESOLVER (v7.0)
+ * Optimized for Next.js build-time replacement and runtime fallback.
  */
 export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : null;
 
-  // 1. Prioritize build-time statically replaced Next.js Public variables
+  // 1. Build-time statically replaced Next.js variables
   let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-  // 2. Fallback to runtime window-shimmed process.env (common in preview grids)
-  if (!url && win?.process?.env?.NEXT_PUBLIC_SUPABASE_URL) {
-    url = win.process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // 2. Runtime fallback (Checks window, process.env, and window-shimming)
+  if (!url || url.length < 5) {
+    url = win?.process?.env?.NEXT_PUBLIC_SUPABASE_URL || win?.NEXT_PUBLIC_SUPABASE_URL || '';
   }
-  if (!key && win?.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    key = win.process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!key || key.length < 20) {
+    key = win?.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || win?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   }
-
-  // 3. Last resort: direct window properties if injected by external platform
-  if (!url && win?.NEXT_PUBLIC_SUPABASE_URL) url = win.NEXT_PUBLIC_SUPABASE_URL;
-  if (!key && win?.NEXT_PUBLIC_SUPABASE_ANON_KEY) key = win.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   return { 
     url: (url || '').trim(), 
@@ -41,13 +36,11 @@ export const getCredentials = () => {
 
 /**
  * VALIDATION NODE
- * Ensures keys are physically present and follow standard Supabase formatting.
+ * Simple existence check to prevent premature initialization failures.
  */
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  const hasUrl = url && (url.startsWith('https://') || url.includes('.supabase.'));
-  const hasKey = key && key.length > 40; // Anon keys are long JWTs
-  return !!(hasUrl && hasKey);
+  return !!(url && url.includes('http') && key && key.length > 20);
 };
 
 /**
@@ -69,27 +62,28 @@ export const getURL = () => {
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v6.0 - PRODUCTION STABILIZED)
- * Strictly ensures only ONE client instance exists to prevent GoTrue conflicts.
+ * THE AUTHENTIC SINGLETON (v7.0 - STABILIZED)
+ * Strictly ensures only ONE real client instance exists.
+ * Does NOT cache dummy instances to allow for runtime key injection.
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
 
-  // Return existing valid instance if available
-  if (!isServer && window.__supabaseInstance && !window.__isDummyInstance) {
+  // If we have a cached REAL instance, return it immediately
+  if (!isServer && window.__supabaseInstance) {
     return window.__supabaseInstance;
   }
 
   const { url, key } = getCredentials();
   const configured = isSupabaseConfigured();
   
-  // If not configured, return a temporary dummy to prevent boot-up crashes
   if (!configured) {
-    const dummyClient = createClient('https://placeholder-node.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key-placeholder');
-    if (!isServer) {
-      window.__isDummyInstance = true;
-    }
-    return dummyClient;
+    // Return a transient dummy client. We DO NOT store this in window.__supabaseInstance
+    // so that subsequent calls can try again if keys appear later.
+    return createClient(
+      'https://placeholder-node.supabase.co', 
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key-placeholder'
+    );
   }
   
   const client = createClient(url, key, {
@@ -98,15 +92,13 @@ export const getSupabaseClient = (): SupabaseClient => {
       autoRefreshToken: true, 
       detectSessionInUrl: true, 
       flowType: 'pkce',
-      storageKey: 'sb-edunexus-auth-unique-v1',
+      storageKey: 'sb-edunexus-auth-stable-v1',
       storage: !isServer ? window.localStorage : undefined
     },
   });
 
-  // Cache strictly for client-side reuse
   if (!isServer) {
     window.__supabaseInstance = client;
-    window.__isDummyInstance = false;
   }
   
   return client;
@@ -124,7 +116,7 @@ export const supabase = new Proxy({} as SupabaseClient, {
   }
 });
 
-// Server-side helpers remain decoupled from the browser singleton
+// Server-side helpers
 export const getSupabaseServerClient = (token?: string): SupabaseClient => {
   const { url, key } = getCredentials();
   if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
@@ -170,8 +162,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     
     if (profile) return profile;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    const metadata = user?.user_metadata || {};
+    const metadata = (await supabase.auth.getUser())?.data?.user?.user_metadata || {};
     const fallbackName = metadata.full_name || metadata.name || email?.split('@')[0] || 'Educator';
 
     const { data: newProfile, error } = await supabase
