@@ -1,75 +1,80 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan } from '../types';
-import { DEFAULT_MASTER_PROMPT } from '../constants';
 
-// Use a truly global singleton to survive HMR and module re-evaluation
-const getGlobalSupabase = (): SupabaseClient | null => {
-  if (typeof window !== 'undefined') {
-    return (window as any).__supabaseInstance || null;
+// Global variable to persist instance across HMR and module re-evaluations
+declare global {
+  interface Window {
+    __supabaseInstance?: SupabaseClient;
   }
-  return null;
-};
+}
 
-const setGlobalSupabase = (client: SupabaseClient) => {
-  if (typeof window !== 'undefined') {
-    (window as any).__supabaseInstance = client;
-  }
-};
-
-let supabaseInstance: SupabaseClient | null = null;
-
+/**
+ * Robust Credential Resolver
+ * Prioritizes process.env but falls back to window-injected variables
+ * which are common in preview/AI Studio environments.
+ */
 export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   
-  /**
-   * CRITICAL: Next.js only injects variables statically at build time.
-   * Dynamic access like process.env[name] will ALWAYS return undefined in the browser.
-   */
-  const staticUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const staticKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  
-  // Fallback for non-standard environments (like AI Studio preview or if window injection is used)
-  const getFallbackVar = (name: string): string => {
-    if (!isBrowser) return '';
+  const getVar = (name: string): string => {
+    if (!isBrowser) return process.env[name] || '';
     const win = window as any;
-    return win.process?.env?.[name] || win[name] || '';
+    // Check various locations where preview environments might inject keys
+    return process.env[name] || win.process?.env?.[name] || win[name] || '';
   };
 
-  const url = (staticUrl || getFallbackVar('NEXT_PUBLIC_SUPABASE_URL')).trim();
-  const key = (staticKey || getFallbackVar('NEXT_PUBLIC_SUPABASE_ANON_KEY')).trim();
+  const url = getVar('NEXT_PUBLIC_SUPABASE_URL').trim();
+  const key = getVar('NEXT_PUBLIC_SUPABASE_ANON_KEY').trim();
   
   return { url, key };
 };
 
-export const getURL = () => {
-  if (typeof window !== 'undefined') {
-    return window.location.origin;
-  }
-  return process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-};
-
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  // Valid URL and a key that looks like a Supabase Anon Key (long JWT)
   return !!(url && url.startsWith('https://') && key && key.length > 30);
 };
 
-export const getSupabaseClient = (): SupabaseClient => {
-  const globalClient = getGlobalSupabase();
-  if (globalClient) return globalClient;
+/**
+ * Resolves the site URL for OAuth redirects and emails.
+ */
+export const getURL = () => {
+  const isBrowser = typeof window !== 'undefined';
+  const getVar = (name: string): string => {
+    if (!isBrowser) return process.env[name] || '';
+    const win = window as any;
+    return process.env[name] || win.process?.env?.[name] || win[name] || '';
+  };
+
+  let url =
+    getVar('NEXT_PUBLIC_SITE_URL') ||
+    getVar('NEXT_PUBLIC_VERCEL_URL') ||
+    'http://localhost:3000/';
   
-  if (supabaseInstance) return supabaseInstance;
+  url = url.includes('http') ? url : `https://${url}`;
+  url = url.endsWith('/') ? url : `${url}/`;
+  return url;
+};
+
+/**
+ * THE AUTHENTIC SINGLETON (v4.0)
+ * Prevents "Multiple GoTrueClient instances" by ensuring createClient
+ * is strictly called once and stored in a shared global space.
+ */
+export const getSupabaseClient = (): SupabaseClient => {
+  const isServer = typeof window === 'undefined';
+
+  if (!isServer && window.__supabaseInstance) {
+    return window.__supabaseInstance;
+  }
 
   const { url, key } = getCredentials();
   
-  // If not configured, we return a dummy client to prevent crashes, but isSupabaseConfigured() will catch it
   if (!isSupabaseConfigured()) {
-    console.warn("⚠️ Infrastructure handshake incomplete: Missing Supabase credentials.");
-    return createClient('https://placeholder-node.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
+    // Return a dummy client to prevent crashes if keys aren't ready yet
+    const dummyClient = createClient('https://placeholder-node.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
+    if (!isServer) window.__supabaseInstance = dummyClient;
+    return dummyClient;
   }
-  
-  const isServer = typeof window === 'undefined';
   
   const client = createClient(url, key, {
     auth: { 
@@ -77,59 +82,22 @@ export const getSupabaseClient = (): SupabaseClient => {
       autoRefreshToken: true, 
       detectSessionInUrl: true, 
       flowType: 'pkce',
-      storageKey: 'sb-edunexus-auth-token',
+      storageKey: 'sb-edunexus-auth-unique',
       storage: !isServer ? window.localStorage : undefined
     },
   });
 
-  setGlobalSupabase(client);
-  supabaseInstance = client;
+  if (!isServer) {
+    window.__supabaseInstance = client;
+  }
+  
   return client;
 };
 
 /**
- * Server-specific client. 
- * persistSession: false is CRITICAL here to prevent storage clashes on client side.
+ * Proxy-based Export
+ * Ensures all calls to 'supabase.xxx' use the singleton instance
  */
-export const getSupabaseServerClient = (token?: string): SupabaseClient => {
-  const { url, key } = getCredentials();
-  if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
-
-  const options: any = {
-    auth: { 
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false
-    },
-  };
-
-  if (token) {
-    options.global = {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  }
-
-  return createClient(url, key, options);
-};
-
-/**
- * ADMIN CLIENT (Server-only)
- * Uses service role key to bypass RLS for critical system processing.
- */
-export const getSupabaseAdminClient = (): SupabaseClient => {
-  const { url } = getCredentials();
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  return createClient(url, serviceKey, {
-    auth: { 
-      persistSession: false,
-      autoRefreshToken: false,
-      detectSessionInUrl: false
-    },
-  });
-};
-
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     const client = getSupabaseClient() as any;
@@ -137,6 +105,30 @@ export const supabase = new Proxy({} as SupabaseClient, {
     return typeof val === 'function' ? val.bind(client) : val;
   }
 });
+
+// Server-side helpers remain decoupled from the browser singleton
+export const getSupabaseServerClient = (token?: string): SupabaseClient => {
+  const { url, key } = getCredentials();
+  if (!isSupabaseConfigured()) return createClient('https://placeholder.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
+
+  const options: any = {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  };
+
+  if (token) {
+    options.global = { headers: { Authorization: `Bearer ${token}` } };
+  }
+
+  return createClient(url, key, options);
+};
+
+export const getSupabaseAdminClient = (): SupabaseClient => {
+  const { url } = getCredentials();
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  });
+};
 
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;

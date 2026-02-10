@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -69,7 +68,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       if (updated.find(d => d.id === docId)?.isSelected) {
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
-      // Keep slider open for a moment to show feedback then close
       setTimeout(() => setIsSliderOpen(false), 300);
     } catch (e) { 
       console.error(e); 
@@ -180,7 +178,12 @@ USER_QUERY: ${userInput}`;
     const appBaseUrl = window.location.origin;
     const toolName = getToolDisplayName(activeTool || 'master_plan');
     
-    const summary = `🚀 PEDAGOGY MASTER AI: NEW ARTIFACT READY\n\n🎯 Tool: ${toolName}\n🏛️ Institution: ${user.workspaceName || 'Independent'}\n📖 Subject: ${activeDoc?.subject || 'General Curriculum'}\n✅ Verified alignment match.\n\nJoin the elite pedagogical grid: ${appBaseUrl}`;
+    // Resolve "Identifying..." placeholder for a professional share card
+    const subjectLabel = (activeDoc?.subject && activeDoc.subject !== 'Identifying...') 
+      ? activeDoc.subject 
+      : (activeDoc?.name || 'Instructional Design');
+
+    const summary = `🚀 **PEDAGOGY MASTER AI: SYNTHESIS COMPLETE**\n\n💎 **High-Fidelity Artifact Ready**\n🎯 **Tool:** ${toolName}\n🏛️ **Institution:** ${user.workspaceName || 'Independent Grid'}\n📖 **Context:** ${subjectLabel}\n✅ **Neural Status:** Standards Alignment Verified\n\n⚡ Join the elite pedagogical grid: ${appBaseUrl}`;
     
     if (navigator.share) {
       try {
@@ -192,8 +195,6 @@ USER_QUERY: ${userInput}`;
         setShareSuccess(true);
         setTimeout(() => setShareSuccess(false), 2000);
       } catch (e) {
-        // Fallback to clipboard if sharing is cancelled or fails
-        console.log("Sharing cancelled or unavailable");
         await navigator.clipboard.writeText(summary);
         setShareSuccess(true);
         setTimeout(() => setShareSuccess(false), 2000);
@@ -217,7 +218,6 @@ USER_QUERY: ${userInput}`;
     a.href = url;
     a.download = `${docTitle}.html`;
     a.click();
-    alert("Artifact optimized for Google Drive. Upload the downloaded .html file and 'Open with Google Docs' for perfect formatting.");
   };
 
   const handlePrint = () => {
@@ -272,7 +272,7 @@ USER_QUERY: ${userInput}`;
                  )}
               </div>
               <div className="pt-6 border-t dark:border-white/5 mt-auto">
-                 <p className="text-[9px] text-slate-400 font-bold uppercase leading-relaxed">Select a curriculum node to focus the neural synthesis on that specific standard.</p>
+                 <p className="text-[9px] text-slate-400 font-bold uppercase leading-relaxed">Select a curriculum node to focus synthesis on specific standards.</p>
               </div>
            </div>
         </div>
@@ -289,7 +289,7 @@ USER_QUERY: ${userInput}`;
             </div>
           </div>
           
-          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex flex-col sm:flex-row items-center gap-2">
+          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex flex-col sm:flex-row items-center gap-2 no-print">
             <button 
               onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)}
               className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
@@ -322,7 +322,7 @@ USER_QUERY: ${userInput}`;
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 md:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 md:gap-8 no-print">
           {toolDefinitions.map((tool) => (
             <button key={tool.id} onClick={() => setActiveTool(tool.id)} className={`p-8 md:p-10 rounded-[2.5rem] md:rounded-[3.5rem] border transition-all text-left flex flex-col gap-4 md:gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl`}>
               <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center text-white shadow-lg`}><tool.icon size={28} /></div>
@@ -341,7 +341,7 @@ USER_QUERY: ${userInput}`;
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden print:h-auto print:overflow-visible">
       <div className="md:hidden flex p-1 bg-white dark:bg-slate-900 border-b dark:border-white/5 no-print">
         <button onClick={() => setMobileActiveTab('logs')} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mobileActiveTab === 'logs' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}>
           <MessageSquare size={14} /> Logs
@@ -351,7 +351,7 @@ USER_QUERY: ${userInput}`;
         </button>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden print:block print:overflow-visible">
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 no-print ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] shrink-0`}>
           <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
              <div className="flex items-center gap-3">
@@ -373,7 +373,7 @@ USER_QUERY: ${userInput}`;
           </div>
         </div>
 
-        <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden`}>
+        <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
            <div className="px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
               <div className="flex items-center gap-3">
                 <FileEdit size={18} className="text-indigo-600" />
@@ -401,10 +401,6 @@ USER_QUERY: ${userInput}`;
                 <button onClick={handlePrint} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0">
                   <Printer size={14}/> Print
                 </button>
-                <button onClick={handleGDriveExport} className="px-4 py-2 bg-[#4285F4]/10 text-[#4285F4] hover:bg-[#4285F4]/20 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border border-[#4285F4]/20 shrink-0">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.502L1.15 14.782L4.44 20.492L11 9.212L7.71 3.502ZM9.73 15L6.44 20.5H19.56L22.85 15H9.73ZM16.29 3.502L9.73 14.782L13.02 20.492L19.58 9.212L16.29 3.502Z"/></svg>
-                  G-Drive
-                </button>
                 <button 
                   onClick={handleRichCopy} 
                   className={`px-4 py-2 ${copySuccess ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 border dark:border-white/5'} rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0`}
@@ -414,30 +410,33 @@ USER_QUERY: ${userInput}`;
               </div>
            </div>
            
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] artifact-wrapper">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full overflow-x-hidden print-container">
-                <div className="hidden print-header space-y-4">
+           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] artifact-wrapper print:p-0 print:bg-white print:overflow-visible">
+              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full overflow-x-hidden print-container print:shadow-none print:border-none print:p-0">
+                
+                {/* PDF Header - Visible only in Print */}
+                <div className="hidden print-header space-y-6">
                    <div className="flex items-center justify-between w-full">
-                      <div className="flex items-center gap-3">
-                         <div className="p-2 bg-indigo-600 rounded-lg text-white"><GraduationCap size={32} /></div>
+                      <div className="flex items-center gap-4">
+                         <div className="p-3 bg-indigo-600 rounded-xl text-white"><GraduationCap size={40} /></div>
                          <div>
-                            <h1 className="text-2xl font-black uppercase tracking-tight" style={{margin: 0}}>{user.workspaceName || 'Pedagogy Master AI Workspace'}</h1>
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]" style={{margin: 0}}>Institutional Pedagogical Intelligence</p>
+                            <h1 className="text-3xl font-black uppercase tracking-tight m-0 text-slate-900">{user.workspaceName || 'Pedagogy Master AI Node'}</h1>
+                            <p className="text-[11px] font-bold text-indigo-600 uppercase tracking-[0.3em] m-0">Institutional Intelligence Grid</p>
                          </div>
                       </div>
                       <div className="text-right">
-                         <p className="text-[9px] font-bold text-slate-400 uppercase" style={{margin: 0}}>Synthesized By</p>
-                         <p className="text-xs font-black uppercase text-indigo-600" style={{margin: 0}}>{user.name}</p>
+                         <p className="text-[10px] font-black text-slate-400 uppercase m-0">Synthesis Origin</p>
+                         <p className="text-sm font-black uppercase text-slate-900 m-0">{user.name}</p>
+                         <p className="text-[9px] font-medium text-slate-500 m-0">{new Date().toLocaleDateString()}</p>
                       </div>
                    </div>
-                   <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 w-full">
+                   <div className="grid grid-cols-2 gap-8 py-5 border-t border-b border-slate-100 w-full">
                       <div>
-                         <p className="text-[8px] font-bold text-slate-400 uppercase" style={{margin: 0}}>Authority</p>
-                         <p className="text-sm font-bold" style={{margin: 0}}>{activeDoc?.authority || 'Verified Standard'}</p>
+                         <p className="text-[9px] font-black text-slate-400 uppercase m-0">Curriculum Source</p>
+                         <p className="text-base font-bold text-slate-900 m-0">{activeDoc?.authority || 'Verified Standard'}</p>
                       </div>
                       <div className="text-right">
-                         <p className="text-[8px] font-bold text-slate-400 uppercase" style={{margin: 0}}>Subject / Grade</p>
-                         <p className="text-sm font-bold" style={{margin: 0}}>{activeDoc?.subject || 'General'} / {activeDoc?.gradeLevel || 'Mixed'}</p>
+                         <p className="text-[9px] font-black text-slate-400 uppercase m-0">Subject Focus / Grade</p>
+                         <p className="text-base font-bold text-slate-900 m-0">{activeDoc?.subject || 'General Curricula'} / {activeDoc?.gradeLevel || 'Multi-Grade'}</p>
                       </div>
                    </div>
                 </div>
@@ -454,8 +453,10 @@ USER_QUERY: ${userInput}`;
                   </div>
                 )}
 
+                {/* PDF Footer - Visible only in Print */}
                 <div className="hidden print-footer">
-                   <p>© {new Date().getFullYear()} {user.workspaceName || 'Pedagogy Master AI'} • Authentic Standards-Aligned Artifact • Neural Verified</p>
+                   <p className="m-0">© {new Date().getFullYear()} {user.workspaceName || 'Pedagogy Master AI'} Institutional Workspace</p>
+                   <p className="m-0 font-bold uppercase tracking-widest">High-Fidelity Deterministic Synthesis • Neural Verified Alignment</p>
                 </div>
               </div>
            </div>
