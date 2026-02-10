@@ -173,7 +173,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
         role: isAdminUser ? 'app_admin' : 'teacher',
         plan: isAdminUser ? 'enterprise' : 'free',
         queries_limit: isAdminUser ? 999999 : 30,
-        tenant_config: { primary_color: '#4f46e5', brand_name: 'EduNexus AI' }
+        tenant_config: { primary_color: '#4f46e5', brand_name: 'Pedagogy Master AI' }
       }, { onConflict: 'id' })
       .select().single();
 

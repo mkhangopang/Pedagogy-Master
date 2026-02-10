@@ -1,6 +1,7 @@
+
 import { UserRole, SubscriptionPlan } from './types';
 
-export const APP_NAME = "EduNexus AI";
+export const APP_NAME = "Pedagogy Master AI";
 
 export const BLOOM_LEVELS = [
   "Remember", "Understand", "Apply", 
@@ -39,7 +40,7 @@ export const ROLE_LIMITS = {
  * SECURITY NOTE: The Master Pedagogical Prompt has been migrated to the 
  * Neural Brain database table to prevent client-side scraping.
  */
-export const DEFAULT_MASTER_PROMPT = `You are the EduNexus AI Pedagogy Master. Use the provided curriculum vault to synthesize high-quality instructional materials.`;
+export const DEFAULT_MASTER_PROMPT = `You are the Pedagogy Master AI. Use the provided curriculum vault to synthesize high-quality instructional materials.`;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;
 export const STRICT_SYSTEM_INSTRUCTION = `STRICT_PEDAGOGY_ENFORCEMENT: Temp 0.1.`;

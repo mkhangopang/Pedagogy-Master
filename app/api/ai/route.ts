@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v53.0 - VIRAL & INSTITUTIONAL)
+ * UNIFIED SYNTHESIS GATEWAY (v53.1 - REBRANDED)
  * FEATURE: Auto-Branding & Neural Watermarking
  */
 export async function POST(req: NextRequest) {
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     // 1. Fetch Workspace Identity
     const supabase = getSupabaseServerClient(token);
     const { data: profile } = await supabase.from('profiles').select('workspace_name, name').eq('id', user.id).single();
-    const brandName = profile?.workspace_name || 'EduNexus AI';
+    const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
     // 2. NEURAL ROUTING
     const effectiveTool = (toolType as ToolType) || detectToolIntent(promptText).tool;
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
         
         // 🚀 VIRAL PEDAGOGICAL WATERMARK
         const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
-        const watermark = `\n\n---\n### 🏛️ Institutional Intelligence Hub\n**Synthesized for:** ${brandName}\n**Alignment Status:** ✅ Verified Standards Match\n\n*Created with EduNexus AI — [Build your own standards-aligned lessons here](${appUrl})*`;
+        const watermark = `\n\n---\n### 🏛️ Institutional Intelligence Hub\n**Synthesized for:** ${brandName}\n**Alignment Status:** ✅ Verified Standards Match\n\n*Created with Pedagogy Master AI — [Build your own standards-aligned lessons here](${appUrl})*`;
         
         controller.enqueue(encoder.encode(watermark));
         controller.close();

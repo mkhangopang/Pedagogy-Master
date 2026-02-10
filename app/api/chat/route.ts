@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED CHAT ENGINE (v28.0 - VIRAL & INSTITUTIONAL)
+ * UNIFIED CHAT ENGINE (v28.1 - REBRANDED)
  * Feature: Auto-Branding & Viral Watermarking
  */
 export async function POST(req: NextRequest) {
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
 
     const authenticatedSupabase = getSupabaseServerClient(token);
     const { data: profile } = await authenticatedSupabase.from('profiles').select('workspace_name').eq('id', user.id).single();
-    const brandName = profile?.workspace_name || 'EduNexus AI';
+    const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
     const { text, provider, metadata } = await generateAIResponse(
       message,
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
         
         // 🚀 VIRAL PEDAGOGICAL WATERMARK
         const groundedNote = metadata?.isGrounded ? ` | Standards anchored to: ${metadata.sourceDocument}` : '';
-        const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via EduNexus AI Grid (${provider}${groundedNote})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
+        const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via Pedagogy Master AI Grid (${provider}${groundedNote})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
         
         controller.enqueue(encoder.encode(watermark));
         controller.close();

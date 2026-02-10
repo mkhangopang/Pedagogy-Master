@@ -165,7 +165,7 @@ USER_QUERY: ${userInput}`;
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     if (!cleanText) return;
     const docTitle = `${getToolDisplayName(activeTool || 'master_plan')}_${new Date().toISOString().slice(0,10)}`;
-    const htmlWrapper = `<html><head><meta charset="utf-8"><title>${docTitle}</title><style>body { font-family: 'Calibri', 'Arial', sans-serif; padding: 1in; color: #1a1a1a; } h1 { color: #1e1b4b; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; } h2, h3 { color: #312e81; margin-top: 20px; } table { border-collapse: collapse; width: 100%; margin: 1.5em 0; } th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; } th { background-color: #f8fafc; font-weight: bold; }</style></head><body><div style="text-align: right; font-size: 10px; color: #94a3b8; margin-bottom: 20px;">Synthesized via EduNexus AI Institutional Hub</div>${renderSTEM(cleanText)}</body></html>`;
+    const htmlWrapper = `<html><head><meta charset="utf-8"><title>${docTitle}</title><style>body { font-family: 'Calibri', 'Arial', sans-serif; padding: 1in; color: #1a1a1a; } h1 { color: #1e1b4b; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; } h2, h3 { color: #312e81; margin-top: 20px; } table { border-collapse: collapse; width: 100%; margin: 1.5em 0; } th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; } th { background-color: #f8fafc; font-weight: bold; }</style></head><body><div style="text-align: right; font-size: 10px; color: #94a3b8; margin-bottom: 20px;">Synthesized via Pedagogy Master AI Institutional Hub</div>${renderSTEM(cleanText)}</body></html>`;
     const blob = new Blob([htmlWrapper], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -195,9 +195,9 @@ USER_QUERY: ${userInput}`;
 
   const shareSnapshot = async () => {
     const appBaseUrl = 'pedagogy-master.vercel.app';
-    const summary = `🚀 EduNexus AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'General'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: ${appBaseUrl}`;
+    const summary = `🚀 Pedagogy Master AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'General'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: ${appBaseUrl}`;
     if (navigator.share) {
-      try { await navigator.share({ title: 'EduNexus AI Lesson Plan', text: summary, url: `https://${appBaseUrl}` });
+      try { await navigator.share({ title: 'Pedagogy Master AI Lesson Plan', text: summary, url: `https://${appBaseUrl}` });
       } catch (e) { console.log("Sharing cancelled"); }
     } else {
       navigator.clipboard.writeText(summary);
@@ -373,7 +373,7 @@ USER_QUERY: ${userInput}`;
                       <div className="flex items-center gap-3">
                          <div className="p-2 bg-indigo-600 rounded-lg text-white"><GraduationCap size={32} /></div>
                          <div>
-                            <h1 className="text-2xl font-black uppercase tracking-tight" style={{margin: 0}}>{user.workspaceName || 'EduNexus AI Workspace'}</h1>
+                            <h1 className="text-2xl font-black uppercase tracking-tight" style={{margin: 0}}>{user.workspaceName || 'Pedagogy Master AI Workspace'}</h1>
                             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em]" style={{margin: 0}}>Institutional Pedagogical Intelligence</p>
                          </div>
                       </div>
@@ -407,7 +407,7 @@ USER_QUERY: ${userInput}`;
                 )}
 
                 <div className="hidden print-footer">
-                   <p>© {new Date().getFullYear()} {user.workspaceName || 'EduNexus AI'} • Authentic Standards-Aligned Artifact • Neural Verified</p>
+                   <p>© {new Date().getFullYear()} {user.workspaceName || 'Pedagogy Master AI'} • Authentic Standards-Aligned Artifact • Neural Verified</p>
                 </div>
               </div>
            </div>
