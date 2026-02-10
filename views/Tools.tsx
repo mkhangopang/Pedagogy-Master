@@ -8,7 +8,8 @@ import {
   MessageSquare, FileEdit, Zap, GraduationCap,
   ShieldCheck, Library,
   ChevronLeft, Crown, Mail, Check, X,
-  PenTool, Compass, SearchCode, BookMarked, Globe2, Globe
+  PenTool, Compass, SearchCode, BookMarked, Globe2, Globe,
+  Play, Rocket
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -43,6 +44,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [localDocs, setLocalDocs] = useState<Document[]>(documents);
   const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
@@ -126,12 +128,25 @@ USER_QUERY: ${userInput}`;
     } finally { setIsGenerating(false); }
   };
 
+  const handleTransitionToPlan = () => {
+    if (activeTool !== 'audit_tagger' || !canvasContent || isGenerating) return;
+
+    const sloMatch = canvasContent.match(/[B-Z]-\d{2}-[A-Z]-\d{2,4}|[A-Z]\d{1,2}[a-z]\d{1,2}/gi);
+    const detectedSLOs = sloMatch ? Array.from(new Set(sloMatch.map(s => s.toUpperCase()))) : [];
+
+    const workflowPrompt = detectedSLOs.length > 0 
+      ? `Based on my recent audit of these standards (${detectedSLOs.join(', ')}), synthesize a comprehensive 5E Master Plan that ensures vertical alignment and rigorous assessment.`
+      : `Based on the pedagogical audit I just performed, develop a high-fidelity Master Plan for this unit.`;
+
+    setActiveTool('master_plan');
+    handleGenerate(workflowPrompt);
+  };
+
   const handleRichCopy = async () => {
     if (!canvasContent) return;
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     const renderedHtml = renderSTEM(cleanText);
     
-    // Improved styled wrapper for higher document fidelity during copy-paste
     const styledHtml = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1a1a1a; max-width: 800px; margin: 0 auto; padding: 20px;">
         ${renderedHtml}
@@ -139,7 +154,6 @@ USER_QUERY: ${userInput}`;
     `;
 
     try {
-      // Stripping Markdown characters for a cleaner plain-text fallback
       const cleanPlainText = cleanText
         .replace(/\*\*/g, '')
         .replace(/###/g, '')
@@ -157,6 +171,37 @@ USER_QUERY: ${userInput}`;
       await navigator.clipboard.writeText(cleanText);
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
+    }
+  };
+
+  const shareSnapshot = async () => {
+    if (!canvasContent) return;
+    
+    const appBaseUrl = window.location.origin;
+    const toolName = getToolDisplayName(activeTool || 'master_plan');
+    
+    const summary = `🚀 PEDAGOGY MASTER AI: NEW ARTIFACT READY\n\n🎯 Tool: ${toolName}\n🏛️ Institution: ${user.workspaceName || 'Independent'}\n📖 Subject: ${activeDoc?.subject || 'General Curriculum'}\n✅ Verified alignment match.\n\nJoin the elite pedagogical grid: ${appBaseUrl}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Pedagogy Master AI | ${toolName}`,
+          text: summary,
+          url: appBaseUrl
+        });
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 2000);
+      } catch (e) {
+        // Fallback to clipboard if sharing is cancelled or fails
+        console.log("Sharing cancelled or unavailable");
+        await navigator.clipboard.writeText(summary);
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 2000);
+      }
+    } else {
+      await navigator.clipboard.writeText(summary);
+      setShareSuccess(true);
+      setTimeout(() => setShareSuccess(false), 2000);
     }
   };
 
@@ -193,22 +238,9 @@ USER_QUERY: ${userInput}`;
     return renderSTEM(contentToParse);
   };
 
-  const shareSnapshot = async () => {
-    const appBaseUrl = 'pedagogy-master.vercel.app';
-    const summary = `🚀 Pedagogy Master AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'General'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: ${appBaseUrl}`;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Pedagogy Master AI Lesson Plan', text: summary, url: `https://${appBaseUrl}` });
-      } catch (e) { console.log("Sharing cancelled"); }
-    } else {
-      navigator.clipboard.writeText(summary);
-      alert("Synthesis metadata card copied to clipboard.");
-    }
-  };
-
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
-        {/* Document Slider / Sidebar */}
         <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
            <div className="p-8 flex flex-col h-full">
               <div className="flex items-center justify-between mb-8">
@@ -348,6 +380,24 @@ USER_QUERY: ${userInput}`;
                 <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Expert Artifact</span>
               </div>
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                {activeTool === 'audit_tagger' && canvasContent && !isGenerating && (
+                  <button 
+                    onClick={handleTransitionToPlan}
+                    className="px-4 py-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 shrink-0"
+                  >
+                    <Rocket size={14}/> Plan Analysis
+                  </button>
+                )}
+
+                <button 
+                  onClick={shareSnapshot}
+                  className={`px-4 py-2 ${shareSuccess ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600 hover:bg-purple-100'} rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border border-purple-200 shrink-0`}
+                >
+                  {shareSuccess ? <Check size={14}/> : <Share2 size={14}/>} {shareSuccess ? 'Link Shared' : 'Share Artifact'}
+                </button>
+
+                <div className="w-px h-4 bg-slate-200 dark:bg-white/10 mx-1 shrink-0" />
+
                 <button onClick={handlePrint} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0">
                   <Printer size={14}/> Print
                 </button>
@@ -355,7 +405,6 @@ USER_QUERY: ${userInput}`;
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.502L1.15 14.782L4.44 20.492L11 9.212L7.71 3.502ZM9.73 15L6.44 20.5H19.56L22.85 15H9.73ZM16.29 3.502L9.73 14.782L13.02 20.492L19.58 9.212L16.29 3.502Z"/></svg>
                   G-Drive
                 </button>
-                <div className="w-px h-4 bg-slate-200 dark:bg-white/10 mx-1 shrink-0" />
                 <button 
                   onClick={handleRichCopy} 
                   className={`px-4 py-2 ${copySuccess ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 border dark:border-white/5'} rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0`}
@@ -367,7 +416,6 @@ USER_QUERY: ${userInput}`;
            
            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] artifact-wrapper">
               <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full overflow-x-hidden print-container">
-                {/* 🏷️ INSTITUTIONAL BRANDING */}
                 <div className="hidden print-header space-y-4">
                    <div className="flex items-center justify-between w-full">
                       <div className="flex items-center gap-3">
