@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       priorityDocumentId
     );
 
-    const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://edunexus.ai';
+    const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
     const encoder = new TextEncoder();
     
     return new Response(new ReadableStream({

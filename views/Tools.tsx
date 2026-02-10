@@ -152,14 +152,15 @@ USER_QUERY: ${userInput}`;
 
   const shareSnapshot = async () => {
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
-    const summary = `🚀 EduNexus AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'Standardized'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: edunexus.ai`;
+    const appBaseUrl = 'pedagogy-master.vercel.app';
+    const summary = `🚀 EduNexus AI Artifact\n\n🎯 Tool: ${getToolDisplayName(activeTool || 'master_plan')}\n🏛️ Authority: ${activeDoc?.authority || 'General'}\n📖 Subject: ${activeDoc?.subject || 'General'}\n\nJoin the grid: ${appBaseUrl}`;
     
     if (navigator.share) {
       try {
         await navigator.share({
           title: 'EduNexus AI Lesson Plan',
           text: summary,
-          url: 'https://edunexus.ai'
+          url: `https://${appBaseUrl}`
         });
       } catch (e) { 
         console.log("Sharing cancelled"); 

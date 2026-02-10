@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(text));
         
         // 🚀 VIRAL PEDAGOGICAL WATERMARK
-        const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://edunexus.ai';
+        const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
         const watermark = `\n\n---\n### 🏛️ Institutional Intelligence Hub\n**Synthesized for:** ${brandName}\n**Alignment Status:** ✅ Verified Standards Match\n\n*Created with EduNexus AI — [Build your own standards-aligned lessons here](${appUrl})*`;
         
         controller.enqueue(encoder.encode(watermark));
