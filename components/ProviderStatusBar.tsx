@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { Activity, ShieldCheck, Zap, Server, Cpu, Layers, AlertCircle } from 'lucide-react';
 
@@ -23,7 +22,7 @@ export const ProviderStatusBar: React.FC = () => {
   if (!show || status.length === 0) return null;
 
   return (
-    <div className="bg-slate-950/95 backdrop-blur-xl border-b border-white/5 px-4 py-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500 z-[100]">
+    <div className="bg-slate-950/95 backdrop-blur-xl border-b border-white/5 px-4 py-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500 z-[100] no-print">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]" />
