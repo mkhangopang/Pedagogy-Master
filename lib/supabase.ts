@@ -10,29 +10,44 @@ declare global {
 }
 
 /**
- * Robust Credential Resolver
- * Prioritizes process.env but falls back to window-injected variables
- * which are common in preview/AI Studio environments.
+ * PRODUCTION CREDENTIAL RESOLVER (v6.0)
+ * CRITICAL: References must be EXPLICIT dot-notation for Next.js compiler replacement.
  */
 export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
-  
-  const getVar = (name: string): string => {
-    if (!isBrowser) return process.env[name] || '';
-    const win = window as any;
-    // Standard Next.js env, window-shimmed env, or direct window property
-    return process.env[name] || win.process?.env?.[name] || win[name] || '';
-  };
+  const win = isBrowser ? (window as any) : null;
 
-  const url = (getVar('NEXT_PUBLIC_SUPABASE_URL') || '').trim();
-  const key = (getVar('NEXT_PUBLIC_SUPABASE_ANON_KEY') || '').trim();
-  
-  return { url, key };
+  // 1. Prioritize build-time statically replaced Next.js Public variables
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+  // 2. Fallback to runtime window-shimmed process.env (common in preview grids)
+  if (!url && win?.process?.env?.NEXT_PUBLIC_SUPABASE_URL) {
+    url = win.process.env.NEXT_PUBLIC_SUPABASE_URL;
+  }
+  if (!key && win?.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    key = win.process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  }
+
+  // 3. Last resort: direct window properties if injected by external platform
+  if (!url && win?.NEXT_PUBLIC_SUPABASE_URL) url = win.NEXT_PUBLIC_SUPABASE_URL;
+  if (!key && win?.NEXT_PUBLIC_SUPABASE_ANON_KEY) key = win.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  return { 
+    url: (url || '').trim(), 
+    key: (key || '').trim() 
+  };
 };
 
+/**
+ * VALIDATION NODE
+ * Ensures keys are physically present and follow standard Supabase formatting.
+ */
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  return !!(url && url.startsWith('https://') && key && key.length > 30);
+  const hasUrl = url && (url.startsWith('https://') || url.includes('.supabase.'));
+  const hasKey = key && key.length > 40; // Anon keys are long JWTs
+  return !!(hasUrl && hasKey);
 };
 
 /**
@@ -40,15 +55,12 @@ export const isSupabaseConfigured = (): boolean => {
  */
 export const getURL = () => {
   const isBrowser = typeof window !== 'undefined';
-  const getVar = (name: string): string => {
-    if (!isBrowser) return process.env[name] || '';
-    const win = window as any;
-    return process.env[name] || win.process?.env?.[name] || win[name] || '';
-  };
+  const win = isBrowser ? (window as any) : null;
 
   let url =
-    getVar('NEXT_PUBLIC_SITE_URL') ||
-    getVar('NEXT_PUBLIC_VERCEL_URL') ||
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    win?.process?.env?.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_VERCEL_URL ||
     'http://localhost:3000/';
   
   url = url.includes('http') ? url : `https://${url}`;
@@ -57,14 +69,13 @@ export const getURL = () => {
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v5.0 - RECOVERY MODE)
- * Only caches the instance if it is a VALID production client.
- * If credentials aren't ready, returns a temporary dummy without caching it as the singleton.
+ * THE AUTHENTIC SINGLETON (v6.0 - PRODUCTION STABILIZED)
+ * Strictly ensures only ONE client instance exists to prevent GoTrue conflicts.
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
 
-  // 1. Return existing valid instance if available
+  // Return existing valid instance if available
   if (!isServer && window.__supabaseInstance && !window.__isDummyInstance) {
     return window.__supabaseInstance;
   }
@@ -72,29 +83,27 @@ export const getSupabaseClient = (): SupabaseClient => {
   const { url, key } = getCredentials();
   const configured = isSupabaseConfigured();
   
-  // 2. If not configured yet, return a non-cached dummy
+  // If not configured, return a temporary dummy to prevent boot-up crashes
   if (!configured) {
-    const dummyClient = createClient('https://placeholder-node.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
+    const dummyClient = createClient('https://placeholder-node.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key-placeholder');
     if (!isServer) {
-      // We don't cache this as the primary instance so it can be 'overwritten' later
       window.__isDummyInstance = true;
     }
     return dummyClient;
   }
   
-  // 3. Create real client
   const client = createClient(url, key, {
     auth: { 
       persistSession: true,
       autoRefreshToken: true, 
       detectSessionInUrl: true, 
       flowType: 'pkce',
-      storageKey: 'sb-edunexus-auth-unique',
+      storageKey: 'sb-edunexus-auth-unique-v1',
       storage: !isServer ? window.localStorage : undefined
     },
   });
 
-  // 4. Cache ONLY the real client
+  // Cache strictly for client-side reuse
   if (!isServer) {
     window.__supabaseInstance = client;
     window.__isDummyInstance = false;
@@ -105,7 +114,7 @@ export const getSupabaseClient = (): SupabaseClient => {
 
 /**
  * Proxy-based Export
- * Ensures all calls to 'supabase.xxx' use the latest available instance
+ * Automatically points to the most up-to-date client instance.
  */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
