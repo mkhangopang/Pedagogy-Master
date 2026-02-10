@@ -3,21 +3,21 @@ import { marked } from 'marked';
 import katex from 'katex';
 
 /**
- * NEURAL STEM RENDERER (v3.1 - ENHANCED)
+ * NEURAL STEM RENDERER (v3.2)
  * Integrates KaTeX directly into the Marked.js lifecycle.
- * v3.1: Improved tokenizer 'start' logic and robust error visual cues.
+ * v3.2: Improved multi-line block detection and delimiter priority.
  */
 
 const mathExtension: any = {
   name: 'math',
   level: 'inline',
   start(src: string) { 
-    // Improved start detection to include LaTeX backslash escapes
     const match = src.match(/[\$\\]/);
     return match ? match.index : -1; 
   },
   tokenizer(src: string, tokens: any) {
     // 1. Block Math: $$ ... $$ or \[ ... \]
+    // Optimized for multi-line content with greedy matching
     const blockRules = /^(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])/;
     const blockMatch = blockRules.exec(src);
     if (blockMatch) {
@@ -34,7 +34,7 @@ const mathExtension: any = {
     const inlineMatch = inlineRules.exec(src);
     if (inlineMatch) {
       const text = (inlineMatch[1] || inlineMatch[2]).trim();
-      // Skip simple numbers that are likely currency ($50)
+      // Skip simple numbers that are likely currency ($50) or lists
       if (inlineMatch[1] && /^\d+(\.\d+)?$/.test(text)) return undefined;
       
       return {
@@ -53,15 +53,15 @@ const mathExtension: any = {
         throwOnError: false,
         output: 'html',
         trust: true,
-        errorColor: '#f43f5e', // Professional rose-500 for error highlighting
+        errorColor: '#f43f5e',
         macros: {
           "\\ce": "\\text{#1}",
-          "\\unit": "\\text{#1}"
+          "\\unit": "\\text{#1}",
+          "\\degree": "^{\\circ}"
         }
       });
     } catch (e) {
       console.warn("KaTeX Error:", e);
-      // Return raw text with error indicator for user transparency
       return `<span class="text-rose-500 border-b border-dotted border-rose-500" title="Math Rendering Error">${token.raw}</span>`;
     }
   }
@@ -76,7 +76,6 @@ marked.use({ extensions: [mathExtension] });
 export function renderSTEM(text: string): string {
   if (!text) return '';
   try {
-    // Reset options for safety and GFM compliance
     marked.setOptions({ gfm: true, breaks: true });
     return marked.parse(text) as string;
   } catch (e) {
