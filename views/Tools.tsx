@@ -130,10 +130,24 @@ USER_QUERY: ${userInput}`;
     if (!canvasContent) return;
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     const renderedHtml = renderSTEM(cleanText);
-    const styledHtml = `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">${renderedHtml}</div>`;
+    
+    // Improved styled wrapper for higher document fidelity during copy-paste
+    const styledHtml = `
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #1a1a1a; max-width: 800px; margin: 0 auto; padding: 20px;">
+        ${renderedHtml}
+      </div>
+    `;
 
     try {
-      const textBlob = new Blob([cleanText], { type: 'text/plain' });
+      // Stripping Markdown characters for a cleaner plain-text fallback
+      const cleanPlainText = cleanText
+        .replace(/\*\*/g, '')
+        .replace(/###/g, '')
+        .replace(/##/g, '')
+        .replace(/#/g, '')
+        .trim();
+
+      const textBlob = new Blob([cleanPlainText], { type: 'text/plain' });
       const htmlBlob = new Blob([styledHtml], { type: 'text/html' });
       const clipboardItem = new ClipboardItem({ 'text/plain': textBlob, 'text/html': htmlBlob });
       await navigator.clipboard.write([clipboardItem]);
@@ -151,14 +165,14 @@ USER_QUERY: ${userInput}`;
     const cleanText = canvasContent.split('--- Synthesis Hub:')[0].trim();
     if (!cleanText) return;
     const docTitle = `${getToolDisplayName(activeTool || 'master_plan')}_${new Date().toISOString().slice(0,10)}`;
-    const htmlWrapper = `<html><head><meta charset="utf-8"><title>${docTitle}</title><style>body { font-family: 'Calibri', 'Arial', sans-serif; padding: 1in; } h1 { color: #1e1b4b; border-bottom: 2px solid #4f46e5; } table { border-collapse: collapse; width: 100%; margin: 1em 0; } th, td { border: 1px solid #ddd; padding: 10px; text-align: left; } th { background-color: #f3f4f6; }</style></head><body><div style="text-align: right; font-size: 10px; color: #999;">Synthesized via EduNexus AI</div>${renderSTEM(cleanText)}</body></html>`;
+    const htmlWrapper = `<html><head><meta charset="utf-8"><title>${docTitle}</title><style>body { font-family: 'Calibri', 'Arial', sans-serif; padding: 1in; color: #1a1a1a; } h1 { color: #1e1b4b; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; } h2, h3 { color: #312e81; margin-top: 20px; } table { border-collapse: collapse; width: 100%; margin: 1.5em 0; } th, td { border: 1px solid #e2e8f0; padding: 12px; text-align: left; } th { background-color: #f8fafc; font-weight: bold; }</style></head><body><div style="text-align: right; font-size: 10px; color: #94a3b8; margin-bottom: 20px;">Synthesized via EduNexus AI Institutional Hub</div>${renderSTEM(cleanText)}</body></html>`;
     const blob = new Blob([htmlWrapper], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${docTitle}.html`;
     a.click();
-    alert("Artifact optimized for Google Docs. Upload the downloaded .html file to Google Drive and 'Open with Google Docs' for perfect formatting.");
+    alert("Artifact optimized for Google Drive. Upload the downloaded .html file and 'Open with Google Docs' for perfect formatting.");
   };
 
   const handlePrint = () => {
@@ -337,7 +351,7 @@ USER_QUERY: ${userInput}`;
                 <button onClick={handlePrint} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-600 dark:text-slate-300 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border dark:border-white/5 shrink-0">
                   <Printer size={14}/> Print
                 </button>
-                <button onClick={handleGDriveExport} className="px-4 py-2 bg-[#1db954]/10 text-[#1db954] hover:bg-[#1db954]/20 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border border-[#1db954]/20 shrink-0">
+                <button onClick={handleGDriveExport} className="px-4 py-2 bg-[#4285F4]/10 text-[#4285F4] hover:bg-[#4285F4]/20 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest border border-[#4285F4]/20 shrink-0">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7.71 3.502L1.15 14.782L4.44 20.492L11 9.212L7.71 3.502ZM9.73 15L6.44 20.5H19.56L22.85 15H9.73ZM16.29 3.502L9.73 14.782L13.02 20.492L19.58 9.212L16.29 3.502Z"/></svg>
                   G-Drive
                 </button>

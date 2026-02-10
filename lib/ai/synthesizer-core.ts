@@ -125,8 +125,9 @@ export class SynthesizerCore {
 
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
+          // Lower temperature (0.2) for standard artifacts to prevent formatting drift
           const config: any = { 
-            temperature: (isSurgicalExtract || isConversion) ? 0.0 : 0.7, 
+            temperature: (isSurgicalExtract || isConversion) ? 0.0 : 0.2, 
             maxOutputTokens: provider.maxTokens 
           };
           
@@ -166,7 +167,7 @@ export class SynthesizerCore {
                 ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
                 { role: 'user', content: prompt }
               ],
-              temperature: (isSurgicalExtract || isConversion) ? 0.0 : 0.7,
+              temperature: (isSurgicalExtract || isConversion) ? 0.0 : 0.2,
               max_tokens: provider.maxTokens
             })
           });

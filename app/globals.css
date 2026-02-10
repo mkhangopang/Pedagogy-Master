@@ -33,7 +33,7 @@
   }
 }
 
-/* 🖨️ WORLD-CLASS HIGH-FIDELITY PRINT ENGINE (v2.0) */
+/* 🖨️ WORLD-CLASS HIGH-FIDELITY PRINT ENGINE (v2.1) */
 @media print {
   @page {
     margin: 2cm;
@@ -44,6 +44,7 @@
     background: white !important;
     color: black !important;
     height: auto !important;
+    min-height: 0 !important;
     overflow: visible !important;
     font-size: 11pt !important;
   }
@@ -56,11 +57,12 @@
   }
 
   /* Break the Flex/Grid constraints for vertical flow */
-  #root, main, .flex, .grid {
+  #root, main, .flex, .grid, .artifact-wrapper {
     display: block !important;
     float: none !important;
     width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     overflow: visible !important;
@@ -77,6 +79,14 @@
     box-shadow: none !important;
     border: none !important;
     background: white !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  .artifact-canvas-container {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   /* Prose Enhancements for Paper */
