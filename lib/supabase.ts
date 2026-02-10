@@ -5,6 +5,7 @@ import { UserRole, SubscriptionPlan } from '../types';
 declare global {
   interface Window {
     __supabaseInstance?: SupabaseClient;
+    __isDummyInstance?: boolean;
   }
 }
 
@@ -19,12 +20,12 @@ export const getCredentials = () => {
   const getVar = (name: string): string => {
     if (!isBrowser) return process.env[name] || '';
     const win = window as any;
-    // Check various locations where preview environments might inject keys
+    // Standard Next.js env, window-shimmed env, or direct window property
     return process.env[name] || win.process?.env?.[name] || win[name] || '';
   };
 
-  const url = getVar('NEXT_PUBLIC_SUPABASE_URL').trim();
-  const key = getVar('NEXT_PUBLIC_SUPABASE_ANON_KEY').trim();
+  const url = (getVar('NEXT_PUBLIC_SUPABASE_URL') || '').trim();
+  const key = (getVar('NEXT_PUBLIC_SUPABASE_ANON_KEY') || '').trim();
   
   return { url, key };
 };
@@ -56,26 +57,32 @@ export const getURL = () => {
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v4.0)
- * Prevents "Multiple GoTrueClient instances" by ensuring createClient
- * is strictly called once and stored in a shared global space.
+ * THE AUTHENTIC SINGLETON (v5.0 - RECOVERY MODE)
+ * Only caches the instance if it is a VALID production client.
+ * If credentials aren't ready, returns a temporary dummy without caching it as the singleton.
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
 
-  if (!isServer && window.__supabaseInstance) {
+  // 1. Return existing valid instance if available
+  if (!isServer && window.__supabaseInstance && !window.__isDummyInstance) {
     return window.__supabaseInstance;
   }
 
   const { url, key } = getCredentials();
+  const configured = isSupabaseConfigured();
   
-  if (!isSupabaseConfigured()) {
-    // Return a dummy client to prevent crashes if keys aren't ready yet
+  // 2. If not configured yet, return a non-cached dummy
+  if (!configured) {
     const dummyClient = createClient('https://placeholder-node.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key');
-    if (!isServer) window.__supabaseInstance = dummyClient;
+    if (!isServer) {
+      // We don't cache this as the primary instance so it can be 'overwritten' later
+      window.__isDummyInstance = true;
+    }
     return dummyClient;
   }
   
+  // 3. Create real client
   const client = createClient(url, key, {
     auth: { 
       persistSession: true,
@@ -87,8 +94,10 @@ export const getSupabaseClient = (): SupabaseClient => {
     },
   });
 
+  // 4. Cache ONLY the real client
   if (!isServer) {
     window.__supabaseInstance = client;
+    window.__isDummyInstance = false;
   }
   
   return client;
@@ -96,7 +105,7 @@ export const getSupabaseClient = (): SupabaseClient => {
 
 /**
  * Proxy-based Export
- * Ensures all calls to 'supabase.xxx' use the singleton instance
+ * Ensures all calls to 'supabase.xxx' use the latest available instance
  */
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
