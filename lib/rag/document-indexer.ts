@@ -1,12 +1,10 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * NEURAL VECTOR INDEXER (v206.2 - Production Optimized)
- * Feature: Semantic Chunk Scaling & Recursive Hierarchy Injection.
- * FIX: Resolved NOT NULL constraint violation for "chunk_index".
+ * ATOMIC PEDAGOGICAL INDEXER (v210.0)
+ * Logic: Respects the hierarchical structure of Master MD.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -17,34 +15,28 @@ export async function indexDocumentForRAG(
 ) {
   try {
     const meta = preExtractedMeta || {};
-    
     const lines = content.split('\n');
+    
+    let currentGrade = "N/A";
     let currentDomain = "General";
-    let currentStandard = "Standard Curriculum";
-    let currentGrade = meta.grade || "Auto";
+    let currentStandard = "N/A";
+    let currentBenchmark = "N/A";
     
-    const processedChunks: any[] = [];
-    
-    // TARGET: 1500 characters per chunk for pedagogical depth
+    const pedagogicalChunks: any[] = [];
     let currentBuffer = "";
-    const TARGET_CHUNK_SIZE = 1500;
-    const MIN_CHUNK_SIZE = 800;
     let accumulatedSLOs: string[] = [];
 
+    // Protocol: Iterate and detect hierarchical markers
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+      const line = lines[i].trim();
+      if (!line) continue;
 
       // Detect Hierarchy for Context Injection
-      if (trimmed.startsWith('# GRADE ')) {
-         currentGrade = trimmed.replace('# GRADE ', '').trim();
-      } else if (trimmed.startsWith('# ')) {
-         currentDomain = trimmed.replace('# ', '').trim();
-      } else if (trimmed.startsWith('## ')) {
-         currentStandard = trimmed.replace('## ', '').trim();
-      }
-      
+      if (line.startsWith('# GRADE')) currentGrade = line.replace('# GRADE', '').trim();
+      else if (line.startsWith('# ')) currentDomain = line.replace('#', '').trim();
+      else if (line.startsWith('## ')) currentStandard = line.replace('##', '').trim();
+      else if (line.startsWith('### ')) currentBenchmark = line.replace('###', '').trim();
+
       const lineCodes = extractSLOCodes(line);
       lineCodes.forEach(code => {
         if (!accumulatedSLOs.includes(code)) accumulatedSLOs.push(code);
@@ -52,77 +44,69 @@ export async function indexDocumentForRAG(
 
       currentBuffer += (currentBuffer ? '\n' : '') + line;
 
-      const isMajorHeading = trimmed.startsWith('# ') || trimmed.startsWith('## ');
-      const isLastLine = i === lines.length - 1;
+      // CHUNK TRIGGER: We break at the start of new hierarchy nodes OR if buffer is large
+      const isNewSection = line.startsWith('#') || line.startsWith('Standard:') || line.startsWith('Benchmark:');
+      const isLargeBuffer = currentBuffer.length >= 1800;
 
-      if (currentBuffer.length >= TARGET_CHUNK_SIZE || (isMajorHeading && currentBuffer.length >= MIN_CHUNK_SIZE) || isLastLine) {
-        if (currentBuffer.trim().length > 50) {
-          const enrichedText = `[GRADE: ${currentGrade}] [DOMAIN: ${currentDomain}] [STANDARD: ${currentStandard}]\n${currentBuffer.trim()}`;
-          
-          processedChunks.push({
-            text: enrichedText,
-            metadata: {
-              subject: meta.subject,
-              grade: currentGrade,
-              slo_codes: [...accumulatedSLOs],
-              source_path: filePath,
-              hierarchy: { domain: currentDomain, standard: currentStandard },
-              is_atomic_slo: accumulatedSLOs.length > 0
-            }
-          });
-        }
-        
-        currentBuffer = ""; 
+      if ((isNewSection && currentBuffer.length > 500) || isLargeBuffer || i === lines.length - 1) {
+        // INJECT CONTEXT HEADER: Every chunk becomes a self-contained pedagogical node
+        const contextHeader = `[CONTEXT: Grade ${currentGrade} | Domain: ${currentDomain} | Standard: ${currentStandard}]\n`;
+        const finalChunkText = contextHeader + currentBuffer.trim();
+
+        pedagogicalChunks.push({
+          text: finalChunkText,
+          metadata: {
+            grade: currentGrade,
+            domain: currentDomain,
+            standard: currentStandard,
+            benchmark: currentBenchmark,
+            slo_codes: [...accumulatedSLOs],
+            dialect: meta.dialect || 'Standard'
+          }
+        });
+
+        currentBuffer = "";
         accumulatedSLOs = [];
       }
     }
 
-    // 2. Refresh Node Points in Database
+    // Database Sync Protocol
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    // 3. High-Concurrency Batch Embedding
-    const BATCH_SIZE = 10;
-    for (let i = 0; i < processedChunks.length; i += BATCH_SIZE) {
-      const batch = processedChunks.slice(i, i + BATCH_SIZE);
+    const BATCH_SIZE = 12;
+    for (let i = 0; i < pedagogicalChunks.length; i += BATCH_SIZE) {
+      const batch = pedagogicalChunks.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
       
       const records = batch.map((chunk, j) => {
         const embedding = embeddings[j];
-        
-        if (!Array.isArray(embedding) || typeof embedding[0] !== 'number') {
-          return null;
-        }
+        if (!embedding || embedding.length !== 768) return null;
 
         return {
           document_id: documentId,
           chunk_text: chunk.text,
           embedding: embedding,
-          slo_codes: chunk.metadata.slo_codes || [],
+          slo_codes: chunk.metadata.slo_codes,
           metadata: chunk.metadata,
-          chunk_index: i + j // SATISFY DB SCHEMA
+          chunk_index: i + j
         };
       }).filter(Boolean);
 
-      if (records && records.length > 0) {
-        const { error: insertError } = await supabase.from('document_chunks').insert(records);
-        if (insertError) {
-          console.error("❌ [Vector Insert Fault]:", insertError.message);
-          throw new Error(`Database rejected vector node: ${insertError.message}`);
-        }
+      if (records.length > 0) {
+        const { error } = await supabase.from('document_chunks').insert(records);
+        if (error) throw error;
       }
     }
 
     await supabase.from('documents').update({ 
+      status: 'ready',
       rag_indexed: true,
-      last_synced_at: new Date().toISOString(),
-      grade_level: currentGrade === "Auto" ? meta.grade : currentGrade,
-      chunk_count: processedChunks.length,
-      status: 'ready'
+      chunk_count: pedagogicalChunks.length
     }).eq('id', documentId);
 
-    return { success: true, count: processedChunks.length };
-  } catch (error: any) {
-    console.error("❌ [Indexer Context Fault]:", error);
+    return { success: true, count: pedagogicalChunks.length };
+  } catch (error) {
+    console.error("❌ [Indexer Fault]:", error);
     throw error;
   }
 }
