@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * NEURAL GEMINI ADAPTER (v50.0)
+ * NEURAL GEMINI ADAPTER (v51.0)
  * Optimized for Recursive Synthesis and Massive Multi-Grade Curriculum Artifacts.
  */
 export async function callGemini(
@@ -40,8 +40,8 @@ export async function callGemini(
     parts.push({ text: fullPrompt });
     contents.push({ role: 'user', parts });
 
-    // Check for massive tasks based on content patterns rather than hardcoded subjects
-    const isMassiveTask = fullPrompt.includes('CURRICULUM') && (fullPrompt.includes('SINDH') || fullPrompt.includes('FEDERAL') || fullPrompt.includes('Tier_Merge'));
+    // Check for massive tasks based on structural keywords rather than specific subjects
+    const isMassiveTask = fullPrompt.includes('CURRICULUM') && (fullPrompt.includes('SINDH') || fullPrompt.includes('FEDERAL') || fullPrompt.includes('MASTER MD'));
     
     return await ai.models.generateContent({
       model: modelName,

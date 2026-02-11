@@ -100,7 +100,7 @@ export class SynthesizerCore {
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
     
     const isSurgicalExtract = prompt.includes('SURGICAL_PRECISION_VAULT_EXTRACT');
-    const isConversion = prompt.includes('Linearize Curriculum Grids');
+    const isConversion = prompt.includes('Linearizing Curriculum');
 
     let candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id));

@@ -1,8 +1,7 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, getSupabaseHealth, getOrCreateProfile } from '../lib/supabase';
+import { supabase, getSupabaseHealth, getOrCreateProfile, isSupabaseConfigured } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -11,8 +10,7 @@ import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
-import { paymentService } from '../services/paymentService';
-import { Loader2, Menu, Cpu } from 'lucide-react';
+import { Loader2, Menu, Cpu, AlertTriangle } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -26,9 +24,9 @@ export default function App() {
   const [session, setSession] = useState<any>(null);
   const [isAuthResolving, setIsAuthResolving] = useState(true);
   const [currentView, setCurrentView] = useState('landing');
+  const [infraError, setInfraError] = useState<string | null>(null);
   const initStarted = useRef(false);
   
-  // App Context Data
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [healthStatus, setHealthStatus] = useState({ status: 'checking', message: 'Syncing...' });
@@ -38,21 +36,15 @@ export default function App() {
     updatedAt: new Date().toISOString()
   });
 
-  // UI State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  // Persistence: Initial Theme Sync
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
     if (savedTheme) {
       setTheme(savedTheme);
-      if (savedTheme === 'dark') document.documentElement.classList.add('dark');
-      else document.documentElement.classList.remove('dark');
-    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
-      document.documentElement.classList.add('dark');
+      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
     }
   }, []);
 
@@ -60,19 +52,8 @@ export default function App() {
     const newTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
+    document.documentElement.classList.toggle('dark', newTheme === 'dark');
   };
-
-  const incrementUsage = useCallback(() => {
-    setUserProfile(prev => {
-      if (!prev) return null;
-      return { ...prev, queriesUsed: prev.queriesUsed + 1 };
-    });
-  }, []);
 
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
     getSupabaseHealth().then(setHealthStatus);
@@ -103,38 +84,29 @@ export default function App() {
           })));
         }
       });
-
-    supabase.from('neural_brain').select('*').eq('is_active', true).order('version', { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          setBrain({
-            id: data.id, masterPrompt: data.master_prompt,
-            bloomRules: data.bloom_rules || DEFAULT_BLOOM_RULES,
-            version: data.version, isActive: true, updatedAt: data.updated_at
-          });
-        }
-      });
   }, []);
 
   useEffect(() => {
     if (initStarted.current) return;
     initStarted.current = true;
 
-    paymentService.init();
-    
     const initializeAuth = async () => {
+      // Small grace period for infrastructure bridging
+      await new Promise(r => setTimeout(r, 500));
+
+      if (!isSupabaseConfigured()) {
+        setInfraError("Infrastructure Handshake Failed: Supabase keys missing.");
+        setIsAuthResolving(false);
+        return;
+      }
+
       const { data: { session: existingSession } } = await supabase.auth.getSession();
-      
       if (existingSession) {
         setSession(existingSession);
         fetchAppData(existingSession.user.id, existingSession.user.email);
         setCurrentView('dashboard');
-        setIsAuthResolving(false);
-      } else {
-        setTimeout(() => {
-          setIsAuthResolving(false);
-        }, 500);
       }
+      setIsAuthResolving(false);
     };
 
     initializeAuth();
@@ -142,26 +114,31 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
       if (currentSession) {
         setSession(currentSession);
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-          fetchAppData(currentSession.user.id, currentSession.user.email);
-          if (currentView === 'landing' || currentView === 'login') {
-            setCurrentView('dashboard');
-          }
-          setIsAuthResolving(false);
-        }
-      } else if (event === 'SIGNED_OUT') {
+        fetchAppData(currentSession.user.id, currentSession.user.email);
+        if (currentView === 'landing' || currentView === 'login') setCurrentView('dashboard');
+      } else {
         setSession(null);
-        setCurrentView('landing');
-        setIsAuthResolving(false);
+        if (currentView !== 'landing' && currentView !== 'login') setCurrentView('landing');
       }
     });
 
     return () => subscription?.unsubscribe();
   }, [fetchAppData, currentView]);
 
+  if (infraError) return (
+    <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
+      <div className="max-w-md w-full bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-rose-100 text-center space-y-6">
+        <AlertTriangle className="w-16 h-16 text-rose-500 mx-auto" />
+        <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Error</h2>
+        <p className="text-slate-500 text-sm">{infraError}</p>
+        <button onClick={() => window.location.reload()} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl">Retry Connection</button>
+      </div>
+    </div>
+  );
+
   if (isAuthResolving) return (
-    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950 text-center animate-in fade-in duration-300">
-      <div className="relative bg-white dark:bg-slate-900 p-12 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col items-center scale-90">
+    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="bg-white dark:bg-slate-900 p-12 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col items-center">
         <Cpu className="text-indigo-600 w-16 h-16 animate-pulse mb-6" />
         <div className="flex gap-2">
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
@@ -169,28 +146,26 @@ export default function App() {
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" />
         </div>
       </div>
-      <p className="mt-8 text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] opacity-50">Initializing Workspace</p>
+      <p className="mt-8 text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] opacity-50">Syncing Grid</p>
     </div>
   );
   
   if (!session) {
-    if (currentView === 'login') return <Login onSession={(s) => setSession(s)} onBack={() => setCurrentView('landing')} />;
+    if (currentView === 'login') return <Login onSession={setSession} onBack={() => setCurrentView('landing')} />;
     return <Landing onStart={() => setCurrentView('login')} />;
   }
 
   const safeProfile = userProfile || {
-    id: session.user.id, email: session.user.email || '', name: session.user.email?.split('@')[0] || 'Educator',
+    id: session.user.id, email: session.user.email || '', name: 'Educator',
     role: UserRole.TEACHER, plan: SubscriptionPlan.FREE, queriesUsed: 0, queriesLimit: 30,
     generationCount: 0, successRate: 0
   };
-
-  const isActuallyConnected = healthStatus.status === 'connected';
 
   return (
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
       {isSidebarOpen && <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
       <div className={`fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'} ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={(v) => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} onClose={() => setIsSidebarOpen(false)} theme={theme} toggleTheme={toggleTheme} />
+        <Sidebar currentView={currentView} onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
       </div>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {safeProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
@@ -199,38 +174,24 @@ export default function App() {
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600 hover:bg-slate-50 rounded-xl"><Menu size={24} /></button>
             <span className="font-black text-indigo-950 dark:text-white tracking-tight text-sm uppercase">{currentView.replace('-', ' ')}</span>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="hidden md:flex flex-col items-end">
-              <span className="text-[8px] font-black uppercase text-slate-400">Usage Limit</span>
-              <span className="text-[10px] font-bold text-indigo-600">{safeProfile.queriesUsed} / {safeProfile.queriesLimit}</span>
-            </div>
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 dark:bg-slate-800 rounded-full border dark:border-white/5">
-              <div className={`w-2 h-2 rounded-full ${healthStatus.status === 'checking' ? 'bg-amber-400 animate-pulse' : isActuallyConnected ? 'bg-emerald-50 shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'bg-rose-500'}`} />
-              <span className="text-[10px] font-black text-slate-500 uppercase tracking-tight">{healthStatus.status === 'checking' ? 'Syncing...' : isActuallyConnected ? 'Linked' : 'Offline'}</span>
-            </div>
-          </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
           <div className="max-w-6xl mx-auto w-full">
             <Suspense fallback={<div className="flex justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
               {(() => {
                 const props = { 
-                  user: safeProfile, 
-                  documents, 
-                  onProfileUpdate: setUserProfile, 
-                  health: healthStatus as any, 
-                  onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true), 
-                  onViewChange: setCurrentView 
+                  user: safeProfile, documents, onProfileUpdate: setUserProfile, health: healthStatus as any, 
+                  onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true), onViewChange: setCurrentView 
                 };
                 switch (currentView) {
                   case 'dashboard': return <Dashboard {...props} />;
-                  case 'documents': return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => { fetchAppData(safeProfile.id, safeProfile.email); }} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={isActuallyConnected} />;
-                  case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={incrementUsage} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} />;
+                  case 'documents': return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => fetchAppData(safeProfile.id, safeProfile.email)} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={healthStatus.status === 'connected'} />;
+                  case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={() => setUserProfile(p => p ? {...p, queriesUsed: p.queriesUsed + 1} : null)} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} />;
                   case 'tracker': return <TrackerView user={safeProfile} documents={documents} />;
                   case 'brain': return safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
                   case 'audit': return safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} />;
                   case 'mission': return safeProfile.role === UserRole.APP_ADMIN ? <MissionView /> : <Dashboard {...props} />;
-                  case 'pricing': return <PricingView currentPlan={safeProfile.plan} onUpgrade={() => setCurrentView('dashboard')} onShowPolicy={() => setCurrentView('policy')} />;
+                  case 'pricing': return <PricingView currentPlan={safeProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
                   case 'policy': return <Policy onBack={() => setCurrentView('pricing')} />;
                   default: return <Dashboard {...props} />;
                 }

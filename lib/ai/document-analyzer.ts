@@ -1,17 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getObjectText } from "../r2";
-import { resolveApiKey } from "../env-server";
-
-export interface GeminiProcessedDocument {
-  documentId: string;
-  summary: string;
-  keyTopics: string[];
-  difficultyLevel: string;
-  extractedSLOs: any[];
-  documentStructure: any;
-  qualityScore: number;
-}
 
 export async function analyzeDocumentWithAI(
   documentId: string, 
@@ -19,10 +8,8 @@ export async function analyzeDocumentWithAI(
   supabase: SupabaseClient
 ) {
   try {
-    // Add comment above each fix
-    // GUIDELINE: Always use const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
     const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("Neural Node Error: API Key missing for analysis.");
+    if (!apiKey) throw new Error("Neural Node Error: API Key missing.");
 
     const { data: doc, error: fetchError } = await supabase
       .from('documents')
@@ -32,26 +19,21 @@ export async function analyzeDocumentWithAI(
 
     if (fetchError || !doc) throw new Error("Document not found");
 
-    let content = "";
-    if (doc.extracted_text_r2_key) {
-      content = await getObjectText(doc.extracted_text_r2_key);
-    } else if (doc.r2_key) {
-      content = await getObjectText(doc.r2_key);
-    } else if (doc.extracted_text) {
-      content = doc.extracted_text;
+    let content = doc.extracted_text || "";
+    if (!content && doc.file_path) {
+      content = await getObjectText(doc.file_path);
     }
 
     if (!content || content.length < 10) {
-      await supabase.from('documents').update({ status: 'completed' }).eq('id', documentId);
+      await supabase.from('documents').update({ status: 'ready' }).eq('id', documentId);
       return;
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-    // Increased window to 100k for better summary of large curriculum files
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `You are a curriculum document intelligence system. Analyze this curriculum document and extract ALL structured information.
+      contents: `Perform a deep pedagogical analysis on this curriculum file. Identify the SUBJECT and GRADE with 100% accuracy.
       
       DOCUMENT TEXT:
       ${content.substring(0, 100000)}`,
@@ -61,11 +43,9 @@ export async function analyzeDocumentWithAI(
           type: Type.OBJECT,
           properties: {
             summary: { type: Type.STRING },
-            keyTopics: { type: Type.ARRAY, items: { type: Type.STRING } },
-            difficultyLevel: { type: Type.STRING, enum: ["elementary", "middle_school", "high_school", "college"] },
-            subject: { type: Type.STRING },
+            subject: { type: Type.STRING, description: "The primary academic subject (e.g. English, Biology, Math)" },
             grade: { type: Type.STRING },
-            board: { type: Type.STRING },
+            difficultyLevel: { type: Type.STRING, enum: ["elementary", "middle_school", "high_school", "college"] },
             slos: {
               type: Type.ARRAY,
               items: {
@@ -73,106 +53,45 @@ export async function analyzeDocumentWithAI(
                 properties: {
                   code: { type: Type.STRING },
                   fullText: { type: Type.STRING },
-                  bloomLevel: { type: Type.STRING },
-                  cognitiveComplexity: { type: Type.STRING, enum: ["Low", "Medium", "High"] },
-                  teachingStrategies: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  assessmentIdeas: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  prerequisiteConcepts: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  commonMisconceptions: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
-                  pageNumber: { type: Type.NUMBER },
-                  confidence: { type: Type.NUMBER }
+                  bloomLevel: { type: Type.STRING }
                 },
                 required: ["code", "fullText", "bloomLevel"]
               }
-            },
-            documentStructure: {
-              type: Type.OBJECT,
-              properties: {
-                hasTOC: { type: Type.BOOLEAN },
-                sections: {
-                  type: Type.ARRAY,
-                  items: {
-                    type: Type.OBJECT,
-                    properties: {
-                      title: { type: Type.STRING },
-                      pageStart: { type: Type.NUMBER }
-                    }
-                  }
-                },
-                totalPages: { type: Type.NUMBER },
-                hasAppendix: { type: Type.BOOLEAN }
-              }
             }
           },
-          required: ["summary", "difficultyLevel", "slos"]
+          required: ["summary", "subject", "grade", "slos"]
         }
       }
     });
 
-    let analysis: any = { summary: "Analysis failed", difficultyLevel: "middle_school", slos: [] };
-    const text = response.text || '{}';
-    try {
-      analysis = JSON.parse(text);
-    } catch (parseErr) {
-      console.error("JSON Parse Error:", parseErr);
-    }
-
-    const calculateQualityScore = (data: any) => {
-      let score = 0;
-      if (data.summary?.length > 50) score += 20;
-      if (data.slos?.length > 0) score += 30;
-      const slosWithStrategies = data.slos?.filter((s: any) => s.teachingStrategies?.length > 0).length || 0;
-      score += (slosWithStrategies / Math.max(data.slos?.length || 1, 1)) * 30;
-      if (data.keyTopics?.length >= 5) score += 10;
-      if (data.documentStructure?.sections?.length > 0) score += 10;
-      return Math.min(score, 100) / 100;
-    };
-
-    const qualityScore = calculateQualityScore(analysis);
+    const analysis = JSON.parse(response.text || '{}');
 
     await supabase.from('documents').update({
-      status: 'completed',
       document_summary: analysis.summary,
+      subject: analysis.subject,
+      grade_level: analysis.grade,
       difficulty_level: analysis.difficultyLevel,
-      subject: analysis.subject || doc.subject,
-      grade_level: analysis.grade || doc.grade_level,
-      gemini_metadata: {
-        quality_score: qualityScore,
-        document_structure: analysis.documentStructure,
-        key_topics: analysis.keyTopics,
-        board: analysis.board
-      }
+      gemini_processed: true
     }).eq('id', documentId);
 
-    if (analysis.slos && analysis.slos.length > 0) {
+    if (analysis.slos?.length > 0) {
       const sloRecords = analysis.slos.map((s: any) => ({
         document_id: documentId,
         slo_code: s.code,
         slo_full_text: s.fullText,
-        subject: analysis.subject || doc.subject,
-        grade_level: analysis.grade || doc.grade_level,
-        bloom_level: s.bloomLevel,
-        cognitive_complexity: s.cognitiveComplexity,
-        teaching_strategies: s.teachingStrategies || [],
-        assessment_ideas: s.assessmentIdeas || [],
-        prerequisite_concepts: s.prerequisiteConcepts || [],
-        common_misconceptions: s.common_misconceptions || [],
-        keywords: s.keywords || [],
-        page_number: s.pageNumber,
-        extraction_confidence: s.confidence || 0.95
+        subject: analysis.subject,
+        grade_level: analysis.grade,
+        bloom_level: s.bloomLevel
       }));
 
-      const { error: sloError } = await supabase.from('slo_database').upsert(sloRecords, {
+      await supabase.from('slo_database').upsert(sloRecords, {
         onConflict: 'document_id, slo_code'
       });
-      
-      if (sloError) console.error("SLO Upsert Error:", sloError);
     }
 
     return analysis;
   } catch (error) {
-    console.error("Pedagogical Analysis Failed:", error);
-    await supabase.from('documents').update({ status: 'failed' }).eq('id', documentId);
+    console.error("Deep Analysis Failed:", error);
+    await supabase.from('documents').update({ status: 'ready' }).eq('id', documentId);
   }
 }
