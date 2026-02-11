@@ -3,8 +3,8 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * ATOMIC PEDAGOGICAL INDEXER (v210.0)
- * Logic: Respects the hierarchical structure of Master MD.
+ * HIGH-FIDELITY PEDAGOGICAL INDEXER (v221.0)
+ * Logic: Continuum-Aware Hierarchical Mapping (ECE to XII).
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -18,76 +18,75 @@ export async function indexDocumentForRAG(
     const lines = content.split('\n');
     
     let currentGrade = "N/A";
-    let currentDomain = "General";
-    let currentStandard = "N/A";
+    let currentCompetency = "General";
+    let currentStandard = "General";
     let currentBenchmark = "N/A";
     
-    const pedagogicalChunks: any[] = [];
-    let currentBuffer = "";
-    let accumulatedSLOs: string[] = [];
+    const nodes: any[] = [];
+    let buffer = "";
+    let codesInChunk: string[] = [];
 
-    // Protocol: Iterate and detect hierarchical markers
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      // Detect Hierarchy for Context Injection
-      if (line.startsWith('# GRADE')) currentGrade = line.replace('# GRADE', '').trim();
-      else if (line.startsWith('# ')) currentDomain = line.replace('#', '').trim();
-      else if (line.startsWith('## ')) currentStandard = line.replace('##', '').trim();
-      else if (line.startsWith('### ')) currentBenchmark = line.replace('###', '').trim();
+      // Detect Contextual Shifts including ECE and full Roman Grades
+      if (line.startsWith('# GRADE') || line.includes('# ECE')) {
+        currentGrade = line.replace('# GRADE', '').replace('# ', '').trim();
+      } else if (line.startsWith('## DOMAIN') || line.startsWith('## Competency')) {
+        currentCompetency = line.split(':')[1]?.trim() || line.replace('##', '').trim();
+      } else if (line.startsWith('### STANDARD')) {
+        currentStandard = line.replace('###', '').trim();
+      } else if (line.startsWith('#### BENCHMARK')) {
+        currentBenchmark = line.replace('####', '').trim();
+      }
 
-      const lineCodes = extractSLOCodes(line);
-      lineCodes.forEach(code => {
-        if (!accumulatedSLOs.includes(code)) accumulatedSLOs.push(code);
-      });
+      const foundCodes = extractSLOCodes(line);
+      foundCodes.forEach(c => { if (!codesInChunk.includes(c)) codesInChunk.push(c); });
 
-      currentBuffer += (currentBuffer ? '\n' : '') + line;
+      buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK TRIGGER: We break at the start of new hierarchy nodes OR if buffer is large
-      const isNewSection = line.startsWith('#') || line.startsWith('Standard:') || line.startsWith('Benchmark:');
-      const isLargeBuffer = currentBuffer.length >= 1800;
+      // CHUNK TRIGGER: Optimized for 1500 chars to maximize reasoning window
+      if (buffer.length >= 1500 || i === lines.length - 1) {
+        // ENFORCEMENT: Prepend Lineage to every chunk
+        const descriptor = `[IDENTITY: Grade ${currentGrade} | ${currentCompetency} | ${currentStandard}]\n`;
+        const enrichedText = descriptor + buffer.trim();
 
-      if ((isNewSection && currentBuffer.length > 500) || isLargeBuffer || i === lines.length - 1) {
-        // INJECT CONTEXT HEADER: Every chunk becomes a self-contained pedagogical node
-        const contextHeader = `[CONTEXT: Grade ${currentGrade} | Domain: ${currentDomain} | Standard: ${currentStandard}]\n`;
-        const finalChunkText = contextHeader + currentBuffer.trim();
-
-        pedagogicalChunks.push({
-          text: finalChunkText,
+        nodes.push({
+          text: enrichedText,
           metadata: {
             grade: currentGrade,
-            domain: currentDomain,
+            competency: currentCompetency,
             standard: currentStandard,
             benchmark: currentBenchmark,
-            slo_codes: [...accumulatedSLOs],
+            slo_codes: [...codesInChunk],
             dialect: meta.dialect || 'Standard'
           }
         });
 
-        currentBuffer = "";
-        accumulatedSLOs = [];
+        buffer = "";
+        codesInChunk = [];
       }
     }
 
-    // Database Sync Protocol
+    // Grid Sync Protocol
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    const BATCH_SIZE = 12;
-    for (let i = 0; i < pedagogicalChunks.length; i += BATCH_SIZE) {
-      const batch = pedagogicalChunks.slice(i, i + BATCH_SIZE);
-      const embeddings = await generateEmbeddingsBatch(batch.map(c => c.text));
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
+      const batch = nodes.slice(i, i + BATCH_SIZE);
+      const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
       
-      const records = batch.map((chunk, j) => {
-        const embedding = embeddings[j];
-        if (!embedding || embedding.length !== 768) return null;
+      const records = batch.map((node, j) => {
+        const vec = embeddings[j];
+        if (!vec || vec.length !== 768) return null;
 
         return {
           document_id: documentId,
-          chunk_text: chunk.text,
-          embedding: embedding,
-          slo_codes: chunk.metadata.slo_codes,
-          metadata: chunk.metadata,
+          chunk_text: node.text,
+          embedding: vec,
+          slo_codes: node.metadata.slo_codes,
+          metadata: node.metadata,
           chunk_index: i + j
         };
       }).filter(Boolean);
@@ -101,12 +100,12 @@ export async function indexDocumentForRAG(
     await supabase.from('documents').update({ 
       status: 'ready',
       rag_indexed: true,
-      chunk_count: pedagogicalChunks.length
+      chunk_count: nodes.length
     }).eq('id', documentId);
 
-    return { success: true, count: pedagogicalChunks.length };
+    return { success: true, count: nodes.length };
   } catch (error) {
-    console.error("❌ [Indexer Fault]:", error);
+    console.error("❌ [Indexer Error]:", error);
     throw error;
   }
 }
