@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality } from "@google/genai";
 
 /**
- * NEURAL GEMINI ADAPTER (v49.0)
+ * NEURAL GEMINI ADAPTER (v50.0)
  * Optimized for Recursive Synthesis and Massive Multi-Grade Curriculum Artifacts.
  */
 export async function callGemini(
@@ -40,14 +40,15 @@ export async function callGemini(
     parts.push({ text: fullPrompt });
     contents.push({ role: 'user', parts });
 
-    const isMassiveTask = fullPrompt.includes('MASTER SINDH BIOLOGY 2024') || fullPrompt.includes('Tier_Merge');
+    // Check for massive tasks based on content patterns rather than hardcoded subjects
+    const isMassiveTask = fullPrompt.includes('CURRICULUM') && (fullPrompt.includes('SINDH') || fullPrompt.includes('FEDERAL') || fullPrompt.includes('Tier_Merge'));
     
     return await ai.models.generateContent({
       model: modelName,
       contents,
       config: {
         systemInstruction: systemInstruction || "You are a world-class pedagogy master.",
-        temperature: isMassiveTask ? 0.0 : 0.7,
+        temperature: isMassiveTask ? 0.1 : 0.7,
         maxOutputTokens: 8192, 
         thinkingConfig: { 
           thinkingBudget: isMassiveTask ? 4096 : 2048 
@@ -56,9 +57,8 @@ export async function callGemini(
     });
   };
 
-  const isComplex = fullPrompt.includes('LESSON PLAN') || fullPrompt.includes('MASTER SINDH BIOLOGY') || fullPrompt.length > 5000;
+  const isComplex = fullPrompt.includes('LESSON PLAN') || fullPrompt.includes('CURRICULUM') || fullPrompt.length > 5000;
   
-  // NO LOCAL RETRY: Let synthesizer-core handle failover to other providers (Groq/Cerebras)
   const model = isComplex ? 'gemini-3-pro-preview' : 'gemini-3-flash-preview';
   const response = await executeWithModel(model);
   return { text: response.text || "Synthesis complete.", groundingMetadata: response.candidates?.[0]?.groundingMetadata };

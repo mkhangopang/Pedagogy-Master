@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -125,7 +124,6 @@ export class SynthesizerCore {
 
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
-          // FORCED LOW TEMPERATURE (0.1) for maximum math and structural precision
           const config: any = { 
             temperature: 0.1, 
             maxOutputTokens: provider.maxTokens 
