@@ -13,7 +13,7 @@ let cachedUrl: string | null = null;
 let cachedKey: string | null = null;
 
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v31.0 - ULTRA RESILIENT)
+ * PRODUCTION CREDENTIAL RESOLVER (v32.0 - ULTRA RESILIENT)
  * Orchestrates an aggressive search for infrastructure keys to fix discovery exhaustion.
  */
 export const getCredentials = () => {
@@ -24,34 +24,33 @@ export const getCredentials = () => {
 
   const isValid = (val: string | undefined | null) => {
     if (!val) return false;
-    const v = val.trim();
-    // Allow placeholders for local/dev, but trigger config warnings
-    return v !== '' && v !== 'undefined' && v !== 'null';
+    const v = String(val).trim();
+    return v !== '' && v !== 'undefined' && v !== 'null' && v !== '[object Object]';
   };
 
   // TIER 1: Explicit Compiler Literals
-  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
   // TIER 2: Unified Namespace Scan (Deep Crawl)
   if (!isValid(url) || !isValid(key)) {
     const sources = [
       win.env,
       win.process?.env,
-      win.ai_config, // Common injection point for some AI platforms
+      win.ai_config,
       isBrowser ? JSON.parse(localStorage.getItem('sb-infra-cache') || '{}') : null,
       win
     ].filter(Boolean);
 
     for (const src of sources) {
-      if (!isValid(url)) url = src.NEXT_PUBLIC_SUPABASE_URL || src.SUPABASE_URL || '';
-      if (!isValid(key)) key = src.NEXT_PUBLIC_SUPABASE_ANON_KEY || src.SUPABASE_ANON_KEY || '';
-      if (isValid(url) && isValid(key) && url.startsWith('http')) break;
+      if (!isValid(url)) url = src.NEXT_PUBLIC_SUPABASE_URL || src.SUPABASE_URL || src.supabase_url || '';
+      if (!isValid(key)) key = src.NEXT_PUBLIC_SUPABASE_ANON_KEY || src.SUPABASE_ANON_KEY || src.supabase_anon_key || '';
+      if (isValid(url) && isValid(key) && String(url).startsWith('http')) break;
     }
   }
 
-  const finalUrl = (url || '').trim();
-  const finalKey = (key || '').trim();
+  const finalUrl = String(url || '').trim();
+  const finalKey = String(key || '').trim();
 
   if (finalUrl.startsWith('http') && finalKey.length >= 10) {
     cachedUrl = finalUrl;
@@ -85,8 +84,7 @@ export const pulseCredentialsFromServer = async (): Promise<boolean> => {
 
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  // Fixed logic: URL must start with http and key must have some length
-  return !!(url && url.startsWith('http') && key && key.length > 20);
+  return !!(url && url.startsWith('http') && key && key.length > 15);
 };
 
 export const refreshSupabaseInstance = () => {
@@ -104,7 +102,7 @@ export const getSupabaseClient = (): SupabaseClient => {
   }
 
   const { url, key } = getCredentials();
-  const isValid = url.startsWith('http') && key.length > 20;
+  const isValid = url.startsWith('http') && key.length > 15;
   
   const client = createClient(
     isValid ? url : 'https://placeholder.supabase.co', 

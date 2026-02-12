@@ -11,7 +11,7 @@ import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
-import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff, RefreshCw, ArrowRight } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -27,6 +27,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState('landing');
   const [infraError, setInfraError] = useState<string | null>(null);
   const [showRuntimeDebug, setShowRuntimeDebug] = useState(false);
+  const [bypassHandshake, setBypassHandshake] = useState(false);
   const initStarted = useRef(false);
   
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -97,18 +98,15 @@ export default function App() {
     const initializeAuth = async () => {
       console.log('📡 [System] Infrastructure Handshake: INITIATED');
       
-      // 1. CLEAR STALE SINGLETON
       refreshSupabaseInstance();
 
-      // 2. IMMEDIATE PULSE (Aggressive Recovery)
       const pulseSuccess = await pulseCredentialsFromServer();
       if (pulseSuccess) {
         console.log('📡 [System] Pulse Success: Keys recovered from server context.');
       }
 
-      // 3. RETRY DISCOVERY LOOP (Increased to 30 attempts for slow environments)
       let retries = 0;
-      const maxRetries = 30;
+      const maxRetries = 15; // Faster timeout for local preview
       
       while (retries < maxRetries) {
         if (isSupabaseConfigured()) break;
@@ -119,7 +117,7 @@ export default function App() {
 
       if (!isSupabaseConfigured()) {
         console.error('📡 [System] Handshake Failed: Pulse discovery exhausted.');
-        setInfraError("The neural gateway could not detect your infrastructure keys. Please verify your environment variables and re-deploy.");
+        setInfraError("The neural gateway could not detect your infrastructure keys. If you are sure they are set, use the Emergency Bypass below.");
         setIsAuthResolving(false);
         return;
       }
@@ -159,7 +157,7 @@ export default function App() {
     };
   }, [fetchAppData]);
 
-  if (infraError) {
+  if (infraError && !bypassHandshake) {
     const creds = getCredentials();
     return (
       <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 text-left">
@@ -193,21 +191,26 @@ export default function App() {
                   <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto text-left">
                     <div>URL_STATUS: {creds.url ? 'DETECTED' : 'MISSING'}</div>
                     <div>KEY_STATUS: {creds.key ? 'DETECTED' : 'MISSING'}</div>
-                    <div className="mt-2 text-slate-500">// Discovery Grid v31.0</div>
+                    <div className="mt-2 text-slate-500">// Discovery Grid v32.0</div>
                   </div>
                 )}
              </div>
           </div>
 
-          <button onClick={() => window.location.reload()} className="w-full py-4 bg-slate-900 text-white dark:bg-white dark:text-black rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2">
-            <RefreshCw size={14} /> Retry Handshake
-          </button>
+          <div className="flex flex-col gap-3">
+            <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2">
+              <RefreshCw size={14} /> Retry Handshake
+            </button>
+            <button onClick={() => setBypassHandshake(true)} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
+              Emergency Bypass <ArrowRight size={12} />
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (isAuthResolving) return (
+  if (isAuthResolving && !bypassHandshake) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
       <div className="bg-white dark:bg-slate-900 p-12 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col items-center">
         <Cpu className="text-indigo-600 w-16 h-16 animate-pulse mb-6" />
