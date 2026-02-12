@@ -1,9 +1,9 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * WORLD-CLASS NEURAL STRUCTURER (v20.0)
- * Specialized for Sindh Progression Grids (Grades IX-XII) and English standards.
- * FEATURE: High-Fidelity Linearization & Hierarchical Anchoring.
+ * UNIVERSAL NEURAL STRUCTURER (v26.0 - MASTER MD)
+ * Feature: High-Fidelity Linearization matching institutional UI standards.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -11,36 +11,31 @@ export async function convertToPedagogicalMarkdown(rawText: string): Promise<str
   // Gemini 3 Pro is mandatory for this high-complexity architectural mapping
   const modelName = 'gemini-3-pro-preview';
   
+  const systemInstruction = `You are a world-class Universal Curriculum Document Ingestion Architect. 
+Your mission is to extract curriculum from ANY format into structured, AI-ready "Master MD" content that matches our visual design system.
+
+VISUAL HIERARCHY RULES:
+1. GRADE HEADER: Use "# GRADE [ROMAN_OR_NUMBER]" (e.g., # GRADE IX). Use all caps.
+2. DOMAIN HEADER: Use "## DOMAIN [ID]: [NAME]" (e.g., ## DOMAIN A: NATURE OF SCIENCE). All caps.
+3. STANDARD BLOCK: Use "**Standard:** [Text]". Ensure the word "Standard:" is bolded.
+4. BENCHMARK HEADER: Use "### BENCHMARK [ID]: [DESCRIPTION]". All caps.
+5. SLO LIST: 
+   - MUST start with a round bullet (•).
+   - Format: "• SLO: [CODE] : [Full objective text]"
+   - Note the spacing around the colon: "SLO: [CODE] : [TEXT]"
+   - CODE Pattern: [SUB_CHAR]-[GRADE_NUM]-[DOMAIN_CHAR]-[SEQ_NUM] (e.g., B-09-A-01).
+
+UNIVERSAL PRINCIPLES:
+- SUBJECT AGNOSTIC: Handle STEM, Languages, Social Sciences, etc.
+- UNROLL GRIDS: If input is a comparison table, flatten it into sequential grade-based sections.
+- LATEX ENFORCEMENT: Use $...$ for all scientific/mathematical notation.
+
+OUTPUT STYLE: Professional, clean, and deterministic. No conversational text.`;
+
   const prompt = `
-TASK: Convert the provided curriculum text into a "High-Fidelity Master MD" database.
-
-CRITICAL FORMATTING RULES (Follow images style):
-
-1. LINEARIZATION:
-   - Sources often have multiple grades in tables (e.g. IX | X | XI | XII).
-   - You MUST unroll these into sequential blocks by Grade.
-   - Grade IX content first, then Grade X, etc.
-
-2. HIERARCHY (Must use these exact headers):
-   # GRADE [ROMAN NUMERAL] (e.g., # GRADE IX)
-   ## DOMAIN [LETTER]: [TITLE] (e.g., ## DOMAIN A: NATURE OF SCIENCE)
-   **Standard:** [Verbatim standard text]
-   ### BENCHMARK [NUMBER]: [BENCHMARK TITLE] (e.g., ### BENCHMARK 1: CRITICALLY ANALYZE...)
-   
-3. SLO BULLET FORMAT:
-   - Use a round bullet (•) followed by the SLO tag.
-   - Format: "• SLO: [CODE]: [Learning Outcome Text]"
-   - Example: "• SLO: B-09-A-01: Understand the concept of biology."
-
-4. SLO CODE RULES:
-   - Codes MUST be specific and include subject, grade, domain, and number.
-   - If the source just says "1.1.1", synthesize it into "B-09-A-01" using the context.
-   - B = Biology, S = Science, E = English, etc.
-
-5. CLEANING:
-   - Remove page numbers, headers, and footer noise.
-   - Maintain scientific notation using LaTeX (e.g., $C_{6}H_{12}O_{6}$).
-   - NO conversational text. Just the structured Markdown.
+[MISSION: SYNTHESIZE MASTER MD]
+Linearize the following raw curriculum stream into our "Master MD" hierarchy. 
+Apply the hierarchy rules (Grade -> Domain -> Standard -> Benchmark -> SLO) with surgical precision.
 
 RAW CURRICULUM STREAM:
 ${rawText.substring(0, 300000)}
@@ -51,20 +46,22 @@ ${rawText.substring(0, 300000)}
       model: modelName,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1, // Near-zero for deterministic alignment
-        systemInstruction: "You are a Curriculum Architect. Your output is the source of truth for a RAG grid. You must linearize complex grids into a high-fidelity hierarchical markdown structure with unique SLO codes.",
+        temperature: 0.1,
+        systemInstruction,
         thinkingConfig: { thinkingBudget: 4000 }
       }
     });
 
     const masterMd = response.text || rawText;
     
-    // Auto-detect Dialect for the indexer
+    // Auto-detect Dialect for metadata
     let dialect = 'Standard';
-    if (masterMd.includes('Sindh')) dialect = 'Pakistani-Sindh-2024';
-    if (masterMd.includes('B-09-')) dialect = 'Sindh-Biology-IX-XII';
+    const lowerMd = masterMd.toLowerCase();
+    if (lowerMd.includes('sindh')) dialect = 'Pakistani-Sindh-2024';
+    if (lowerMd.includes('common core')) dialect = 'US-Common-Core';
+    if (lowerMd.includes('cambridge') || lowerMd.includes('igcse')) dialect = 'Cambridge-International';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v20.0-HIFI-LINEARIZER -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v26.0-MASTER-FORMATTER -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Synthesis fault:", err);
     return rawText;

@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -204,25 +205,37 @@
   @apply bg-slate-200 dark:bg-slate-800 rounded-full hover:bg-indigo-500 transition-colors;
 }
 
-/* Prose Refinements & Responsive Table Fix */
-.prose {
-  @apply text-slate-600 dark:text-slate-400 leading-relaxed;
+/* MASTER MD PROSE REFINEMENTS (Matching Screenshot Typography) */
+.reader-canvas.prose {
+  @apply text-slate-800 dark:text-slate-200 leading-[1.8] font-medium;
 }
 
-.prose h1, .prose h2, .prose h3 {
-  @apply font-black text-slate-900 dark:text-white mt-12 mb-6 tracking-tighter uppercase;
+.reader-canvas.prose h1 {
+  @apply text-2xl font-black text-slate-900 dark:text-white mt-12 mb-8 tracking-tighter uppercase;
 }
 
-.prose strong {
-  @apply font-bold text-slate-900 dark:text-indigo-400;
+.reader-canvas.prose h2 {
+  @apply text-xl font-extrabold text-slate-900 dark:text-white mt-10 mb-6 tracking-tight uppercase;
 }
 
-.prose ul {
-  @apply space-y-4 my-8;
+.reader-canvas.prose h3 {
+  @apply text-lg font-bold text-slate-900 dark:text-white mt-8 mb-4 tracking-tight uppercase;
 }
 
-.prose li {
-  @apply pl-6 relative before:content-[''] before:absolute before:left-0 before:top-2.5 before:w-1.5 before:h-1.5 before:bg-indigo-600 before:rounded-full;
+.reader-canvas.prose strong {
+  @apply font-black text-slate-900 dark:text-indigo-400;
+}
+
+.reader-canvas.prose p {
+  @apply my-6;
+}
+
+.reader-canvas.prose ul {
+  @apply space-y-4 my-8 list-none p-0;
+}
+
+.reader-canvas.prose li {
+  @apply pl-0 flex items-start gap-2;
 }
 
 /* FIX: Table Overflow in Artifact Canvas */
