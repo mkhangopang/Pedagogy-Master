@@ -46,9 +46,10 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
       return;
     }
 
+    // Soft check for infrastructure - allow attempt even if client check failed initially
+    // as state might have updated or we are in bypass mode.
     if (!isSupabaseConfigured()) {
-      setError({ message: "Infrastructure handshake pending. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set correctly in Vercel." });
-      return;
+      console.warn("⚠️ Attempting auth with potentially missing configuration.");
     }
     
     setLoading(true);
@@ -89,9 +90,9 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
   };
 
   const handleGoogleLogin = async () => {
+    // Soft check
     if (!isSupabaseConfigured()) {
-      setError({ message: "Infrastructure configuration missing." });
-      return;
+       console.warn("⚠️ Attempting OAuth with potentially missing configuration.");
     }
 
     setGoogleLoading(true);
