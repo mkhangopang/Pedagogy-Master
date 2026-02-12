@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -105,20 +106,20 @@ export default function App() {
         console.log('📡 [System] Pulse Success: Keys recovered from server context.');
       }
 
-      // 3. RETRY DISCOVERY LOOP
+      // 3. RETRY DISCOVERY LOOP (Increased to 30 attempts for slow environments)
       let retries = 0;
-      const maxRetries = 15;
+      const maxRetries = 30;
       
       while (retries < maxRetries) {
         if (isSupabaseConfigured()) break;
         console.warn(`📡 [System] Handshake attempt ${retries + 1}/${maxRetries}...`);
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
         retries++;
       }
 
       if (!isSupabaseConfigured()) {
         console.error('📡 [System] Handshake Failed: Pulse discovery exhausted.');
-        setInfraError("The neural gateway could not detect your production infrastructure keys. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are present in your Vercel/CI environment.");
+        setInfraError("The neural gateway could not detect your infrastructure keys. Please verify your environment variables and re-deploy.");
         setIsAuthResolving(false);
         return;
       }
@@ -177,7 +178,7 @@ export default function App() {
                <ul className="text-[11px] text-slate-500 space-y-1 font-medium list-disc ml-4">
                  <li>Check <b>Vercel Settings</b> for key presence.</li>
                  <li>Verify <b>NEXT_PUBLIC_</b> prefix is correct.</li>
-                 <li><b>Re-Deploy:</b> Environment changes require a new build to inline values.</li>
+                 <li><b>Re-Deploy:</b> Ensure values are inlined during build.</li>
                </ul>
              </div>
 
@@ -190,9 +191,9 @@ export default function App() {
                 </button>
                 {showRuntimeDebug && (
                   <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto text-left">
-                    <div>RESOLVED_URL: {creds.url ? 'DETECTED' : 'NULL'}</div>
-                    <div>RESOLVED_KEY: {creds.key ? 'DETECTED' : 'NULL'}</div>
-                    <div className="mt-2 text-slate-500">// Scavenger v30.0 (Atomic Consensus)</div>
+                    <div>URL_STATUS: {creds.url ? 'DETECTED' : 'MISSING'}</div>
+                    <div>KEY_STATUS: {creds.key ? 'DETECTED' : 'MISSING'}</div>
+                    <div className="mt-2 text-slate-500">// Discovery Grid v31.0</div>
                   </div>
                 )}
              </div>

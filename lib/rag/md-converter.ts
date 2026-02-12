@@ -2,8 +2,9 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v26.0 - MASTER MD)
+ * UNIVERSAL NEURAL STRUCTURER (v27.0 - MASTER MD)
  * Feature: High-Fidelity Linearization matching institutional UI standards.
+ * Optimized for: Grade IX-XII Sindh Progression Grids & International Standards.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -12,13 +13,13 @@ export async function convertToPedagogicalMarkdown(rawText: string): Promise<str
   const modelName = 'gemini-3-pro-preview';
   
   const systemInstruction = `You are a world-class Universal Curriculum Document Ingestion Architect. 
-Your mission is to extract curriculum from ANY format into structured, AI-ready "Master MD" content that matches our visual design system.
+Your mission is to extract curriculum from ANY format into structured, AI-ready "Master MD" content that matches our visual design system exactly.
 
-VISUAL HIERARCHY RULES:
-1. GRADE HEADER: Use "# GRADE [ROMAN_OR_NUMBER]" (e.g., # GRADE IX). Use all caps.
-2. DOMAIN HEADER: Use "## DOMAIN [ID]: [NAME]" (e.g., ## DOMAIN A: NATURE OF SCIENCE). All caps.
+VISUAL HIERARCHY RULES (CRITICAL):
+1. GRADE HEADER: Use "# GRADE [ROMAN_OR_NUMBER]" (e.g., # GRADE IX). Use ALL CAPS.
+2. DOMAIN HEADER: Use "## DOMAIN [ID]: [NAME]" (e.g., ## DOMAIN A: NATURE OF SCIENCE). Use ALL CAPS.
 3. STANDARD BLOCK: Use "**Standard:** [Text]". Ensure the word "Standard:" is bolded.
-4. BENCHMARK HEADER: Use "### BENCHMARK [ID]: [DESCRIPTION]". All caps.
+4. BENCHMARK HEADER: Use "### BENCHMARK [ID]: [DESCRIPTION]". Use ALL CAPS.
 5. SLO LIST: 
    - MUST start with a round bullet (•).
    - Format: "• SLO: [CODE] : [Full objective text]"
@@ -26,16 +27,16 @@ VISUAL HIERARCHY RULES:
    - CODE Pattern: [SUB_CHAR]-[GRADE_NUM]-[DOMAIN_CHAR]-[SEQ_NUM] (e.g., B-09-A-01).
 
 UNIVERSAL PRINCIPLES:
-- SUBJECT AGNOSTIC: Handle STEM, Languages, Social Sciences, etc.
-- UNROLL GRIDS: If input is a comparison table, flatten it into sequential grade-based sections.
-- LATEX ENFORCEMENT: Use $...$ for all scientific/mathematical notation.
+- UNROLL GRIDS: If input is a comparison table with multiple grades as columns, flatten it into sequential sections (e.g., Grade IX content, then Grade X content).
+- LATEX ENFORCEMENT: Use $...$ for all scientific/mathematical notation ($H_{2}O$, $x^2$).
+- CLEANING: Remove page numbers, headers, footers, and redundant legal text.
 
-OUTPUT STYLE: Professional, clean, and deterministic. No conversational text.`;
+OUTPUT STYLE: Deterministic, hierarchical, and strictly pedagogical.`;
 
   const prompt = `
 [MISSION: SYNTHESIZE MASTER MD]
 Linearize the following raw curriculum stream into our "Master MD" hierarchy. 
-Apply the hierarchy rules (Grade -> Domain -> Standard -> Benchmark -> SLO) with surgical precision.
+Ensure Grade headers are top-level and SLOs are listed as discrete bulleted nodes with unique IDs.
 
 RAW CURRICULUM STREAM:
 ${rawText.substring(0, 300000)}
@@ -61,7 +62,7 @@ ${rawText.substring(0, 300000)}
     if (lowerMd.includes('common core')) dialect = 'US-Common-Core';
     if (lowerMd.includes('cambridge') || lowerMd.includes('igcse')) dialect = 'Cambridge-International';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v26.0-MASTER-FORMATTER -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v27.0-MASTER-FORMATTER -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Synthesis fault:", err);
     return rawText;

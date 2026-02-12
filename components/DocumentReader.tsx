@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { X, FileText, Copy, Share2, ZoomIn, ZoomOut, Search, Maximize2 } from 'lucide-react';
+import { X, FileText, Copy, Share2, Search, Maximize2 } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
 
@@ -20,14 +20,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
     // 1. STYLE "Standard:" labels with specific indigo tint from screenshot
     text = text.replace(
       /\*\*Standard:\*\*/g, 
-      '<strong class="text-indigo-500 dark:text-indigo-400 font-black">Standard:</strong>'
+      '<strong class="text-indigo-600 dark:text-indigo-400 font-black">Standard:</strong>'
     );
 
     // 2. STYLE SLO badges to match the pill style in reference image
     // Matches: • SLO: B-09-A-01
     text = text.replace(
       /•\s+(SLO[:\s]*[A-Z0-9\.-]{3,18})/gi, 
-      '• <span class="inline-flex items-center px-4 py-1.5 rounded-2xl bg-indigo-900/40 text-indigo-300 border border-indigo-500/30 font-black text-[11px] tracking-widest mx-2 shadow-sm">$1</span>'
+      '• <span class="inline-flex items-center px-4 py-1.5 rounded-2xl bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 font-black text-[11px] tracking-widest mx-2 shadow-sm">$1</span>'
     );
     
     return renderSTEM(text);
@@ -42,7 +42,6 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
 
   return (
     <div className="fixed inset-0 z-[500] bg-slate-50 dark:bg-[#050505] flex flex-col animate-in fade-in zoom-in-95 duration-300">
-      {/* Reader Header */}
       <header className="h-16 border-b border-slate-200 dark:border-white/5 bg-white dark:bg-[#0d0d0d] flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-4 min-w-0">
           <div className="p-2 bg-indigo-600 rounded-lg text-white shadow-lg">
@@ -57,24 +56,16 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
         </div>
 
         <div className="flex items-center gap-2">
-          <button 
-            onClick={handleCopy}
-            className="p-2.5 text-slate-400 hover:text-indigo-600 dark:hover:text-white transition-all rounded-xl"
-            title="Copy Source"
-          >
+          <button onClick={handleCopy} className="p-2.5 text-slate-400 hover:text-indigo-600 transition-all rounded-xl" title="Copy Source">
             <Copy size={20} />
           </button>
           <div className="w-px h-6 bg-slate-200 dark:bg-white/10 mx-1" />
-          <button 
-            onClick={onClose}
-            className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-xl transition-all shadow-sm"
-          >
+          <button onClick={onClose} className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-xl transition-all shadow-sm">
             <X size={20} />
           </button>
         </div>
       </header>
 
-      {/* Reader Body */}
       <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#080808] p-4 md:p-8 lg:p-12">
         <div className="max-w-4xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-2xl rounded-[3rem] border border-slate-200 dark:border-white/5 p-8 md:p-16 lg:p-24 relative min-h-full">
           <div className="absolute top-8 right-8 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-2xl hidden lg:block">
@@ -82,7 +73,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
           </div>
 
           <div 
-            className="prose dark:prose-invert max-w-none prose-indigo selection:bg-indigo-100 dark:selection:bg-indigo-900 reader-canvas"
+            className="prose dark:prose-invert max-w-none prose-indigo reader-canvas"
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
           
@@ -95,7 +86,6 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
         </div>
       </main>
 
-      {/* Floating Action Bar - Matching User Screenshot */}
       <div className="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-slate-900/95 dark:bg-[#1a1a2e]/95 backdrop-blur-xl px-10 py-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.4)] border border-white/10 animate-in slide-in-from-bottom-10 duration-700 no-print">
          <button className="flex items-center gap-3 text-white/90 hover:text-indigo-400 text-[11px] font-black uppercase tracking-widest transition-all">
             <Search size={16} className="text-indigo-400" /> Find SLO
