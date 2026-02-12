@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, getSupabaseHealth, getOrCreateProfile, isSupabaseConfigured, getCredentials } from '../lib/supabase';
+import { supabase, getSupabaseHealth, getOrCreateProfile, isSupabaseConfigured, getCredentials, pulseCredentialsFromServer, refreshSupabaseInstance } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -10,7 +10,7 @@ import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
-import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff, RefreshCw } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -91,29 +91,53 @@ export default function App() {
     if (initStarted.current) return;
     initStarted.current = true;
 
+    let authSubscription: { unsubscribe: () => void } | null = null;
+
     const initializeAuth = async () => {
       console.log('📡 [System] Infrastructure Handshake: INITIATED');
       
+      // 1. CLEAR STALE SINGLETON
+      refreshSupabaseInstance();
+
+      // 2. IMMEDIATE PULSE (Aggressive Recovery)
+      const pulseSuccess = await pulseCredentialsFromServer();
+      if (pulseSuccess) {
+        console.log('📡 [System] Pulse Success: Keys recovered from server context.');
+      }
+
+      // 3. RETRY DISCOVERY LOOP
       let retries = 0;
-      const maxRetries = 15; 
+      const maxRetries = 15;
       
       while (retries < maxRetries) {
         if (isSupabaseConfigured()) break;
-        const { url, key } = getCredentials();
-        console.warn(`📡 [System] Handshake attempt ${retries + 1}/${maxRetries}. URL: ${url ? 'Found' : 'Missing'}, Key: ${key ? 'Found' : 'Missing'}`);
+        console.warn(`📡 [System] Handshake attempt ${retries + 1}/${maxRetries}...`);
         await new Promise(r => setTimeout(r, 800));
         retries++;
       }
 
       if (!isSupabaseConfigured()) {
         console.error('📡 [System] Handshake Failed: Pulse discovery exhausted.');
-        setInfraError("Infrastructure Handshake Failed: Supabase keys not detected. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are correctly set in your environment.");
+        setInfraError("The neural gateway could not detect your production infrastructure keys. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are present in your Vercel/CI environment.");
         setIsAuthResolving(false);
         return;
       }
 
       console.log('📡 [System] Infrastructure Handshake: VERIFIED');
+      
       try {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
+          if (currentSession) {
+            setSession(currentSession);
+            fetchAppData(currentSession.user.id, currentSession.user.email);
+            setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
+          } else {
+            setSession(null);
+            setCurrentView(prev => (prev !== 'landing' && prev !== 'login') ? 'landing' : prev);
+          }
+        });
+        authSubscription = subscription;
+
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession) {
           setSession(existingSession);
@@ -123,24 +147,16 @@ export default function App() {
       } catch (err) {
         console.error('📡 [System] Auth initialization failed:', err);
       }
+      
       setIsAuthResolving(false);
     };
 
     initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
-      if (currentSession) {
-        setSession(currentSession);
-        fetchAppData(currentSession.user.id, currentSession.user.email);
-        if (currentView === 'landing' || currentView === 'login') setCurrentView('dashboard');
-      } else {
-        setSession(null);
-        if (currentView !== 'landing' && currentView !== 'login') setCurrentView('landing');
-      }
-    });
-
-    return () => subscription?.unsubscribe();
-  }, [fetchAppData, currentView]);
+    return () => {
+      if (authSubscription) authSubscription.unsubscribe();
+    };
+  }, [fetchAppData]);
 
   if (infraError) {
     const creds = getCredentials();
@@ -157,12 +173,11 @@ export default function App() {
           
           <div className="p-4 bg-slate-50 dark:bg-black/20 rounded-2xl text-left space-y-4">
              <div>
-               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Diagnostic Resolution</p>
+               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Discovery Diagnostics</p>
                <ul className="text-[11px] text-slate-500 space-y-1 font-medium list-disc ml-4">
-                 <li>Confirm keys are set in <b>Secrets</b> dashboard.</li>
-                 <li>Verify <b>NEXT_PUBLIC_</b> prefix for all keys.</li>
-                 <li>Check for trailing spaces in secret values.</li>
-                 <li>Restart development server or redeploy.</li>
+                 <li>Check <b>Vercel Settings</b> for key presence.</li>
+                 <li>Verify <b>NEXT_PUBLIC_</b> prefix is correct.</li>
+                 <li><b>Re-Deploy:</b> Environment changes require a new build to inline values.</li>
                </ul>
              </div>
 
@@ -177,13 +192,15 @@ export default function App() {
                   <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto text-left">
                     <div>RESOLVED_URL: {creds.url ? 'DETECTED' : 'NULL'}</div>
                     <div>RESOLVED_KEY: {creds.key ? 'DETECTED' : 'NULL'}</div>
-                    <div className="mt-2 text-slate-500">// Discovery v16.0 Deep Pulse active</div>
+                    <div className="mt-2 text-slate-500">// Scavenger v30.0 (Atomic Consensus)</div>
                   </div>
                 )}
              </div>
           </div>
 
-          <button onClick={() => window.location.reload()} className="w-full py-4 bg-slate-900 text-white dark:bg-white dark:text-black rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl hover:scale-[1.02] transition-all">Retry Discovery</button>
+          <button onClick={() => window.location.reload()} className="w-full py-4 bg-slate-900 text-white dark:bg-white dark:text-black rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2">
+            <RefreshCw size={14} /> Retry Handshake
+          </button>
         </div>
       </div>
     );

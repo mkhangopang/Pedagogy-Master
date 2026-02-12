@@ -1,7 +1,7 @@
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Explicitly inline environment variables at build time
   env: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -13,6 +13,18 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb'
     }
+  },
+  // Build-time diagnostic for CI/CD environments
+  webpack: (config, { dev, isServer }) => {
+    if (!isServer) {
+      // Logic for client-side bundle verification
+      const urlExists = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const keyExists = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!urlExists || !keyExists) {
+        console.warn('⚠️ [Build] Supabase keys missing in current environment context.');
+      }
+    }
+    return config;
   },
   async headers() {
     return [

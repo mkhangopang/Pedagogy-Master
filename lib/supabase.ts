@@ -13,8 +13,8 @@ let cachedUrl: string | null = null;
 let cachedKey: string | null = null;
 
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v16.0 - ZERO-TRUST DISCOVERY)
- * Exhaustively scans all possible namespaces for Supabase identity tokens.
+ * PRODUCTION CREDENTIAL RESOLVER (v30.0 - ATOMIC CONSENSUS)
+ * Orchestrates a multi-tier search for infrastructure keys.
  */
 export const getCredentials = () => {
   if (cachedUrl && cachedKey) return { url: cachedUrl, key: cachedKey };
@@ -22,93 +22,139 @@ export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : {};
 
-  // TIER 1: Standard Search (Prefixed & Unprefixed)
-  const searchFor = (keyName: string): string => {
-    const keysToTry = [
-      `NEXT_PUBLIC_${keyName}`,
-      `VITE_${keyName}`,
-      `REACT_APP_${keyName}`,
-      keyName
-    ];
-
-    for (const k of keysToTry) {
-      // 1. Literal process.env (Bundler replacement)
-      try { if (process.env[k]) return String(process.env[k]); } catch (e) {}
-      // 2. Global process.env
-      try { if (win.process?.env?.[k]) return String(win.process.env[k]); } catch (e) {}
-      // 3. Global env object
-      try { if (win.env?.[k]) return String(win.env[k]); } catch (e) {}
-      // 4. Direct window property
-      try { if (win[k]) return String(win[k]); } catch (e) {}
-    }
-    return '';
+  // HELPER: Validate a string is not a placeholder or empty
+  const isValid = (val: string | undefined | null) => {
+    if (!val) return false;
+    const v = val.trim().toLowerCase();
+    return v !== '' && v !== 'undefined' && v !== 'null' && !v.includes('placeholder');
   };
 
-  let url = searchFor('SUPABASE_URL');
-  let key = searchFor('SUPABASE_ANON_KEY');
+  // TIER 1: Explicit Compiler Literals (Next.js Build-Time Inlining)
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-  // TIER 2: Deep Pattern Matching (Heuristic Discovery)
-  if (isBrowser && (!url || !key)) {
-    console.debug('📡 [System] Standard credential search failed. Initiating Deep Pattern Match...');
-    
-    // Scan all window properties for Supabase signatures
-    for (const prop in win) {
-      try {
-        const val = win[prop];
-        if (typeof val !== 'string') continue;
-        
-        // URL Pattern: looks like a Supabase project URL
-        if (!url && val.includes('.supabase.co') && val.startsWith('http')) {
-          console.debug(`📡 [System] Heuristic match for URL: ${prop}`);
-          url = val;
-        }
-        // Key Pattern: looks like a Supabase JWT (starts with eyJ and is long)
-        if (!key && val.length > 50 && val.includes('eyJ')) {
-          console.debug(`📡 [System] Heuristic match for KEY: ${prop}`);
-          key = val;
-        }
-      } catch (e) {}
-      if (url && key) break;
+  // TIER 2: Unified Namespace Scan
+  if (!isValid(url) || !isValid(key)) {
+    const sources = [
+      win.env,
+      win.process?.env,
+      isBrowser ? JSON.parse(localStorage.getItem('sb-infra-cache') || '{}') : null,
+      win // Scan window root
+    ].filter(Boolean);
+
+    for (const src of sources) {
+      if (!isValid(url)) url = src.NEXT_PUBLIC_SUPABASE_URL || src.SUPABASE_URL || '';
+      if (!isValid(key)) key = src.NEXT_PUBLIC_SUPABASE_ANON_KEY || src.SUPABASE_ANON_KEY || '';
+      if (isValid(url) && isValid(key) && url.startsWith('http')) break;
     }
+  }
+
+  // TIER 3: Deep Global Scavenger (Last Resort Regex)
+  if (isBrowser && (!isValid(url) || !isValid(key))) {
+    try {
+      Object.keys(win).forEach(prop => {
+        const val = win[prop];
+        if (typeof val !== 'string') return;
+        if (!isValid(url) && val.includes('.supabase.co') && val.startsWith('http')) url = val;
+        if (!isValid(key) && val.length > 50 && val.includes('eyJ')) key = val;
+      });
+    } catch (e) {}
   }
 
   const finalUrl = (url || '').trim();
   const finalKey = (key || '').trim();
 
-  // Validate and Cache
-  if (finalUrl.startsWith('http') && finalKey.length > 10) {
+  // FINAL VERIFICATION
+  if (finalUrl.startsWith('http') && finalKey.length >= 10 && !finalUrl.includes('placeholder')) {
     cachedUrl = finalUrl;
     cachedKey = finalKey;
-    console.log('📡 [System] Infrastructure Handshake: CREDENTIALS_RESOLVED_V16');
+    
+    if (isBrowser) {
+      // Anchor keys across all sources to prevent logic drift
+      win.env = win.env || {};
+      win.env.NEXT_PUBLIC_SUPABASE_URL = finalUrl;
+      win.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = finalKey;
+      
+      win.process = win.process || { env: {} };
+      win.process.env = win.process.env || {};
+      win.process.env.NEXT_PUBLIC_SUPABASE_URL = finalUrl;
+      win.process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = finalKey;
+
+      try {
+        localStorage.setItem('sb-infra-cache', JSON.stringify({
+          NEXT_PUBLIC_SUPABASE_URL: finalUrl,
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: finalKey
+        }));
+      } catch (e) {}
+    }
+    console.log('📡 [System] Handshake: Credentials Verified via v30.0');
   }
 
   return { url: finalUrl, key: finalKey };
 };
 
 /**
- * VALIDATION NODE
+ * INFRASTRUCTURE PULSE: Recovers configuration from the server-side diagnostics
  */
-export const isSupabaseConfigured = (): boolean => {
-  const { url, key } = getCredentials();
-  return !!(url && url.startsWith('http') && key && key.length > 10);
+export const pulseCredentialsFromServer = async (): Promise<boolean> => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const res = await fetch('/api/check-env', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    
+    if (data.config?.url && data.config?.key && !data.config.url.includes('placeholder')) {
+      const win = window as any;
+      win.env = win.env || {};
+      win.env.NEXT_PUBLIC_SUPABASE_URL = data.config.url;
+      win.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = data.config.key;
+      
+      console.log('📡 [System] Infrastructure Pulse: KEYS_RECOVERED');
+      refreshSupabaseInstance();
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('📡 [System] Infrastructure Pulse: Fatal Node Error', err);
+    return false;
+  }
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v16.0)
+ * CONFIGURATION VALIDATOR
+ */
+export const isSupabaseConfigured = (): boolean => {
+  const { url, key } = getCredentials();
+  return !!(url && url.startsWith('http') && key && key.length >= 10 && !url.includes('placeholder'));
+};
+
+/**
+ * INSTANCE REFRESH
+ */
+export const refreshSupabaseInstance = () => {
+  if (typeof window !== 'undefined') {
+    delete (window as any).__supabaseInstance;
+    cachedUrl = null;
+    cachedKey = null;
+  }
+};
+
+/**
+ * THE AUTHENTIC SINGLETON (v30.0)
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
 
-  if (!isServer && window.__supabaseInstance) {
-    return window.__supabaseInstance;
+  if (!isServer && (window as any).__supabaseInstance) {
+    return (window as any).__supabaseInstance;
   }
 
   const { url, key } = getCredentials();
+  const isValid = url.startsWith('http') && key.length >= 10 && !url.includes('placeholder');
   
-  // Use placeholder if not configured to prevent crash, but validation should catch this
   const client = createClient(
-    url || 'https://placeholder.supabase.co', 
-    key || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy', 
+    isValid ? url : 'https://placeholder.supabase.co', 
+    isValid ? key : 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.placeholder', 
     {
       auth: { 
         persistSession: true,
@@ -120,14 +166,13 @@ export const getSupabaseClient = (): SupabaseClient => {
     }
   );
 
-  if (!isServer) {
-    window.__supabaseInstance = client;
+  if (!isServer && isValid) {
+    (window as any).__supabaseInstance = client;
   }
   
   return client;
 };
 
-// Proxy export for ease of use
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     const client = getSupabaseClient() as any;
@@ -182,18 +227,13 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     const fallbackName = metadata.full_name || metadata.name || email?.split('@')[0] || 'Educator';
     
     const { data: newProfile } = await supabase.from('profiles').upsert({
-      id: userId, 
-      email: email || '', 
-      name: fallbackName,
-      role: isAdminUser ? 'app_admin' : 'teacher', 
-      plan: isAdminUser ? 'enterprise' : 'free',
+      id: userId, email: email || '', name: fallbackName,
+      role: isAdminUser ? 'app_admin' : 'teacher', plan: isAdminUser ? 'enterprise' : 'free',
       queries_limit: isAdminUser ? 999999 : 30
     }, { onConflict: 'id' }).select().single();
     
     return newProfile;
-  } catch (err) { 
-    return null; 
-  }
+  } catch (err) { return null; }
 }
 
 export const getSupabaseHealth = async () => {
