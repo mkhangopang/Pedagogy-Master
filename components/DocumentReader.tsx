@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo } from 'react';
@@ -15,16 +14,13 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
   const renderedHtml = useMemo(() => {
     if (!document.extractedText) return '<p class="text-center opacity-50 py-20 italic">Intelligence not yet extracted for this node.</p>';
     
-    // The renderSTEM utility now handles the entire pipeline (KaTeX + SLO Highlighting + Markdown)
-    // We add the SLO span highlighting via standard Markdown or post-processing if needed, 
-    // but first we ensure the text itself is rendered professionally.
-    
     let text = document.extractedText;
     
-    // Inject SLO highlighting as Markdown-friendly spans before full render
+    // Robust SLO highlighting that works with bullets and standard tags
+    // Matches: "• SLO: CODE" or "SLO: CODE" or "[SLO: CODE]"
     text = text.replace(
-      /(SLO[:\s]*[A-Z0-9\.-]{3,15})/gi, 
-      '<span class="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-md font-bold">$1</span>'
+      /(?:•\s*)?(SLO[:\s]*[A-Z0-9\.-]{3,18})/gi, 
+      '<span class="inline-flex items-center px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-black text-[10px] tracking-tight mr-2 shadow-sm shadow-indigo-600/20">$1</span>'
     );
     
     return renderSTEM(text);
@@ -42,7 +38,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
       {/* Reader Header */}
       <header className="h-16 border-b border-slate-200 dark:border-white/5 bg-white dark:bg-[#0d0d0d] flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-4 min-w-0">
-          <div className="p-2 bg-indigo-600 rounded-lg text-white">
+          <div className="p-2 bg-indigo-600 rounded-lg text-white shadow-lg">
             <FileText size={18} />
           </div>
           <div className="min-w-0">
@@ -77,11 +73,10 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
       </header>
 
       {/* Reader Body */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-100/50 dark:bg-[#050505] p-4 md:p-12 lg:p-20">
-        <div className="max-w-4xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-2xl rounded-[2.5rem] border border-slate-200 dark:border-white/5 p-8 md:p-16 lg:p-20 relative min-h-full">
-          {/* Metadata Overlay Badge */}
+      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#080808] p-4 md:p-8 lg:p-12">
+        <div className="max-w-4xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-2xl rounded-[3rem] border border-slate-200 dark:border-white/5 p-8 md:p-16 lg:p-20 relative min-h-full">
           <div className="absolute top-8 right-8 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800 rounded-2xl hidden lg:block">
-             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em]">Verified Source</span>
+             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em]">High-Fidelity Master MD</span>
           </div>
 
           <div 
@@ -89,23 +84,23 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
             dangerouslySetInnerHTML={{ __html: renderedHtml }}
           />
           
-          <div className="mt-20 pt-10 border-t border-slate-100 dark:border-white/5 flex flex-col items-center justify-center text-center space-y-4 opacity-40">
+          <div className="mt-24 pt-10 border-t border-slate-100 dark:border-white/5 flex flex-col items-center justify-center text-center space-y-4 opacity-40">
              <div className="w-12 h-12 bg-slate-50 dark:bg-white/5 rounded-full flex items-center justify-center">
                <Maximize2 size={24} className="text-slate-300" />
              </div>
-             <p className="text-[10px] font-black uppercase tracking-[0.3em]">End of Document</p>
+             <p className="text-[10px] font-black uppercase tracking-[0.3em]">Curriculum Endpoint Reached</p>
           </div>
         </div>
       </main>
 
       {/* Floating Action Bar */}
-      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-slate-900/90 dark:bg-slate-800/90 backdrop-blur-xl px-6 py-3 rounded-full shadow-2xl border border-white/10 animate-in slide-in-from-bottom-10 duration-700">
-         <button className="flex items-center gap-2 text-white/70 hover:text-white text-xs font-bold transition-all">
-            <Search size={14} /> Find SLO
+      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-xl px-7 py-4 rounded-full shadow-2xl border border-white/10 animate-in slide-in-from-bottom-10 duration-700 no-print">
+         <button className="flex items-center gap-2 text-white/90 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all">
+            <Search size={14} className="text-indigo-400" /> Find SLO
          </button>
-         <div className="w-px h-4 bg-white/10" />
-         <button className="flex items-center gap-2 text-white/70 hover:text-white text-xs font-bold transition-all">
-            <Share2 size={14} /> Export Node
+         <div className="w-px h-5 bg-white/10" />
+         <button className="flex items-center gap-2 text-white/90 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all">
+            <Share2 size={14} className="text-emerald-400" /> Export Node
          </button>
       </div>
     </div>
