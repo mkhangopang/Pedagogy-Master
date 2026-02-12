@@ -13,8 +13,8 @@ let cachedUrl: string | null = null;
 let cachedKey: string | null = null;
 
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v13.0 - COMPILER LITERAL PRIORITY)
- * Force-references literal environment variables to ensure Next.js compiler injection.
+ * PRODUCTION CREDENTIAL RESOLVER (v15.0 - COMPILER LITERAL ENFORCEMENT)
+ * Direct literal access is REQUIRED for Next.js to bundle these values.
  */
 export const getCredentials = () => {
   if (cachedUrl && cachedKey) return { url: cachedUrl, key: cachedKey };
@@ -22,50 +22,26 @@ export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : {};
 
-  // PRIORITY 1: Explicit Literals (Crucial for Next.js build-time substitution)
+  // PRIORITY 1: Explicit Compiler Literals (The only reliable method for browser bundles)
   let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-  // PRIORITY 2: Scavenge dynamic process.env if literals failed
+  // PRIORITY 2: Window Proxy Check (Fallback for custom runtime injection)
   if (!url || !key) {
-    const findValue = (keyName: string): string => {
-      const prefixes = ['NEXT_PUBLIC_', 'VITE_', 'REACT_APP_', ''];
-      for (const prefix of prefixes) {
-        const k = `${prefix}${keyName}`;
-        try { if (process.env[k]) return process.env[k]!; } catch (e) {}
-        try { if (win.process?.env?.[k]) return win.process.env[k]; } catch (e) {}
-        try { if (win.env?.[k]) return win.env[k]; } catch (e) {}
-        try { if (win[k]) return win[k]; } catch (e) {}
-      }
-      return '';
-    };
-
-    if (!url) url = findValue('SUPABASE_URL');
-    if (!key) key = findValue('SUPABASE_ANON_KEY');
+    url = url || win.process?.env?.NEXT_PUBLIC_SUPABASE_URL || win.env?.NEXT_PUBLIC_SUPABASE_URL || '';
+    key = key || win.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || win.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
   }
 
-  // PRIORITY 3: HEURISTIC SCAN (Iterate window object)
-  if ((!url || !url.startsWith('http')) && isBrowser) {
-    for (const k in win) {
+  // PRIORITY 3: Deep Heuristic Pulse (Emergency discovery)
+  if (isBrowser && (!url || !key)) {
+    for (const prop in win) {
       try {
-        const val = win[k];
-        if (typeof val === 'string' && val.includes('.supabase.co') && val.startsWith('http')) {
-          url = val;
-          break;
-        }
+        const val = win[prop];
+        if (typeof val !== 'string') continue;
+        if (!url && val.includes('.supabase.co') && val.startsWith('http')) url = val;
+        if (!key && val.length > 50 && val.includes('eyJ')) key = val;
       } catch (e) {}
-    }
-  }
-
-  if ((!key || key.length < 20) && isBrowser) {
-    for (const k in win) {
-      try {
-        const val = win[k];
-        if (typeof val === 'string' && val.length > 50 && val.includes('eyJ')) {
-          key = val;
-          break;
-        }
-      } catch (e) {}
+      if (url && key) break;
     }
   }
 
@@ -75,7 +51,7 @@ export const getCredentials = () => {
   if (finalUrl && finalKey.length > 10) {
     cachedUrl = finalUrl;
     cachedKey = finalKey;
-    console.log('📡 [System] Credentials Scavenged Successfully');
+    console.log('📡 [System] Handshake Credentials Verified via v15.0 Scavenger');
   }
 
   return { url: finalUrl, key: finalKey };
@@ -90,7 +66,7 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v13.0)
+ * THE AUTHENTIC SINGLETON (v15.0)
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';

@@ -95,21 +95,19 @@ export default function App() {
       console.log('📡 [System] Infrastructure Handshake: INITIATED');
       
       let retries = 0;
-      const maxRetries = 20; 
+      const maxRetries = 15; 
       
       while (retries < maxRetries) {
         if (isSupabaseConfigured()) break;
-        
         const { url, key } = getCredentials();
         console.warn(`📡 [System] Handshake attempt ${retries + 1}/${maxRetries}. URL: ${url ? 'Found' : 'Missing'}, Key: ${key ? 'Found' : 'Missing'}`);
-        
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 600));
         retries++;
       }
 
       if (!isSupabaseConfigured()) {
-        console.error('📡 [System] Handshake Failed: Compiler injection missing.');
-        setInfraError("Infrastructure Handshake Failed: Supabase keys not detected. Ensure they are prefixed with 'NEXT_PUBLIC_' in your environment settings.");
+        console.error('📡 [System] Handshake Failed: Pulse discovery exhausted.');
+        setInfraError("Infrastructure Handshake Failed: Supabase keys not detected in runtime environment. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are correctly mapped.");
         setIsAuthResolving(false);
         return;
       }
@@ -153,17 +151,17 @@ export default function App() {
             <AlertTriangle className="w-12 h-12 text-rose-500" />
           </div>
           <div className="space-y-2">
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Error</h2>
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Fault</h2>
             <p className="text-slate-500 dark:text-slate-400 text-sm">{infraError}</p>
           </div>
           
           <div className="p-4 bg-slate-50 dark:bg-black/20 rounded-2xl text-left space-y-4">
              <div>
-               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Resolution Guide</p>
+               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Diagnostic Resolution</p>
                <ul className="text-[11px] text-slate-500 space-y-1 font-medium list-disc ml-4">
-                 <li>Confirm keys are set in <b>Secrets/Environment</b> settings.</li>
-                 <li>Keys <b>must</b> start with <code>NEXT_PUBLIC_</code> for frontend access.</li>
-                 <li>Redeploy your app after adding new environment variables.</li>
+                 <li>Confirm keys are set in <b>Secrets</b> dashboard.</li>
+                 <li>Verify <b>NEXT_PUBLIC_</b> prefix for all keys.</li>
+                 <li>Restart development server or redeploy.</li>
                </ul>
              </div>
 
@@ -172,13 +170,13 @@ export default function App() {
                   onClick={() => setShowRuntimeDebug(!showRuntimeDebug)}
                   className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-indigo-500"
                 >
-                  {showRuntimeDebug ? <EyeOff size={10}/> : <Eye size={10}/>} {showRuntimeDebug ? 'Hide' : 'Inspect'} Runtime Payload
+                  {showRuntimeDebug ? <EyeOff size={10}/> : <Eye size={10}/>} {showRuntimeDebug ? 'Hide' : 'Inspect'} Scavenger Results
                 </button>
                 {showRuntimeDebug && (
-                  <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto">
-                    <div>NEXT_PUBLIC_SUPABASE_URL: {creds.url ? 'DETECTED' : 'MISSING'}</div>
-                    <div>NEXT_PUBLIC_SUPABASE_ANON_KEY: {creds.key ? 'DETECTED' : 'MISSING'}</div>
-                    <div className="mt-2 text-slate-500">// Values are obfuscated for security</div>
+                  <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto text-left">
+                    <div>RESOLVED_URL: {creds.url ? 'FOUND' : 'NULL'}</div>
+                    <div>RESOLVED_KEY: {creds.key ? 'FOUND' : 'NULL'}</div>
+                    <div className="mt-2 text-slate-500">// Discovery v14.0 Deep Pulse active</div>
                   </div>
                 )}
              </div>
