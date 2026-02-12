@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan } from '../types';
 
@@ -10,18 +9,25 @@ declare global {
 }
 
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v8.0)
- * Highly resilient to different injection environments.
+ * PRODUCTION CREDENTIAL RESOLVER (v9.0)
+ * Highly resilient to module hoisting and environment injection.
  */
 export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : null;
 
-  // 1. Build-time statically replaced Next.js variables
-  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  // 1. Try local process.env (Build-time or polyfilled)
+  let url = '';
+  let key = '';
 
-  // 2. Runtime fallback (Checks window, bridged process.env, and global scope)
+  try {
+    url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+    key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  } catch (e) {
+    // process might not be defined
+  }
+
+  // 2. Try window-level process.env (Bridged from index.html/tsx)
   if (!url || url.length < 5) {
     url = win?.process?.env?.NEXT_PUBLIC_SUPABASE_URL || win?.NEXT_PUBLIC_SUPABASE_URL || '';
   }
@@ -35,35 +41,29 @@ export const getCredentials = () => {
   };
 };
 
-// Add comment above each fix
-// Fix: Added missing getURL helper for OAuth redirect handling in views/Login.tsx
 /**
  * Helper to get the site URL for OAuth redirects.
  */
 export const getURL = () => {
   let url =
-    process?.env?.NEXT_PUBLIC_SITE_URL ?? // Set this to your site URL in production env.
-    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? // Automatically set on Vercel.
+    process?.env?.NEXT_PUBLIC_SITE_URL ?? 
+    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 
     'http://localhost:3000/';
-  // Make sure to include `https://` when not localhost.
   url = url.includes('http') ? url : `https://${url}`;
-  // Make sure to include a trailing `/`.
   url = url.charAt(url.length - 1) === '/' ? url : `${url}/`;
   return url;
 };
 
 /**
  * VALIDATION NODE
- * Checks if we have enough info to at least TRY a connection.
  */
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  // We check for minimal length to allow the app to attempt loading
   return !!(url && url.includes('http') && key && key.length > 10);
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v8.0)
+ * THE AUTHENTIC SINGLETON (v9.0)
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
@@ -74,12 +74,11 @@ export const getSupabaseClient = (): SupabaseClient => {
 
   const { url, key } = getCredentials();
   
-  // If not configured, we return a dummy but DO NOT cache it, 
-  // allowing a real client to be created once keys are available.
   if (!url || !key || key.length < 10) {
+    // If not configured, we return a functional but "failed" client for the auth layer to handle
     return createClient(
-      'https://placeholder.supabase.co', 
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy'
+      'https://placeholder-node.supabase.co', 
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key-placeholder'
     );
   }
   
