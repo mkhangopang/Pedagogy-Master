@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, getSupabaseHealth, getOrCreateProfile, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, getSupabaseHealth, getOrCreateProfile, isSupabaseConfigured, getCredentials } from '../lib/supabase';
 import Sidebar from '../components/Sidebar';
 import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
@@ -10,7 +10,7 @@ import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
-import { Loader2, Menu, Cpu, AlertTriangle } from 'lucide-react';
+import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -25,6 +25,7 @@ export default function App() {
   const [isAuthResolving, setIsAuthResolving] = useState(true);
   const [currentView, setCurrentView] = useState('landing');
   const [infraError, setInfraError] = useState<string | null>(null);
+  const [showRuntimeDebug, setShowRuntimeDebug] = useState(false);
   const initStarted = useRef(false);
   
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -91,22 +92,38 @@ export default function App() {
     initStarted.current = true;
 
     const initializeAuth = async () => {
-      // Grace period for infrastructure bridging (increased to 1200ms)
-      await new Promise(r => setTimeout(r, 1200));
+      console.log('📡 [System] Infrastructure Handshake: INITIATED');
+      
+      let retries = 0;
+      const maxRetries = 20; 
+      
+      while (retries < maxRetries) {
+        if (isSupabaseConfigured()) break;
+        
+        const { url, key } = getCredentials();
+        console.warn(`📡 [System] Handshake attempt ${retries + 1}/${maxRetries}. URL: ${url ? 'Found' : 'Missing'}, Key: ${key ? 'Found' : 'Missing'}`);
+        
+        await new Promise(r => setTimeout(r, 500));
+        retries++;
+      }
 
       if (!isSupabaseConfigured()) {
-        console.warn('📡 [System] Handshake Failed: Keys still missing after grace period.');
-        setInfraError("Infrastructure Handshake Failed: Supabase keys missing.");
+        console.error('📡 [System] Handshake Failed: Compiler injection missing.');
+        setInfraError("Infrastructure Handshake Failed: Supabase keys not detected. Ensure they are prefixed with 'NEXT_PUBLIC_' in your environment settings.");
         setIsAuthResolving(false);
         return;
       }
 
       console.log('📡 [System] Infrastructure Handshake: VERIFIED');
-      const { data: { session: existingSession } } = await supabase.auth.getSession();
-      if (existingSession) {
-        setSession(existingSession);
-        fetchAppData(existingSession.user.id, existingSession.user.email);
-        setCurrentView('dashboard');
+      try {
+        const { data: { session: existingSession } } = await supabase.auth.getSession();
+        if (existingSession) {
+          setSession(existingSession);
+          fetchAppData(existingSession.user.id, existingSession.user.email);
+          setCurrentView('dashboard');
+        }
+      } catch (err) {
+        console.error('📡 [System] Auth initialization failed:', err);
       }
       setIsAuthResolving(false);
     };
@@ -127,28 +144,51 @@ export default function App() {
     return () => subscription?.unsubscribe();
   }, [fetchAppData, currentView]);
 
-  if (infraError) return (
-    <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 text-left">
-      <div className="max-w-md w-full bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-rose-100 dark:border-rose-900/30 text-center space-y-6">
-        <div className="w-20 h-20 bg-rose-50 dark:bg-rose-900/20 rounded-full flex items-center justify-center mx-auto">
-          <AlertTriangle className="w-12 h-12 text-rose-500" />
+  if (infraError) {
+    const creds = getCredentials();
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 text-left">
+        <div className="max-w-md w-full bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-rose-100 dark:border-rose-900/30 text-center space-y-6">
+          <div className="w-20 h-20 bg-rose-50 dark:bg-rose-900/20 rounded-full flex items-center justify-center mx-auto">
+            <AlertTriangle className="w-12 h-12 text-rose-500" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Error</h2>
+            <p className="text-slate-500 dark:text-slate-400 text-sm">{infraError}</p>
+          </div>
+          
+          <div className="p-4 bg-slate-50 dark:bg-black/20 rounded-2xl text-left space-y-4">
+             <div>
+               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Resolution Guide</p>
+               <ul className="text-[11px] text-slate-500 space-y-1 font-medium list-disc ml-4">
+                 <li>Confirm keys are set in <b>Secrets/Environment</b> settings.</li>
+                 <li>Keys <b>must</b> start with <code>NEXT_PUBLIC_</code> for frontend access.</li>
+                 <li>Redeploy your app after adding new environment variables.</li>
+               </ul>
+             </div>
+
+             <div className="pt-2 border-t dark:border-white/5">
+                <button 
+                  onClick={() => setShowRuntimeDebug(!showRuntimeDebug)}
+                  className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-indigo-500"
+                >
+                  {showRuntimeDebug ? <EyeOff size={10}/> : <Eye size={10}/>} {showRuntimeDebug ? 'Hide' : 'Inspect'} Runtime Payload
+                </button>
+                {showRuntimeDebug && (
+                  <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto">
+                    <div>NEXT_PUBLIC_SUPABASE_URL: {creds.url ? 'DETECTED' : 'MISSING'}</div>
+                    <div>NEXT_PUBLIC_SUPABASE_ANON_KEY: {creds.key ? 'DETECTED' : 'MISSING'}</div>
+                    <div className="mt-2 text-slate-500">// Values are obfuscated for security</div>
+                  </div>
+                )}
+             </div>
+          </div>
+
+          <button onClick={() => window.location.reload()} className="w-full py-4 bg-slate-900 text-white dark:bg-white dark:text-black rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl hover:scale-[1.02] transition-all">Retry Discovery</button>
         </div>
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Error</h2>
-          <p className="text-slate-500 dark:text-slate-400 text-sm">{infraError}</p>
-        </div>
-        <div className="p-4 bg-slate-50 dark:bg-black/20 rounded-2xl text-left">
-           <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Resolution Guide</p>
-           <ul className="text-[11px] text-slate-500 space-y-1 font-medium">
-             <li>1. Verify NEXT_PUBLIC_SUPABASE_URL in Environment Variables.</li>
-             <li>2. Verify NEXT_PUBLIC_SUPABASE_ANON_KEY in Environment Variables.</li>
-             <li>3. Ensure changes are deployed/restarted.</li>
-           </ul>
-        </div>
-        <button onClick={() => window.location.reload()} className="w-full py-4 bg-slate-900 text-white dark:bg-white dark:text-black rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl hover:scale-[1.02] transition-all">Retry Connection</button>
       </div>
-    </div>
-  );
+    );
+  }
 
   if (isAuthResolving) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">

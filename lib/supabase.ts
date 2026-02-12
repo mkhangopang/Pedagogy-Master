@@ -5,53 +5,80 @@ import { UserRole, SubscriptionPlan } from '../types';
 declare global {
   interface Window {
     __supabaseInstance?: SupabaseClient;
+    env?: Record<string, string>;
   }
 }
 
+let cachedUrl: string | null = null;
+let cachedKey: string | null = null;
+
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v9.0)
- * Highly resilient to module hoisting and environment injection.
+ * PRODUCTION CREDENTIAL RESOLVER (v13.0 - COMPILER LITERAL PRIORITY)
+ * Force-references literal environment variables to ensure Next.js compiler injection.
  */
 export const getCredentials = () => {
+  if (cachedUrl && cachedKey) return { url: cachedUrl, key: cachedKey };
+
   const isBrowser = typeof window !== 'undefined';
-  const win = isBrowser ? (window as any) : null;
+  const win = isBrowser ? (window as any) : {};
 
-  // 1. Try local process.env (Build-time or polyfilled)
-  let url = '';
-  let key = '';
+  // PRIORITY 1: Explicit Literals (Crucial for Next.js build-time substitution)
+  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-  try {
-    url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  } catch (e) {
-    // process might not be defined
+  // PRIORITY 2: Scavenge dynamic process.env if literals failed
+  if (!url || !key) {
+    const findValue = (keyName: string): string => {
+      const prefixes = ['NEXT_PUBLIC_', 'VITE_', 'REACT_APP_', ''];
+      for (const prefix of prefixes) {
+        const k = `${prefix}${keyName}`;
+        try { if (process.env[k]) return process.env[k]!; } catch (e) {}
+        try { if (win.process?.env?.[k]) return win.process.env[k]; } catch (e) {}
+        try { if (win.env?.[k]) return win.env[k]; } catch (e) {}
+        try { if (win[k]) return win[k]; } catch (e) {}
+      }
+      return '';
+    };
+
+    if (!url) url = findValue('SUPABASE_URL');
+    if (!key) key = findValue('SUPABASE_ANON_KEY');
   }
 
-  // 2. Try window-level process.env (Bridged from index.html/tsx)
-  if (!url || url.length < 5) {
-    url = win?.process?.env?.NEXT_PUBLIC_SUPABASE_URL || win?.NEXT_PUBLIC_SUPABASE_URL || '';
-  }
-  if (!key || key.length < 20) {
-    key = win?.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || win?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  // PRIORITY 3: HEURISTIC SCAN (Iterate window object)
+  if ((!url || !url.startsWith('http')) && isBrowser) {
+    for (const k in win) {
+      try {
+        const val = win[k];
+        if (typeof val === 'string' && val.includes('.supabase.co') && val.startsWith('http')) {
+          url = val;
+          break;
+        }
+      } catch (e) {}
+    }
   }
 
-  return { 
-    url: (url || '').trim(), 
-    key: (key || '').trim() 
-  };
-};
+  if ((!key || key.length < 20) && isBrowser) {
+    for (const k in win) {
+      try {
+        const val = win[k];
+        if (typeof val === 'string' && val.length > 50 && val.includes('eyJ')) {
+          key = val;
+          break;
+        }
+      } catch (e) {}
+    }
+  }
 
-/**
- * Helper to get the site URL for OAuth redirects.
- */
-export const getURL = () => {
-  let url =
-    process?.env?.NEXT_PUBLIC_SITE_URL ?? 
-    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 
-    'http://localhost:3000/';
-  url = url.includes('http') ? url : `https://${url}`;
-  url = url.charAt(url.length - 1) === '/' ? url : `${url}/`;
-  return url;
+  const finalUrl = (url || '').trim();
+  const finalKey = (key || '').trim();
+
+  if (finalUrl && finalKey.length > 10) {
+    cachedUrl = finalUrl;
+    cachedKey = finalKey;
+    console.log('📡 [System] Credentials Scavenged Successfully');
+  }
+
+  return { url: finalUrl, key: finalKey };
 };
 
 /**
@@ -59,11 +86,11 @@ export const getURL = () => {
  */
 export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  return !!(url && url.includes('http') && key && key.length > 10);
+  return !!(url && url.startsWith('http') && key && key.length > 10);
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v9.0)
+ * THE AUTHENTIC SINGLETON (v13.0)
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
@@ -74,23 +101,19 @@ export const getSupabaseClient = (): SupabaseClient => {
 
   const { url, key } = getCredentials();
   
-  if (!url || !key || key.length < 10) {
-    // If not configured, we return a functional but "failed" client for the auth layer to handle
-    return createClient(
-      'https://placeholder-node.supabase.co', 
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy-key-placeholder'
-    );
-  }
-  
-  const client = createClient(url, key, {
-    auth: { 
-      persistSession: true,
-      autoRefreshToken: true, 
-      detectSessionInUrl: true, 
-      flowType: 'pkce',
-      storageKey: 'sb-edunexus-auth-stable-v1'
-    },
-  });
+  const client = createClient(
+    url || 'https://placeholder.supabase.co', 
+    key || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy', 
+    {
+      auth: { 
+        persistSession: true,
+        autoRefreshToken: true, 
+        detectSessionInUrl: true, 
+        flowType: 'pkce',
+        storageKey: 'sb-edunexus-auth-stable-v1'
+      },
+    }
+  );
 
   if (!isServer) {
     window.__supabaseInstance = client;
@@ -119,9 +142,23 @@ export const getSupabaseServerClient = (token?: string): SupabaseClient => {
 export const getSupabaseAdminClient = (): SupabaseClient => {
   const { url } = getCredentials();
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  return createClient(url, serviceKey, {
+  return createClient(url || 'https://placeholder.supabase.co', serviceKey || 'dummy', {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
+};
+
+/**
+ * URL RESOLVER FOR AUTH REDIRECTS
+ */
+export const getURL = () => {
+  let url =
+    process?.env?.NEXT_PUBLIC_SITE_URL ?? 
+    process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 
+    'http://localhost:3000/';
+  
+  url = url.includes('http') ? url : `https://${url}`;
+  url = url.endsWith('/') ? url : `${url}/`;
+  return url;
 };
 
 export async function getOrCreateProfile(userId: string, email?: string) {
