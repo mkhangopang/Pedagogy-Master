@@ -13,8 +13,8 @@ let cachedUrl: string | null = null;
 let cachedKey: string | null = null;
 
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v15.0 - COMPILER LITERAL ENFORCEMENT)
- * Direct literal access is REQUIRED for Next.js to bundle these values.
+ * PRODUCTION CREDENTIAL RESOLVER (v16.0 - ZERO-TRUST DISCOVERY)
+ * Exhaustively scans all possible namespaces for Supabase identity tokens.
  */
 export const getCredentials = () => {
   if (cachedUrl && cachedKey) return { url: cachedUrl, key: cachedKey };
@@ -22,24 +22,51 @@ export const getCredentials = () => {
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : {};
 
-  // PRIORITY 1: Explicit Compiler Literals (The only reliable method for browser bundles)
-  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  // TIER 1: Standard Search (Prefixed & Unprefixed)
+  const searchFor = (keyName: string): string => {
+    const keysToTry = [
+      `NEXT_PUBLIC_${keyName}`,
+      `VITE_${keyName}`,
+      `REACT_APP_${keyName}`,
+      keyName
+    ];
 
-  // PRIORITY 2: Window Proxy Check (Fallback for custom runtime injection)
-  if (!url || !key) {
-    url = url || win.process?.env?.NEXT_PUBLIC_SUPABASE_URL || win.env?.NEXT_PUBLIC_SUPABASE_URL || '';
-    key = key || win.process?.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || win.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-  }
+    for (const k of keysToTry) {
+      // 1. Literal process.env (Bundler replacement)
+      try { if (process.env[k]) return String(process.env[k]); } catch (e) {}
+      // 2. Global process.env
+      try { if (win.process?.env?.[k]) return String(win.process.env[k]); } catch (e) {}
+      // 3. Global env object
+      try { if (win.env?.[k]) return String(win.env[k]); } catch (e) {}
+      // 4. Direct window property
+      try { if (win[k]) return String(win[k]); } catch (e) {}
+    }
+    return '';
+  };
 
-  // PRIORITY 3: Deep Heuristic Pulse (Emergency discovery)
+  let url = searchFor('SUPABASE_URL');
+  let key = searchFor('SUPABASE_ANON_KEY');
+
+  // TIER 2: Deep Pattern Matching (Heuristic Discovery)
   if (isBrowser && (!url || !key)) {
+    console.debug('📡 [System] Standard credential search failed. Initiating Deep Pattern Match...');
+    
+    // Scan all window properties for Supabase signatures
     for (const prop in win) {
       try {
         const val = win[prop];
         if (typeof val !== 'string') continue;
-        if (!url && val.includes('.supabase.co') && val.startsWith('http')) url = val;
-        if (!key && val.length > 50 && val.includes('eyJ')) key = val;
+        
+        // URL Pattern: looks like a Supabase project URL
+        if (!url && val.includes('.supabase.co') && val.startsWith('http')) {
+          console.debug(`📡 [System] Heuristic match for URL: ${prop}`);
+          url = val;
+        }
+        // Key Pattern: looks like a Supabase JWT (starts with eyJ and is long)
+        if (!key && val.length > 50 && val.includes('eyJ')) {
+          console.debug(`📡 [System] Heuristic match for KEY: ${prop}`);
+          key = val;
+        }
       } catch (e) {}
       if (url && key) break;
     }
@@ -48,10 +75,11 @@ export const getCredentials = () => {
   const finalUrl = (url || '').trim();
   const finalKey = (key || '').trim();
 
-  if (finalUrl && finalKey.length > 10) {
+  // Validate and Cache
+  if (finalUrl.startsWith('http') && finalKey.length > 10) {
     cachedUrl = finalUrl;
     cachedKey = finalKey;
-    console.log('📡 [System] Handshake Credentials Verified via v15.0 Scavenger');
+    console.log('📡 [System] Infrastructure Handshake: CREDENTIALS_RESOLVED_V16');
   }
 
   return { url: finalUrl, key: finalKey };
@@ -66,7 +94,7 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 /**
- * THE AUTHENTIC SINGLETON (v15.0)
+ * THE AUTHENTIC SINGLETON (v16.0)
  */
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
@@ -77,6 +105,7 @@ export const getSupabaseClient = (): SupabaseClient => {
 
   const { url, key } = getCredentials();
   
+  // Use placeholder if not configured to prevent crash, but validation should catch this
   const client = createClient(
     url || 'https://placeholder.supabase.co', 
     key || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.dummy', 
@@ -98,6 +127,7 @@ export const getSupabaseClient = (): SupabaseClient => {
   return client;
 };
 
+// Proxy export for ease of use
 export const supabase = new Proxy({} as SupabaseClient, {
   get: (target, prop) => {
     const client = getSupabaseClient() as any;
@@ -139,6 +169,7 @@ export const getURL = () => {
 
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
+  
   const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
   const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
   const isAdminUser = email && adminEmails.includes(email.toLowerCase().trim());
@@ -146,15 +177,23 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (profile) return profile;
+    
     const metadata = (await supabase.auth.getUser())?.data?.user?.user_metadata || {};
     const fallbackName = metadata.full_name || metadata.name || email?.split('@')[0] || 'Educator';
+    
     const { data: newProfile } = await supabase.from('profiles').upsert({
-      id: userId, email: email || '', name: fallbackName,
-      role: isAdminUser ? 'app_admin' : 'teacher', plan: isAdminUser ? 'enterprise' : 'free',
+      id: userId, 
+      email: email || '', 
+      name: fallbackName,
+      role: isAdminUser ? 'app_admin' : 'teacher', 
+      plan: isAdminUser ? 'enterprise' : 'free',
       queries_limit: isAdminUser ? 999999 : 30
     }, { onConflict: 'id' }).select().single();
+    
     return newProfile;
-  } catch (err) { return null; }
+  } catch (err) { 
+    return null; 
+  }
 }
 
 export const getSupabaseHealth = async () => {

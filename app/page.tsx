@@ -101,13 +101,13 @@ export default function App() {
         if (isSupabaseConfigured()) break;
         const { url, key } = getCredentials();
         console.warn(`📡 [System] Handshake attempt ${retries + 1}/${maxRetries}. URL: ${url ? 'Found' : 'Missing'}, Key: ${key ? 'Found' : 'Missing'}`);
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 800));
         retries++;
       }
 
       if (!isSupabaseConfigured()) {
         console.error('📡 [System] Handshake Failed: Pulse discovery exhausted.');
-        setInfraError("Infrastructure Handshake Failed: Supabase keys not detected in runtime environment. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are correctly mapped.");
+        setInfraError("Infrastructure Handshake Failed: Supabase keys not detected. Ensure NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY are correctly set in your environment.");
         setIsAuthResolving(false);
         return;
       }
@@ -161,6 +161,7 @@ export default function App() {
                <ul className="text-[11px] text-slate-500 space-y-1 font-medium list-disc ml-4">
                  <li>Confirm keys are set in <b>Secrets</b> dashboard.</li>
                  <li>Verify <b>NEXT_PUBLIC_</b> prefix for all keys.</li>
+                 <li>Check for trailing spaces in secret values.</li>
                  <li>Restart development server or redeploy.</li>
                </ul>
              </div>
@@ -174,9 +175,9 @@ export default function App() {
                 </button>
                 {showRuntimeDebug && (
                   <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto text-left">
-                    <div>RESOLVED_URL: {creds.url ? 'FOUND' : 'NULL'}</div>
-                    <div>RESOLVED_KEY: {creds.key ? 'FOUND' : 'NULL'}</div>
-                    <div className="mt-2 text-slate-500">// Discovery v14.0 Deep Pulse active</div>
+                    <div>RESOLVED_URL: {creds.url ? 'DETECTED' : 'NULL'}</div>
+                    <div>RESOLVED_KEY: {creds.key ? 'DETECTED' : 'NULL'}</div>
+                    <div className="mt-2 text-slate-500">// Discovery v16.0 Deep Pulse active</div>
                   </div>
                 )}
              </div>
