@@ -7,207 +7,20 @@
   :root {
     --foreground-rgb: 15, 23, 42;
     --background-start-rgb: 255, 255, 255;
-    --background-end-rgb: 255, 255, 255;
   }
-
   .dark {
     --foreground-rgb: 241, 245, 249;
     --background-start-rgb: 3, 3, 3;
-    --background-end-rgb: 3, 3, 3;
   }
-
-  html {
-    scroll-behavior: smooth;
-    -webkit-font-smoothing: antialiased;
-  }
-
   body {
     color: rgb(var(--foreground-rgb));
     background: rgb(var(--background-start-rgb));
-    overflow-x: hidden;
-  }
-
-  * {
-    @apply transition-colors duration-300;
-    -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* 🖨️ WORLD-CLASS HIGH-FIDELITY PRINT ENGINE (v4.0 - STABILIZED) */
-@media print {
-  @page {
-    margin: 1.5cm;
-    size: A4 portrait;
-  }
-
-  /* CRITICAL: Force break of app-shell height constraints and positioning */
-  html, body, #root, [data-reactroot], main, .flex, .grid, .h-screen, [class*="h-[calc"] {
-    background: white !important;
-    color: black !important;
-    height: auto !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: visible !important;
-    position: static !important;
-    display: block !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-  }
-
-  /* Aggressive scrubbing of UI chrome and interactive elements */
-  header, nav, aside, footer, button, .no-print, .shrink-0, 
-  [role="button"], .sidebar-wrapper, .input-container, 
-  .ProviderStatusBar, [class*="ProviderStatusBar"],
-  .fixed, .sticky {
-    display: none !important;
-    visibility: hidden !important;
-    height: 0 !important;
-    width: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
-  }
-
-  /* Reset Artifact Wrapper padding which causes physical page overflow */
-  .artifact-wrapper {
-    padding: 0 !important;
-    margin: 0 !important;
-    max-width: none !important;
-    width: 100% !important;
-    overflow: visible !important;
-  }
-
-  .print-container {
-    display: block !important;
-    width: 100% !important;
-    padding: 0.5cm !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: white !important;
-    border-radius: 0 !important;
-  }
-
-  /* Typography and Layout Control */
-  .prose {
-    font-family: 'Plus Jakarta Sans', 'Inter', 'Segoe UI', serif !important;
-    color: black !important;
-    line-height: 1.6 !important;
-    font-size: 11pt !important;
-    max-width: none !important;
-  }
-
-  .prose h1, .prose h2, .prose h3 {
-    page-break-after: avoid;
-    break-after: avoid;
-    margin-top: 1.5em !important;
-    color: #000 !important;
-    text-transform: uppercase !important;
-  }
-
-  .prose p, .prose li, .prose blockquote {
-    page-break-inside: avoid;
-    break-inside: avoid;
-    orphans: 3;
-    widows: 3;
-  }
-
-  /* Table Rendering Fidelity */
-  table {
-    page-break-inside: auto !important;
-    width: 100% !important;
-    border-collapse: collapse !important;
-    margin: 1em 0 !important;
-  }
-
-  thead { display: table-header-group !important; }
-
-  tr {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  td, th {
-    border: 0.5pt solid #cbd5e1 !important;
-    padding: 8pt !important;
-    text-align: left !important;
-  }
-
-  /* Institutional Header Visibility */
-  .print-header {
-    display: flex !important;
-    flex-direction: column !important;
-    border-bottom: 2pt solid #4f46e5 !important;
-    padding-bottom: 15pt !important;
-    margin-bottom: 25pt !important;
-  }
-
-  .print-header > div {
-    display: flex !important;
-    justify-content: space-between !important;
-    width: 100% !important;
-  }
-
-  .print-footer {
-    display: block !important;
-    text-align: center;
-    font-size: 8pt;
-    color: #64748b;
-    border-top: 0.5pt solid #e2e8f0;
-    margin-top: 30pt;
-    padding-top: 10pt;
-  }
-}
-
-/* Neural Animations */
-@keyframes gradient-x {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-}
-
-.animate-gradient-x {
-  background-size: 200% 200%;
-  animation: gradient-x 10s ease infinite;
-}
-
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.animate-spin-slow {
-  animation: spin-slow 20s linear infinite;
-}
-
-.reveal-node {
-  will-change: transform, opacity;
-  transition: transform 1.2s cubic-bezier(0.16, 1, 0.3, 1), 
-              opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
-              scale 1.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Glass & Blur Effects */
-.glass-panel {
-  @apply bg-white/70 dark:bg-black/70 backdrop-blur-2xl border border-white/20 dark:border-white/5;
-}
-
-/* Advanced Scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
-}
-
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-slate-200 dark:bg-slate-800 rounded-full hover:bg-indigo-500 transition-colors;
-}
-
-/* MASTER MD PROSE REFINEMENTS (Matching Screenshot Typography) */
+/* MASTER MD TYPOGRAPHY OVERRIDES */
 .reader-canvas.prose {
-  @apply text-slate-800 dark:text-slate-200 leading-[1.8] font-medium;
+  @apply text-slate-800 dark:text-slate-200 leading-[1.9] font-medium;
 }
 
 .reader-canvas.prose h1 {
@@ -215,38 +28,35 @@
 }
 
 .reader-canvas.prose h2 {
-  @apply text-xl font-extrabold text-slate-900 dark:text-white mt-10 mb-6 tracking-tight uppercase;
+  @apply text-xl font-black text-slate-900 dark:text-white mt-10 mb-6 tracking-tight uppercase;
 }
 
 .reader-canvas.prose h3 {
-  @apply text-lg font-bold text-slate-900 dark:text-white mt-8 mb-4 tracking-tight uppercase;
-}
-
-.reader-canvas.prose strong {
-  @apply font-black text-slate-900 dark:text-indigo-400;
-}
-
-.reader-canvas.prose p {
-  @apply my-6;
+  @apply text-lg font-black text-slate-900 dark:text-white mt-8 mb-4 tracking-tight uppercase;
 }
 
 .reader-canvas.prose ul {
-  @apply space-y-4 my-8 list-none p-0;
+  @apply space-y-5 my-10 list-none p-0;
 }
 
 .reader-canvas.prose li {
-  @apply pl-0 flex items-start gap-2;
+  @apply pl-0 flex items-start;
 }
 
-/* FIX: Table Overflow in Artifact Canvas */
+/* Bullet Point Styling */
+.reader-canvas.prose li::before {
+  content: "•";
+  @apply text-indigo-600 dark:text-indigo-400 font-black text-xl mr-3 leading-none mt-0.5 shrink-0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-thumb { @apply bg-indigo-600/20 rounded-full; }
+
+/* Hybrid Search Styles */
 .artifact-canvas-container table {
   @apply w-full border-collapse my-8 block overflow-x-auto;
 }
-
 .artifact-canvas-container th {
-  @apply px-4 py-3 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white font-black text-xs uppercase border border-slate-200 dark:border-white/10;
-}
-
-.artifact-canvas-container td {
-  @apply px-4 py-3 text-sm border border-slate-100 dark:border-white/5;
+  @apply px-4 py-3 bg-slate-50 dark:bg-white/5 font-black text-xs uppercase border border-slate-200 dark:border-white/10;
 }
