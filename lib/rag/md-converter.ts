@@ -1,41 +1,56 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * WORLD-CLASS NEURAL STRUCTURER (v15.0)
- * Specialized for Full-Spectrum ECE to XII Institutional Curricula.
- * FEATURE: Developmental Phase Detection & Spiral Progression Mapping.
+ * WORLD-CLASS NEURAL STRUCTURER (v16.0)
+ * Specialized for ECE-XII English & Complex Nested Grids.
+ * FEATURE: UID Hydration & Spiral Contextualization.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  // Pro model required for complex developmental unrolling across 13 grade levels
+  // Gemini 3 Pro is required for the high-cognitive task of synthesizing unique IDs from grid context
   const modelName = 'gemini-3-pro-preview';
   
   const prompt = `
-TASK: Convert the provided raw curriculum OCR into a high-fidelity "Master MD" pedagogical database.
+TASK: Convert the provided curriculum OCR into a "Master MD" Pedagogical Database.
 
-DEVELOPMENTAL SCOPE: This document covers ECE (Early Childhood) through Grade XII.
+CRITICAL CHALLENGE:
+The source text uses generic numbering (e.g., "1.1.1") that repeats across grades.
+You must UNROLL tables and HYDRATE these numbers into Globally Unique IDs.
 
-STRICT RECONSTRUCTION RULES:
-1. DEVELOPMENTAL PHASE UNROLLING: 
-   - ECE/KATCHI: Focus on developmental milestones and play-based outcomes.
-   - PRIMARY (I-V): Focus on foundational skills and literacy.
-   - MIDDLE (VI-VIII): Focus on conceptual grounding.
-   - SECONDARY (IX-XII): Focus on academic rigor and career readiness.
-   - For any table comparing these, create vertically isolated markdown blocks for each grade.
+STRICT RECONSTRUCTION PROTOCOL:
 
-2. SPIRAL PROGRESSION ANCHORING: 
-   - Every SLO code must be preserved verbatim (e.g., S8a5, B-09-A-01).
-   - If a code is repeated across grades (Spiral Recycling), append the Grade level to the anchor.
-   - Format: # GRADE [X] > ## DOMAIN [Y] > ### STANDARD [Z] > #### BENCHMARK [W] > - SLO: [CODE]: [TEXT].
+1. HIERARCHY DETECTION:
+   - Identify the ROOT: Subject (e.g., English).
+   - Identify LEVEL 1: Competency (e.g., C1 Reading).
+   - Identify LEVEL 2: Standard.
+   - Identify LEVEL 3: Benchmark.
 
-3. GRID TRANSPOSITION: 
-   - If a row spans Grade I, II, and III, split it into three distinct markdown nodes.
-   - Ensure the "Benchmark" description is repeated as a header for each grade's outcome.
+2. GRID LINEARIZATION (The "Unroll" Rule):
+   - The document lists Grades side-by-side (e.g., ECE | Class I | Class II).
+   - You MUST separate these into distinct, sequential blocks.
+   - DO NOT create Markdown tables. Create headers.
 
-4. DIALECT RECOVERY:
-   - Normalize Roman numerals (I, II, III, IV, V, VI, VII, VIII, IX, X, XI, XII).
-   - Fix OCR errors: "SL0" -> "SLO", "Katchi" -> "ECE/Katchi".
+3. UID HYDRATION (The "Unique Code" Rule):
+   - NEVER output just "1.1.1". Context is lost in vector search.
+   - SYNTHESIZE a code using: [SUBJECT]-[GRADE]-C[COMPETENCY]-[BENCHMARK]-[SLO]
+   - Example Input: Grade 9, Competency 1, SLO 1.1.1 "Analyze paragraphs..."
+   - Example Output: "- SLO: ENG-09-C1-1.1.1: Analyze paragraphs..."
+
+4. DEVELOPMENTAL SPAN:
+   - ECE/Katchi -> Grade 00
+   - Primary -> Grade 01-05
+   - Middle -> Grade 06-08
+   - Secondary -> Grade 09-10
+   - HSSC -> Grade 11-12
+
+5. OUTPUT STRUCTURE:
+   # GRADE 09
+   ## COMPETENCY 1: Reading
+   ### STANDARD: Students will search for...
+   #### BENCHMARK 1.1: Analyze patterns...
+   - SLO: ENG-09-C1-1.1.1: Analyze the order of paragraphs...
+   - SLO: ENG-09-C1-1.1.2: Analyze organizational patterns...
 
 RAW TEXT STREAM:
 ${rawText.substring(0, 250000)}
@@ -47,21 +62,21 @@ ${rawText.substring(0, 250000)}
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
         temperature: 0.1,
-        systemInstruction: "You are a senior curriculum engineer specializing in the K-12 continuum. You reconstruct complex institutional documents into structured, RAG-ready markdown with 100% data fidelity.",
+        systemInstruction: "You are a Curriculum Architect. Transform flat text into a relational knowledge graph. Every SLO must have a unique, searchable ID.",
         thinkingConfig: { thinkingBudget: 4000 }
       }
     });
 
     const masterMd = response.text || rawText;
     
-    // Enhanced Dialect Detection
+    // Dialect Tagging
     let dialect = 'Standard';
-    if (masterMd.includes('Sindh')) dialect = 'Pakistani-Sindh-ECE-XII';
-    if (masterMd.includes('Federal')) dialect = 'Pakistani-Federal-K-XII';
+    if (masterMd.includes('Sindh')) dialect = 'Pakistani-Sindh-2016';
+    if (masterMd.includes('ENG-')) dialect = 'Hydrated-SLO-Grid';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- DEVELOPMENTAL_SPAN: ECE-XII -->\n<!-- SYNTHESIS_PROTOCOL: v15.0-CONTINUUM -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v16.0-UID-HYDRATION -->\n${masterMd}`;
   } catch (err) {
-    console.error("❌ [MD Converter] Continuum reconstruction fault:", err);
+    console.error("❌ [MD Converter] Hydration fault:", err);
     return rawText;
   }
 }
