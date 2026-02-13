@@ -12,14 +12,14 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // 1. New Generated 5-Part Code: B-11-J-13-01 (Subject-Grade-Domain-Chapter-Num)
-  /\b([A-Z]{1,3})[-\s]?(\d{2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{2,3})\b/g,
+  // 1. New Master MD Generated 5-Part Code: B-11-J-13-01
+  /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{1,3})\b/g,
 
   // 2. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
   /(?:\[|\b)SL[O0]\s*[:\s-]*([A-Z]{1,3})\s*[:\s-]+\s*(\d{2})\s*[:\s-]+\s*([A-Z])\s*[:\s-]+\s*(\d{1,3})(?:\]|\b)/gi,
 
   // 3. Compact/Standard: B09A01 or B-09-A-01
-  /\b([A-Z]{1,3})[-\s]?(\d{2})[-\s]?([A-Z])[-\s]?(\d{1,3})\b/g,
+  /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,3})\b/g,
 
   // 4. Legacy/Federal: S8a5
   /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/g,
@@ -33,7 +33,7 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
   const extracted: ExtractedSLO[] = [];
   const seen = new Set<string>();
   
-  // Pre-normalize text slightly to help with line breaks in PDF extraction
+  // Pre-normalize text slightly
   const normalizedText = documentText.replace(/\[\s+/g, '[').replace(/\s+\]/g, ']');
 
   for (const pattern of SLO_PATTERNS) {
@@ -41,20 +41,25 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
     for (const match of matches) {
       const fullMatch = match[0];
       
-      // Basic dedup based on the raw string found
       const cleanKey = fullMatch.replace(/[\s\[\]-]/g, '').toUpperCase();
       if (seen.has(cleanKey)) continue;
       seen.add(cleanKey);
       
-      const startIndex = Math.max(0, match.index! - 200);
-      const endIndex = Math.min(normalizedText.length, match.index! + fullMatch.length + 300);
+      const startIndex = Math.max(0, match.index! - 400);
+      const endIndex = Math.min(normalizedText.length, match.index! + fullMatch.length + 600);
       const context = normalizedText.substring(startIndex, endIndex);
       
-      // Attempt to find description: text following the code
-      // We look for the code, then optional separator, then text
-      const descRegex = new RegExp(`${fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:–-]?\\s*([^.\n\\[]+)`, 'i');
-      const descMatch = context.match(descRegex);
-      const description = descMatch ? descMatch[1].trim() : '';
+      // Support for Master MD SLO Blocks: Extract from "**Text:** ..."
+      let description = fullMatch;
+      const textBlockMatch = context.match(/\*\*Text:\*\*\s*([^\n#<]+)/i);
+      if (textBlockMatch) {
+        description = textBlockMatch[1].trim();
+      } else {
+        // Fallback for non-Master MD formats
+        const descRegex = new RegExp(`${fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:–-]?\\s*([^.\n\\[]+)`, 'i');
+        const descMatch = context.match(descRegex);
+        description = descMatch ? descMatch[1].trim() : fullMatch;
+      }
 
       const confidence = calculateConfidence(cleanKey, context);
       
@@ -70,51 +75,16 @@ function calculateConfidence(code: string, context: string): number {
   let confidence = 0.6;
   const lowerContext = context.toLowerCase();
   
-  // High confidence for the explicit Sindh format structure
-  if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,4}$/.test(code)) return 0.95; // Standard 4-part
-  if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,2}\d{2,3}$/.test(code)) return 0.98; // New 5-part
+  // High confidence for well-structured patterns
+  if (/^[A-Z]{1,3}\d{1,2}[A-Z]\d{1,2}\d{1,3}$/.test(code)) return 0.98; // New 5-part
+  if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,4}$/.test(code)) return 0.95; // 4-part
 
-  const keywords = ['objective', 'outcome', 'slo', 'standard', 'learning', 'students will', 'benchmark'];
+  const keywords = ['objective', 'outcome', 'slo', 'standard', 'learning', 'students will', 'bloom'];
   for (const keyword of keywords) {
     if (lowerContext.includes(keyword)) confidence += 0.1;
   }
   
   return Math.min(confidence, 1.0);
-}
-
-export interface SLOIndex {
-  [sloCode: string]: {
-    description: string;
-    fullContext: string;
-    documentName: string;
-    confidence: number;
-  };
-}
-
-export function createSLOIndex(extractedSLOs: ExtractedSLO[], documentName: string): SLOIndex {
-  const index: SLOIndex = {};
-  for (const slo of extractedSLOs) {
-    index[slo.code] = {
-      description: slo.description,
-      fullContext: slo.context,
-      documentName,
-      confidence: slo.confidence,
-    };
-  }
-  return index;
-}
-
-export function searchSLO(sloCode: string, index: SLOIndex): string | null {
-  const normalized = normalizeSLO(sloCode);
-  if (index[sloCode]) {
-    return `SLO ${sloCode}: ${index[sloCode].description}\n\nContext: ${index[sloCode].fullContext}`;
-  }
-  for (const [code, data] of Object.entries(index)) {
-    if (normalizeSLO(code) === normalized) {
-      return `SLO ${code}: ${data.description}\n\nContext: ${data.fullContext}`;
-    }
-  }
-  return null;
 }
 
 export function normalizeSLO(sloCode: string): string {
