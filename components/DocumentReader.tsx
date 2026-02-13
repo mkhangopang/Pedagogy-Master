@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, FileText, Copy, Share2, Search, Maximize2, Check, ExternalLink, AlignLeft, Download } from 'lucide-react';
+import { X, FileText, Copy, Share2, Search, Maximize2, Check, ExternalLink, AlignLeft, Download, BookOpen, Layers } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
 
@@ -49,39 +49,53 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     
     let text = activeDoc.extractedText;
     
-    // 1. Style "Standard:" headers (Bold Indigo)
+    // --- 1. Structure Cleanup (Fix Mingled Text) ---
+    
+    // Bold specific headers common in Sindh/National Curriculum to break up text walls
+    const structuralHeaders = [
+      'Major Concepts', 'Learning Outcomes', 'Assessment', 'Guidelines', 
+      'Chapter', 'Unit', 'Section', 'Domain', 'Standard', 'Benchmark'
+    ];
+    
+    structuralHeaders.forEach(header => {
+      // Regex to find these words at start of lines or sentences and bold them if they aren't already
+      // Case insensitive match, looks for "Benchmark 1:" or "Chapter 01"
+      const regex = new RegExp(`(^|\\n|\\r)(${header}\\s*\\d*[:.]?)`, 'gi');
+      text = text.replace(regex, '$1\n<h3 class="text-lg font-black text-slate-800 dark:text-slate-200 mt-6 mb-2 uppercase tracking-wide border-b border-slate-100 dark:border-white/5 pb-1">$2</h3>');
+    });
+
+    // Specifically styling "Standard:" which is often inline
     text = text.replace(
       /\*\*Standard:\*\*/g, 
       '<strong class="text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-wide block mt-6 mb-2">Standard:</strong>'
     );
 
-    // 2. High-Fidelity SLO Cards
-    // Captures diverse formats:
-    // - • SLO: B-09-A-01 : Description
-    // - [SLO: B - 11 - B - 21] Description
-    // - SLO: B-09-A-01 Description
+    // --- 2. High-Fidelity SLO Cards (The Blue Pill) ---
     
-    // We use a specific regex to capture the code and description separately
-    // Group 1: Code (e.g. B-09-A-01 or B - 11 - B - 21)
-    // Group 2: Description
-    const sloRegex = /(?:^|\n)(?:[-•*]\s*)?(?:\[\s*)?(?:SLO|LO)\s*[:\s-]\s*([A-Z0-9\s\.-]+)(?:\]|[:\s-])\s*([^\n\r]+)/gi;
+    // ROBUST REGEX STRATEGY:
+    // 1. Handles `[SLO: ...]` brackets
+    // 2. Handles typos like `SL0` (zero instead of O)
+    // 3. Handles spaces inside codes `B - 09 - A`
+    // 4. Captures the description accurately
+    const sloRegex = /(?:^|\n)(?:[-•*]\s*)?(?:\[\s*)?(?:SL[O0]|LO|Student Learning Outcome)\s*[:\s-]*([A-Z0-9\s\.-]+?)(?:\]|[:\s-])\s+([^\n]+)/gi;
     
     text = text.replace(sloRegex, (match, code, desc) => {
-        const cleanCode = code.trim();
-        const cleanDesc = desc.replace(/^[:\-\]]\s*/, '').trim(); // Remove leading punctuation if captured
+        // Clean the code: Remove spaces inside the code (B - 09 -> B-09) and brackets
+        const cleanCode = code.replace(/\s+/g, '').replace(/[\[\]]/g, '').trim();
+        const cleanDesc = desc.replace(/^[:\-\]]\s*/, '').trim(); 
         
-        return `\n\n<div class="slo-card-container my-4 group relative pl-4 border-l-4 border-indigo-500 bg-slate-50 dark:bg-white/5 rounded-r-xl p-4 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all cursor-pointer slo-interactive-pill" data-slo="${cleanCode}">
-          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
-             <span class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-black text-[10px] tracking-widest shadow-md shrink-0 whitespace-nowrap border border-indigo-400/50">
-               SLO: ${cleanCode}
-             </span>
-             <span class="text-sm font-medium text-slate-700 dark:text-slate-200 leading-relaxed group-hover:text-indigo-900 dark:group-hover:text-indigo-100 transition-colors">
+        return `\n\n<div class="slo-card-container my-4 group relative pl-0 sm:pl-4 sm:border-l-4 sm:border-indigo-500 bg-white dark:bg-[#1a1a1a] rounded-xl shadow-sm border border-slate-100 dark:border-white/5 p-4 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer slo-interactive-pill" data-slo="${cleanCode}">
+          <div class="flex flex-col gap-2">
+             <div class="flex items-start justify-between">
+                <span class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-black text-[11px] tracking-widest shadow-sm shrink-0 whitespace-nowrap">
+                  ${cleanCode}
+                </span>
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-bold text-slate-400 flex items-center gap-1 bg-slate-50 dark:bg-white/10 px-2 py-1 rounded">
+                  <Copy size={10} /> Copy ID
+                </span>
+             </div>
+             <span class="text-sm font-medium text-slate-700 dark:text-slate-300 leading-relaxed group-hover:text-indigo-900 dark:group-hover:text-indigo-100 transition-colors">
                ${cleanDesc}
-             </span>
-          </div>
-          <div class="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-             <span class="p-1.5 bg-white dark:bg-black rounded-lg text-indigo-500 shadow-sm text-[9px] font-bold flex items-center gap-1 border border-indigo-100 dark:border-white/10">
-               <span class="w-3 h-3"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg></span> Copy Code
              </span>
           </div>
         </div>\n\n`;
@@ -98,9 +112,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     if (pill) {
       const sloCode = pill.getAttribute('data-slo');
       if (sloCode) {
-        // We only copy the Code as requested for tool generation
         navigator.clipboard.writeText(sloCode); 
-        setCopyFeedback(`SLO: ${sloCode}`);
+        setCopyFeedback(`${sloCode}`);
         setTimeout(() => setCopyFeedback(null), 2000);
       }
     }
@@ -108,8 +121,6 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
   const triggerFind = () => {
     setShowFind(!showFind);
-    // Explicitly use window.document to avoid conflicting with the prop name 'document' (aliased to activeDoc)
-    // This fixes the build error: "Property 'querySelector' does not exist on type 'Document'"
     const reader = window.document.querySelector('.reader-canvas');
     if (reader) (reader as HTMLElement).focus();
   };
@@ -182,7 +193,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
         </div>
       )}
 
-      {/* Responsive Floating Action Bar (Glassmorphism + Mobile Fit) */}
+      {/* Responsive Floating Action Bar */}
       <div className="fixed bottom-6 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-auto z-[550]">
         <div className="flex items-center justify-between md:justify-center gap-4 bg-slate-900/95 dark:bg-[#1a1a2e]/95 backdrop-blur-xl px-5 py-4 md:px-10 md:py-5 rounded-2xl md:rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/10 animate-in slide-in-from-bottom-10 duration-700">
            
