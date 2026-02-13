@@ -1,8 +1,8 @@
 
 /**
- * WORLD-CLASS SLO PARSER (v9.0)
+ * WORLD-CLASS SLO PARSER (v10.0)
  * Optimized for Sindh (B09A01) and Federal (S8a5) standards.
- * LOGIC: Subject(Char) -> Grade(2Digits) -> Domain(Char) -> Number(Digits)
+ * Supports new 5-part generated codes: B-11-J-13-01
  */
 
 export interface ParsedSLO {
@@ -41,24 +41,40 @@ export function parseSLOCode(code: string): ParsedSLO | null {
   // 1. Remove brackets [] 
   // 2. Remove "SLO" or "SL0" prefix (case insensitive)
   // 3. Remove colons, spaces, hyphens
-  // Example: "[SLO: B - 09 - A - 01]" -> "B09A01"
   const cleanCode = code.toUpperCase()
     .replace(/\[|\]/g, '')
     .replace(/^\s*SL[O0][:.\s-]*/, '')
     .replace(/[:\s-]/g, '');
   
-  // PATTERN: Subject (1-3 chars) + Grade (2 chars) + Domain (1 char) + Number (1-3 chars)
-  // Example: B09A01 -> B (Sub), 09 (Gr), A (Dom), 01 (Num)
+  // 1. NEW PATTERN: Subject(1-3) + Grade(2) + Domain(1) + Chapter(1-2) + Number(2-3)
+  // Example: B11J1301 (B-11-J-13-01)
+  const extendedPattern = /^([A-Z]{1,3})(\d{2})([A-Z])(\d{1,2})(\d{2,3})$/;
+
+  // 2. STANDARD PATTERN: Subject + Grade + Domain + Number
+  // Example: B09A01
   const standardPattern = /^([A-Z]{1,3})(\d{2})([A-Z])(\d{1,3})$/;
   
-  // Legacy Pattern (e.g. S8a5 -> S 8 a 5)
+  // 3. LEGACY PATTERN: S8a5
   const legacyPattern = /^([A-Z])(\d{1,2})([A-Z])(\d{1,2})$/;
 
-  let match = cleanCode.match(standardPattern);
+  let match = cleanCode.match(extendedPattern);
   
-  if (!match) {
-    match = cleanCode.match(legacyPattern);
+  if (match) {
+    const [_, sub, grade, domain, chapter, num] = match;
+    const subUpper = sub.toUpperCase();
+    return {
+      original: code.toUpperCase(),
+      subject: subUpper,
+      subjectFull: SUBJECT_MAP[subUpper] || subUpper,
+      grade: grade, // Already 2 digits
+      domain: domain.toUpperCase(),
+      number: parseInt(num, 10),
+      searchable: `${subUpper}${grade}${domain}${chapter}${num}`
+    };
   }
+
+  match = cleanCode.match(standardPattern);
+  if (!match) match = cleanCode.match(legacyPattern);
   
   if (!match) return null;
   
@@ -66,7 +82,7 @@ export function parseSLOCode(code: string): ParsedSLO | null {
   const subUpper = sub.toUpperCase();
   const subjectFull = SUBJECT_MAP[subUpper] || subUpper;
 
-  // Format Grade: Ensure strictly 2 digits (e.g., 9 -> 09) for sorting safety
+  // Format Grade: Ensure strictly 2 digits
   const gradeInt = parseInt(grade, 10);
   const gradeStr = gradeInt < 10 ? `0${gradeInt}` : `${gradeInt}`;
 

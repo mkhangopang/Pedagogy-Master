@@ -4,8 +4,8 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * HIGH-FIDELITY PEDAGOGICAL INDEXER (v221.0)
- * Logic: Continuum-Aware Hierarchical Mapping (ECE to XII).
+ * HIGH-FIDELITY PEDAGOGICAL INDEXER (v222.0)
+ * Logic: Continuum-Aware Hierarchical Mapping (Grade -> Domain -> Chapter -> Section).
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -19,9 +19,9 @@ export async function indexDocumentForRAG(
     const lines = content.split('\n');
     
     let currentGrade = "N/A";
-    let currentCompetency = "General";
-    let currentStandard = "General";
-    let currentBenchmark = "N/A";
+    let currentDomain = "General";
+    let currentChapter = "General";
+    let currentSection = "General";
     
     const nodes: any[] = [];
     let buffer = "";
@@ -31,15 +31,15 @@ export async function indexDocumentForRAG(
       const line = lines[i].trim();
       if (!line) continue;
 
-      // Detect Contextual Shifts including ECE and full Roman Grades
+      // Detect Contextual Shifts using new Hierarchy Rules
       if (line.startsWith('# GRADE') || line.includes('# ECE')) {
         currentGrade = line.replace('# GRADE', '').replace('# ', '').trim();
-      } else if (line.startsWith('## DOMAIN') || line.startsWith('## Competency')) {
-        currentCompetency = line.split(':')[1]?.trim() || line.replace('##', '').trim();
-      } else if (line.startsWith('### STANDARD')) {
-        currentStandard = line.replace('###', '').trim();
-      } else if (line.startsWith('#### BENCHMARK')) {
-        currentBenchmark = line.replace('####', '').trim();
+      } else if (line.startsWith('## DOMAIN') || line.startsWith('## Domain')) {
+        currentDomain = line.replace(/##\s*DOMAIN\s*/i, '').trim();
+      } else if (line.startsWith('### CHAPTER') || line.startsWith('### Chapter')) {
+        currentChapter = line.replace(/###\s*CHAPTER\s*/i, '').trim();
+      } else if (line.startsWith('#### SECTION') || line.startsWith('#### Section')) {
+        currentSection = line.replace(/####\s*SECTION\s*/i, '').trim();
       }
 
       const foundCodes = extractSLOCodes(line);
@@ -50,16 +50,16 @@ export async function indexDocumentForRAG(
       // CHUNK TRIGGER: Optimized for 1500 chars to maximize reasoning window
       if (buffer.length >= 1500 || i === lines.length - 1) {
         // ENFORCEMENT: Prepend Lineage to every chunk
-        const descriptor = `[IDENTITY: Grade ${currentGrade} | ${currentCompetency} | ${currentStandard}]\n`;
+        const descriptor = `[CTX: Grade ${currentGrade} | ${currentDomain} | ${currentChapter} | ${currentSection}]\n`;
         const enrichedText = descriptor + buffer.trim();
 
         nodes.push({
           text: enrichedText,
           metadata: {
             grade: currentGrade,
-            competency: currentCompetency,
-            standard: currentStandard,
-            benchmark: currentBenchmark,
+            domain: currentDomain,
+            chapter: currentChapter,
+            section: currentSection,
             slo_codes: [...codesInChunk],
             dialect: meta.dialect || 'Standard'
           }

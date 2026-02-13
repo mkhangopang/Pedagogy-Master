@@ -12,16 +12,19 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // 1. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
+  // 1. New Generated 5-Part Code: B-11-J-13-01 (Subject-Grade-Domain-Chapter-Num)
+  /\b([A-Z]{1,3})[-\s]?(\d{2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{2,3})\b/g,
+
+  // 2. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
   /(?:\[|\b)SL[O0]\s*[:\s-]*([A-Z]{1,3})\s*[:\s-]+\s*(\d{2})\s*[:\s-]+\s*([A-Z])\s*[:\s-]+\s*(\d{1,3})(?:\]|\b)/gi,
 
-  // 2. Compact/Standard: B09A01 or B-09-A-01
+  // 3. Compact/Standard: B09A01 or B-09-A-01
   /\b([A-Z]{1,3})[-\s]?(\d{2})[-\s]?([A-Z])[-\s]?(\d{1,3})\b/g,
 
-  // 3. Legacy/Federal: S8a5
+  // 4. Legacy/Federal: S8a5
   /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/g,
   
-  // 4. International / Numbered
+  // 5. International / Numbered
   /\b(MYP|DP)\s+(criterion\s+)?([A-D]|\d+\.\d+)\b/gi,
   /\b(LO|Outcome|Objective)[-\s]?(\d+(?:\.\d+)?)\b/gi,
 ];
@@ -36,7 +39,6 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
   for (const pattern of SLO_PATTERNS) {
     const matches = normalizedText.matchAll(pattern);
     for (const match of matches) {
-      // Use the full match as the "code" for display, but cleaner logic handles parsing later
       const fullMatch = match[0];
       
       // Basic dedup based on the raw string found
@@ -56,7 +58,7 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
 
       const confidence = calculateConfidence(cleanKey, context);
       
-      if (confidence > 0.4) { // Lowered slightly to catch the specific Sindh format
+      if (confidence > 0.4) { 
         extracted.push({ code: fullMatch, description, context, confidence });
       }
     }
@@ -69,7 +71,8 @@ function calculateConfidence(code: string, context: string): number {
   const lowerContext = context.toLowerCase();
   
   // High confidence for the explicit Sindh format structure
-  if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,3}$/.test(code)) return 0.95;
+  if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,4}$/.test(code)) return 0.95; // Standard 4-part
+  if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,2}\d{2,3}$/.test(code)) return 0.98; // New 5-part
 
   const keywords = ['objective', 'outcome', 'slo', 'standard', 'learning', 'students will', 'benchmark'];
   for (const keyword of keywords) {
