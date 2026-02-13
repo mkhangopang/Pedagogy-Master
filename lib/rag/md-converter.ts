@@ -2,7 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v28.1 - MASTER MD)
+ * UNIVERSAL NEURAL STRUCTURER (v28.2 - MASTER MD)
  * Logic: Strictly linearizes curriculum into institutional standard Markdown.
  * Updated to handle messy Sindh Board spacing/brackets in SLOs.
  */
@@ -16,17 +16,15 @@ Your mission is to extract curriculum into structured, AI-ready "Master MD" cont
 CRITICAL FORMATTING RULES:
 1. GRADE HEADER: Use "# GRADE [ROMAN/NUM]" (e.g., # GRADE IX). ALL CAPS.
 2. DOMAIN HEADER: Use "## DOMAIN [ID]: [NAME]" (e.g., ## DOMAIN A: NATURE OF SCIENCE). ALL CAPS.
-3. STANDARD BLOCK: Use "**Standard:** [Verbatim text]". 
+3. STANDARD BLOCK: Use "**Standard:** [Verbatim text]". Always add a blank line before it.
 4. BENCHMARK HEADER: Use "### BENCHMARK [NUM]: [DESCRIPTION]". ALL CAPS.
 
-5. SLO LIST RULES (STRICT):
-   - INPUT DATA often looks like: "[SLO: B - 09 - A - 01] Description" or "[SL0:B-09]"
-   - YOU MUST CLEAN THIS.
-   - OUTPUT FORMAT: "• SLO: [CLEAN-CODE] : [Description]"
-   - REMOVE BRACKETS around the code.
-   - REMOVE SPACES inside the code (e.g., "B - 09" becomes "B-09").
-   - CORRECT TYPOS: "SL0" (zero) becomes "SLO" (letter).
-   - EXAMPLE: Input "[SLO: B - 09 - A - 01]" -> Output "• SLO: B-09-A-01 : Description"
+5. SLO LIST RULES (STRICT & CLEAN):
+   - INPUT: "[SLO: B - 09 - A - 01] Description" or "[SL0:B-09] Description"
+   - ACTION: Extract them onto their OWN LINES. Do not bury them in paragraphs.
+   - OUTPUT FORMAT: "[SLO: CLEAN-CODE] Description"
+   - CLEANING: Remove internal spaces in the code (e.g., "B - 09" -> "B-09"). Correct "SL0" to "SLO".
+   - CRITICAL: Ensure there is a blank line before every [SLO:...] tag.
 
 6. GENERAL TEXT:
    - Identify headers like "Chapter 1", "Unit 2" and make them "## Unit 2".
@@ -36,7 +34,7 @@ CRITICAL FORMATTING RULES:
   const prompt = `
 [MISSION: SYNTHESIZE MASTER MD]
 Linearize the following raw curriculum stream into our "Master MD" hierarchy. 
-Focus heavily on cleaning the SLO codes as per the rules.
+Focus heavily on putting every SLO tag on its own line.
 
 RAW CURRICULUM STREAM:
 ${rawText.substring(0, 300000)}
@@ -61,7 +59,7 @@ ${rawText.substring(0, 300000)}
     if (lowerMd.includes('sindh')) dialect = 'Pakistani-Sindh-2024';
     if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v28.1 -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v28.2 -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Fault:", err);
     return rawText;

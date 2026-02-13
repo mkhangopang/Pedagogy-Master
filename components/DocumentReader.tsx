@@ -47,48 +47,51 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   const renderedHtml = useMemo(() => {
     if (!activeDoc.extractedText) return '<p class="text-center opacity-50 py-20 italic">Awaiting neural sync...</p>';
     
-    let text = activeDoc.extractedText;
+    // 1. AGGRESSIVE PRE-CLEANING (The "De-Mingle" Phase)
+    // We force newlines before any patterns that look like headers or SLOs to break up text walls.
+    let text = activeDoc.extractedText
+      // Break [SLO:...] onto its own line if it's buried in text
+      .replace(/([^\n])\s*(\[\s*SL[O0])/gi, '$1\n\n$2')
+      // Break Standard: onto its own line
+      .replace(/([^\n])\s*(\*\*Standard)/gi, '$1\n\n$2')
+      // Break Benchmark: onto its own line
+      .replace(/([^\n])\s*(Benchmark\s*\d*:)/gi, '$1\n\n$2');
     
-    // --- 1. Structure Cleanup (Fix Mingled Text) ---
-    
-    // Bold specific headers common in Sindh/National Curriculum to break up text walls
+    // 2. Style Structural Headers
     const structuralHeaders = [
       'Major Concepts', 'Learning Outcomes', 'Assessment', 'Guidelines', 
       'Chapter', 'Unit', 'Section', 'Domain', 'Standard', 'Benchmark'
     ];
     
     structuralHeaders.forEach(header => {
-      // Regex to find these words at start of lines or sentences and bold them if they aren't already
-      // Case insensitive match, looks for "Benchmark 1:" or "Chapter 01"
       const regex = new RegExp(`(^|\\n|\\r)(${header}\\s*\\d*[:.]?)`, 'gi');
-      text = text.replace(regex, '$1\n<h3 class="text-lg font-black text-slate-800 dark:text-slate-200 mt-6 mb-2 uppercase tracking-wide border-b border-slate-100 dark:border-white/5 pb-1">$2</h3>');
+      text = text.replace(regex, '$1\n<h3 class="text-lg font-black text-slate-800 dark:text-slate-200 mt-8 mb-4 uppercase tracking-wide border-b border-slate-100 dark:border-white/5 pb-2">$2</h3>');
     });
 
-    // Specifically styling "Standard:" which is often inline
     text = text.replace(
       /\*\*Standard:\*\*/g, 
-      '<strong class="text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-wide block mt-6 mb-2">Standard:</strong>'
+      '<strong class="text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-wide block mt-8 mb-2">Standard:</strong>'
     );
 
-    // --- 2. High-Fidelity SLO Cards (The Blue Pill) ---
+    // 3. High-Fidelity SLO Cards (The Blue Pill)
+    // Regex Logic:
+    // - Matches start of line (due to pre-cleaning step 1)
+    // - Captures the full tag: [SLO: B - 09 - A - 01]
+    // - Captures the description: Everything after until the next newline
+    const sloRegex = /(?:^|\n)\s*(\[\s*SL[O0]\s*[:\-]\s*[A-Z0-9\s\.-]+\])\s*([^\n]+)/gi;
     
-    // ROBUST REGEX STRATEGY:
-    // 1. Handles `[SLO: ...]` brackets
-    // 2. Handles typos like `SL0` (zero instead of O)
-    // 3. Handles spaces inside codes `B - 09 - A`
-    // 4. Captures the description accurately
-    const sloRegex = /(?:^|\n)(?:[-•*]\s*)?(?:\[\s*)?(?:SL[O0]|LO|Student Learning Outcome)\s*[:\s-]*([A-Z0-9\s\.-]+?)(?:\]|[:\s-])\s+([^\n]+)/gi;
-    
-    text = text.replace(sloRegex, (match, code, desc) => {
-        // Clean the code: Remove spaces inside the code (B - 09 -> B-09) and brackets
-        const cleanCode = code.replace(/\s+/g, '').replace(/[\[\]]/g, '').trim();
-        const cleanDesc = desc.replace(/^[:\-\]]\s*/, '').trim(); 
+    text = text.replace(sloRegex, (match, fullTag, desc) => {
+        // Extract the code from inside the brackets, e.g., "B - 09 - A - 01"
+        const innerCode = fullTag.replace(/^\[\s*SL[O0]\s*[:\-]\s*|\]$/gi, '').trim();
+        // Clean up spaces: "B - 09" -> "B-09"
+        const cleanCode = innerCode.replace(/\s+/g, '').replace(/-/g, '-'); 
+        const cleanDesc = desc.trim();
         
         return `\n\n<div class="slo-card-container my-4 group relative pl-0 sm:pl-4 sm:border-l-4 sm:border-indigo-500 bg-white dark:bg-[#1a1a1a] rounded-xl shadow-sm border border-slate-100 dark:border-white/5 p-4 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer slo-interactive-pill" data-slo="${cleanCode}">
           <div class="flex flex-col gap-2">
              <div class="flex items-start justify-between">
                 <span class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-black text-[11px] tracking-widest shadow-sm shrink-0 whitespace-nowrap">
-                  ${cleanCode}
+                  SLO: ${cleanCode}
                 </span>
                 <span class="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-bold text-slate-400 flex items-center gap-1 bg-slate-50 dark:bg-white/10 px-2 py-1 rounded">
                   <Copy size={10} /> Copy ID
