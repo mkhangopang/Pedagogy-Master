@@ -28,7 +28,7 @@ interface SloRecord {
   };
 }
 
-// 3-Level Hierarchy: Grade -> Subject -> Domain -> List of SLOs
+// HIERARCHY: Grade (09) -> Subject (Biology) -> Domain (A) -> List of SLOs
 interface GroupedSLOs {
   [grade: string]: {
     [subject: string]: {
@@ -62,7 +62,7 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
         // Initial Expansion Logic
         const uniqueGrades = new Set<string>();
         rawData.forEach((s: any) => {
-           // Try to parse grade from code first, fallback to doc metadata
+           // Prioritize parsed grade to ensure "Grade 09" is distinct from "Grade 9" text
            const parsed = parseSLOCode(s.slo_code);
            if (parsed) uniqueGrades.add(`Grade ${parsed.grade}`);
            else uniqueGrades.add(s.documents?.grade_level || 'General');
@@ -133,7 +133,7 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
     setExpandedGrades(newState);
   };
 
-  // --- Logic: Group, Filter, Deduplicate ---
+  // --- LOGIC ENGINE: STRICT HIERARCHY ---
   const groupedSLOs = useMemo(() => {
     const groups: GroupedSLOs = {};
     const seenCodes = new Set<string>();
@@ -147,44 +147,62 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
     });
 
     filtered.forEach(slo => {
-      // 🧠 INTELLIGENT PARSING
-      // We prioritize information derived directly from the SLO Code (B09A01) 
-      // over the generic document metadata.
+      // 1. PARSE: Extract strict Grade and Domain from Code (e.g. B09A01)
       const parsed = parseSLOCode(slo.slo_code);
       
-      let grade = slo.documents?.grade_level || 'General';
-      let subject = slo.documents?.subject || 'General';
-      let domain = 'Core Standards';
+      let gradeKey = 'General';
+      let subjectKey = 'General';
+      let domainKey = 'Core';
 
       if (parsed) {
-        grade = `Grade ${parsed.grade}`;
-        subject = parsed.subjectFull; // e.g. Biology
-        domain = `Domain ${parsed.domain}`;
+        // STRICT GRADE BUCKETING: "Grade 09" vs "Grade 11"
+        // This ensures B09... never mixes with B11...
+        gradeKey = `Grade ${parsed.grade}`; 
+        subjectKey = parsed.subjectFull;
+        domainKey = `Domain ${parsed.domain}`;
       } else {
-        // Fallback extraction
+        // Fallback to document metadata if code parsing fails
+        gradeKey = slo.documents?.grade_level || 'General';
+        subjectKey = slo.documents?.subject || 'General';
+        // Try to guess domain from hyphenated structure if parser failed
         const clean = slo.slo_code.toUpperCase().trim();
         const segments = clean.split('-');
         if (segments.length >= 3) {
-           domain = `Domain ${segments[2]}`;
+           domainKey = `Domain ${segments[2]}`;
         }
       }
 
-      const compositeKey = `${grade}-${subject}-${slo.slo_code}`;
-
+      // 2. DEDUPLICATE: Prevent same SLO appearing twice
+      const compositeKey = `${gradeKey}-${subjectKey}-${slo.slo_code}`;
       if (seenCodes.has(compositeKey)) return; 
       seenCodes.add(compositeKey);
 
-      if (!groups[grade]) groups[grade] = {};
-      if (!groups[grade][subject]) groups[grade][subject] = {};
-      if (!groups[grade][subject][domain]) groups[grade][subject][domain] = [];
+      // 3. ASSIGN TO HIERARCHY
+      if (!groups[gradeKey]) groups[gradeKey] = {};
+      if (!groups[gradeKey][subjectKey]) groups[gradeKey][subjectKey] = {};
+      if (!groups[gradeKey][subjectKey][domainKey]) groups[gradeKey][subjectKey][domainKey] = [];
 
-      groups[grade][subject][domain].push(slo);
+      groups[gradeKey][subjectKey][domainKey].push(slo);
+    });
+
+    // 4. INTERNAL SORT: Sort SLOs inside the domain list by number (01, 02, 03)
+    Object.keys(groups).forEach(grade => {
+      Object.keys(groups[grade]).forEach(subj => {
+        Object.keys(groups[grade][subj]).forEach(dom => {
+          groups[grade][subj][dom].sort((a, b) => {
+             const pA = parseSLOCode(a.slo_code);
+             const pB = parseSLOCode(b.slo_code);
+             if (pA && pB) return pA.number - pB.number;
+             return a.slo_code.localeCompare(b.slo_code);
+          });
+        });
+      });
     });
 
     return groups;
   }, [slos, searchTerm, statusFilter, progress]);
 
-  // Sort grades naturally (Grade 09 before Grade 10)
+  // SORT GRADES NATURALLY (09 before 10 before 11)
   const sortedGrades = Object.keys(groupedSLOs).sort((a, b) => {
     const numA = parseInt(a.replace(/\D/g, '')) || 999;
     const numB = parseInt(b.replace(/\D/g, '')) || 999;
@@ -302,7 +320,7 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
                            <div className="h-px bg-indigo-100 dark:bg-white/10 flex-1" />
                         </div>
 
-                        {/* Domain Sections */}
+                        {/* Domain Sections (Sorted Alphabetically: Domain A, Domain B...) */}
                         {Object.entries(domains).sort((a, b) => a[0].localeCompare(b[0])).map(([domain, domainSLOs]) => (
                           <div key={domain} className="bg-slate-50 dark:bg-white/5 rounded-3xl p-6 border border-slate-100 dark:border-white/5">
                             <div className="flex items-center gap-2 mb-4">
