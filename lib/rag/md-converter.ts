@@ -2,41 +2,51 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v28.2 - MASTER MD)
- * Logic: Strictly linearizes curriculum into institutional standard Markdown.
- * Updated to handle messy Sindh Board spacing/brackets in SLOs.
+ * UNIVERSAL NEURAL STRUCTURER (v29.0 - CANONICAL FLOW)
+ * Logic: Linearizes curriculum into standard Markdown.
+ * Feature: DE-DUPLICATION ENGINE to remove repetitive curriculum noise.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview';
   
-  const systemInstruction = `You are a world-class Universal Curriculum Document Ingestion Architect. 
-Your mission is to extract curriculum into structured, AI-ready "Master MD" content.
+  const systemInstruction = `You are a world-class Curriculum Architect.
+Your goal is to convert raw, messy curriculum PDFs into a "Master MD" format that is beautiful, logical, and readable.
 
-CRITICAL FORMATTING RULES:
-1. GRADE HEADER: Use "# GRADE [ROMAN/NUM]" (e.g., # GRADE IX). ALL CAPS.
-2. DOMAIN HEADER: Use "## DOMAIN [ID]: [NAME]" (e.g., ## DOMAIN A: NATURE OF SCIENCE). ALL CAPS.
-3. STANDARD BLOCK: Use "**Standard:** [Verbatim text]". Always add a blank line before it.
-4. BENCHMARK HEADER: Use "### BENCHMARK [NUM]: [DESCRIPTION]". ALL CAPS.
+CRITICAL RULES FOR "WORLD-CLASS" OUTPUT:
 
-5. SLO LIST RULES (STRICT & CLEAN):
-   - INPUT: "[SLO: B - 09 - A - 01] Description" or "[SL0:B-09] Description"
-   - ACTION: Extract them onto their OWN LINES. Do not bury them in paragraphs.
-   - OUTPUT FORMAT: "[SLO: CLEAN-CODE] Description"
-   - CLEANING: Remove internal spaces in the code (e.g., "B - 09" -> "B-09"). Correct "SL0" to "SLO".
-   - CRITICAL: Ensure there is a blank line before every [SLO:...] tag.
+1. 🚫 NO REPETITION (Deduplication Mode):
+   - Curriculum documents often list the same SLOs in the "Table of Contents", then in the "Unit Overview", and again in the "Chapter Details".
+   - IGNORE the Table of Contents and Brief Overviews.
+   - OUTPUT ONLY THE DETAILED DEFINITION of the SLOs.
+   - If an SLO code (e.g., [SLO: B-09-A-01]) appears twice, output it ONLY ONCE in its most relevant section.
 
-6. GENERAL TEXT:
-   - Identify headers like "Chapter 1", "Unit 2" and make them "## Unit 2".
-   - Do not output page numbers or table of contents.
-   - Keep Latex math ($...$) intact.`;
+2. 🏛️ STRICT HIERARCHY:
+   - # GRADE [ROMAN/NUM] (e.g., # GRADE IX)
+   - ## DOMAIN [NAME] (e.g., ## DOMAIN A: BIODIVERSITY)
+   - ### STANDARD [TEXT]
+   - #### BENCHMARK [TEXT]
+
+3. 💊 SLO CARD FORMAT (The "Blue Pill" Target):
+   - You MUST place every SLO on its own line.
+   - Format: "[SLO: CLEAN-CODE] Description"
+   - CLEAN THE CODE: Remove internal spaces (B - 09 -> B-09). Fix typos (SL0 -> SLO).
+   - Ensure a blank line before and after every SLO tag.
+
+4. 🧹 CLEANUP:
+   - Remove page numbers, headers, footers, and "This page intentionally left blank".
+   - If the text is "mingled" (sentences run together), fix the grammar and punctuation.
+
+RESULT: A clean, flowing document that reads like a high-quality syllabus, not a raw data dump.`;
 
   const prompt = `
-[MISSION: SYNTHESIZE MASTER MD]
-Linearize the following raw curriculum stream into our "Master MD" hierarchy. 
-Focus heavily on putting every SLO tag on its own line.
+[MISSION: CANONICAL CURRICULUM SYNTHESIS]
+Process the raw text below. 
+1. Detect the Grade Level and Subject.
+2. Group all SLOs logically.
+3. REMOVE ALL REPETITIVE TEXT. I only want the definitive list of standards, not the summaries.
 
-RAW CURRICULUM STREAM:
+RAW TEXT STREAM:
 ${rawText.substring(0, 300000)}
 `;
 
@@ -59,7 +69,7 @@ ${rawText.substring(0, 300000)}
     if (lowerMd.includes('sindh')) dialect = 'Pakistani-Sindh-2024';
     if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v28.2 -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v29.0 -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Fault:", err);
     return rawText;

@@ -48,14 +48,19 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     if (!activeDoc.extractedText) return '<p class="text-center opacity-50 py-20 italic">Awaiting neural sync...</p>';
     
     // 1. AGGRESSIVE PRE-CLEANING (The "De-Mingle" Phase)
-    // We force newlines before any patterns that look like headers or SLOs to break up text walls.
+    // We normalize spaces and force newlines before any patterns that look like headers or SLOs.
     let text = activeDoc.extractedText
-      // Break [SLO:...] onto its own line if it's buried in text
-      .replace(/([^\n])\s*(\[\s*SL[O0])/gi, '$1\n\n$2')
-      // Break Standard: onto its own line
-      .replace(/([^\n])\s*(\*\*Standard)/gi, '$1\n\n$2')
-      // Break Benchmark: onto its own line
-      .replace(/([^\n])\s*(Benchmark\s*\d*:)/gi, '$1\n\n$2');
+      .replace(/\u00A0/g, ' ') // Replace non-breaking spaces
+      .replace(/\r\n/g, '\n'); // Normalize line endings
+
+    // FORCE BREAK: If a line contains text followed by [SLO:..., break it.
+    // Example: "...end of sentence [SLO:..." -> "...end of sentence\n\n[SLO:..."
+    // We use a lookbehind-like approach via capturing groups
+    text = text.replace(/([^\n>])\s*(\[\s*SL[O0][^\]]*\])/gi, '$1\n\n$2');
+    
+    // Also break for Standard: and Benchmark:
+    text = text.replace(/([^\n>])\s*(\*\*Standard)/gi, '$1\n\n$2');
+    text = text.replace(/([^\n>])\s*(Benchmark\s*\d*:)/gi, '$1\n\n$2');
     
     // 2. Style Structural Headers
     const structuralHeaders = [
@@ -64,8 +69,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     ];
     
     structuralHeaders.forEach(header => {
-      const regex = new RegExp(`(^|\\n|\\r)(${header}\\s*\\d*[:.]?)`, 'gi');
-      text = text.replace(regex, '$1\n<h3 class="text-lg font-black text-slate-800 dark:text-slate-200 mt-8 mb-4 uppercase tracking-wide border-b border-slate-100 dark:border-white/5 pb-2">$2</h3>');
+      // Ensure headers are on their own lines before processing
+      const regex = new RegExp(`(^|\\n)(${header}\\s*\\d*[:.]?)`, 'gi');
+      text = text.replace(regex, '\n\n<h3 class="text-lg font-black text-slate-800 dark:text-slate-200 mt-8 mb-4 uppercase tracking-wide border-b border-slate-100 dark:border-white/5 pb-2">$2</h3>');
     });
 
     text = text.replace(
@@ -77,14 +83,18 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     // Regex Logic:
     // - Matches start of line (due to pre-cleaning step 1)
     // - Captures the full tag: [SLO: B - 09 - A - 01]
+    // - Handles spaces inside the tag extensively
     // - Captures the description: Everything after until the next newline
-    const sloRegex = /(?:^|\n)\s*(\[\s*SL[O0]\s*[:\-]\s*[A-Z0-9\s\.-]+\])\s*([^\n]+)/gi;
+    const sloRegex = /(?:^|\n)\s*(\[\s*SL[O0]\s*[:\-]\s*[^\]]+\])\s*([^\n]+)/gi;
     
     text = text.replace(sloRegex, (match, fullTag, desc) => {
-        // Extract the code from inside the brackets, e.g., "B - 09 - A - 01"
-        const innerCode = fullTag.replace(/^\[\s*SL[O0]\s*[:\-]\s*|\]$/gi, '').trim();
+        // Extract the code from inside the brackets
+        let innerCode = fullTag.replace(/^\[\s*SL[O0]\s*[:\-]\s*|\]$/gi, '').trim();
+        
         // Clean up spaces: "B - 09" -> "B-09"
-        const cleanCode = innerCode.replace(/\s+/g, '').replace(/-/g, '-'); 
+        // We carefully remove spaces around hyphens specifically, or just remove all spaces if it's a code
+        const cleanCode = innerCode.replace(/\s+/g, '').replace(/–/g, '-');
+        
         const cleanDesc = desc.trim();
         
         return `\n\n<div class="slo-card-container my-4 group relative pl-0 sm:pl-4 sm:border-l-4 sm:border-indigo-500 bg-white dark:bg-[#1a1a1a] rounded-xl shadow-sm border border-slate-100 dark:border-white/5 p-4 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer slo-interactive-pill" data-slo="${cleanCode}">
