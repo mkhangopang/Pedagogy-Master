@@ -2,16 +2,16 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v30.0 - MASTER ARCHITECT)
+ * UNIVERSAL NEURAL STRUCTURER (v31.0 - MASTER ARCHITECT)
  * Logic: Linearizes curriculum into standard Markdown with deep hierarchy enforcement.
- * Feature: Code Generation for missing SLOs & Semantic Restructuring.
+ * Feature: Surgical SLO Code Generation & Pedagogical Metadata Injection.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview';
   
-  const systemInstruction = `You are a world-class Curriculum Architect.
-Your goal is to convert raw, messy curriculum PDFs into a "Master MD" format that is beautiful, logical, and readable.
+  const systemInstruction = `You are a world-class Curriculum Architect. 
+Your goal is to convert messy curriculum PDFs into a "Master MD" format for high-fidelity RAG indexing.
 
 CRITICAL RULES FOR "MASTER MD" OUTPUT:
 
@@ -23,33 +23,37 @@ CRITICAL RULES FOR "MASTER MD" OUTPUT:
 
 2. 🧬 SLO GENERATION & EXTRACTION:
    - Identify ALL learning outcomes (bullet points, table rows).
-   - If explicit SLO codes are missing, **GENERATE THEM** using the pattern: [SUBJECT]-[GRADE]-[DOMAIN]-[CHAPTER]-[NUMBER] (e.g., B-11-J-13-01).
+   - If explicit SLO codes are missing, GENERATE THEM using: [SUBJECT_INITIAL]-[GRADE]-[DOMAIN_CODE]-[CHAPTER]-[SEQUENCE] 
+   - Example generated code: B-11-J-13-01
    - Format each SLO exactly like this:
      
      <!-- SLO BLOCK START -->
      #### SLO: [CODE]
      **Text:** [Verbatim Learning Outcome]
-     **Cognitive Level:** [Bloom's Taxonomy Level]
-     **Keywords:** [Comma separated keywords]
+     **Analysis:**
+     - **Keywords:** [5-8 comma separated keywords]
+     - **Cognitive Level:** [Bloom's Level: Remember, Understand, Apply, Analyze, Evaluate, Create]
+     - **Bloom's Verbs:** [The action verbs used in the text]
+     - **Difficulty:** [Foundational, Intermediate, Advanced]
      <!-- SLO BLOCK END -->
 
 3. 🧠 LOGICAL RESTRUCTURING:
-   - If the document has a "Progression Grid" separate from "Detailed Content", prioritize the detailed content chapters but integrate the grid's metadata if possible.
-   - **Grade Mapping:** If the document covers multiple grades (IX-XII), carefully assign chapters to the correct grade based on the Table of Contents or context (e.g., Chapter 13 might be Grade XI).
-   - **Deduplication:** Remove repetitive "Table of Contents" lists; focus on the instructional content.
+   - Separate Grade levels clearly if multiple exist in the document.
+   - Map every chapter to its parent domain.
+   - Fix "mingled" text where newlines are missing between headers and body text.
+   - Remove administrative noise (prefaces, page numbers, footers).
 
-4. 🧹 CLEANUP:
-   - Remove headers/footers, page numbers, and administrative prefaces.
-   - Fix "mingled" text where newlines are missing between headers and body.
+4. 🧪 STEM INTEGRATION:
+   - Wrap ALL mathematical or chemical notation in LaTeX $...$ or $$...$$.
 
 RESULT: A structured, database-ready pedagogical document.`;
 
   const prompt = `
-[MISSION: DEEP CURRICULUM EXTRACTION]
-Process the raw text stream below.
-1. Detect Grade Levels (e.g., IX, X, XI, XII).
-2. Group content by DOMAIN and CHAPTER.
-3. Extract every single learning outcome as a structured SLO block.
+[MISSION: SURGICAL CURRICULUM EXTRACTION]
+Process the raw text stream below. 
+1. Determine the Grade level for each section.
+2. Group content into DOMAINS and CHAPTERS.
+3. Extract every bullet point as a structured SLO block with generated codes if missing.
 
 RAW TEXT STREAM:
 ${rawText.substring(0, 400000)}
@@ -62,19 +66,19 @@ ${rawText.substring(0, 400000)}
       config: {
         temperature: 0.1,
         systemInstruction,
-        thinkingConfig: { thinkingBudget: 4096 } // Maximize reasoning for structure
+        thinkingConfig: { thinkingBudget: 4096 }
       }
     });
 
     const masterMd = response.text || rawText;
     
-    // Auto-detect Dialect for the indexer
+    // Auto-detect Dialect
     let dialect = 'Standard';
     const lowerMd = masterMd.toLowerCase();
     if (lowerMd.includes('sindh')) dialect = 'Pakistani-Sindh-2024';
-    if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
+    else if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v30.0 -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v31.0 -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Fault:", err);
     return rawText;
