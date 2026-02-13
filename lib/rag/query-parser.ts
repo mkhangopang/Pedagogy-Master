@@ -1,3 +1,4 @@
+
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 export interface ParsedQuery {
@@ -18,7 +19,8 @@ export function parseUserQuery(query: string): ParsedQuery {
   const lower = query.toLowerCase();
   
   // 1. ADVANCED SLO EXTRACTION
-  const sloCodes = extractSLOCodes(query);
+  const extractedObjects = extractSLOCodes(query);
+  const sloCodes = extractedObjects.map(o => o.code);
 
   // 2. FUZZY GRADE MAPPING (ix -> 9, xi -> 11, etc.)
   const gradeMap: Record<string, string> = {

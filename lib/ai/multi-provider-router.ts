@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
@@ -26,7 +27,7 @@ export async function generateAIResponse(
   // 1. Precise Code Analysis
   const queryAnalysis = analyzeUserQuery(userPrompt);
   const rawCodes = extractSLOCodes(userPrompt);
-  const primaryCode = rawCodes.length > 0 ? normalizeSLO(rawCodes[0]) : null;
+  const primaryCode = rawCodes.length > 0 ? normalizeSLO(rawCodes[0].code) : null;
 
   // 2. Resource Resolution
   let docQuery = supabase

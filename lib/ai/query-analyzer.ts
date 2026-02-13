@@ -1,3 +1,4 @@
+
 import { normalizeSLO, extractSLOCodes } from '../rag/slo-extractor';
 
 /**
@@ -23,7 +24,8 @@ export function analyzeUserQuery(query: string): QueryAnalysis {
   const keywords = extractKeywords(query);
   
   // Use the canonical extractor for precision
-  const allSLOCodes = extractSLOCodes(query);
+  const extractedObjects = extractSLOCodes(query);
+  const allSLOCodes = extractedObjects.map(o => o.code);
   const extractedSLO = allSLOCodes.length > 0 ? allSLOCodes[0] : undefined;
   
   // PATTERN 1: Simple SLO Lookup

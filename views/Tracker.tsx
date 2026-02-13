@@ -10,6 +10,7 @@ import {
 import { UserProfile, Document, TeacherProgress } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
 import { supabase } from '../lib/supabase';
+import { parseSLOCode } from '../lib/rag/slo-parser';
 
 interface TrackerProps {
   user: UserProfile;
@@ -58,9 +59,17 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
         const rawData = (sloData as any[]) || [];
         setSlos((rawData as unknown as SloRecord[]) || []);
 
-        const uniqueGrades = Array.from(new Set(rawData.map((s: any) => s.documents?.grade_level || 'General')));
+        // Initial Expansion Logic
+        const uniqueGrades = new Set<string>();
+        rawData.forEach((s: any) => {
+           // Try to parse grade from code first, fallback to doc metadata
+           const parsed = parseSLOCode(s.slo_code);
+           if (parsed) uniqueGrades.add(`Grade ${parsed.grade}`);
+           else uniqueGrades.add(s.documents?.grade_level || 'General');
+        });
+
         const initialExpanded: Record<string, boolean> = {};
-        uniqueGrades.forEach((g: any) => initialExpanded[String(g)] = true);
+        Array.from(uniqueGrades).forEach((g: any) => initialExpanded[String(g)] = true);
         setExpandedGrades(initialExpanded);
 
         const progressRecords = await curriculumService.getProgress(user.id);
@@ -124,29 +133,6 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
     setExpandedGrades(newState);
   };
 
-  // Helper to extract Domain from Code (e.g., B-09-A-01 -> Domain A)
-  const extractDomain = (code: string): string => {
-    const clean = code.toUpperCase().trim();
-    
-    // Pattern 1: Sindh/Standard (e.g., B-09-A-01 or BIO-9-B-12)
-    // Looks for 3rd segment separated by hyphens
-    const segments = clean.split('-');
-    if (segments.length >= 3) {
-      // Check if the 3rd part is likely a domain (A, B, C, or 1, 2, 3)
-      const potentialDomain = segments[2]; 
-      // If it's short (1-2 chars), it's likely a domain identifier
-      if (potentialDomain.length <= 3) return `Domain ${potentialDomain}`;
-    }
-
-    // Pattern 2: Decimal (e.g., 8.2.1) -> Unit 2
-    const decimalParts = clean.split('.');
-    if (decimalParts.length >= 2) {
-      return `Unit ${decimalParts[1]}`;
-    }
-
-    return 'Core Standards';
-  };
-
   // --- Logic: Group, Filter, Deduplicate ---
   const groupedSLOs = useMemo(() => {
     const groups: GroupedSLOs = {};
@@ -161,9 +147,28 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
     });
 
     filtered.forEach(slo => {
-      const grade = slo.documents?.grade_level || 'General';
-      const subject = slo.documents?.subject || 'General';
-      const domain = extractDomain(slo.slo_code);
+      // 🧠 INTELLIGENT PARSING
+      // We prioritize information derived directly from the SLO Code (B09A01) 
+      // over the generic document metadata.
+      const parsed = parseSLOCode(slo.slo_code);
+      
+      let grade = slo.documents?.grade_level || 'General';
+      let subject = slo.documents?.subject || 'General';
+      let domain = 'Core Standards';
+
+      if (parsed) {
+        grade = `Grade ${parsed.grade}`;
+        subject = parsed.subjectFull; // e.g. Biology
+        domain = `Domain ${parsed.domain}`;
+      } else {
+        // Fallback extraction
+        const clean = slo.slo_code.toUpperCase().trim();
+        const segments = clean.split('-');
+        if (segments.length >= 3) {
+           domain = `Domain ${segments[2]}`;
+        }
+      }
+
       const compositeKey = `${grade}-${subject}-${slo.slo_code}`;
 
       if (seenCodes.has(compositeKey)) return; 
@@ -176,11 +181,10 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
       groups[grade][subject][domain].push(slo);
     });
 
-    // Sort SLOs within each domain by code logic (e.g. B-09-A-01 before B-09-A-02)
-    // Also sort keys? We handle key sorting in the render loop.
     return groups;
   }, [slos, searchTerm, statusFilter, progress]);
 
+  // Sort grades naturally (Grade 09 before Grade 10)
   const sortedGrades = Object.keys(groupedSLOs).sort((a, b) => {
     const numA = parseInt(a.replace(/\D/g, '')) || 999;
     const numB = parseInt(b.replace(/\D/g, '')) || 999;
@@ -216,7 +220,7 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input 
             type="text" 
-            placeholder="Search objectives..." 
+            placeholder="Search B09A01, Physics, etc..." 
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-950 border-none rounded-2xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold"

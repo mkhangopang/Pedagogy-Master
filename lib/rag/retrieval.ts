@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { GoogleGenAI, Type } from "@google/genai";
 import { generateEmbedding } from './embeddings';
@@ -104,7 +105,7 @@ export async function smartRetrieval(
   const targetSLOs = extractSLOCodes(query);
   
   if (targetSLOs.length > 0) {
-    return sloLookup(targetSLOs[0], supabase, filters.documentIds);
+    return sloLookup(targetSLOs[0].code, supabase, filters.documentIds);
   }
 
   return hybridSearch(query, supabase, filters, topK);

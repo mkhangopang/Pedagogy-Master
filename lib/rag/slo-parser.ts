@@ -1,6 +1,8 @@
+
 /**
- * WORLD-CLASS SLO PARSER (v6.0)
- * Optimized for Sindh (B-09-A-01) and Federal (S8a5) standards.
+ * WORLD-CLASS SLO PARSER (v7.0)
+ * Optimized for Sindh (B09A01) and Federal (S8a5) standards.
+ * Decodes Subject, Grade, Domain, and ID from compact alphanumerics.
  */
 
 export interface ParsedSLO {
@@ -16,34 +18,63 @@ export interface ParsedSLO {
 const SUBJECT_MAP: Record<string, string> = {
   'S': 'Science',
   'B': 'Biology',
-  'X': 'Experiment',
+  'X': 'Experiment', // Often used in practicals
   'M': 'Mathematics',
   'E': 'English',
   'SS': 'Social Studies',
   'P': 'Physics',
-  'C': 'Chemistry'
+  'C': 'Chemistry',
+  'CS': 'Computer Science',
+  'GS': 'General Science',
+  'U': 'Urdu',
+  'I': 'Islamiat',
+  'PS': 'Pakistan Studies',
+  'BIO': 'Biology',
+  'CHE': 'Chemistry',
+  'PHY': 'Physics'
 };
 
 export function parseSLOCode(code: string): ParsedSLO | null {
-  // Pattern 1: Sindh 2024 (Handles B-09-A-01 or B-9-A-1)
-  const pattern2024 = /^([A-Z])\s*-?\s*(0?9|10|11|12)\s*-?\s*([A-Z])\s*-?\s*(\d{1,2})$/i;
-  // Pattern 2: Shorthand (S8a5)
-  const patternShort = /^([A-Z])(\d{1,2})([A-Z])(\d{1,2})$/i;
+  if (!code) return null;
+  
+  // Normalize: Remove spaces, dashes for parsing logic
+  const cleanCode = code.toUpperCase().replace(/[\s-]/g, '');
+  
+  // Pattern 1: Sindh Compact (B09A01) or (CS10B05)
+  // Subject: 1-3 letters
+  // Grade: 2 digits (09, 10)
+  // Domain: 1 letter
+  // Number: 1-3 digits
+  const compactPattern = /^([A-Z]{1,3})(\d{2})([A-Z])(\d{1,3})$/;
+  
+  // Pattern 2: Sindh 2024 Standard (B-09-A-01) - handled by cleanCode if dashes removed
+  
+  // Pattern 3: Shorthand Legacy (S8a5) -> S 8 a 5
+  const shortPattern = /^([A-Z])(\d{1,2})([A-Z])(\d{1,2})$/;
 
-  const match = code.match(pattern2024) || code.match(patternShort);
+  let match = cleanCode.match(compactPattern);
+  
+  if (!match) {
+    match = cleanCode.match(shortPattern);
+  }
   
   if (!match) return null;
   
   const [_, sub, grade, domain, num] = match;
   const subUpper = sub.toUpperCase();
+  const subjectFull = SUBJECT_MAP[subUpper] || subUpper; // Fallback to code if not in map
+
+  // Format Grade (ensure it looks like "09" or "9")
+  const gradeInt = parseInt(grade, 10);
+  const gradeStr = gradeInt < 10 ? `0${gradeInt}` : `${gradeInt}`;
 
   return {
     original: code.toUpperCase(),
     subject: subUpper,
-    subjectFull: SUBJECT_MAP[subUpper] || subUpper,
-    grade: parseInt(grade).toString(),
+    subjectFull: subjectFull,
+    grade: gradeStr,
     domain: domain.toUpperCase(),
-    number: parseInt(num),
-    searchable: `${subUpper}${parseInt(grade)}${domain.toUpperCase()}${parseInt(num)}`.toLowerCase()
+    number: parseInt(num, 10),
+    searchable: `${subUpper}${gradeStr}${domain.toUpperCase()}${parseInt(num, 10)}`
   };
 }

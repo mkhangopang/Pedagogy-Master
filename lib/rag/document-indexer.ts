@@ -1,3 +1,4 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
@@ -42,7 +43,7 @@ export async function indexDocumentForRAG(
       }
 
       const foundCodes = extractSLOCodes(line);
-      foundCodes.forEach(c => { if (!codesInChunk.includes(c)) codesInChunk.push(c); });
+      foundCodes.forEach(c => { if (!codesInChunk.includes(c.code)) codesInChunk.push(c.code); });
 
       buffer += (buffer ? '\n' : '') + line;
 
