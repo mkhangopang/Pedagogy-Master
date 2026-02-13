@@ -1,10 +1,11 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardCheck, Target, BarChart3, 
   ChevronRight, Search, CheckCircle2, 
-  Clock, BookOpen, Loader2, ChevronDown, Layers, Filter
+  Clock, BookOpen, Loader2, ChevronDown, Layers, Filter, Bookmark, Hash
 } from 'lucide-react';
 import { UserProfile, Document, TeacherProgress } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -26,9 +27,12 @@ interface SloRecord {
   };
 }
 
+// 3-Level Hierarchy: Grade -> Subject -> Domain -> List of SLOs
 interface GroupedSLOs {
   [grade: string]: {
-    [subject: string]: SloRecord[];
+    [subject: string]: {
+      [domain: string]: SloRecord[];
+    };
   };
 }
 
@@ -40,24 +44,20 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'planning' | 'teaching' | 'completed'>('all');
   const [isSaving, setIsSaving] = useState<string | null>(null);
   
-  // Accordion State: Keep track of which grades are expanded
   const [expandedGrades, setExpandedGrades] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        // Fetch SLOs with Grade and Subject info from parent document
         const { data: sloData } = await supabase
           .from('slo_database')
           .select('*, documents!inner(user_id, name, grade_level, subject, authority)')
           .eq('documents.user_id', user.id);
         
-        // Fix: Cast unknown/any data from Supabase to any[] to avoid property access errors
         const rawData = (sloData as any[]) || [];
         setSlos((rawData as unknown as SloRecord[]) || []);
 
-        // Initialize all found grades to expanded by default
         const uniqueGrades = Array.from(new Set(rawData.map((s: any) => s.documents?.grade_level || 'General')));
         const initialExpanded: Record<string, boolean> = {};
         uniqueGrades.forEach((g: any) => initialExpanded[String(g)] = true);
@@ -124,12 +124,34 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
     setExpandedGrades(newState);
   };
 
+  // Helper to extract Domain from Code (e.g., B-09-A-01 -> Domain A)
+  const extractDomain = (code: string): string => {
+    const clean = code.toUpperCase().trim();
+    
+    // Pattern 1: Sindh/Standard (e.g., B-09-A-01 or BIO-9-B-12)
+    // Looks for 3rd segment separated by hyphens
+    const segments = clean.split('-');
+    if (segments.length >= 3) {
+      // Check if the 3rd part is likely a domain (A, B, C, or 1, 2, 3)
+      const potentialDomain = segments[2]; 
+      // If it's short (1-2 chars), it's likely a domain identifier
+      if (potentialDomain.length <= 3) return `Domain ${potentialDomain}`;
+    }
+
+    // Pattern 2: Decimal (e.g., 8.2.1) -> Unit 2
+    const decimalParts = clean.split('.');
+    if (decimalParts.length >= 2) {
+      return `Unit ${decimalParts[1]}`;
+    }
+
+    return 'Core Standards';
+  };
+
   // --- Logic: Group, Filter, Deduplicate ---
   const groupedSLOs = useMemo(() => {
     const groups: GroupedSLOs = {};
-    const seenCodes = new Set<string>(); // For deduplication within the same view
+    const seenCodes = new Set<string>();
 
-    // 1. Filter
     const filtered = slos.filter(s => {
       const matchesSearch = s.slo_code.toLowerCase().includes(searchTerm.toLowerCase()) || 
                             s.slo_full_text.toLowerCase().includes(searchTerm.toLowerCase());
@@ -138,26 +160,27 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
       return matchesSearch && matchesFilter;
     });
 
-    // 2. Sort & Group
     filtered.forEach(slo => {
       const grade = slo.documents?.grade_level || 'General';
       const subject = slo.documents?.subject || 'General';
+      const domain = extractDomain(slo.slo_code);
       const compositeKey = `${grade}-${subject}-${slo.slo_code}`;
 
-      // Deduplication: If we've seen this exact code in this exact grade/subject, skip repeats
       if (seenCodes.has(compositeKey)) return; 
       seenCodes.add(compositeKey);
 
       if (!groups[grade]) groups[grade] = {};
-      if (!groups[grade][subject]) groups[grade][subject] = [];
+      if (!groups[grade][subject]) groups[grade][subject] = {};
+      if (!groups[grade][subject][domain]) groups[grade][subject][domain] = [];
 
-      groups[grade][subject].push(slo);
+      groups[grade][subject][domain].push(slo);
     });
 
+    // Sort SLOs within each domain by code logic (e.g. B-09-A-01 before B-09-A-02)
+    // Also sort keys? We handle key sorting in the render loop.
     return groups;
   }, [slos, searchTerm, statusFilter, progress]);
 
-  // Helper to sort grades naturally (9 before 10)
   const sortedGrades = Object.keys(groupedSLOs).sort((a, b) => {
     const numA = parseInt(a.replace(/\D/g, '')) || 999;
     const numB = parseInt(b.replace(/\D/g, '')) || 999;
@@ -177,7 +200,7 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Curriculum Tracker</h1>
-          <p className="text-slate-500 mt-1 text-sm font-medium">Audit coverage and track student mastery across objectives.</p>
+          <p className="text-slate-500 mt-1 text-sm font-medium">Audit coverage and track student mastery across domains.</p>
         </div>
         
         <div className="flex bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/5 rounded-2xl p-4 gap-8 shadow-sm">
@@ -232,7 +255,9 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
           {sortedGrades.map(grade => {
             const isExpanded = expandedGrades[grade];
             const subjects = groupedSLOs[grade];
-            const sloCount = Object.values(subjects).reduce((acc, list) => acc + list.length, 0);
+            const sloCount = Object.values(subjects).reduce((acc, domains) => 
+              acc + Object.values(domains).reduce((dAcc, list) => dAcc + list.length, 0)
+            , 0);
 
             return (
               <div key={grade} className="animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -263,62 +288,74 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
 
                 {/* Grade Content */}
                 {isExpanded && (
-                  <div className="mt-4 space-y-6 pl-2 md:pl-6 border-l-2 border-slate-200 dark:border-white/5 ml-6 md:ml-10">
-                    {Object.entries(subjects).map(([subject, subjectSLOs]) => (
-                      <div key={subject} className="space-y-4">
-                        <div className="flex items-center gap-3 mt-6 mb-2">
-                           <span className="w-2 h-2 rounded-full bg-indigo-500" />
-                           <h3 className="text-xs font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">{subject}</h3>
-                           <div className="h-px bg-slate-200 dark:bg-white/5 flex-1" />
+                  <div className="mt-4 space-y-8 pl-2 md:pl-6 border-l-2 border-slate-200 dark:border-white/5 ml-6 md:ml-10">
+                    {Object.entries(subjects).map(([subject, domains]) => (
+                      <div key={subject} className="space-y-6">
+                        {/* Subject Header */}
+                        <div className="flex items-center gap-3 mt-6">
+                           <div className="bg-indigo-100 dark:bg-indigo-900/30 p-1.5 rounded-lg text-indigo-600 dark:text-indigo-400"><BookOpen size={16} /></div>
+                           <h3 className="text-sm font-black uppercase tracking-[0.2em] text-indigo-900 dark:text-indigo-400">{subject}</h3>
+                           <div className="h-px bg-indigo-100 dark:bg-white/10 flex-1" />
                         </div>
 
-                        <div className="grid grid-cols-1 gap-3">
-                          {subjectSLOs.map((slo) => {
-                            const p = progress[slo.slo_code];
-                            const isSavingThis = isSaving === slo.slo_code;
-                            
-                            return (
-                              <div 
-                                key={slo.id} 
-                                className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-indigo-500 transition-all flex flex-col md:flex-row items-start md:items-center gap-4 group shadow-sm hover:shadow-lg"
-                              >
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-3 mb-1.5">
-                                    <span className="font-black text-white bg-indigo-600 px-2 py-0.5 rounded text-[10px] tracking-wide">{slo.slo_code}</span>
-                                    <span className="text-[9px] font-bold text-slate-400 uppercase truncate">
-                                      {slo.documents.authority}
-                                    </span>
+                        {/* Domain Sections */}
+                        {Object.entries(domains).sort((a, b) => a[0].localeCompare(b[0])).map(([domain, domainSLOs]) => (
+                          <div key={domain} className="bg-slate-50 dark:bg-white/5 rounded-3xl p-6 border border-slate-100 dark:border-white/5">
+                            <div className="flex items-center gap-2 mb-4">
+                              <Hash size={14} className="text-slate-400" />
+                              <h4 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">{domain}</h4>
+                              <span className="text-[9px] px-2 py-0.5 bg-white dark:bg-black/20 rounded-full text-slate-400 font-bold">{domainSLOs.length}</span>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-3">
+                              {domainSLOs.map((slo) => {
+                                const p = progress[slo.slo_code];
+                                const isSavingThis = isSaving === slo.slo_code;
+                                
+                                return (
+                                  <div 
+                                    key={slo.id} 
+                                    className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-indigo-500 transition-all flex flex-col md:flex-row items-start md:items-center gap-4 group shadow-sm hover:shadow-lg"
+                                  >
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-3 mb-1.5">
+                                        <span className="font-black text-white bg-indigo-600 px-2 py-0.5 rounded text-[10px] tracking-wide">{slo.slo_code}</span>
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase truncate">
+                                          {slo.documents.authority}
+                                        </span>
+                                      </div>
+                                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300 leading-snug">{slo.slo_full_text}</p>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-end border-t md:border-t-0 border-slate-100 dark:border-white/5 pt-3 md:pt-0">
+                                      <StatusBtn 
+                                        active={p?.status === 'planning' || !p} 
+                                        label="Plan" 
+                                        icon={<Clock size={12} />} 
+                                        onClick={() => handleUpdateStatus(slo.slo_code, 'planning')}
+                                        disabled={isSavingThis}
+                                      />
+                                      <StatusBtn 
+                                        active={p?.status === 'teaching'} 
+                                        label="Teach" 
+                                        icon={<BookOpen size={12} />} 
+                                        onClick={() => handleUpdateStatus(slo.slo_code, 'teaching')}
+                                        disabled={isSavingThis}
+                                      />
+                                      <StatusBtn 
+                                        active={p?.status === 'completed'} 
+                                        label="Done" 
+                                        icon={<CheckCircle2 size={12} />} 
+                                        onClick={() => handleUpdateStatus(slo.slo_code, 'completed')}
+                                        disabled={isSavingThis}
+                                      />
+                                    </div>
                                   </div>
-                                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300 leading-snug">{slo.slo_full_text}</p>
-                                </div>
-
-                                <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-end border-t md:border-t-0 border-slate-100 dark:border-white/5 pt-3 md:pt-0">
-                                  <StatusBtn 
-                                    active={p?.status === 'planning' || !p} 
-                                    label="Plan" 
-                                    icon={<Clock size={12} />} 
-                                    onClick={() => handleUpdateStatus(slo.slo_code, 'planning')}
-                                    disabled={isSavingThis}
-                                  />
-                                  <StatusBtn 
-                                    active={p?.status === 'teaching'} 
-                                    label="Teach" 
-                                    icon={<BookOpen size={12} />} 
-                                    onClick={() => handleUpdateStatus(slo.slo_code, 'teaching')}
-                                    disabled={isSavingThis}
-                                  />
-                                  <StatusBtn 
-                                    active={p?.status === 'completed'} 
-                                    label="Done" 
-                                    icon={<CheckCircle2 size={12} />} 
-                                    onClick={() => handleUpdateStatus(slo.slo_code, 'completed')}
-                                    disabled={isSavingThis}
-                                  />
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
