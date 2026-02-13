@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { X, FileText, Copy, Share2, Search, Maximize2, Check, ExternalLink, AlignLeft, Download } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
@@ -11,13 +11,22 @@ interface DocumentReaderProps {
   onClose: () => void;
 }
 
-export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClose }) => {
+export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: activeDoc, onClose }) => {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [showFind, setShowFind] = useState(false);
 
+  // Handle Escape key to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   const handleCopyMarkdown = async () => {
-    if (!document.extractedText) return;
-    await navigator.clipboard.writeText(document.extractedText);
+    if (!activeDoc.extractedText) return;
+    await navigator.clipboard.writeText(activeDoc.extractedText);
     setCopyFeedback("Full Document Markdown");
     setTimeout(() => setCopyFeedback(null), 2000);
   };
@@ -26,7 +35,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
     const url = window.location.href;
     if (navigator.share) {
       try {
-        await navigator.share({ title: document.name, text: `Reviewing ${document.name} on Pedagogy Master`, url });
+        await navigator.share({ title: activeDoc.name, text: `Reviewing ${activeDoc.name} on Pedagogy Master`, url });
         return;
       } catch (e) {}
     }
@@ -36,9 +45,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
   };
 
   const renderedHtml = useMemo(() => {
-    if (!document.extractedText) return '<p class="text-center opacity-50 py-20 italic">Awaiting neural sync...</p>';
+    if (!activeDoc.extractedText) return '<p class="text-center opacity-50 py-20 italic">Awaiting neural sync...</p>';
     
-    let text = document.extractedText;
+    let text = activeDoc.extractedText;
     
     // 1. Style "Standard:" headers (Bold Indigo)
     text = text.replace(
@@ -79,7 +88,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
     });
 
     return renderSTEM(text);
-  }, [document.extractedText]);
+  }, [activeDoc.extractedText]);
 
   const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -99,8 +108,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
 
   const triggerFind = () => {
     setShowFind(!showFind);
-    // Focus reader for native find interaction
-    const reader = document.querySelector('.reader-canvas');
+    // Explicitly use window.document to avoid conflicting with the prop name 'document' (aliased to activeDoc)
+    // This fixes the build error: "Property 'querySelector' does not exist on type 'Document'"
+    const reader = window.document.querySelector('.reader-canvas');
     if (reader) (reader as HTMLElement).focus();
   };
 
@@ -113,9 +123,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document, onClos
             <FileText size={18} />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">{document.name}</h2>
+            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">{activeDoc.name}</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
-              {document.authority} • {document.subject} • Grade {document.gradeLevel}
+              {activeDoc.authority} • {activeDoc.subject} • Grade {activeDoc.gradeLevel}
             </p>
           </div>
         </div>
