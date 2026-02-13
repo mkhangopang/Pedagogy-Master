@@ -39,12 +39,12 @@ export function parseSLOCode(code: string): ParsedSLO | null {
   
   // ROBUST CLEANING: 
   // 1. Remove brackets [] 
-  // 2. Remove "SLO" or "SL0" prefix
+  // 2. Remove "SLO" or "SL0" prefix (case insensitive)
   // 3. Remove colons, spaces, hyphens
   // Example: "[SLO: B - 09 - A - 01]" -> "B09A01"
   const cleanCode = code.toUpperCase()
     .replace(/\[|\]/g, '')
-    .replace(/^SL[O0][:.\s-]*/, '')
+    .replace(/^\s*SL[O0][:.\s-]*/, '')
     .replace(/[:\s-]/g, '');
   
   // PATTERN: Subject (1-3 chars) + Grade (2 chars) + Domain (1 char) + Number (1-3 chars)

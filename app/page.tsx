@@ -106,7 +106,7 @@ export default function App() {
       }
 
       let retries = 0;
-      const maxRetries = 15; // Faster timeout for local preview
+      const maxRetries = 5; 
       
       while (retries < maxRetries) {
         if (isSupabaseConfigured()) break;
@@ -116,13 +116,11 @@ export default function App() {
       }
 
       if (!isSupabaseConfigured()) {
-        console.error('📡 [System] Handshake Failed: Pulse discovery exhausted.');
-        setInfraError("The neural gateway could not detect your infrastructure keys. If you are sure they are set, use the Emergency Bypass below.");
-        setIsAuthResolving(false);
-        return;
+        console.warn('📡 [System] Handshake Failed: Running in degraded mode.');
+        // Allow application to proceed even if keys are missing
+      } else {
+        console.log('📡 [System] Infrastructure Handshake: VERIFIED');
       }
-
-      console.log('📡 [System] Infrastructure Handshake: VERIFIED');
       
       try {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
