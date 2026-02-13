@@ -165,7 +165,7 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
         gradeKey = slo.documents?.grade_level || 'General';
         subjectKey = slo.documents?.subject || 'General';
         // Try to guess domain from hyphenated structure if parser failed
-        const clean = slo.slo_code.toUpperCase().trim();
+        const clean = slo.slo_code.toUpperCase().replace(/SLO|[:\[\]]/g, '').trim();
         const segments = clean.split('-');
         if (segments.length >= 3) {
            domainKey = `Domain ${segments[2]}`;

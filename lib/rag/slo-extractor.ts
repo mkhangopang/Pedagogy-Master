@@ -12,25 +12,17 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // Compact Sindh: B09A01, P10C12, CS09A01
-  /\b([A-Z]{1,3})(\d{2})([A-Z])(\d{2})\b/g,
-  
-  // Hyphenated Sindh: B-09-A-01
-  /\b([A-Z]{1,3})-\d{2}-[A-Z]-\d{2}\b/g,
+  // 1. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
+  /(?:\[|\b)SL[O0]\s*[:\s-]*([A-Z]{1,3})\s*[:\s-]+\s*(\d{2})\s*[:\s-]+\s*([A-Z])\s*[:\s-]+\s*(\d{1,3})(?:\]|\b)/gi,
 
-  // Legacy/Federal: S8a5
+  // 2. Compact/Standard: B09A01 or B-09-A-01
+  /\b([A-Z]{1,3})[-\s]?(\d{2})[-\s]?([A-Z])[-\s]?(\d{1,3})\b/g,
+
+  // 3. Legacy/Federal: S8a5
   /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/g,
   
-  // Standard Labelled: SLO: ...
-  /\bSLO[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?([a-z])[-\s]?(\d{1,2})\b/gi,
-  
-  // Year/Num: 2004/12
-  /\b(\d{4})\/(\d{2,4})\b/g,
-  
-  // IB/International
+  // 4. International / Numbered
   /\b(MYP|DP)\s+(criterion\s+)?([A-D]|\d+\.\d+)\b/gi,
-  
-  // Generic Objectives
   /\b(LO|Outcome|Objective)[-\s]?(\d+(?:\.\d+)?)\b/gi,
 ];
 
@@ -38,28 +30,34 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
   const extracted: ExtractedSLO[] = [];
   const seen = new Set<string>();
   
+  // Pre-normalize text slightly to help with line breaks in PDF extraction
+  const normalizedText = documentText.replace(/\[\s+/g, '[').replace(/\s+\]/g, ']');
+
   for (const pattern of SLO_PATTERNS) {
-    const matches = documentText.matchAll(pattern);
+    const matches = normalizedText.matchAll(pattern);
     for (const match of matches) {
-      const code = match[0];
-      // Normalize code to uppercase for deduplication
-      const cleanCode = code.toUpperCase().replace(/\s/g, '');
+      // Use the full match as the "code" for display, but cleaner logic handles parsing later
+      const fullMatch = match[0];
       
-      if (seen.has(cleanCode)) continue;
-      seen.add(cleanCode);
+      // Basic dedup based on the raw string found
+      const cleanKey = fullMatch.replace(/[\s\[\]-]/g, '').toUpperCase();
+      if (seen.has(cleanKey)) continue;
+      seen.add(cleanKey);
       
       const startIndex = Math.max(0, match.index! - 200);
-      const endIndex = Math.min(documentText.length, match.index! + code.length + 200);
-      const context = documentText.substring(startIndex, endIndex);
+      const endIndex = Math.min(normalizedText.length, match.index! + fullMatch.length + 300);
+      const context = normalizedText.substring(startIndex, endIndex);
       
-      // Attempt to find a description following the code
-      // Looks for: CODE [separator] Description
-      const descMatch = context.match(new RegExp(`${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:–-]\s*([^.\n]+)`));
+      // Attempt to find description: text following the code
+      // We look for the code, then optional separator, then text
+      const descRegex = new RegExp(`${fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:–-]?\\s*([^.\n\\[]+)`, 'i');
+      const descMatch = context.match(descRegex);
       const description = descMatch ? descMatch[1].trim() : '';
-      const confidence = calculateConfidence(code, context);
+
+      const confidence = calculateConfidence(cleanKey, context);
       
-      if (confidence > 0.5) {
-        extracted.push({ code: code.toUpperCase(), description, context, confidence });
+      if (confidence > 0.4) { // Lowered slightly to catch the specific Sindh format
+        extracted.push({ code: fullMatch, description, context, confidence });
       }
     }
   }
@@ -69,14 +67,15 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
 function calculateConfidence(code: string, context: string): number {
   let confidence = 0.6;
   const lowerContext = context.toLowerCase();
+  
+  // High confidence for the explicit Sindh format structure
+  if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,3}$/.test(code)) return 0.95;
+
   const keywords = ['objective', 'outcome', 'slo', 'standard', 'learning', 'students will', 'benchmark'];
   for (const keyword of keywords) {
     if (lowerContext.includes(keyword)) confidence += 0.1;
   }
-  // If it matches strict Sindh format (B09A01), high confidence
-  if (code.match(/^[A-Z]{1,3}\d{2}[A-Z]\d{2}$/)) confidence += 0.3;
   
-  if (lowerContext.includes(':') || lowerContext.includes('–')) confidence += 0.15;
   return Math.min(confidence, 1.0);
 }
 
@@ -116,5 +115,5 @@ export function searchSLO(sloCode: string, index: SLOIndex): string | null {
 }
 
 export function normalizeSLO(sloCode: string): string {
-  return sloCode.toUpperCase().replace(/[\s-]/g, '');
+  return sloCode.toUpperCase().replace(/\[|\]|SLO|[:\s-]/g, '');
 }

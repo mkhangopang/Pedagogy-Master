@@ -1,6 +1,6 @@
 
 /**
- * WORLD-CLASS SLO PARSER (v8.0)
+ * WORLD-CLASS SLO PARSER (v9.0)
  * Optimized for Sindh (B09A01) and Federal (S8a5) standards.
  * LOGIC: Subject(Char) -> Grade(2Digits) -> Domain(Char) -> Number(Digits)
  */
@@ -37,16 +37,18 @@ const SUBJECT_MAP: Record<string, string> = {
 export function parseSLOCode(code: string): ParsedSLO | null {
   if (!code) return null;
   
-  // Normalize: Remove spaces, dashes for parsing logic
-  // e.g. "B-09-A-01" -> "B09A01"
-  const cleanCode = code.toUpperCase().replace(/[\s-]/g, '');
+  // ROBUST CLEANING: 
+  // 1. Remove brackets [] 
+  // 2. Remove "SLO" or "SL0" prefix
+  // 3. Remove colons, spaces, hyphens
+  // Example: "[SLO: B - 09 - A - 01]" -> "B09A01"
+  const cleanCode = code.toUpperCase()
+    .replace(/\[|\]/g, '')
+    .replace(/^SL[O0][:.\s-]*/, '')
+    .replace(/[:\s-]/g, '');
   
   // PATTERN: Subject (1-3 chars) + Grade (2 chars) + Domain (1 char) + Number (1-3 chars)
-  // Example: B09A01
-  // Group 1 (Subject): B
-  // Group 2 (Grade): 09
-  // Group 3 (Domain): A
-  // Group 4 (Number): 01
+  // Example: B09A01 -> B (Sub), 09 (Gr), A (Dom), 01 (Num)
   const standardPattern = /^([A-Z]{1,3})(\d{2})([A-Z])(\d{1,3})$/;
   
   // Legacy Pattern (e.g. S8a5 -> S 8 a 5)
