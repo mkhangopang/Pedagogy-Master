@@ -2,53 +2,53 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v65.0 - SURGICAL)
- * Specialized for: Columnar De-interleaving (Sindh Grid Protocol)
- * Strategy: Reconstructs the entire document vertically.
+ * UNIVERSAL CURRICULUM ARCHITECT (v70.0 - CONTEXTUAL)
+ * Specialized for: Sindh Board 2019 Protocol (Natural Language SLOs)
+ * Logic: Detects 'Student will:' patterns and assigns virtual anchor codes.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. 
-Your mission is to fix "Interleaved Column Faults" caused by horizontal OCR of curriculum grids.
+  const systemInstruction = `You are the "Master Architect" node. Your mission is to transform OCR curriculum text into a structured "Master MD" library asset.
 
-CRITICAL PROTOCOL: VERTICAL PASS-BY-PASS EXTRACTION
-The input text contains curriculum data for Grades IX, X, XI, and XII side-by-side in columns. 
-OCR has read these horizontally, mixing them (e.g., Grade IX Domain A followed immediately by Grade XI Domain A). 
-YOU MUST RE-SORT THIS VERTICALLY.
+CRITICAL: NATURAL LANGUAGE SLO DETECTION
+In documents like Sindh Biology 2019, objectives are often written as:
+"Understanding: Student will: • Define biological molecules..."
+"Skills: Student will: • Draw model diagrams..."
 
-RECONSTRUCTION STEPS:
-1. PASS 1 (GRADE IX): Extract ALL Domains, Standards, Benchmarks, and SLOs for Grade IX. Complete this section entirely.
-2. PASS 2 (GRADE X): Extract ALL content for Grade X.
-3. PASS 3 (GRADE XI): Extract ALL content for Grade XI.
-4. PASS 4 (GRADE XII): Extract ALL content for Grade XII.
+YOUR RECONSTRUCTION PROTOCOL:
+1. HIERARCHY: Strictly follow Section -> Chapter -> Major Concept -> Domain (Understanding/Skills).
+2. SLO ANCHORING: If a bullet point starts with or follows "Student will:", it IS an SLO. 
+   - You MUST assign it a code if one isn't present.
+   - Format: "- SLO: [GEN-CODE]: [DESCRIPTION]"
+   - Example Virtual Code: BIO-XI-CH01-U-01 (Subject-Grade-Chapter-Domain-Index).
+3. TEXT FIDELITY: Keep the original descriptions verbatim.
+4. MARKDOWN TEMPLATE:
+   # MASTER MD: [CURRICULUM TITLE]
+   ---
+   # GRADE [XI/XII]
+   ## CHAPTER [N]: [TITLE]
+   ### MAJOR CONCEPT: [TITLE]
+   **Domain:** [Understanding/Skills]
+   - SLO: [CODE]: [Verbatim Description] <!-- AI_META: {...} -->
 
-OUTPUT FORMAT (MINIMALISTIC & ACCURATE):
-# MASTER MD: [CURRICULUM TITLE]
----
-# GRADE [N]
-## DOMAIN [A]: [TITLE]
-**Standard:** [TEXT]
-**Benchmark [I]:** [TEXT]
-- SLO: [CODE]: [TEXT] <!-- AI_META: {"bloom": "...", "dok": ...} -->
+5. NOISE SCRUBBING: Ignore page headers, footers (e.g. "Sindh Curriculum for Biology"), and member lists.
+6. STEM SUPPORT: Ensure LaTeX $...$ for any chemical formulas or math.
 
-RULES:
-- Use full, verbatim SLO codes (e.g., P-09-A-01, B-12-J-13-01).
-- Use LaTeX $...$ for all math/science notation.
-- REMOVE all page numbers, meeting minutes, and signatures.
-- NO PREAMBLE. Start with "# MASTER MD".`;
+OUTPUT ONLY THE MARKDOWN starting with # MASTER MD.`;
 
   const prompt = `
-[COMMAND: SURGICAL VERTICAL RECONSTRUCTION]
-Process the following text. It is a column-based grid where content is interleaved. 
-TASK: Unroll the grid. Reconstruct it strictly by Grade Level hierarchy (IX -> X -> XI -> XII).
+[COMMAND: SURGICAL PEDAGOGICAL EXTRACTION]
+Analyze the provided document stream. Reconstruct it vertically. 
+Identify all "Student will:" blocks and treat each bullet as a unique SLO. 
+If the text is messy, use the headings to rebuild the logic.
 
 RAW INPUT STREAM:
 ${rawText.substring(0, 600000)}
 
 [FINAL INSTRUCTION]: 
-Generate the high-fidelity, Grade-ordered Markdown.
+Generate the high-fidelity Master MD with synthetic codes where necessary for searchability.
 `;
 
   try {
@@ -64,7 +64,7 @@ Generate the high-fidelity, Grade-ordered Markdown.
 
     const masterMd = response.text || "";
     let dialect = 'Standard';
-    if (masterMd.toLowerCase().includes('sindh')) dialect = 'Sindh-Curriculum-2024';
+    if (masterMd.toLowerCase().includes('sindh')) dialect = 'Sindh-Curriculum-2019';
     
     return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n${masterMd}`;
   } catch (err) {
