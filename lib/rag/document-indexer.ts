@@ -4,7 +4,7 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * HIGH-FIDELITY PEDAGOGICAL INDEXER (v222.0)
+ * HIGH-FIDELITY PEDAGOGICAL INDEXER (v225.0)
  * Logic: Continuum-Aware Hierarchical Mapping (Grade -> Domain -> Chapter -> Section).
  */
 export async function indexDocumentForRAG(
@@ -31,24 +31,25 @@ export async function indexDocumentForRAG(
       const line = lines[i].trim();
       if (!line) continue;
 
-      // Detect Contextual Shifts using new Hierarchy Rules
-      if (line.startsWith('# GRADE') || line.includes('# ECE')) {
-        currentGrade = line.replace('# GRADE', '').replace('# ', '').trim();
+      // DETECT CONTEXTUAL HIERARCHY
+      if (line.startsWith('# GRADE')) {
+        currentGrade = line.replace('# GRADE', '').trim();
       } else if (line.startsWith('## DOMAIN') || line.startsWith('## Domain')) {
-        currentDomain = line.replace(/##\s*DOMAIN\s*/i, '').trim();
+        currentDomain = line.replace(/##\s*DOMAIN\s*([A-Z]:)?/i, '').trim();
       } else if (line.startsWith('### CHAPTER') || line.startsWith('### Chapter')) {
-        currentChapter = line.replace(/###\s*CHAPTER\s*/i, '').trim();
+        currentChapter = line.replace(/###\s*CHAPTER\s*\d*[:]?/i, '').trim();
       } else if (line.startsWith('#### SECTION') || line.startsWith('#### Section')) {
-        currentSection = line.replace(/####\s*SECTION\s*/i, '').trim();
+        currentSection = line.replace(/####\s*SECTION\s*\d*(\.\d*)?[:]?/i, '').trim();
       }
 
+      // EXTRACT SLO CODES FOR METADATA
       const foundCodes = extractSLOCodes(line);
       foundCodes.forEach(c => { if (!codesInChunk.includes(c.code)) codesInChunk.push(c.code); });
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK TRIGGER: Optimized for 1500 chars to maximize reasoning window
-      if (buffer.length >= 1500 || i === lines.length - 1) {
+      // CHUNK TRIGGER (1200 chars for optimal reasoning density)
+      if (buffer.length >= 1200 || i === lines.length - 1) {
         // ENFORCEMENT: Prepend Lineage to every chunk
         const descriptor = `[CTX: Grade ${currentGrade} | ${currentDomain} | ${currentChapter} | ${currentSection}]\n`;
         const enrichedText = descriptor + buffer.trim();

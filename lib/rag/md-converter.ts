@@ -2,62 +2,71 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v31.0 - MASTER ARCHITECT)
- * Logic: Linearizes curriculum into standard Markdown with deep hierarchy enforcement.
- * Feature: Surgical SLO Code Generation & Pedagogical Metadata Injection.
+ * UNIVERSAL NEURAL STRUCTURER (v40.0 - MASTER ARCHITECT)
+ * Logic: Linearizes curriculum into high-fidelity "Master MD" with deep pedagogical metadata.
+ * Feature: Surgical SLO Code Generation & Bloom's Taxonomy Alignment.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview';
   
-  const systemInstruction = `You are a world-class Curriculum Architect and Pedagogy Master. 
-Your goal is to convert messy curriculum PDFs into a "Master MD" format for high-fidelity RAG indexing.
+  const systemInstruction = `You are a world-class Curriculum Architect and Pedagogy Master.
+Your goal is to convert messy curriculum PDFs/OCR into a structured "Master MD" format.
 
-CRITICAL RULES FOR "MASTER MD" OUTPUT:
+CRITICAL ARCHITECTURE RULES:
 
-1. 🏛️ STRICT HIERARCHY ENFORCEMENT:
-   - # GRADE [ROMAN/NUM] (e.g., # GRADE XI)
+1. 🏛️ HIERARCHY ENFORCEMENT:
+   - # GRADE [NUM/ROMAN] (e.g., # GRADE XI)
    - ## DOMAIN [CODE]: [NAME] (e.g., ## DOMAIN J: HUMAN PHYSIOLOGY)
    - ### CHAPTER [NUM]: [TITLE] (e.g., ### CHAPTER 13: CIRCULATION)
    - #### SECTION [NUM]: [TITLE] (e.g., #### SECTION 13.1: COMPONENTS)
 
-2. 🧬 SLO GENERATION & EXTRACTION:
-   - Identify ALL learning outcomes (bullet points, table rows).
-   - If explicit SLO codes are missing, GENERATE THEM using: [SUBJECT_INITIAL]-[GRADE]-[DOMAIN_CODE]-[CHAPTER]-[SEQUENCE] 
-   - Example generated code: B-11-J-13-01
-   - Format each SLO exactly like this:
-     
-     <!-- SLO BLOCK START -->
-     #### SLO: [CODE]
-     **Text:** [Verbatim Learning Outcome]
-     **Analysis:**
-     - **Keywords:** [5-8 comma separated keywords]
-     - **Cognitive Level:** [Bloom's Level: Remember, Understand, Apply, Analyze, Evaluate, Create]
-     - **Bloom's Verbs:** [The action verbs used in the text]
-     - **Difficulty:** [Foundational, Intermediate, Advanced]
-     - **Topic:** [Specific sub-topic name]
-     <!-- SLO BLOCK END -->
+2. 🧬 SURGICAL SLO EXTRACTION:
+   - Identify ALL learning outcomes. 
+   - Generate unique codes if missing: [SUBJECT_INITIAL]-[GRADE]-[DOMAIN_CODE]-[CHAPTER]-[SEQUENCE] (e.g., B-11-J-13-01).
+   - EACH SLO must be wrapped in a block exactly like this:
 
-3. 🧠 LOGICAL RESTRUCTURING:
-   - Separate Grade levels clearly if multiple exist in the document (e.g. IX vs XI).
-   - Map every chapter to its correct parent domain.
-   - Fix "mingled" text where newlines are missing between headers and body text.
-   - Remove administrative noise (prefaces, page numbers, generic footers).
+   <!-- SLO BLOCK START -->
+   #### SLO: [CODE]
+   **Text:** [Verbatim objective text]
+   
+   **Analysis:**
+   - **Keywords:** [5-8 comma separated keywords]
+   - **Cognitive Level:** [Bloom's Level]
+   - **Bloom's Verbs:** [Specific action verbs]
+   - **Difficulty:** [Foundational/Intermediate/Advanced]
+   - **Topic:** [Specific sub-topic]
 
-4. 🧪 STEM INTEGRATION:
-   - Wrap ALL mathematical or chemical notation in LaTeX $...$ or $$...$$.
+   **Context:**
+   - **Prerequisites:** [Related earlier SLOs or concepts]
+   - **Builds Toward:** [Next logical SLO]
+   
+   **Teaching Context:**
+   - **Estimated Duration:** [Periods/Minutes]
+   - **Teaching Strategies:** [2-3 high-impact strategies]
+   - **Assessment Ideas:** [Brief formative check idea]
+   
+   **Metadata:**
+   - **Code Generated:** [Yes/No]
+   - **Sequence:** [Position in chapter]
+   <!-- SLO BLOCK END -->
 
-RESULT: A structured, metadata-rich pedagogical document ready for surgical retrieval.`;
+3. 🧹 CLEANUP & DE-MINGLE:
+   - Remove headers, footers, page numbers, and prefaces.
+   - Separate "mingled" text where headers and body text are fused.
+   - Map every chapter to its correct parent domain and grade.
+
+RESULT: A database-ready, RAG-optimized pedagogical masterpiece.`;
 
   const prompt = `
-[MISSION: SURGICAL CURRICULUM EXTRACTION]
-Process the raw text stream below. 
-1. Identify the Grade level for each section (Chapter 13 in Sindh Bio is Grade XI).
-2. Group content into DOMAINS and CHAPTERS based on the board's structure.
-3. Extract every bullet point as a structured SLO block. Generate codes if missing.
+[MISSION: DEEP PEDAGOGICAL EXTRACTION]
+Analyze the raw curriculum stream below. 
+1. Map the Grade and Domain context (e.g., Chapter 13 in Sindh Biology is Grade XI, Domain J).
+2. Group content logically by CHAPTER and SECTION.
+3. Transform every bullet point into a detailed SLO block with rich metadata.
 
-RAW TEXT STREAM:
-${rawText.substring(0, 400000)}
+RAW CURRICULUM STREAM:
+${rawText.substring(0, 450000)}
 `;
 
   try {
@@ -73,13 +82,13 @@ ${rawText.substring(0, 400000)}
 
     const masterMd = response.text || rawText;
     
-    // Auto-detect Dialect
+    // Auto-detect Dialect for registry
     let dialect = 'Standard';
     const lowerMd = masterMd.toLowerCase();
     if (lowerMd.includes('sindh')) dialect = 'Pakistani-Sindh-2024';
     else if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v31.0 -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v40.0 -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Fault:", err);
     return rawText;
