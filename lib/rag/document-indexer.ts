@@ -4,8 +4,9 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * HIGH-FIDELITY PEDAGOGICAL INDEXER (v225.0)
- * Logic: Continuum-Aware Hierarchical Mapping (Grade -> Domain -> Chapter -> Section).
+ * HIGH-FIDELITY PEDAGOGICAL INDEXER (v230.0)
+ * Logic: Continuum-Aware Hierarchical Mapping with Context Prepending.
+ * Implements Protocol 3: [CTX: Grade=... | Domain=... | Standard=... | Benchmark=...]
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -20,8 +21,8 @@ export async function indexDocumentForRAG(
     
     let currentGrade = "N/A";
     let currentDomain = "General";
-    let currentChapter = "General";
-    let currentSection = "General";
+    let currentStandard = "General";
+    let currentBenchmark = "I";
     
     const nodes: any[] = [];
     let buffer = "";
@@ -31,50 +32,55 @@ export async function indexDocumentForRAG(
       const line = lines[i].trim();
       if (!line) continue;
 
-      // DETECT CONTEXTUAL HIERARCHY
+      // 🏛️ HIERARCHY TRACKING (Unrolled Column Aware)
       if (line.startsWith('# GRADE')) {
         currentGrade = line.replace('# GRADE', '').trim();
-      } else if (line.startsWith('## DOMAIN') || line.startsWith('## Domain')) {
-        currentDomain = line.replace(/##\s*DOMAIN\s*([A-Z]:)?/i, '').trim();
-      } else if (line.startsWith('### CHAPTER') || line.startsWith('### Chapter')) {
-        currentChapter = line.replace(/###\s*CHAPTER\s*\d*[:]?/i, '').trim();
-      } else if (line.startsWith('#### SECTION') || line.startsWith('#### Section')) {
-        currentSection = line.replace(/####\s*SECTION\s*\d*(\.\d*)?[:]?/i, '').trim();
+      } else if (line.startsWith('## DOMAIN')) {
+        currentDomain = line.replace('## DOMAIN', '').trim();
+      } else if (line.startsWith('**Standard:**')) {
+        currentStandard = line.replace('**Standard:**', '').trim();
+      } else if (line.startsWith('**Benchmark')) {
+        currentBenchmark = line.match(/Benchmark\s*([IVXLCDM\d]+)/i)?.[1] || "I";
       }
 
-      // EXTRACT SLO CODES FOR METADATA
+      // Surgical SLO Code Extraction for Metadata
       const foundCodes = extractSLOCodes(line);
-      foundCodes.forEach(c => { if (!codesInChunk.includes(c.code)) codesInChunk.push(c.code); });
+      foundCodes.forEach(c => { 
+        if (!codesInChunk.includes(c.code)) codesInChunk.push(c.code); 
+      });
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK TRIGGER (1200 chars for optimal reasoning density)
-      if (buffer.length >= 1200 || i === lines.length - 1) {
-        // ENFORCEMENT: Prepend Lineage to every chunk
-        const descriptor = `[CTX: Grade ${currentGrade} | ${currentDomain} | ${currentChapter} | ${currentSection}]\n`;
-        const enrichedText = descriptor + buffer.trim();
+      // 🧬 CHUNK TRIGGER (1000-1200 chars for optimal reasoning density)
+      if (buffer.length >= 1100 || i === lines.length - 1) {
+        // ENFORCEMENT: Protocol 3 - Context Prepending
+        const ctxHeader = `[CTX: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard} | Benchmark=${currentBenchmark}]\n`;
+        const enrichedText = ctxHeader + buffer.trim();
 
         nodes.push({
           text: enrichedText,
           metadata: {
             grade: currentGrade,
             domain: currentDomain,
-            chapter: currentChapter,
-            section: currentSection,
+            standard: currentStandard,
+            benchmark: currentBenchmark,
             slo_codes: [...codesInChunk],
             dialect: meta.dialect || 'Standard'
           }
         });
 
+        // Reset buffer but keep overlap if needed? 
+        // For simplicity, we clear buffer, but you can carry over the last few lines for context overlap.
         buffer = "";
         codesInChunk = [];
       }
     }
 
-    // Grid Sync Protocol
+    // ⚡ GRID SYNC PROTOCOL
+    // Remove stale chunks before re-indexing
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 8;
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
       const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
@@ -99,6 +105,7 @@ export async function indexDocumentForRAG(
       }
     }
 
+    // Update document status to ready
     await supabase.from('documents').update({ 
       status: 'ready',
       rag_indexed: true,

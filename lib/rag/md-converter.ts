@@ -2,72 +2,57 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v40.0 - MASTER ARCHITECT)
- * Logic: Linearizes curriculum into high-fidelity "Master MD" with deep pedagogical metadata.
- * Feature: Surgical SLO Code Generation & Bloom's Taxonomy Alignment.
+ * UNIVERSAL CURRICULUM INGESTION NODE (v4.0 - NEURAL BRAIN)
+ * Protocol: Unrolled Column Protocol
+ * Logic: Linearizes complex curriculum hierarchies into atomic, RAG-optimized segments.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview';
   
-  const systemInstruction = `You are a world-class Curriculum Architect and Pedagogy Master.
-Your goal is to convert messy curriculum PDFs/OCR into a structured "Master MD" format.
+  const systemInstruction = `You are the Universal Document Ingestion Node for EduNexus AI Neural Brain V4.0.
+Your goal is to convert raw curriculum text/OCR into a structured "Master MD" format using the UNROLLED COLUMN PROTOCOL.
 
-CRITICAL ARCHITECTURE RULES:
+CORE TRANSFORMATION RULES:
 
-1. 🏛️ HIERARCHY ENFORCEMENT:
-   - # GRADE [NUM/ROMAN] (e.g., # GRADE XI)
-   - ## DOMAIN [CODE]: [NAME] (e.g., ## DOMAIN J: HUMAN PHYSIOLOGY)
-   - ### CHAPTER [NUM]: [TITLE] (e.g., ### CHAPTER 13: CIRCULATION)
-   - #### SECTION [NUM]: [TITLE] (e.g., #### SECTION 13.1: COMPONENTS)
+1. 🏛️ UNROLLED COLUMN PROTOCOL:
+   - Each grade must be a self-contained unit.
+   - Use strict markdown hierarchy:
+     # GRADE [NUM] (e.g., # GRADE IX)
+     ## DOMAIN [IDENTIFIER]: [NAME] (e.g., ## DOMAIN C: MECHANICS)
+     **Standard:** [Standard statement]
+     **Benchmark [NUM]:** [Benchmark description]
+   - Use '---' to separate grade levels.
 
 2. 🧬 SURGICAL SLO EXTRACTION:
-   - Identify ALL learning outcomes. 
-   - Generate unique codes if missing: [SUBJECT_INITIAL]-[GRADE]-[DOMAIN_CODE]-[CHAPTER]-[SEQUENCE] (e.g., B-11-J-13-01).
-   - EACH SLO must be wrapped in a block exactly like this:
+   - Parse every Student Learning Outcome (SLO) as a discrete unit.
+   - Generate/Verify Unique ID: [Subject Code]-[Grade]-[Domain]-[Number] (e.g., P-09-C-01).
+   - Format: "- SLO: [ID]: [Action Verb] [Content] [Context in brackets]."
+   - Deep Bloom's Analysis: Identify action verbs and map to cognitive levels (Remember, Understand, Apply, Analyze, Evaluate, Create).
 
-   <!-- SLO BLOCK START -->
-   #### SLO: [CODE]
-   **Text:** [Verbatim objective text]
-   
-   **Analysis:**
-   - **Keywords:** [5-8 comma separated keywords]
-   - **Cognitive Level:** [Bloom's Level]
-   - **Bloom's Verbs:** [Specific action verbs]
-   - **Difficulty:** [Foundational/Intermediate/Advanced]
-   - **Topic:** [Specific sub-topic]
+3. 🧪 STEM FIDELITY:
+   - Wrap ALL formulas and equations in LaTeX $...$ or $$...$$.
+   - Maintain all bracketed qualifiers [including...] and parenthetical context exactly.
 
-   **Context:**
-   - **Prerequisites:** [Related earlier SLOs or concepts]
-   - **Builds Toward:** [Next logical SLO]
-   
-   **Teaching Context:**
-   - **Estimated Duration:** [Periods/Minutes]
-   - **Teaching Strategies:** [2-3 high-impact strategies]
-   - **Assessment Ideas:** [Brief formative check idea]
-   
-   **Metadata:**
-   - **Code Generated:** [Yes/No]
-   - **Sequence:** [Position in chapter]
-   <!-- SLO BLOCK END -->
+4. 🧹 ADMINISTRATIVE SCRUBBING:
+   - Remove prefaces, page numbers, and institutional boilerplate unless it contains core metadata.
+   - Separate "mingled" text where headers are fused with body content.
 
-3. 🧹 CLEANUP & DE-MINGLE:
-   - Remove headers, footers, page numbers, and prefaces.
-   - Separate "mingled" text where headers and body text are fused.
-   - Map every chapter to its correct parent domain and grade.
-
-RESULT: A database-ready, RAG-optimized pedagogical masterpiece.`;
+RESULT: A RAG-optimized pedagogical masterpiece.`;
 
   const prompt = `
-[MISSION: DEEP PEDAGOGICAL EXTRACTION]
-Analyze the raw curriculum stream below. 
-1. Map the Grade and Domain context (e.g., Chapter 13 in Sindh Biology is Grade XI, Domain J).
-2. Group content logically by CHAPTER and SECTION.
-3. Transform every bullet point into a detailed SLO block with rich metadata.
+[MISSION: UNIVERSAL CURRICULUM TRANSFORMATION]
+Analyze the following curriculum stream and output a MASTER MD file following the Unrolled Column Protocol.
 
-RAW CURRICULUM STREAM:
+RAW TEXT:
 ${rawText.substring(0, 450000)}
-`;
+
+[OUTPUT SPECIFICATION]:
+- Start with # MASTER MD: [CURRICULUM NAME] ([YEAR])
+- Include a PREAMBLE section with processing metadata.
+- Group all content by GRADE, then DOMAIN, then STANDARD/BENCHMARK.
+- Ensure every SLO has a unique code.
+- Wrap all math in $...$.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -82,15 +67,15 @@ ${rawText.substring(0, 450000)}
 
     const masterMd = response.text || rawText;
     
-    // Auto-detect Dialect for registry
+    // Dialect Detection for registry
     let dialect = 'Standard';
-    const lowerMd = masterMd.toLowerCase();
-    if (lowerMd.includes('sindh')) dialect = 'Pakistani-Sindh-2024';
-    else if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
+    if (masterMd.toLowerCase().includes('sindh')) dialect = 'Pakistani-Sindh-2024';
+    else if (masterMd.toLowerCase().includes('cambridge')) dialect = 'Cambridge-IGCSE';
+    else if (masterMd.toLowerCase().includes('ksa')) dialect = 'KSA-Vision-2030';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v40.0 -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v40.0-PRO -->\n${masterMd}`;
   } catch (err) {
-    console.error("❌ [MD Converter] Fault:", err);
+    console.error("❌ [Ingestion Engine] Fault:", err);
     return rawText;
   }
 }

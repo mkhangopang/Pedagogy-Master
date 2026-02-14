@@ -50,7 +50,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Master Intelligence Node Active</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Universal Ingestion Node Active</span>
           </div>
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
             <Fingerprint className="text-indigo-600" /> Neural Brain v4.0
@@ -59,7 +59,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto no-scrollbar">
           {[
             { id: 'logic', icon: <Cpu size={14}/>, label: 'Master Logic' },
-            { id: 'ingestion', icon: <Layers size={14}/>, label: 'Ingestion' },
+            { id: 'ingestion', icon: <Layers size={14}/>, label: 'Transformation' },
             { id: 'diagnostics', icon: <Activity size={14}/>, label: 'Diagnostics' },
             { id: 'dialects', icon: <Globe size={14}/>, label: 'Curricula' }
           ].map(tab => (
@@ -123,7 +123,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Surgical Extraction</h4>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed italic">
-                  "Continuum-Aware mapping active. Grading, Domain, and Chapter hierarchy enforced across all ingested nodes."
+                  "Unrolled Column Protocol active. Grading, Domain, and Standard hierarchy enforced across all ingested nodes."
                 </p>
                 <div className="h-1.5 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
                    <div className="h-full bg-emerald-500 w-[96%]" />
@@ -143,31 +143,32 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
              <div className="flex items-center gap-4">
                 <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><Rocket size={32}/></div>
                 <div>
-                   <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Master MD v40.0</h3>
-                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Universal Ingestion Node</p>
+                   <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Ingestion Node v40.0</h3>
+                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Unrolled Column Protocol</p>
                 </div>
              </div>
              <div className="space-y-6">
                 <div className="p-6 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
-                   <p className="text-[11px] font-black text-indigo-600 uppercase mb-4 tracking-widest">Active Protocols</p>
+                   <p className="text-[11px] font-black text-indigo-600 uppercase mb-4 tracking-widest">Active Ingestion Specs</p>
                    <ul className="space-y-3">
-                      <ProtocolItem label="Surgical SLO Code Generation" />
-                      <ProtocolItem label="Deep Bloom's Analysis" />
-                      <ProtocolItem label="Context Prepending [CTX: ...]" />
-                      <ProtocolItem label="Linearization of Progression Grids" />
+                      <ProtocolItem label="Atomic SLO Granularity" />
+                      <ProtocolItem label="Hierarchical Preservation (Grade > Domain)" />
+                      <ProtocolItem label="Deep Bloom's Tagger" />
+                      <ProtocolItem label="LaTeX STEM Fidelity" />
+                      <ProtocolItem label="[CTX: ...] Metadata Injection" />
                    </ul>
                 </div>
-                <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl">Re-Index Global Vault</button>
+                <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-black transition-all">Audit Global Registry</button>
              </div>
           </div>
           <div className="bg-slate-900 p-10 rounded-[3rem] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col justify-center">
              <div className="absolute top-0 right-0 p-8 opacity-5"><Fingerprint size={200} /></div>
-             <h3 className="text-xl font-black uppercase tracking-tight mb-8 text-indigo-400">Alignment Registry</h3>
+             <h3 className="text-xl font-black uppercase tracking-tight mb-8 text-indigo-400">Curriculum Registry</h3>
              <div className="space-y-4 relative z-10">
                 <DialectEntry title="Pakistani Sindh Board" count="240 SLOs" status="VERIFIED" />
                 <DialectEntry title="Cambridge IGCSE" count="180 SLOs" status="SYNCING" />
                 <DialectEntry title="KSA Vision 2030" count="450 SLOs" status="READY" />
-                <DialectEntry title="Federal Board (S8a5)" count="120 SLOs" status="DEPRECATED" />
+                <DialectEntry title="US Common Core" count="890 SLOs" status="ACTIVE" />
              </div>
           </div>
         </div>
@@ -185,7 +186,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                       <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${node.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                         {node.status}
                       </span>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-2">Tier: {node.tier}</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-2">Node Tier: {node.tier}</p>
                    </div>
                 </div>
                 <div>
@@ -193,7 +194,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">ID: {node.id}</p>
                 </div>
                 <div className="pt-4 border-t dark:border-white/5 flex items-center justify-between">
-                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Grid Latency</span>
+                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Network Latency</span>
                    <span className="text-[10px] font-bold text-indigo-500">{Math.floor(Math.random() * 200 + 100)}ms</span>
                 </div>
              </div>
@@ -203,10 +204,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
       {activeTab === 'dialects' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-           <DialectCard title="Sindh Surgical" desc="Enforces B-GRADE-DOMAIN-CHAPTER codes. Linearizes raw OCR tables into rich metadata blocks." active />
-           <DialectCard title="Inquiry-Based (IB)" desc="Focuses on Assessment Objectives (AO) and conceptual scaffolding." />
-           <DialectCard title="Conceptual Mapping" desc="Optimized for vertical alignment and Bloom's cognitive demand tracking." />
-           <DialectCard title="Global Standards" desc="Generic Bloom-based extraction for international curricula." />
+           <DialectCard title="Sindh Surgical" desc="Enforces B-GRADE-DOMAIN codes. Optimizes for Sindh Progression Grids and vertical alignment." active />
+           <DialectCard title="IGCSE COMMAND" desc="Focuses on assessment command words (Analyze, Evaluate, Describe) and Cambridge scoring rubrics." />
+           <DialectCard title="KSA VISION 2030" desc="Surgical mapping to Saudi National Curriculum standards with bilingual support context." />
+           <DialectCard title="IB INQUIRY" desc="Optimized for Assessment Objectives (AO) and conceptual scaffolding descriptors." />
         </div>
       )}
     </div>
@@ -218,7 +219,7 @@ const MetricRow = ({ label, value, trend }: any) => (
     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
     <div className="text-right">
        <span className="block text-sm font-black text-white">{value}</span>
-       <span className={`block text-[8px] font-black uppercase ${trend === 'OPTIMAL' || trend === 'STABLE' ? 'text-emerald-500' : 'text-rose-400'}`}>{trend}</span>
+       <span className={`block text-[8px] font-black uppercase ${trend === 'OPTIMAL' || trend === 'STABLE' || trend === 'SUPPRESSED' ? 'text-emerald-500' : 'text-rose-400'}`}>{trend}</span>
     </div>
   </div>
 );
