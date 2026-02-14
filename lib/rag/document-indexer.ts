@@ -1,9 +1,10 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 /**
- * HIERARCHICAL PEDAGOGICAL INDEXER (v245.0)
+ * HIERARCHICAL PEDAGOGICAL INDEXER (v248.0)
  * Logic: Context-Aware Recursive Segmentation.
  * Implements Protocol 4: Hierarchical Prepending.
  */
@@ -22,7 +23,7 @@ export async function indexDocumentForRAG(
     const lines = content.split('\n');
     const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || preExtractedMeta?.dialect || 'Standard';
 
-    let currentGrade = "N/A";
+    let currentGrade = "General Context";
     let currentDomain = "General";
     let currentStandard = "General";
     
@@ -34,9 +35,9 @@ export async function indexDocumentForRAG(
       const line = lines[i].trim();
       if (!line) continue;
 
-      // DETECT PEDAGOGICAL PARENTAGE
-      if (line.includes('Institutional Grade Node') || line.startsWith('# GRADE')) {
-        currentGrade = line.replace(/# GRADE|Institutional Grade Node/g, '').trim();
+      // DETECT PEDAGOGICAL PARENTAGE (v55 Structural Markers)
+      if (line.startsWith('# GRADE')) {
+        currentGrade = line.replace('# GRADE', '').trim();
       } else if (line.startsWith('## DOMAIN')) {
         currentDomain = line.replace('## DOMAIN', '').trim();
       } else if (line.startsWith('**Standard:**')) {
@@ -51,10 +52,11 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK TRIGGER (Optimal for Educational Content)
+      // CHUNK TRIGGER (Optimal for Educational Logic)
       if (buffer.length >= 1000 || i === lines.length - 1) {
         // HIERARCHICAL PREPENDING (Protocol 4)
-        const contextHeader = `[CONTEXT: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard}]\n`;
+        // This ensures the vector embedding captures the Grade and Domain context.
+        const contextHeader = `[CURRICULUM_CONTEXT: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard}]\n`;
         const enrichedText = contextHeader + buffer.trim();
 
         if (buffer.trim().length > 30) {
@@ -77,7 +79,7 @@ export async function indexDocumentForRAG(
 
     if (nodes.length === 0) throw new Error("Segmentation failure.");
 
-    // Scorch old chunks
+    // Clear old vector nodes
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     const BATCH_SIZE = 12;

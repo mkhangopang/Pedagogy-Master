@@ -2,32 +2,47 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v50.0)
- * Specialized for: Vertical Column Reconstruction (Sindh Progression Grids)
- * Logic: Completes Grade N Vertical Column before proceeding to Grade N+1.
+ * UNIVERSAL CURRICULUM ARCHITECT (v55.0)
+ * Specialized for: Vertical Column Reconstruction & De-shuffling.
+ * Use Case: Sindh Board Progression Grids (Column-based layouts).
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const modelName = 'gemini-3-pro-preview'; // Pro required for structural reasoning
+  const modelName = 'gemini-3-pro-preview'; // Required for high-stakes structural reasoning
   
-  const systemInstruction = `You are the "Master Architect" node. Your mission is to reconstruct messy curriculum text into a clean, hierarchical "Master MD".
+  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. 
+Your mission: Transform messy, column-based curriculum text into a clean, hierarchical "Master MD".
 
-CORE PROTOCOLS:
-1. 🏛️ VERTICAL COLUMN LOGIC: If the input text comes from a grid or table with grades in columns, you MUST unroll it. Complete ALL Domains and SLOs for Grade IX first. Then move to Grade X. NEVER mix grades in the same section.
-2. 🛑 ZERO CONVERSATION: Start immediately with "# MASTER MD". No preamble.
-3. 🧬 SLO ATOMICITY: Every SLO must follow the pattern: "- SLO: [CODE]: [TEXT]".
-4. 🧠 INVISIBLE INTELLIGENCE: After every SLO, add a hidden HTML comment containing pedagogical metadata.
-   Format: <!-- AI_META: {"bloom": "Apply", "dok": 2, "keywords": ["..."]} -->
-5. 🧹 NOISE PURGE: Remove all administrative headers, footers, page numbers, and meeting minutes. Focus ONLY on the instructional content.
-6. 📐 STEM FIDELITY: Wrap all scientific notation and math in LaTeX $...$.
+CRITICAL: VERTICAL DE-SHUFFLING PROTOCOL
+Curriculum documents are often formatted in tables where Column 1 = Grade IX, Column 2 = Grade X, etc. 
+OCR often reads these horizontally, mixing the grades. YOU MUST RE-ORDER THIS.
+
+1. 🏛️ GRADE-FIRST HIERARCHY: 
+   - You MUST extract and complete ALL content for "GRADE IX" (Domains A-Z, Standards, and SLOs) before writing a single word for "GRADE X".
+   - Start each grade with "# GRADE [N]".
+   - Separate grades with "---" dividers.
+
+2. 🧬 SLO ATOMICITY: 
+   - Format: "- SLO: [CODE]: [DESCRIPTION]"
+   - Every SLO must be a distinct line. Do not use nested sub-bullets.
+
+3. 🧠 INVISIBLE METADATA (Neural Grounding):
+   - Wrap pedagogical metadata (Bloom's Level, DOK, Keywords) in HTML comments at the end of each SLO.
+   - Format: "<!-- AI_META: { "bloom": "Apply", "dok": 2 } -->"
+
+4. 🧹 NOISE SCRUBBING: 
+   - Strip all page numbers, footers (e.g., "Curriculum of Biology for Sindh"), and meeting signatures.
+
+5. 📐 STEM FIDELITY: 
+   - Wrap all math and chemical notation in LaTeX $...$.
 
 TEMPLATE STRUCTURE:
 # MASTER MD: [CURRICULUM TITLE]
 ---
 # GRADE IX
 ## DOMAIN [A]: [TITLE]
-**Standard:** [Institutional Statement]
-**Benchmark [I]:** [Benchmark Text]
+**Standard:** [Text]
+**Benchmark [I]:** [Text]
 - SLO: [CODE]: [DESCRIPTION] <!-- AI_META: {...} -->
 ...
 ---
@@ -35,15 +50,15 @@ TEMPLATE STRUCTURE:
 ...`;
 
   const prompt = `
-[COMMAND: VERTICAL COLUMN RECONSTRUCTION]
-Process the provided curriculum data. Unroll the progression grid so that it follows a strict Grade-by-Grade vertical flow.
-Ensure SLO codes (e.g., B-09-A-01) are verbatim and highlighted.
+[COMMAND: SURGICAL VERTICAL RECONSTRUCTION]
+Analyze the provided text stream. It contains curriculum grids where grades are in columns but the text is horizontally interleaved. 
+TASK: Trace the vertical path for each Grade. Reconstruct the document so it is strictly ordered by Grade (IX -> X -> XI -> XII).
 
 RAW INPUT STREAM:
-${rawText.substring(0, 600000)}
+${rawText.substring(0, 550000)}
 
 [FINAL INSTRUCTION]: 
-Generate the high-fidelity, clean Markdown. Ensure metadata is hidden in comments.
+Generate the high-fidelity, Grade-ordered Markdown. Verbatim SLO codes only.
 `;
 
   try {
@@ -51,7 +66,7 @@ Generate the high-fidelity, clean Markdown. Ensure metadata is hidden in comment
       model: modelName,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1, // Deterministic adherence
+        temperature: 0.1, // Deterministic adherence to structure
         systemInstruction,
         thinkingConfig: { thinkingBudget: 4096 }
       }
@@ -59,7 +74,7 @@ Generate the high-fidelity, clean Markdown. Ensure metadata is hidden in comment
 
     const masterMd = response.text || "";
     
-    // Self-Correction: Ensure dialect is set
+    // Auto-detect Dialect for the system vault
     let dialect = 'Standard';
     if (masterMd.toLowerCase().includes('sindh')) dialect = 'Sindh-Curriculum-2024';
     
