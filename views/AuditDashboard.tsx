@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -5,7 +6,7 @@ import {
   ShieldCheck, Zap, Globe, FileJson, 
   BarChart3, Target, Lock, Cpu, 
   ArrowRight, Download, Server, CheckCircle2,
-  AlertTriangle, Network, Scale, Code2, Key, Webhook, Box, Copy, Check, Eye, X, FileText, Activity, Layers, Rocket
+  AlertTriangle, Network, Scale, Code2, Key, Webhook, Box, Copy, Check, Eye, X, FileText, Activity, Layers, Rocket, Loader2
 } from 'lucide-react';
 import { UserProfile } from '../types';
 
@@ -15,13 +16,21 @@ interface AuditDashboardProps {
 
 const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
   const [report, setReport] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [showReportModal, setShowReportModal] = useState(false);
 
   useEffect(() => {
+    setIsLoading(true);
     fetch('/audit_report.json')
       .then(res => res.json())
-      .then(data => setReport(data))
-      .catch(err => console.error("Audit load failed", err));
+      .then(data => {
+        setReport(data);
+        setIsLoading(false);
+      })
+      .catch(err => {
+        console.error("Audit load failed", err);
+        setIsLoading(false);
+      });
   }, []);
 
   const generateWhitepaper = () => {
@@ -48,13 +57,24 @@ STATUS: ${report.benchmarks.infrastructure_health}
     link.click();
   };
 
+  if (isLoading) {
+    return (
+      <div className="h-[60vh] flex flex-col items-center justify-center space-y-4">
+        <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Loading Deep Neural Audit...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 px-2 md:px-0 text-left">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-50 dark:bg-indigo-950/30 rounded-full border border-indigo-100 dark:border-indigo-900/30 mb-4">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Deep Neural Audit: Operational</span>
+            <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
+              Deep Neural Audit: {report?.status || 'Active'}
+            </span>
           </div>
           <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tight uppercase">System Health</h1>
           <p className="text-slate-500 mt-1 font-medium italic text-sm">Real-time pedagogical fidelity and infrastructure benchmarks.</p>
@@ -77,32 +97,63 @@ STATUS: ${report.benchmarks.infrastructure_health}
 
       {/* Grid Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard label="RAG Precision" value={`${((report?.benchmarks?.rag_precision || 0) * 100).toFixed(1)}%`} status="Optimal" color="text-emerald-500" />
-        <MetricCard label="Neural Latency" value={report?.benchmarks?.average_latency || "..."} status="Fast" color="text-indigo-500" />
-        <MetricCard label="Peda-Fidelity" value={`${((report?.benchmarks?.pedagogical_fidelity || 0) * 100).toFixed(0)}%`} status="High" color="text-amber-500" />
-        <MetricCard label="Hallucination" value={`${((report?.benchmarks?.hallucination_rate || 0) * 100).toFixed(3)}%`} status="Suppressed" color="text-rose-500" />
+        <MetricCard 
+          label="RAG Precision" 
+          value={report?.benchmarks?.rag_precision ? `${(report.benchmarks.rag_precision * 100).toFixed(1)}%` : '0.0%'} 
+          status="Optimal" 
+          color="text-emerald-500" 
+        />
+        <MetricCard 
+          label="Neural Latency" 
+          value={report?.benchmarks?.average_latency || "---"} 
+          status="Fast" 
+          color="text-indigo-500" 
+        />
+        <MetricCard 
+          label="Peda-Fidelity" 
+          value={report?.benchmarks?.pedagogical_fidelity ? `${(report.benchmarks.pedagogical_fidelity * 100).toFixed(0)}%` : '0%'} 
+          status="High" 
+          color="text-amber-500" 
+        />
+        <MetricCard 
+          label="Hallucination" 
+          value={report?.benchmarks?.hallucination_rate ? `${(report.benchmarks.hallucination_rate * 100).toFixed(3)}%` : '0.000%'} 
+          status="Suppressed" 
+          color="text-rose-500" 
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         <section className="bg-white dark:bg-slate-900 p-8 md:p-10 rounded-[3rem] border border-slate-100 dark:border-white/5 shadow-sm">
            <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight mb-8 flex items-center gap-3">
-             <Scale size={20} className="text-indigo-600" /> Compliance Frameworks
+             <Scale size={20} className="text-indigo-600" /> Infrastructure Health
            </h3>
-           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {report?.compliance?.map((c: string) => (
-                <div key={c} className="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl flex items-center gap-3 border border-slate-100 dark:border-white/5">
-                   <ShieldCheck size={18} className="text-emerald-500" />
-                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">{c}</span>
-                </div>
-              ))}
+           <div className="space-y-4">
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+                 <div className="flex items-center gap-3">
+                    <Server size={18} className="text-indigo-500" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Vector Grid Status</span>
+                 </div>
+                 <span className="text-[10px] font-black text-emerald-500 uppercase">Operational</span>
+              </div>
+              <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
+                 <div className="flex items-center gap-3">
+                    <Cpu size={18} className="text-purple-500" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Synthesizer Load</span>
+                    <div className="w-24 h-1.5 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
+                       <div className="h-full bg-indigo-500 w-[24%]" />
+                    </div>
+                 </div>
+                 <span className="text-[10px] font-black text-slate-400 uppercase">Balanced</span>
+              </div>
            </div>
         </section>
 
         <section className="bg-slate-900 p-8 md:p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden flex flex-col justify-center">
            <div className="absolute top-0 right-0 p-8 opacity-5"><Rocket size={150} /></div>
-           <h3 className="text-lg font-black uppercase tracking-tight mb-4 text-emerald-400">Assistant Roadmap</h3>
+           <h3 className="text-lg font-black uppercase tracking-tight mb-4 text-emerald-400">Pedagogical Roadmap</h3>
            <div className="space-y-4 relative z-10">
-              {report?.roadmap?.slice(0, 3).map((r: string, i: number) => (
+              {report?.roadmap?.map((r: string, i: number) => (
                 <div key={i} className="flex gap-4 items-start">
                    <div className="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 text-[10px] font-bold text-emerald-400 mt-0.5">{i+1}</div>
                    <p className="text-xs text-slate-400 font-medium leading-relaxed">{r}</p>
@@ -150,7 +201,7 @@ const MetricCard = ({ label, value, status, color }: any) => (
      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4">{label}</p>
      <div className={`text-3xl font-black tracking-tight ${color}`}>{value}</div>
      <div className="flex items-center gap-1.5 mt-4">
-        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+        <div className={`w-1.5 h-1.5 rounded-full ${value === '0.0%' || value === '0%' || value === '---' ? 'bg-slate-300' : 'bg-emerald-500'}`} />
         <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{status}</span>
      </div>
   </div>

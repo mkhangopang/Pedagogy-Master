@@ -59,6 +59,28 @@ export const FIVE_E_MODEL = {
   phases: ['Engage', 'Explore', 'Explain', 'Elaborate', 'Evaluate']
 };
 
+/**
+ * UNDERSTANDING BY DESIGN (UbD)
+ * Recommendation from Audit v92.4
+ */
+export const UBD_FRAMEWORK = {
+  name: "Understanding by Design (UbD)",
+  stages: [
+    { stage: 1, title: 'Identify Desired Results', focus: 'Transfer, Meaning, and Acquisition' },
+    { stage: 2, title: 'Determine Assessment Evidence', focus: 'Performance Tasks and Other Evidence' },
+    { stage: 3, title: 'Plan Learning Experiences', focus: 'W.H.E.R.E.T.O. Principles' }
+  ]
+};
+
+/**
+ * ADDIE INSTRUCTIONAL DESIGN
+ * Recommendation from Audit v92.4
+ */
+export const ADDIE_MODEL = {
+  name: "ADDIE Model",
+  phases: ['Analysis', 'Design', 'Development', 'Implementation', 'Evaluation']
+};
+
 export const DIFFERENTIATION_STRATEGIES = {
   content: {
     below: ['Simplified vocabulary', 'Visual aids', 'Pre-teaching concepts'],

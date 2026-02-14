@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { User, Bot, Copy, Check, Sparkles, Globe, ExternalLink, Library, AlertTriangle } from 'lucide-react';
+import { User, Bot, Copy, Check, Sparkles, Globe, ExternalLink, Library, AlertTriangle, BookOpen, Search } from 'lucide-react';
 import { renderSTEM } from '../../lib/math-renderer';
 
 interface MessageItemProps {
@@ -76,22 +76,31 @@ export const MessageItem: React.FC<MessageItemProps> = ({ role, content, timesta
             )}
 
             {isAi && metadata?.sources?.length > 0 && (
-              <div className="mt-8 pt-8 border-t border-slate-200 dark:border-white/10 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {metadata.sources.map((source: any, i: number) => (
-                  <a 
-                    key={i} 
-                    href={source.uri} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex flex-col p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all hover:bg-indigo-600 group"
-                  >
-                    <span className="text-[10px] font-black text-slate-900 dark:text-white group-hover:text-white line-clamp-1 mb-1 uppercase tracking-tight">{source.title}</span>
-                    <div className="flex items-center justify-between">
-                       <span className="text-[8px] font-bold text-slate-400 group-hover:text-indigo-100 truncate max-w-[85%]">{source.uri}</span>
-                       <ExternalLink size={10} className="text-slate-400 group-hover:text-white" />
-                    </div>
-                  </a>
-                ))}
+              <div className="mt-8 pt-8 border-t border-slate-200 dark:border-white/10">
+                <div className="flex items-center gap-2 mb-4">
+                  <BookOpen size={14} className="text-indigo-500" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Teacher Reference Pack</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {metadata.sources.map((source: any, i: number) => (
+                    <a 
+                      key={i} 
+                      href={source.uri} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex flex-col p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all hover:bg-indigo-600 group"
+                    >
+                      <span className="text-[10px] font-black text-slate-900 dark:text-white group-hover:text-white line-clamp-1 mb-1 uppercase tracking-tight">{source.title}</span>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                           <Search size={10} className="text-slate-400 group-hover:text-indigo-200" />
+                           <span className="text-[8px] font-bold text-slate-400 group-hover:text-indigo-100 truncate max-w-[85%]">{new URL(source.uri).hostname}</span>
+                        </div>
+                        <ExternalLink size={10} className="text-slate-400 group-hover:text-white" />
+                      </div>
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
           </div>
