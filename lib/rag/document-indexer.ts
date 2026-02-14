@@ -1,12 +1,11 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 /**
- * HIERARCHICAL PEDAGOGICAL INDEXER (v248.0)
- * Logic: Context-Aware Recursive Segmentation.
- * Implements Protocol 4: Hierarchical Prepending.
+ * HIERARCHICAL PEDAGOGICAL INDEXER (v250.0)
+ * Logic: Hierarchical Context Injection.
+ * Optimized for: Grade-Domain-Standard preservation.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -17,14 +16,14 @@ export async function indexDocumentForRAG(
 ) {
   try {
     if (!content || content.length < 50) {
-      throw new Error("Target content too sparse for neural indexing.");
+      throw new Error("Content node too sparse for indexing.");
     }
 
     const lines = content.split('\n');
     const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || preExtractedMeta?.dialect || 'Standard';
 
-    let currentGrade = "General Context";
-    let currentDomain = "General";
+    let currentGrade = "N/A";
+    let currentDomain = "N/A";
     let currentStandard = "General";
     
     const nodes: any[] = [];
@@ -35,7 +34,7 @@ export async function indexDocumentForRAG(
       const line = lines[i].trim();
       if (!line) continue;
 
-      // DETECT PEDAGOGICAL PARENTAGE (v55 Structural Markers)
+      // HIERARCHY DETECTION
       if (line.startsWith('# GRADE')) {
         currentGrade = line.replace('# GRADE', '').trim();
       } else if (line.startsWith('## DOMAIN')) {
@@ -44,6 +43,7 @@ export async function indexDocumentForRAG(
         currentStandard = line.replace('**Standard:**', '').trim();
       }
 
+      // SLO CODE EXTRACTION
       const foundCodes = extractSLOCodes(line);
       foundCodes.forEach(c => { 
         const normalized = normalizeSLO(c.code);
@@ -52,10 +52,9 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK TRIGGER (Optimal for Educational Logic)
-      if (buffer.length >= 1000 || i === lines.length - 1) {
-        // HIERARCHICAL PREPENDING (Protocol 4)
-        // This ensures the vector embedding captures the Grade and Domain context.
+      // CHUNK SEGMENTATION (800 chars average for pedagogical density)
+      if (buffer.length >= 800 || i === lines.length - 1) {
+        // CONTEXT INJECTION: Prepend the path to ensure the vector "remembers" its location
         const contextHeader = `[CURRICULUM_CONTEXT: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard}]\n`;
         const enrichedText = contextHeader + buffer.trim();
 
@@ -77,12 +76,12 @@ export async function indexDocumentForRAG(
       }
     }
 
-    if (nodes.length === 0) throw new Error("Segmentation failure.");
+    if (nodes.length === 0) throw new Error("Hierarchy extraction failed.");
 
-    // Clear old vector nodes
+    // Delete existing chunks for this doc
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    const BATCH_SIZE = 12;
+    const BATCH_SIZE = 15;
     let chunksWritten = 0;
 
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
@@ -112,7 +111,7 @@ export async function indexDocumentForRAG(
           chunksWritten += records.length;
         }
       } catch (err) {
-        console.error(`❌ Batch Sync Fault [${i}]`);
+        console.error(`❌ Batch Embedding Fault at node ${i}`);
       }
     }
 
@@ -125,7 +124,7 @@ export async function indexDocumentForRAG(
 
     return { success: true, count: chunksWritten };
   } catch (error: any) {
-    console.error("❌ [Indexer Fault]:", error.message);
+    console.error("❌ [Indexer Fatal]:", error.message);
     throw error;
   }
 }
