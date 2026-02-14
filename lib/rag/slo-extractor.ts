@@ -1,4 +1,3 @@
-
 /**
  * Extract SLO codes from curriculum documents.
  * Supports Pakistan (Federal/Provincial), Cambridge, IB formats.
@@ -12,27 +11,27 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // 1. Synthesized Logic Code (Subject-Grade-CH-Domain-Index)
+  // 1. New Synthetic Biology/Physics Code: BIO-XI-C01-01 or PHY-IX-A-01
+  /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?([A-Z])?(\d{1,2})[-\s]?(\d{1,3})\b/g,
+
+  // 2. Synthesized Logic Code (Subject-Grade-CH-Domain-Index)
   /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?CH(\d{1,2})[-\s]?([US])[-\s]?(\d{1,3})\b/g,
 
-  // 2. New Master MD Generated 5-Part Code: B-11-J-13-01
+  // 3. New Master MD Generated 5-Part Code: B-11-J-13-01
   /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{1,3})\b/g,
 
-  // 3. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
+  // 4. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
   /(?:\[|\b)SL[O0]\s*[:\s-]*([A-Z]{1,3})\s*[:\s-]+\s*(\d{2})\s*[:\s-]+\s*([A-Z])\s*[:\s-]+\s*(\d{1,3})(?:\]|\b)/gi,
 
-  // 4. Compact/Standard: B09A01 or B-09-A-01
+  // 5. Compact/Standard: B09A01 or B-09-A-01
   /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,3})\b/g,
-
-  // 5. Legacy/Federal: S8a5
-  /\b([A-Z])(\d{1,2})([a-z])(\d{1,2})\b/g,
 ];
 
 export function extractSLOCodes(documentText: string): ExtractedSLO[] {
   const extracted: ExtractedSLO[] = [];
   const seen = new Set<string>();
   
-  // Pre-normalize text slightly
+  // Pre-normalize text slightly to handle zero/O confusion in SLO
   const normalizedText = documentText.replace(/\[\s+/g, '[').replace(/\s+\]/g, ']');
 
   for (const pattern of SLO_PATTERNS) {
@@ -48,7 +47,6 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
       const endIndex = Math.min(normalizedText.length, match.index! + fullMatch.length + 800);
       const context = normalizedText.substring(startIndex, endIndex);
       
-      // Support for Master MD SLO Blocks: Extract from "**Text:** ..." or following the code
       let description = fullMatch;
       
       // Try to find natural language description following the code in a Markdown list
@@ -72,7 +70,7 @@ function calculateConfidence(code: string, context: string): number {
   let confidence = 0.5;
   const lowerContext = context.toLowerCase();
   
-  if (/^[A-Z]{2,4}[IVX\d]+CH\d+[US]\d+$/.test(code)) return 0.99; // Synthesized code
+  if (/^[A-Z]{2,4}[IVX\d]+C\d+\d+$/.test(code)) return 0.99; // Synthetic
   if (/^[A-Z]{1,3}\d{1,2}[A-Z]\d{1,2}\d{1,3}$/.test(code)) return 0.98; // 5-part
   if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,4}$/.test(code)) return 0.95; // 4-part
 

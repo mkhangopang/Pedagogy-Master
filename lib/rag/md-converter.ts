@@ -1,54 +1,50 @@
-
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v70.0 - CONTEXTUAL)
- * Specialized for: Sindh Board 2019 Protocol (Natural Language SLOs)
- * Logic: Detects 'Student will:' patterns and assigns virtual anchor codes.
+ * UNIVERSAL CURRICULUM ARCHITECT (v75.0 - HIERARCHICAL)
+ * Specialized for: Natural Language SLOs (Sindh Biology 2019)
+ * Logic: Reconstructs document vertically and synthesizes missing codes.
+ * Template: Verbatim "Master MD" Structure.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node. Your mission is to transform OCR curriculum text into a structured "Master MD" library asset.
+  const systemInstruction = `You are the "Master Architect" node. Your mission is to transform raw OCR text into a structured "Master MD" library asset.
 
-CRITICAL: NATURAL LANGUAGE SLO DETECTION
-In documents like Sindh Biology 2019, objectives are often written as:
-"Understanding: Student will: • Define biological molecules..."
-"Skills: Student will: • Draw model diagrams..."
+CRITICAL: NATURAL LANGUAGE TO DETERMINISTIC CODE PROTOCOL
+Documents like Sindh Biology 2019 list objectives under "Understanding" or "Skills" using "Student will:" without explicit codes. 
+YOU MUST SYNTHESIZE CODES to ensure searchability.
 
-YOUR RECONSTRUCTION PROTOCOL:
-1. HIERARCHY: Strictly follow Section -> Chapter -> Major Concept -> Domain (Understanding/Skills).
-2. SLO ANCHORING: If a bullet point starts with or follows "Student will:", it IS an SLO. 
-   - You MUST assign it a code if one isn't present.
-   - Format: "- SLO: [GEN-CODE]: [DESCRIPTION]"
-   - Example Virtual Code: BIO-XI-CH01-U-01 (Subject-Grade-Chapter-Domain-Index).
-3. TEXT FIDELITY: Keep the original descriptions verbatim.
-4. MARKDOWN TEMPLATE:
+RECONSTRUCTION RULES:
+1. HIERARCHY: Structure by Section -> Chapter -> Major Concept -> Domain.
+2. SYNTHETIC CODING:
+   - For every "Student will:" bullet, generate a code: [Sub]-[Grade]-[Chapter]-[Index]
+   - Example: BIO-XI-C01-01 (Biology, Grade XI, Chapter 01, SLO 01).
+3. DOMAINS: Map "Understanding" content to (U) and "Skills" content to (S) in metadata.
+4. MARKDOWN TEMPLATE (STRICT):
    # MASTER MD: [CURRICULUM TITLE]
    ---
    # GRADE [XI/XII]
    ## CHAPTER [N]: [TITLE]
-   ### MAJOR CONCEPT: [TITLE]
    **Domain:** [Understanding/Skills]
-   - SLO: [CODE]: [Verbatim Description] <!-- AI_META: {...} -->
+   - SLO: [SYNTHETIC-CODE]: [Verbatim Text] <!-- AI_META: {"bloom": "...", "dok": ...} -->
 
-5. NOISE SCRUBBING: Ignore page headers, footers (e.g. "Sindh Curriculum for Biology"), and member lists.
-6. STEM SUPPORT: Ensure LaTeX $...$ for any chemical formulas or math.
+5. NO NOISE: Scrub page numbers, board member lists, and instructions to authors.
+6. VERTICALITY: Process the document vertically. Do not interleave chapters.
 
 OUTPUT ONLY THE MARKDOWN starting with # MASTER MD.`;
 
   const prompt = `
 [COMMAND: SURGICAL PEDAGOGICAL EXTRACTION]
-Analyze the provided document stream. Reconstruct it vertically. 
-Identify all "Student will:" blocks and treat each bullet as a unique SLO. 
-If the text is messy, use the headings to rebuild the logic.
+Analyze the provided curriculum stream. Reconstruct it following the vertical Grade XI -> Grade XII hierarchy.
+For the "Learning Outcomes" sections, identify every "Student will:" bullet and assign it a deterministic code like BIO-XI-C01-01.
 
-RAW INPUT STREAM:
-${rawText.substring(0, 600000)}
+RAW INPUT STREAM (SINDH BIOLOGY 2019):
+${rawText.substring(0, 800000)}
 
 [FINAL INSTRUCTION]: 
-Generate the high-fidelity Master MD with synthetic codes where necessary for searchability.
+Generate the high-fidelity, minimalistic, accurately ordered Master MD. Use LaTeX $...$ for chemical formulas.
 `;
 
   try {
