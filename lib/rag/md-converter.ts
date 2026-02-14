@@ -1,9 +1,9 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v40.0 - MASTER ARCHITECT)
+ * UNIVERSAL NEURAL STRUCTURER (v41.0 - MASTER ARCHITECT)
  * Logic: Linearizes curriculum into high-fidelity "Master MD" with deep pedagogical metadata.
- * Protocol: Unrolled Column Protocol
+ * Protocol: Unrolled Column Protocol v2.0
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -20,15 +20,15 @@ CORE TRANSFORMATION PRINCIPLES:
      # GRADE [NUM/ROMAN]
      ## DOMAIN [CODE]: [NAME]
      **Standard:** [Statement]
-     **Benchmark [NUM]:** [Description]
+     **Benchmark [NUM]: [Description]**
    - Use '---' to separate grade sections.
-   - Ensure zero cross-grade contamination in the primary structure.
+   - Ensure zero cross-grade contamination. If a table has multiple grades, unroll them into separate sections.
 
 2. 🧬 SURGICAL SLO EXTRACTION:
    - Identify every learning outcome as an atomic unit.
-   - Generate unique codes: [Subject Code]-[Grade]-[Domain]-[Number] (e.g., P-09-C-03).
+   - Generate/Preserve unique codes: [Subject Code]-[Grade]-[Domain]-[Number] (e.g., B-09-A-01).
    - Format: "- SLO: [ID]: [Action Verb] [Content] [Context in brackets]."
-   - Deep Bloom's Analysis: Map every SLO to its cognitive level (Remember, Understand, Apply, Analyze, Evaluate, Create).
+   - Every SLO line MUST start with "- SLO: [ID]:" for the surgical indexer to find it.
 
 3. 🧪 STEM FIDELITY & CLEANUP:
    - Preserve ALL formulas in LaTeX $...$ or $$...$$.
@@ -36,24 +36,26 @@ CORE TRANSFORMATION PRINCIPLES:
    - Remove administrative noise, headers, footers, and page numbers.
    - Join mid-sentence page breaks before ID assignment.
 
+4. 📊 PROGRESSION GRIDS:
+   - If unrolling a grid, repeat the Domain and Standard context for every single row to maintain RAG context density.
+
 RESULT: A database-ready, RAG-optimized pedagogical masterpiece.`;
 
   const prompt = `
 [MISSION: UNIVERSAL CURRICULUM INGESTION]
-Analyze the raw curriculum stream below. 
+Analyze the raw curriculum stream provided. 
 1. Map the Grade, Domain, and Standard context for every section.
 2. Linearize progression grids into the Unrolled Column format.
-3. Transform every bullet point into a detailed SLO block with rich Bloom's Analysis.
+3. Transform every bullet point into a detailed SLO block.
 
 RAW CURRICULUM STREAM:
-${rawText.substring(0, 450000)}
+${rawText.substring(0, 400000)}
 
 [OUTPUT SPECIFICATION]:
-- Start with # MASTER MD: [CURRICULUM NAME] ([YEAR])
-- Include a PREAMBLE section with processing metadata.
+- Start with # MASTER MD: [CURRICULUM NAME]
 - Group all content by GRADE, then DOMAIN, then STANDARD/BENCHMARK.
-- Ensure every SLO has a unique code.
-- Wrap all math in $...$.`;
+- Wrap all math in $...$.
+- Ensure no markdown formatting is broken.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -75,9 +77,9 @@ ${rawText.substring(0, 450000)}
     else if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
     else if (lowerMd.includes('ksa')) dialect = 'KSA-Vision-2030';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v40.0 -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v41.0 -->\n${masterMd}`;
   } catch (err) {
     console.error("❌ [MD Converter] Fault:", err);
-    return rawText;
+    return `<!-- ERROR: MD CONVERSION FAILED -->\n${rawText}`;
   }
 }

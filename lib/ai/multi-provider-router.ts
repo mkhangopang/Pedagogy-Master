@@ -7,9 +7,8 @@ import { formatResponseInstructions } from './response-formatter';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v123.0)
- * FEATURE: Surgical Precision Extraction & Vector Bypass.
- * STRATEGY: Master MD Surgical Line-Match -> Dialect-Aware Semantic Fallback.
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v124.0)
+ * FEATURE: High-Precision SLO Grounding & Resilient Retrieval.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -23,12 +22,12 @@ export async function generateAIResponse(
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
   
-  // 1. Specialized Code Analysis
   const queryAnalysis = analyzeUserQuery(userPrompt);
-  const rawCodes = extractSLOCodes(userPrompt);
-  const primaryCode = rawCodes.length > 0 ? normalizeSLO(rawCodes[0].code) : null;
+  const detectedCodes = extractSLOCodes(userPrompt);
+  
+  // Normalize codes for strict lookup (ensures B-09-A-01 matches B09A01)
+  const normalizedPrimaryCode = detectedCodes.length > 0 ? normalizeSLO(detectedCodes[0].code) : null;
 
-  // 2. Resource Resolution
   let docQuery = supabase
     .from('documents')
     .select('id, name, authority, subject, grade_level, extracted_text, master_md_dialect')
@@ -48,50 +47,26 @@ export async function generateAIResponse(
   let groundingMethod = 'None';
   let isGrounded = false;
 
-  // 3. SURGICAL EXTRACTION (DMMR v4.0) - Master MD Line Match
-  if (activeDoc?.extracted_text && primaryCode) {
+  // 1. SURGICAL EXTRACTION (Priority Level 1)
+  if (activeDoc?.extracted_text && normalizedPrimaryCode) {
     const lines = activeDoc.extracted_text.split('\n');
     let targetIndex = -1;
     
-    // Direct lookup for normalized SLO code
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].toUpperCase().includes(primaryCode)) {
+      if (normalizeSLO(lines[i]).includes(normalizedPrimaryCode)) {
         targetIndex = i;
         break;
       }
     }
 
     if (targetIndex !== -1) {
-      // Trace hierarchy backwards for context preservation (Protocol 3)
-      let grade = "N/A";
-      let domain = "N/A";
-      let standard = "Standard";
-      let benchmark = "Benchmark";
-      
-      for (let j = targetIndex; j >= 0; j--) {
-        const l = lines[j].trim();
-        if (l.startsWith('# GRADE')) grade = l;
-        else if (l.startsWith('## DOMAIN')) domain = l;
-        else if (l.startsWith('**Standard:**')) standard = l;
-        else if (l.startsWith('**Benchmark')) benchmark = l;
-        
-        if (grade !== "N/A" && domain !== "N/A") break;
-      }
-
-      vaultContent = `
-### MASTER_MD_SURGICAL_ALIGNMENT [Verified Ingestion]
-${grade}
-${domain}
-${standard}
-${benchmark}
-- ${lines[targetIndex]}
-`;
+      vaultContent = `### SURGICAL_PRECISION_VAULT_EXTRACT\n- VERIFIED_SLO_MATCH: ${lines[targetIndex]}\n`;
       isGrounded = true;
-      groundingMethod = 'Master MD Surgical Line-Match';
+      groundingMethod = 'Surgical Line-Match';
     }
   }
 
-  // 4. DIALECT-AWARE VECTOR AUGMENTATION (Semantic Fallback)
+  // 2. VECTOR AUGMENTATION (Priority Level 2 - Fallback)
   if (!isGrounded && activeDoc) {
     const retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
@@ -106,23 +81,23 @@ ${benchmark}
         .map((chunk, i) => `### ASSET_NODE_${i+1}\n${chunk.chunk_text}\n---`)
         .join('\n');
       isGrounded = true;
-      groundingMethod = 'Semantic Vector Fallback';
+      groundingMethod = 'Vector Semantic Search';
     }
   }
 
-  // 5. Artifact Synthesis
-  const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDoc);
   const systemInstruction = customSystem || DEFAULT_MASTER_PROMPT;
+  const responseInstructions = formatResponseInstructions(queryAnalysis, toolType, activeDoc);
 
   const finalPrompt = `
 <CONTEXT_SIGNATURE>
 DIALECT: ${dialectTag}
-GROUNDING_LEVEL: ${groundingMethod}
+GROUNDING_METHOD: ${groundingMethod}
+IDENTIFIED_SLO: ${normalizedPrimaryCode || 'None'}
 ${adaptiveContext || ''}
 </CONTEXT_SIGNATURE>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: No curriculum context selected]'}
+${vaultContent || '[VAULT_EMPTY: No curriculum context found for this specific query]'}
 </AUTHORITATIVE_VAULT>
 
 ## COMMAND:
@@ -133,11 +108,6 @@ ${responseInstructions}`;
 
   const result = await synthesize(finalPrompt, history.slice(-4), isGrounded, [], 'gemini', systemInstruction);
   
-  // Log grounding method to DB column (SQL v118 evolution)
-  if (isGrounded && activeDoc) {
-    supabase.from('documents').update({ last_grounding_method: groundingMethod }).eq('id', activeDoc.id).then();
-  }
-
   return {
     text: result.text,
     provider: result.provider,
@@ -145,7 +115,11 @@ ${responseInstructions}`;
       isGrounded,
       dialect: dialectTag,
       sourceDocument: activeDoc?.name || 'Global Node',
-      groundingMethod
+      groundingMethod,
+      diagnostic: {
+        slo_normalized: normalizedPrimaryCode,
+        chunks_retrieved: vaultContent ? 'Success' : 'Empty'
+      }
     }
   };
 }

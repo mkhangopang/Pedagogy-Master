@@ -1,10 +1,9 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
-import { extractSLOCodes } from './slo-extractor';
+import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 /**
- * HIGH-FIDELITY PEDAGOGICAL INDEXER (v241.0 - SURGICAL REPAIR)
+ * HIGH-FIDELITY PEDAGOGICAL INDEXER (v242.0 - RECOVERY MODE)
  * Logic: Continuum-Aware Hierarchical Mapping.
  * Implements Protocol 3: Context Prepending [CTX: ...]
  */
@@ -16,15 +15,12 @@ export async function indexDocumentForRAG(
   preExtractedMeta?: any
 ) {
   try {
-    if (!content || content.length < 10) {
-      throw new Error("Empty content provided for indexing.");
+    if (!content || content.length < 50) {
+      throw new Error("Target content too sparse for neural indexing.");
     }
 
-    const meta = preExtractedMeta || {};
     const lines = content.split('\n');
-    
-    // Auto-detect dialect from meta-tag if present
-    const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || meta.dialect || 'Standard';
+    const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || preExtractedMeta?.dialect || 'Standard';
 
     let currentGrade = "N/A";
     let currentDomain = "General";
@@ -33,13 +29,13 @@ export async function indexDocumentForRAG(
     
     const nodes: any[] = [];
     let buffer = "";
-    let codesInChunk: string[] = [];
+    let codesInChunk = new Set<string>();
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      // DETECT CONTEXTUAL HIERARCHY (Protocol 3 & Unrolled Column)
+      // DETECT CONTEXTUAL HIERARCHY
       if (line.startsWith('# GRADE')) {
         currentGrade = line.replace('# GRADE', '').trim();
       } else if (line.startsWith('## DOMAIN')) {
@@ -50,22 +46,21 @@ export async function indexDocumentForRAG(
         currentBenchmark = line.match(/Benchmark\s*([IVXLCDM\d]+)/i)?.[1] || "I";
       }
 
-      // EXTRACT SLO CODES FOR METADATA
+      // EXTRACT & NORMALIZE SLO CODES
       const foundCodes = extractSLOCodes(line);
       foundCodes.forEach(c => { 
-        const normalized = c.code.replace(/[\s\[\]-]/g, '').toUpperCase();
-        if (!codesInChunk.includes(normalized)) codesInChunk.push(normalized); 
+        const normalized = normalizeSLO(c.code);
+        if (normalized) codesInChunk.add(normalized);
       });
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK TRIGGER (1100 chars for optimal reasoning density)
-      if (buffer.length >= 1100 || i === lines.length - 1) {
-        // ENFORCEMENT: Protocol 3 - Prepend Lineage to every chunk
+      // CHUNK TRIGGER (1200 chars for optimal reasoning density)
+      if (buffer.length >= 1200 || i === lines.length - 1) {
         const descriptor = `[CTX: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard} | Benchmark=${currentBenchmark}]\n`;
         const enrichedText = descriptor + buffer.trim();
 
-        if (buffer.trim().length > 20) { // Safety check to prevent ghost chunks
+        if (buffer.trim().length > 30) {
           nodes.push({
             text: enrichedText,
             metadata: {
@@ -73,42 +68,35 @@ export async function indexDocumentForRAG(
               domain: currentDomain,
               standard: currentStandard,
               benchmark: currentBenchmark,
-              slo_codes: [...codesInChunk],
+              slo_codes: Array.from(codesInChunk),
               dialect: dialect
             }
           });
         }
 
         buffer = "";
-        codesInChunk = [];
+        codesInChunk.clear();
       }
     }
 
-    if (nodes.length === 0) throw new Error("Ingestion node produced 0 valid segments. Verify Markdown structure.");
+    if (nodes.length === 0) throw new Error("Neural segmentation yielded zero nodes.");
 
-    // Grid Sync Protocol (SQL v110 aware)
+    // Scorch previous segments to prevent ghosting
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
     const BATCH_SIZE = 10;
+    let chunksWritten = 0;
+
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
+      const texts = batch.map(n => n.text);
       
       try {
-        const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
+        const embeddings = await generateEmbeddingsBatch(texts);
         
         const records = batch.map((node, j) => {
           const vec = embeddings[j];
           if (!vec || vec.length !== 768) return null;
-
-          let type = 'general';
-          let weight = 0.5;
-          if (node.metadata.slo_codes.length > 0) {
-            type = 'slo';
-            weight = 0.9;
-          } else if (node.text.toLowerCase().includes('assessment') || node.text.toLowerCase().includes('quiz')) {
-            type = 'assessment';
-            weight = 0.8;
-          }
 
           return {
             document_id: documentId,
@@ -116,37 +104,33 @@ export async function indexDocumentForRAG(
             embedding: vec,
             slo_codes: node.metadata.slo_codes,
             metadata: node.metadata,
-            chunk_index: i + j,
-            chunk_type: type,
-            cognitive_weight: weight
+            chunk_index: i + j
           };
         }).filter(Boolean);
 
         if (records.length > 0) {
-          const { error } = await supabase.from('document_chunks').insert(records);
-          if (error) throw error;
+          const { error: insertError } = await supabase.from('document_chunks').insert(records);
+          if (insertError) throw insertError;
+          chunksWritten += records.length;
         }
-      } catch (err) {
-        console.error(`❌ Batch Sync Fault [${i}-${i+BATCH_SIZE}]:`, err);
-        // Continue with next batch instead of crashing the whole document
+      } catch (err: any) {
+        console.error(`❌ Batch Failure [${i}]:`, err.message);
       }
     }
 
-    // Final Status Commit
+    if (chunksWritten === 0) throw new Error("Vector grid refused all segments.");
+
+    // Update master record only on verifiable success
     await supabase.from('documents').update({ 
       status: 'ready',
       rag_indexed: true,
-      chunk_count: nodes.length,
-      master_md_dialect: dialect,
-      pedagogical_alignment: { 
-        bloom_weighted: true, 
-        grades_detected: currentGrade !== "N/A" ? [currentGrade] : [] 
-      }
+      chunk_count: chunksWritten,
+      master_md_dialect: dialect
     }).eq('id', documentId);
 
-    return { success: true, count: nodes.length };
-  } catch (error) {
-    console.error("❌ [Indexer Error]:", error);
+    return { success: true, count: chunksWritten };
+  } catch (error: any) {
+    console.error("❌ [Indexer Fault]:", error.message);
     throw error;
   }
 }
