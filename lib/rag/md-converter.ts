@@ -1,85 +1,75 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL NEURAL STRUCTURER (v41.0 - MASTER ARCHITECT)
- * Logic: Linearizes curriculum into high-fidelity "Master MD" with deep pedagogical metadata.
- * Protocol: Unrolled Column Protocol v2.0
+ * UNIVERSAL CURRICULUM ARCHITECT (v42.0)
+ * Logic: Strictly enforces the "Sindh 2024 Template" for all ingestion tasks.
+ * Ensures Grade-by-Grade atomicity and hidden AI metadata.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview';
   
-  const systemInstruction = `You are the Universal Document Ingestion Node for EduNexus AI Neural Brain V4.0.
-Your mission is to convert raw curriculum PDFs/OCR into a structured "Master MD" format using the UNROLLED COLUMN PROTOCOL.
+  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. 
+Your mission: Transform messy curriculum text into a clean, hierarchical "Master MD" following the EXACT structure provided in the template.
 
-CORE TRANSFORMATION PRINCIPLES:
+CORE RULES:
+1. 🛑 NO CONVERSATION: Start immediately with "# MASTER MD". No "Here is the result".
+2. 🏛️ GRADE-BY-GRADE HIERARCHY: 
+   - Complete ALL domains/SLOs for Grade IX before starting Grade X. 
+   - Each grade must start with "# GRADE [X]".
+   - Separate grades with "---" lines.
+3. 🧬 SLO ATOMICITY: 
+   - Format: "- SLO: [CODE]: [DESCRIPTION]"
+   - One line per SLO. No sub-bullets.
+   - Extract/Assign codes exactly like the template (e.g., P-09-A-01).
+4. 🧠 HIDDEN INTELLIGENCE (AI-ONLY):
+   - Wrap pedagogical metadata (Bloom's Level, DOK, Prerequisites) in HTML comments at the end of each Domain or SLO.
+   - Format: "<!-- AI_METADATA: { "bloom": "Apply", "weight": 0.9 } -->"
+5. 📐 STEM FIDELITY: Wrap all scientific notation and math in LaTeX $...$.
 
-1. 🏛️ UNROLLED COLUMN PROTOCOL:
-   - Each grade level MUST be a self-contained, linear unit.
-   - Hierarchy: 
-     # GRADE [NUM/ROMAN]
-     ## DOMAIN [CODE]: [NAME]
-     **Standard:** [Statement]
-     **Benchmark [NUM]: [Description]**
-   - Use '---' to separate grade sections.
-   - Ensure zero cross-grade contamination. If a table has multiple grades, unroll them into separate sections.
-
-2. 🧬 SURGICAL SLO EXTRACTION:
-   - Identify every learning outcome as an atomic unit.
-   - Generate/Preserve unique codes: [Subject Code]-[Grade]-[Domain]-[Number] (e.g., B-09-A-01).
-   - Format: "- SLO: [ID]: [Action Verb] [Content] [Context in brackets]."
-   - Every SLO line MUST start with "- SLO: [ID]:" for the surgical indexer to find it.
-
-3. 🧪 STEM FIDELITY & CLEANUP:
-   - Preserve ALL formulas in LaTeX $...$ or $$...$$.
-   - Maintain all bracketed qualifiers and examples exactly as written.
-   - Remove administrative noise, headers, footers, and page numbers.
-   - Join mid-sentence page breaks before ID assignment.
-
-4. 📊 PROGRESSION GRIDS:
-   - If unrolling a grid, repeat the Domain and Standard context for every single row to maintain RAG context density.
-
-RESULT: A database-ready, RAG-optimized pedagogical masterpiece.`;
+TEMPLATE STRUCTURE:
+# MASTER MD: [TITLE]
+---
+# GRADE [N]
+## DOMAIN [A-Z]: [TITLE]
+**Standard:** [Text]
+**Benchmark [I, II, III...]:** [Text]
+- SLO: [CODE]: [DESCRIPTION]
+---`;
 
   const prompt = `
-[MISSION: UNIVERSAL CURRICULUM INGESTION]
-Analyze the raw curriculum stream provided. 
-1. Map the Grade, Domain, and Standard context for every section.
-2. Linearize progression grids into the Unrolled Column format.
-3. Transform every bullet point into a detailed SLO block.
+[COMMAND: STRUCTURED CURRICULUM SYNTHESIS]
+Analyze the provided text. Linearize it by Grade Level. Ensure all domains and standards are mapped correctly. 
+Remove all administrative text, page numbers, and headers.
 
-RAW CURRICULUM STREAM:
-${rawText.substring(0, 400000)}
+RAW INPUT STREAM:
+${rawText.substring(0, 500000)}
 
-[OUTPUT SPECIFICATION]:
-- Start with # MASTER MD: [CURRICULUM NAME]
-- Group all content by GRADE, then DOMAIN, then STANDARD/BENCHMARK.
-- Wrap all math in $...$.
-- Ensure no markdown formatting is broken.`;
+[FINAL INSTRUCTION]: 
+Output ONLY the structured Markdown. Ensure SLO codes are granular and highlighted.
+`;
 
   try {
     const response = await ai.models.generateContent({
       model: modelName,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1,
+        temperature: 0.1, // Near-deterministic for standard compliance
         systemInstruction,
         thinkingConfig: { thinkingBudget: 4096 }
       }
     });
 
-    const masterMd = response.text || rawText;
+    const masterMd = response.text || "";
     
-    // Auto-detect Dialect for registry
+    // Auto-detect Dialect for the system vault
     let dialect = 'Standard';
-    const lowerMd = masterMd.toLowerCase();
-    if (lowerMd.includes('sindh')) dialect = 'Pakistani-Sindh-2024';
-    else if (lowerMd.includes('cambridge')) dialect = 'Cambridge-International';
-    else if (lowerMd.includes('ksa')) dialect = 'KSA-Vision-2030';
+    if (masterMd.toLowerCase().includes('sindh')) dialect = 'Sindh-Curriculum-2024';
     
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v41.0 -->\n${masterMd}`;
+    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n${masterMd}`;
   } catch (err) {
-    console.error("❌ [MD Converter] Fault:", err);
-    return `<!-- ERROR: MD CONVERSION FAILED -->\n${rawText}`;
+    console.error("❌ [Architect Node Fault]:", err);
+    return `<!-- ERROR: SYNTHESIS FAILED -->\n${rawText}`;
   }
 }

@@ -2,7 +2,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, FileText, Copy, Share2, Search, Maximize2, Check, ExternalLink, AlignLeft, Download, BookOpen, Layers } from 'lucide-react';
+import { X, FileText, Copy, Share2, Search, Maximize2, Check, AlignLeft, BookOpen, Layers } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
 
@@ -13,231 +13,143 @@ interface DocumentReaderProps {
 
 export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: activeDoc, onClose }) => {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
-  const [showFind, setShowFind] = useState(false);
 
-  // Handle Escape key to close
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const handleKeyDown = (e: KeyboardEvent) => { e.key === 'Escape' && onClose(); };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  const handleCopyMarkdown = async () => {
-    if (!activeDoc.extractedText) return;
-    await navigator.clipboard.writeText(activeDoc.extractedText);
-    setCopyFeedback("Full Document Markdown");
-    setTimeout(() => setCopyFeedback(null), 2000);
-  };
-
+  // Add comment above each fix
+  // Fix: Implemented missing handleShare function to resolve "Cannot find name 'handleShare'" error
   const handleShare = async () => {
-    const url = window.location.href;
+    const shareData = {
+      title: `Pedagogy Master | ${activeDoc.name}`,
+      text: `Reviewing curriculum asset: ${activeDoc.name}`,
+      url: window.location.origin,
+    };
+
     if (navigator.share) {
       try {
-        await navigator.share({ title: activeDoc.name, text: `Reviewing ${activeDoc.name} on Pedagogy Master`, url });
-        return;
-      } catch (e) {}
+        await navigator.share(shareData);
+      } catch (err) {
+        // Silently handle share cancellation
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(window.location.origin);
+        setCopyFeedback('Link');
+        setTimeout(() => setCopyFeedback(null), 2000);
+      } catch (err) {
+        console.error('Failed to copy link:', err);
+      }
     }
-    await navigator.clipboard.writeText(url);
-    setCopyFeedback("Link Copied");
-    setTimeout(() => setCopyFeedback(null), 2000);
   };
 
   const renderedHtml = useMemo(() => {
-    if (!activeDoc.extractedText) return '<p class="text-center opacity-50 py-20 italic">Awaiting neural sync...</p>';
+    if (!activeDoc.extractedText) return '<div class="py-20 text-center opacity-40 italic">Syncing with neural grid...</div>';
     
-    // 1. AGGRESSIVE PRE-CLEANING (The "De-Mingle" Phase)
-    // We normalize spaces and force newlines before any patterns that look like headers or SLOs.
-    let text = activeDoc.extractedText
-      .replace(/\u00A0/g, ' ') // Replace non-breaking spaces
-      .replace(/\r\n/g, '\n'); // Normalize line endings
+    let text = activeDoc.extractedText;
 
-    // FORCE BREAK: If a line contains text followed by [SLO:..., break it.
-    // Example: "...end of sentence [SLO:..." -> "...end of sentence\n\n[SLO:..."
-    // We use a lookbehind-like approach via capturing groups
-    text = text.replace(/([^\n>])\s*(\[\s*SL[O0][^\]]*\])/gi, '$1\n\n$2');
+    // 1. Structural Styling: Grades & Domains
+    // Grade headers: # GRADE IX -> Large centered block
+    text = text.replace(/^# GRADE\s+(.+)$/gm, '\n\n<div class="grade-header my-12 pt-10 border-t border-slate-100 dark:border-white/5"><h1 class="text-4xl md:text-6xl font-black text-indigo-600 dark:text-indigo-400 text-center tracking-tighter uppercase mb-4">Grade $1</h1><div class="h-1 w-20 bg-indigo-600 mx-auto rounded-full"></div></div>');
     
-    // Also break for Standard: and Benchmark:
-    text = text.replace(/([^\n>])\s*(\*\*Standard)/gi, '$1\n\n$2');
-    text = text.replace(/([^\n>])\s*(Benchmark\s*\d*:)/gi, '$1\n\n$2');
-    
-    // 2. Style Structural Headers
-    const structuralHeaders = [
-      'Major Concepts', 'Learning Outcomes', 'Assessment', 'Guidelines', 
-      'Chapter', 'Unit', 'Section', 'Domain', 'Standard', 'Benchmark'
-    ];
-    
-    structuralHeaders.forEach(header => {
-      // Ensure headers are on their own lines before processing
-      const regex = new RegExp(`(^|\\n)(${header}\\s*\\d*[:.]?)`, 'gi');
-      text = text.replace(regex, '\n\n<h3 class="text-lg font-black text-slate-800 dark:text-slate-200 mt-8 mb-4 uppercase tracking-wide border-b border-slate-100 dark:border-white/5 pb-2">$2</h3>');
-    });
+    // Domain headers: ## DOMAIN A: ...
+    text = text.replace(/^## DOMAIN\s+([A-Z]):\s+(.+)$/gm, '\n\n<div class="domain-block mt-16 mb-6"><span class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Curriculum Domain $1</span><h2 class="text-2xl md:text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">$2</h2></div>');
 
-    text = text.replace(
-      /\*\*Standard:\*\*/g, 
-      '<strong class="text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-wide block mt-8 mb-2">Standard:</strong>'
-    );
+    // 2. Standard & Benchmark Emphasis
+    text = text.replace(/^\*\*Standard:\*\*\s*(.+)$/gm, '<div class="bg-slate-50 dark:bg-white/5 p-5 rounded-2xl border-l-4 border-indigo-500 mb-6"><strong class="block text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-2">Institutional Standard</strong><p class="text-sm font-bold text-slate-700 dark:text-slate-200">$1</p></div>');
+    text = text.replace(/^\*\*Benchmark\s+(.+):\*\*\s*(.+)$/gm, '<div class="mt-8 mb-4 pl-4 border-l-2 border-slate-200 dark:border-white/10"><span class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Benchmark $1</span><h4 class="font-bold text-slate-900 dark:text-white">$2</h4></div>');
 
-    // 3. High-Fidelity SLO Cards (The Blue Pill)
-    // Regex Logic:
-    // - Matches start of line (due to pre-cleaning step 1)
-    // - Captures the full tag: [SLO: B - 09 - A - 01]
-    // - Handles spaces inside the tag extensively
-    // - Captures the description: Everything after until the next newline
-    const sloRegex = /(?:^|\n)\s*(\[\s*SL[O0]\s*[:\-]\s*[^\]]+\])\s*([^\n]+)/gi;
-    
-    text = text.replace(sloRegex, (match, fullTag, desc) => {
-        // Extract the code from inside the brackets
-        let innerCode = fullTag.replace(/^\[\s*SL[O0]\s*[:\-]\s*|\]$/gi, '').trim();
-        
-        // Clean up spaces: "B - 09" -> "B-09"
-        // We carefully remove spaces around hyphens specifically, or just remove all spaces if it's a code
-        const cleanCode = innerCode.replace(/\s+/g, '').replace(/–/g, '-');
-        
-        const cleanDesc = desc.trim();
-        
-        return `\n\n<div class="slo-card-container my-4 group relative pl-0 sm:pl-4 sm:border-l-4 sm:border-indigo-500 bg-white dark:bg-[#1a1a1a] rounded-xl shadow-sm border border-slate-100 dark:border-white/5 p-4 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all cursor-pointer slo-interactive-pill" data-slo="${cleanCode}">
-          <div class="flex flex-col gap-2">
-             <div class="flex items-start justify-between">
-                <span class="inline-flex items-center px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-black text-[11px] tracking-widest shadow-sm shrink-0 whitespace-nowrap">
-                  SLO: ${cleanCode}
-                </span>
-                <span class="opacity-0 group-hover:opacity-100 transition-opacity text-[9px] font-bold text-slate-400 flex items-center gap-1 bg-slate-50 dark:bg-white/10 px-2 py-1 rounded">
-                  <Copy size={10} /> Copy ID
-                </span>
+    // 3. THE BLUE PILL: Template SLO Cards
+    // Supports: - SLO: P-09-A-01: Describe...
+    const sloRegex = /^- SLO:\s*([A-Z0-9-]+):\s*(.+)$/gm;
+    text = text.replace(sloRegex, (match, code, desc) => {
+        return `\n<div class="slo-card group relative bg-white dark:bg-[#151515] p-5 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm hover:shadow-xl hover:border-indigo-500/50 transition-all cursor-pointer mb-4 slo-interactive-pill" data-slo="${code.trim()}">
+          <div class="flex items-start gap-4">
+             <div class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-black text-[10px] tracking-widest shadow-sm shrink-0">
+               SLO: ${code.trim()}
              </div>
-             <span class="text-sm font-medium text-slate-700 dark:text-slate-300 leading-relaxed group-hover:text-indigo-900 dark:group-hover:text-indigo-100 transition-colors">
-               ${cleanDesc}
-             </span>
+             <div class="flex-1">
+               <p class="text-sm font-medium leading-relaxed text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">${desc.trim()}</p>
+             </div>
+             <div class="opacity-0 group-hover:opacity-100 transition-opacity p-2 bg-slate-50 dark:bg-white/5 rounded-lg text-slate-400">
+               <Copy size={14} />
+             </div>
           </div>
-        </div>\n\n`;
+        </div>`;
     });
 
     return renderSTEM(text);
   }, [activeDoc.extractedText]);
 
-  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleCopyCode = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    
-    // SLO Copy Logic
     const pill = target.closest('.slo-interactive-pill');
     if (pill) {
-      const sloCode = pill.getAttribute('data-slo');
-      if (sloCode) {
-        navigator.clipboard.writeText(sloCode); 
-        setCopyFeedback(`${sloCode}`);
+      const code = pill.getAttribute('data-slo');
+      if (code) {
+        navigator.clipboard.writeText(code);
+        setCopyFeedback(code);
         setTimeout(() => setCopyFeedback(null), 2000);
       }
     }
   };
 
-  const triggerFind = () => {
-    setShowFind(!showFind);
-    const reader = window.document.querySelector('.reader-canvas');
-    if (reader) (reader as HTMLElement).focus();
-  };
-
   return (
-    <div className="fixed inset-0 z-[500] bg-slate-50 dark:bg-[#050505] flex flex-col animate-in fade-in zoom-in-95 duration-300">
-      {/* Header Bar */}
-      <header className="h-16 border-b border-slate-200 dark:border-white/5 bg-white dark:bg-[#0d0d0d] flex items-center justify-between px-4 md:px-6 shrink-0 relative z-[50]">
-        <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-          <div className="p-2 bg-indigo-600 rounded-lg text-white shadow-lg shrink-0">
-            <FileText size={18} />
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight truncate">{activeDoc.name}</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
-              {activeDoc.authority} • {activeDoc.subject} • Grade {activeDoc.gradeLevel}
-            </p>
+    <div className="fixed inset-0 z-[500] bg-white dark:bg-[#050505] flex flex-col animate-in fade-in duration-300">
+      <header className="h-16 border-b dark:border-white/5 bg-white/80 dark:bg-[#0d0d0d]/80 backdrop-blur-xl flex items-center justify-between px-6 shrink-0 z-50">
+        <div className="flex items-center gap-4">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><FileText size={20}/></div>
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-tight dark:text-white">{activeDoc.name}</h2>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Verified Master MD • 2024 Protocol</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <button 
-            onClick={handleCopyMarkdown} 
-            className="hidden md:flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 transition-all"
-            title="Copy Full Markdown Source"
-          >
-            <AlignLeft size={14} /> Copy Source
-          </button>
-          <div className="w-px h-6 bg-slate-200 dark:bg-white/10 mx-1 hidden md:block" />
-          <button onClick={onClose} className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-xl transition-all">
-            <X size={20} />
-          </button>
-        </div>
+        <button onClick={onClose} className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-xl transition-all"><X size={20}/></button>
       </header>
 
-      {/* Reader Body */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#080808] p-4 md:p-8 relative scroll-smooth">
+      <main className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50 dark:bg-[#080808]">
         <div 
-          className="max-w-4xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-2xl rounded-[2rem] md:rounded-[3rem] border border-slate-200 dark:border-white/5 p-6 md:p-16 relative min-h-full"
-          onClick={handleContainerClick}
+          className="max-w-4xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-2xl rounded-[3rem] p-8 md:p-20 lg:p-24 border border-slate-100 dark:border-white/5 min-h-full"
+          onClick={handleCopyCode}
         >
-          {showFind && (
-             <div className="sticky top-0 z-10 mb-6 -mx-2">
-                <div className="bg-indigo-900 text-white p-4 rounded-xl shadow-xl flex items-center justify-between animate-in slide-in-from-top-2">
-                   <span className="text-xs font-bold flex items-center gap-2"><Search size={14}/> Press Ctrl+F / Cmd+F to search this document.</span>
-                   <button onClick={() => setShowFind(false)}><X size={14}/></button>
-                </div>
+          {/* Header metadata (Visible only in reader) */}
+          <div className="mb-20 text-center space-y-4 opacity-60">
+             <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-full">
+                <Layers size={14} className="text-indigo-600" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600">Institutional Ledger</span>
              </div>
-          )}
+             <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">Subject: {activeDoc.subject} • Board: {activeDoc.authority}</p>
+          </div>
 
           <div className="prose dark:prose-invert max-w-none reader-canvas select-text"
                dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           
-          <div className="mt-20 pt-10 border-t border-slate-100 dark:border-white/5 flex flex-col items-center opacity-30">
-             <Maximize2 size={24} className="text-slate-300 mb-2" />
-             <p className="text-[9px] font-black uppercase tracking-[0.3em]">End of Active Context</p>
+          <div className="mt-40 pt-20 border-t dark:border-white/5 text-center opacity-20">
+             <p className="text-[9px] font-black uppercase tracking-[0.4em]">End of Active Curriculum Node</p>
           </div>
         </div>
       </main>
 
-      {/* Feedback Toast */}
       {copyFeedback && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[600] animate-in slide-in-from-top-4 fade-in duration-300 pointer-events-none">
-          <div className="bg-emerald-600 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-emerald-400/50">
-            <div className="p-1 bg-white/20 rounded-full"><Check size={12} /></div>
-            <div className="flex flex-col">
-              <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Success</span>
-              <span className="text-sm font-bold">{copyFeedback} Copied</span>
-            </div>
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[600] animate-in slide-in-from-top-4">
+          <div className="bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10">
+            <Check size={16} className="text-emerald-400" />
+            <span className="text-[10px] font-black uppercase tracking-widest">{copyFeedback} Copied</span>
           </div>
         </div>
       )}
 
-      {/* Responsive Floating Action Bar */}
-      <div className="fixed bottom-6 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-auto z-[550]">
-        <div className="flex items-center justify-between md:justify-center gap-4 bg-slate-900/95 dark:bg-[#1a1a2e]/95 backdrop-blur-xl px-5 py-4 md:px-10 md:py-5 rounded-2xl md:rounded-[2.5rem] shadow-[0_20px_60px_rgba(0,0,0,0.5)] border border-white/10 animate-in slide-in-from-bottom-10 duration-700">
-           
-           <button 
-             onClick={triggerFind} 
-             className="flex-1 md:flex-none flex items-center justify-center gap-3 text-white/90 hover:text-indigo-400 text-[11px] font-black uppercase tracking-widest transition-all"
-           >
-              <Search size={16} className="text-indigo-400" /> 
-              <span className="hidden sm:inline">Find SLO</span>
-              <span className="sm:hidden">Find</span>
+      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[550]">
+        <div className="flex items-center gap-6 bg-slate-900/95 backdrop-blur-xl px-10 py-5 rounded-[2.5rem] shadow-3xl border border-white/10">
+           <button onClick={() => window.print()} className="flex items-center gap-2 text-white/90 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all">
+              <AlignLeft size={16} className="text-indigo-400" /> Print Master
            </button>
-           
-           <div className="w-px h-6 bg-white/10 shrink-0" />
-           
-           <button 
-             onClick={handleCopyMarkdown}
-             className="flex-1 md:flex-none flex items-center justify-center gap-3 text-white/90 hover:text-white text-[11px] font-black uppercase tracking-widest transition-all md:hidden"
-           >
-              <AlignLeft size={16} className="text-slate-400" /> 
-              <span>Copy</span>
-           </button>
-
-           <div className="w-px h-6 bg-white/10 shrink-0 md:hidden" />
-
-           <button 
-             onClick={handleShare}
-             className="flex-1 md:flex-none flex items-center justify-center gap-3 text-white/90 hover:text-emerald-400 text-[11px] font-black uppercase tracking-widest transition-all"
-           >
-              <Share2 size={16} className="text-emerald-400" /> 
-              <span className="hidden sm:inline">Export Node</span>
-              <span className="sm:hidden">Share</span>
+           <div className="w-px h-6 bg-white/10" />
+           <button onClick={handleShare} className="flex items-center gap-2 text-white/90 hover:text-white text-[10px] font-black uppercase tracking-widest transition-all">
+              <Share2 size={16} className="text-emerald-400" /> Share Ledger
            </button>
         </div>
       </div>
