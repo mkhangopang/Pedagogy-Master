@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp
@@ -44,13 +43,21 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     } finally { setIsSaving(false); }
   };
 
+  const handleResetGrid = async () => {
+    setIsResetting(true);
+    try {
+      await fetch('/api/ai-reset', { method: 'POST' });
+      await fetchStatus();
+    } finally { setIsResetting(false); }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 px-2 text-left">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Universal Ingestion Node Active</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Master Intelligence Node Active</span>
           </div>
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
             <Fingerprint className="text-indigo-600" /> Neural Brain v4.0
@@ -59,7 +66,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto no-scrollbar">
           {[
             { id: 'logic', icon: <Cpu size={14}/>, label: 'Master Logic' },
-            { id: 'ingestion', icon: <Layers size={14}/>, label: 'Transformation' },
+            { id: 'ingestion', icon: <Layers size={14}/>, label: 'Ingestion' },
             { id: 'diagnostics', icon: <Activity size={14}/>, label: 'Diagnostics' },
             { id: 'dialects', icon: <Globe size={14}/>, label: 'Curricula' }
           ].map(tab => (
@@ -113,7 +120,9 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                       <span className="block text-[8px] font-black text-slate-500 uppercase">Neural Status</span>
                       <span className="block text-xs font-black text-indigo-400 uppercase tracking-widest">Locked context</span>
                    </div>
-                   <ShieldCheck size={24} className="text-emerald-500" />
+                   <button onClick={handleResetGrid} disabled={isResetting} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                      <RefreshCw size={16} className={isResetting ? 'animate-spin' : ''} />
+                   </button>
                 </div>
              </div>
 
@@ -123,7 +132,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Surgical Extraction</h4>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed italic">
-                  "Unrolled Column Protocol active. Grading, Domain, and Standard hierarchy enforced across all ingested nodes."
+                  "Unrolled Column Protocol active. Grading, Domain, and Chapter hierarchy enforced across all ingested nodes."
                 </p>
                 <div className="h-1.5 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
                    <div className="h-full bg-emerald-500 w-[96%]" />
@@ -158,7 +167,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                       <ProtocolItem label="[CTX: ...] Metadata Injection" />
                    </ul>
                 </div>
-                <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-black transition-all">Audit Global Registry</button>
+                <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl">Audit Global Registry</button>
              </div>
           </div>
           <div className="bg-slate-900 p-10 rounded-[3rem] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col justify-center">
@@ -194,7 +203,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">ID: {node.id}</p>
                 </div>
                 <div className="pt-4 border-t dark:border-white/5 flex items-center justify-between">
-                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Network Latency</span>
+                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Grid Latency</span>
                    <span className="text-[10px] font-bold text-indigo-500">{Math.floor(Math.random() * 200 + 100)}ms</span>
                 </div>
              </div>

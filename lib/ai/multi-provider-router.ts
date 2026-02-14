@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks, RetrievedChunk } from '../rag/retriever';
@@ -8,9 +7,9 @@ import { formatResponseInstructions } from './response-formatter';
 import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
- * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v122.0)
+ * WORLD-CLASS NEURAL SYNTHESIS ORCHESTRATOR (v123.0)
  * FEATURE: Surgical Precision Extraction & Vector Bypass.
- * STRATEGY: Find exact SLO line in Unrolled Master MD -> Stop -> Synthesize.
+ * STRATEGY: Master MD Surgical Line-Match -> Dialect-Aware Semantic Fallback.
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -32,7 +31,7 @@ export async function generateAIResponse(
   // 2. Resource Resolution
   let docQuery = supabase
     .from('documents')
-    .select('id, name, authority, subject, grade_level, extracted_text')
+    .select('id, name, authority, subject, grade_level, extracted_text, master_md_dialect')
     .eq('user_id', userId);
 
   if (priorityDocumentId) {
@@ -43,14 +42,13 @@ export async function generateAIResponse(
 
   const { data: activeDocs } = await docQuery;
   const activeDoc = activeDocs?.[0];
-  
-  const dialectTag = activeDoc?.extracted_text?.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
+  const dialectTag = activeDoc?.master_md_dialect || 'Standard';
 
   let vaultContent = "";
   let groundingMethod = 'None';
   let isGrounded = false;
 
-  // 3. SURGICAL EXTRACTION (DMMR v4.0) - Unrolled Line Match
+  // 3. SURGICAL EXTRACTION (DMMR v4.0) - Master MD Line Match
   if (activeDoc?.extracted_text && primaryCode) {
     const lines = activeDoc.extracted_text.split('\n');
     let targetIndex = -1;
@@ -64,7 +62,7 @@ export async function generateAIResponse(
     }
 
     if (targetIndex !== -1) {
-      // Trace hierarchy backwards to provide full contextual alignment
+      // Trace hierarchy backwards for context preservation (Protocol 3)
       let grade = "N/A";
       let domain = "N/A";
       let standard = "Standard";
@@ -77,7 +75,6 @@ export async function generateAIResponse(
         else if (l.startsWith('**Standard:**')) standard = l;
         else if (l.startsWith('**Benchmark')) benchmark = l;
         
-        // Stop once base context is established
         if (grade !== "N/A" && domain !== "N/A") break;
       }
 
@@ -94,13 +91,14 @@ ${benchmark}
     }
   }
 
-  // 4. VECTOR AUGMENTATION (Semantic Fallback)
+  // 4. DIALECT-AWARE VECTOR AUGMENTATION (Semantic Fallback)
   if (!isGrounded && activeDoc) {
     const retrievedChunks = await retrieveRelevantChunks({
       query: userPrompt,
       documentIds: [activeDoc.id],
       supabase,
-      matchCount: 8
+      matchCount: 8,
+      dialect: dialectTag
     });
 
     if (retrievedChunks.length > 0) {
@@ -135,9 +133,9 @@ ${responseInstructions}`;
 
   const result = await synthesize(finalPrompt, history.slice(-4), isGrounded, [], 'gemini', systemInstruction);
   
-  // Log grounding method to DB column (SQL v118)
-  if (isGrounded) {
-    supabase.from('documents').update({ last_grounding_method: groundingMethod }).eq('id', activeDoc?.id).then();
+  // Log grounding method to DB column (SQL v118 evolution)
+  if (isGrounded && activeDoc) {
+    supabase.from('documents').update({ last_grounding_method: groundingMethod }).eq('id', activeDoc.id).then();
   }
 
   return {
