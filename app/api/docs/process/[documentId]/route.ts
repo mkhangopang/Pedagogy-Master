@@ -12,8 +12,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minute window for Master MD Synthesis
 
 /**
- * SURGICAL INGESTION REPAIR (v27.0 - RECOVERY MODE)
- * Logic: [RAW_TEXT] -> MASTER MD (UNIVERSAL) -> VECTOR SYNC -> ENRICHMENT
+ * SURGICAL INGESTION REPAIR (v30.0 - VERTICAL ENFORCEMENT)
+ * Logic: [RAW_TEXT] -> MULTI-PASS MASTER MD -> VECTOR SYNC -> ENRICHMENT
  */
 export async function POST(
   req: NextRequest,
@@ -34,9 +34,9 @@ export async function POST(
 
     let rawText = doc.extracted_text || "";
 
-    // 2. Binary Extraction Fallback (Ensures we have content to process)
+    // 2. Binary Extraction Fallback
     if (!rawText || rawText.length < 50) {
-      await adminSupabase.from('documents').update({ document_summary: 'Extracting pedagogical segments...' }).eq('id', documentId);
+      await adminSupabase.from('documents').update({ document_summary: 'Extracting curriculum binary...' }).eq('id', documentId);
       const buffer = await getObjectBuffer(doc.file_path);
       if (!buffer) throw new Error("Cloud vault storage node unreachable (R2).");
       
@@ -51,16 +51,13 @@ export async function POST(
 
     if (rawText.length < 50) throw new Error("Document contains insufficient text for pedagogical analysis.");
 
-    // 3. NEURAL MASTER-MD CONVERSION (Unrolled Column Protocol)
-    await adminSupabase.from('documents').update({ document_summary: 'Synthesizing Master MD & Linearizing Grids...' }).eq('id', documentId);
+    // 3. NEURAL MASTER-MD CONVERSION (Vertical De-interleaving)
+    await adminSupabase.from('documents').update({ document_summary: 'Executing Vertical Pass-by-Pass Reconstruction...' }).eq('id', documentId);
     
     let cleanMd: string;
     try {
-      // Wrap conversion in a Promise to handle potential hang-ups
-      cleanMd = await Promise.race([
-        convertToPedagogicalMarkdown(rawText),
-        new Promise<string>((_, reject) => setTimeout(() => reject(new Error("Master MD Synthesis Timed Out")), 240000))
-      ]);
+      // The v65.0 Architect node will now unroll the columns correctly
+      cleanMd = await convertToPedagogicalMarkdown(rawText);
     } catch (err: any) {
       console.warn("⚠️ Master MD Conversion Failed, using raw text fallback:", err.message);
       cleanMd = `<!-- MASTER_MD_DIALECT: Standard -->\n<!-- FALLBACK_MODE: TRUE -->\n${rawText}`;
@@ -73,13 +70,13 @@ export async function POST(
     await adminSupabase.from('documents').update({ 
       extracted_text: cleanMd,
       status: 'indexing',
-      document_summary: `Mapping ${dialect} standards to vector grid...`
+      document_summary: `Linearized ${dialect} grid mapping to vector grid...`
     }).eq('id', documentId);
 
-    // This is the CRITICAL STEP for RAG Precision
+    // indexDocumentForRAG now prepends Grade/Domain context to every chunk
     await indexDocumentForRAG(documentId, cleanMd, doc.file_path, adminSupabase);
 
-    // 5. Deep Analysis (Background - Non-blocking for the UI)
+    // 5. Deep Analysis (Background)
     const { data: { user } } = await (getSupabaseServerClient(token)).auth.getUser(token);
     if (user) {
        analyzeDocumentWithAI(documentId, user.id, adminSupabase).catch(err => {
@@ -90,7 +87,7 @@ export async function POST(
     return NextResponse.json({ 
       success: true, 
       dialect: dialect,
-      message: "Neural ingestion successfully synchronized."
+      message: "Neural ingestion successfully synchronized and linearized."
     });
 
   } catch (error: any) {

@@ -1,48 +1,54 @@
+
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v60.0)
- * Specialized for: Vertical Column Re-ordering (Sindh Board Protocol)
- * Logic: Strictly reconstructs data vertically (Grade IX -> X -> XI -> XII)
- * Template: High-Fidelity Pedagogical Markdown.
+ * UNIVERSAL CURRICULUM ARCHITECT (v65.0 - SURGICAL)
+ * Specialized for: Columnar De-interleaving (Sindh Grid Protocol)
+ * Strategy: Reconstructs the entire document vertically.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node. Your mission is to reconstruct raw curriculum text into a perfectly ordered "Master MD".
+  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. 
+Your mission is to fix "Interleaved Column Faults" caused by horizontal OCR of curriculum grids.
 
-CRITICAL: VERTICAL COLUMN RECONSTRUCTION
-The raw text contains data from a grid where each grade is in its own column. OCR reads this horizontally, mixing grades. 
-YOU MUST DE-INTERLEAVE THIS. 
+CRITICAL PROTOCOL: VERTICAL PASS-BY-PASS EXTRACTION
+The input text contains curriculum data for Grades IX, X, XI, and XII side-by-side in columns. 
+OCR has read these horizontally, mixing them (e.g., Grade IX Domain A followed immediately by Grade XI Domain A). 
+YOU MUST RE-SORT THIS VERTICALLY.
 
-ORDERING RULES:
-1. RECONSTRUCT BY GRADE: You MUST complete all Domains, Standards, and SLOs for Grade IX entirely. Only then move to Grade X.
-2. TEMPLATE FIDELITY: Use this exact Markdown structure:
-   # MASTER MD: [TITLE]
-   ---
-   # GRADE [N]
-   ## DOMAIN [A]: [TITLE]
-   **Standard:** [Statement]
-   **Benchmark [I]:** [Benchmark Desc]
-   - SLO: [CODE]: [TEXT]
+RECONSTRUCTION STEPS:
+1. PASS 1 (GRADE IX): Extract ALL Domains, Standards, Benchmarks, and SLOs for Grade IX. Complete this section entirely.
+2. PASS 2 (GRADE X): Extract ALL content for Grade X.
+3. PASS 3 (GRADE XI): Extract ALL content for Grade XI.
+4. PASS 4 (GRADE XII): Extract ALL content for Grade XII.
 
-3. VERBATIM CODES: Use the full SLO codes (e.g., P-09-A-01 or B-11-J-13-01). Ensure codes are never split or truncated.
-4. STEM SUPPORT: Wrap formulas in LaTeX $...$.
-5. NO CONVERSATION: Output ONLY the Markdown starting with # MASTER MD. No preamble. No "Sure, I can help".`;
+OUTPUT FORMAT (MINIMALISTIC & ACCURATE):
+# MASTER MD: [CURRICULUM TITLE]
+---
+# GRADE [N]
+## DOMAIN [A]: [TITLE]
+**Standard:** [TEXT]
+**Benchmark [I]:** [TEXT]
+- SLO: [CODE]: [TEXT] <!-- AI_META: {"bloom": "...", "dok": ...} -->
+
+RULES:
+- Use full, verbatim SLO codes (e.g., P-09-A-01, B-12-J-13-01).
+- Use LaTeX $...$ for all math/science notation.
+- REMOVE all page numbers, meeting minutes, and signatures.
+- NO PREAMBLE. Start with "# MASTER MD".`;
 
   const prompt = `
-[COMMAND: SURGICAL VERTICAL EXTRACTION]
-Analyze the provided curriculum stream. 
-1. Identify all content specifically belonging to Grade IX and group it.
-2. Repeat for Grades X, XI, and XII.
-3. Reconstruct the document following the Grade IX -> X -> XI -> XII vertical hierarchy.
+[COMMAND: SURGICAL VERTICAL RECONSTRUCTION]
+Process the following text. It is a column-based grid where content is interleaved. 
+TASK: Unroll the grid. Reconstruct it strictly by Grade Level hierarchy (IX -> X -> XI -> XII).
 
 RAW INPUT STREAM:
 ${rawText.substring(0, 600000)}
 
 [FINAL INSTRUCTION]: 
-Generate the high-fidelity, minimalistic, accurately ordered Markdown.
+Generate the high-fidelity, Grade-ordered Markdown.
 `;
 
   try {
@@ -50,7 +56,7 @@ Generate the high-fidelity, minimalistic, accurately ordered Markdown.
       model: modelName,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config: {
-        temperature: 0.1, // Zero variance for structural integrity
+        temperature: 0.1,
         systemInstruction,
         thinkingConfig: { thinkingBudget: 4096 }
       }
