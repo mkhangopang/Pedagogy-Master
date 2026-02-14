@@ -1,7 +1,7 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
-import { parseUserQuery } from './query-parser';
 
 export interface RetrievedChunk {
   chunk_id: string;
@@ -14,8 +14,8 @@ export interface RetrievedChunk {
 }
 
 /**
- * TIERED NEURAL RETRIEVER (v38.0)
- * Optimized for Dialect-Aware Hybrid Search (SQL v110).
+ * TIERED NEURAL RETRIEVER (v38.1 - RESILIENT)
+ * Optimized for Dialect-Aware Hybrid Search with Auto-Fallback.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -44,15 +44,20 @@ export async function retrieveRelevantChunks({
       dialect_filter: dialect || null
     });
 
-    if (rpcError) {
-      console.warn('⚠️ hybrid_search_chunks_v6 failed, falling back to basic vector search.');
+    // RECOVERY LOGIC: If dialect filter is too strict and yields 0 results, 
+    // fallback to broader search to prevent 0% grounding.
+    if (rpcError || !hybridChunks || hybridChunks.length === 0) {
+      if (rpcError) console.warn('⚠️ hybrid_search_chunks_v6 RPC error, engaging fallback.');
+      
       const { data: fallback, error: fallbackError } = await supabase.rpc('hybrid_search_chunks_v4', {
         query_text: query,
         query_embedding: queryEmbedding,
         match_count: matchCount, 
         filter_document_ids: documentIds
       });
+      
       if (fallbackError) throw fallbackError;
+      
       return (fallback || []).map((m: any) => ({
         chunk_id: m.id,
         document_id: m.document_id,
@@ -63,7 +68,7 @@ export async function retrieveRelevantChunks({
       }));
     }
 
-    return (hybridChunks || []).map((m: any) => ({
+    return hybridChunks.map((m: any) => ({
       chunk_id: m.id,
       document_id: m.document_id,
       chunk_text: m.chunk_text,

@@ -1,9 +1,10 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
 /**
- * HIGH-FIDELITY PEDAGOGICAL INDEXER (v240.0)
+ * HIGH-FIDELITY PEDAGOGICAL INDEXER (v241.0 - SURGICAL REPAIR)
  * Logic: Continuum-Aware Hierarchical Mapping.
  * Implements Protocol 3: Context Prepending [CTX: ...]
  */
@@ -15,6 +16,10 @@ export async function indexDocumentForRAG(
   preExtractedMeta?: any
 ) {
   try {
+    if (!content || content.length < 10) {
+      throw new Error("Empty content provided for indexing.");
+    }
+
     const meta = preExtractedMeta || {};
     const lines = content.split('\n');
     
@@ -47,7 +52,10 @@ export async function indexDocumentForRAG(
 
       // EXTRACT SLO CODES FOR METADATA
       const foundCodes = extractSLOCodes(line);
-      foundCodes.forEach(c => { if (!codesInChunk.includes(c.code)) codesInChunk.push(c.code); });
+      foundCodes.forEach(c => { 
+        const normalized = c.code.replace(/[\s\[\]-]/g, '').toUpperCase();
+        if (!codesInChunk.includes(normalized)) codesInChunk.push(normalized); 
+      });
 
       buffer += (buffer ? '\n' : '') + line;
 
@@ -57,22 +65,26 @@ export async function indexDocumentForRAG(
         const descriptor = `[CTX: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard} | Benchmark=${currentBenchmark}]\n`;
         const enrichedText = descriptor + buffer.trim();
 
-        nodes.push({
-          text: enrichedText,
-          metadata: {
-            grade: currentGrade,
-            domain: currentDomain,
-            standard: currentStandard,
-            benchmark: currentBenchmark,
-            slo_codes: [...codesInChunk],
-            dialect: dialect
-          }
-        });
+        if (buffer.trim().length > 20) { // Safety check to prevent ghost chunks
+          nodes.push({
+            text: enrichedText,
+            metadata: {
+              grade: currentGrade,
+              domain: currentDomain,
+              standard: currentStandard,
+              benchmark: currentBenchmark,
+              slo_codes: [...codesInChunk],
+              dialect: dialect
+            }
+          });
+        }
 
         buffer = "";
         codesInChunk = [];
       }
     }
+
+    if (nodes.length === 0) throw new Error("Ingestion node produced 0 valid segments. Verify Markdown structure.");
 
     // Grid Sync Protocol (SQL v110 aware)
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
@@ -80,42 +92,47 @@ export async function indexDocumentForRAG(
     const BATCH_SIZE = 10;
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
-      const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
       
-      const records = batch.map((node, j) => {
-        const vec = embeddings[j];
-        if (!vec || vec.length !== 768) return null;
+      try {
+        const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
+        
+        const records = batch.map((node, j) => {
+          const vec = embeddings[j];
+          if (!vec || vec.length !== 768) return null;
 
-        // Determine chunk type and cognitive weight (SQL v110)
-        let type = 'general';
-        let weight = 0.5;
-        if (node.metadata.slo_codes.length > 0) {
-          type = 'slo';
-          weight = 0.9;
-        } else if (node.text.toLowerCase().includes('assessment') || node.text.toLowerCase().includes('quiz')) {
-          type = 'assessment';
-          weight = 0.8;
+          let type = 'general';
+          let weight = 0.5;
+          if (node.metadata.slo_codes.length > 0) {
+            type = 'slo';
+            weight = 0.9;
+          } else if (node.text.toLowerCase().includes('assessment') || node.text.toLowerCase().includes('quiz')) {
+            type = 'assessment';
+            weight = 0.8;
+          }
+
+          return {
+            document_id: documentId,
+            chunk_text: node.text,
+            embedding: vec,
+            slo_codes: node.metadata.slo_codes,
+            metadata: node.metadata,
+            chunk_index: i + j,
+            chunk_type: type,
+            cognitive_weight: weight
+          };
+        }).filter(Boolean);
+
+        if (records.length > 0) {
+          const { error } = await supabase.from('document_chunks').insert(records);
+          if (error) throw error;
         }
-
-        return {
-          document_id: documentId,
-          chunk_text: node.text,
-          embedding: vec,
-          slo_codes: node.metadata.slo_codes,
-          metadata: node.metadata,
-          chunk_index: i + j,
-          chunk_type: type,
-          cognitive_weight: weight
-        };
-      }).filter(Boolean);
-
-      if (records.length > 0) {
-        const { error } = await supabase.from('document_chunks').insert(records);
-        if (error) throw error;
+      } catch (err) {
+        console.error(`❌ Batch Sync Fault [${i}-${i+BATCH_SIZE}]:`, err);
+        // Continue with next batch instead of crashing the whole document
       }
     }
 
-    // Update document with evolved metadata (SQL v110/v118)
+    // Final Status Commit
     await supabase.from('documents').update({ 
       status: 'ready',
       rag_indexed: true,

@@ -29,12 +29,23 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
   const fetchAuditReport = async () => {
     setIsLoading(true);
     try {
-      // Try local cache first then fall back to static
-      const res = await fetch('/audit_report.json');
-      const data = await res.json();
-      setReport(data);
+      // First attempt to load dynamic report, fallback to static template
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/admin/run-audit', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        setReport(data);
+      } else {
+        const staticRes = await fetch('/audit_report.json');
+        const staticData = await staticRes.json();
+        setReport(staticData);
+      }
     } catch (err) {
-      console.error("Audit load failed", err);
+      console.error("Audit load fault:", err);
     } finally {
       setIsLoading(false);
     }
@@ -47,9 +58,9 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 800));
       setAuditStep('Polling Vector Database Health...');
-      await new Promise(r => setTimeout(r, 1000));
+      await new Promise(r => setTimeout(r, 800));
       setAuditStep('Verifying AI Synthesis Handshake...');
 
       const response = await fetch('/api/admin/run-audit', {
@@ -73,19 +84,19 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
 
   const generateWhitepaper = () => {
     if (!report) return;
-    const roadmapText = report.roadmap.map((item: string) => `- ${item}`).join('\n');
+    const roadmapText = report.roadmap?.map((item: string) => `- ${item}`).join('\n') || '';
     const content = `# EDUNEXUS AI: SYSTEM AUDIT v${report.audit_version}
 Generated: ${new Date().toLocaleString()}
 
 ## 1. PERFORMANCE METRICS
-- RAG Precision: ${(report.benchmarks.rag_precision * 100).toFixed(1)}%
-- Hallucination Rate: ${(report.benchmarks.hallucination_rate * 100).toFixed(3)}%
-- Latency: ${report.benchmarks.average_latency}
+- RAG Precision: ${(report.benchmarks?.rag_precision * 100).toFixed(1)}%
+- Hallucination Rate: ${(report.benchmarks?.hallucination_rate * 100).toFixed(3)}%
+- Latency: ${report.benchmarks?.average_latency}
 
 ## 2. WORLD-CLASS ROADMAP
 ${roadmapText}
 
-STATUS: ${report.benchmarks.infrastructure_health}
+STATUS: ${report.benchmarks?.infrastructure_health}
 `;
     const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -103,6 +114,10 @@ STATUS: ${report.benchmarks.infrastructure_health}
       </div>
     );
   }
+
+  const ragPrecisionValue = report?.benchmarks?.rag_precision != null 
+    ? `${(report.benchmarks.rag_precision * 100).toFixed(1)}%` 
+    : 'N/A';
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700 pb-20 px-2 md:px-0 text-left">
@@ -144,7 +159,7 @@ STATUS: ${report.benchmarks.infrastructure_health}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <MetricCard 
           label="RAG Precision" 
-          value={report?.benchmarks?.rag_precision ? `${(report.benchmarks.rag_precision * 100).toFixed(1)}%` : '0.0%'} 
+          value={ragPrecisionValue} 
           status="Optimal" 
           color="text-emerald-500" 
           isAuditing={isAuditing}
@@ -244,7 +259,7 @@ STATUS: ${report.benchmarks.infrastructure_health}
                  </div>
               </div>
               <div className="p-8 border-t dark:border-white/5 bg-slate-50/50 dark:bg-black/20 flex justify-between items-center">
-                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Last audit run: {new Date(report?.last_run).toLocaleString()}</p>
+                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Last audit run: {report?.last_run ? new Date(report.last_run).toLocaleString() : 'N/A'}</p>
                  <button onClick={() => setShowReportModal(false)} className="px-6 py-2.5 bg-slate-900 text-white dark:bg-white dark:text-black rounded-xl font-black text-[10px] uppercase tracking-widest">Close Findings</button>
               </div>
            </div>
@@ -261,7 +276,7 @@ const MetricCard = ({ label, value, status, color, isAuditing }: any) => (
         {isAuditing ? '---' : value}
      </div>
      <div className="flex items-center gap-1.5 mt-4">
-        <div className={`w-1.5 h-1.5 rounded-full ${isAuditing ? 'bg-indigo-400 animate-bounce' : (value === '0.0%' || value === '0%' || value === '---' ? 'bg-slate-300' : 'bg-emerald-500')}`} />
+        <div className={`w-1.5 h-1.5 rounded-full ${isAuditing ? 'bg-indigo-400 animate-bounce' : (value === '0.0%' || value === '0%' || value === '---' || value === 'N/A' ? 'bg-slate-300' : 'bg-emerald-500')}`} />
         <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{isAuditing ? 'Auditing...' : status}</span>
      </div>
   </div>
