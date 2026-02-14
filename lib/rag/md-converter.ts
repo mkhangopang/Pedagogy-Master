@@ -1,50 +1,57 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v75.0 - HIERARCHICAL)
- * Specialized for: Natural Language SLOs (Sindh Biology 2019)
- * Logic: Reconstructs document vertically and synthesizes missing codes.
- * Template: Verbatim "Master MD" Structure.
+ * UNIVERSAL CURRICULUM ARCHITECT (v85.0 - SEQUENTIAL FIDELITY)
+ * Specialized for: Sindh Biology 2019 / Natural Language SLOs
+ * Logic: Strict sectional verticalization and hierarchical code synthesis.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node. Your mission is to transform raw OCR text into a structured "Master MD" library asset.
+  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. Your mission is to transform messy OCR curriculum text into a structured, vertically aligned "Master MD" asset.
 
-CRITICAL: NATURAL LANGUAGE TO DETERMINISTIC CODE PROTOCOL
-Documents like Sindh Biology 2019 list objectives under "Understanding" or "Skills" using "Student will:" without explicit codes. 
-YOU MUST SYNTHESIZE CODES to ensure searchability.
+CRITICAL: SEQUENTIAL RECONSTRUCTION PROTOCOL
+The input text for Sindh Biology 2019 is often mixed due to OCR reading columns horizontally. You MUST re-sort and unroll this into a linear progression.
 
 RECONSTRUCTION RULES:
-1. HIERARCHY: Structure by Section -> Chapter -> Major Concept -> Domain.
-2. SYNTHETIC CODING:
-   - For every "Student will:" bullet, generate a code: [Sub]-[Grade]-[Chapter]-[Index]
-   - Example: BIO-XI-C01-01 (Biology, Grade XI, Chapter 01, SLO 01).
-3. DOMAINS: Map "Understanding" content to (U) and "Skills" content to (S) in metadata.
-4. MARKDOWN TEMPLATE (STRICT):
-   # MASTER MD: [CURRICULUM TITLE]
-   ---
-   # GRADE [XI/XII]
-   ## CHAPTER [N]: [TITLE]
-   **Domain:** [Understanding/Skills]
-   - SLO: [SYNTHETIC-CODE]: [Verbatim Text] <!-- AI_META: {"bloom": "...", "dok": ...} -->
+1. HIERARCHY (STRICT): 
+   # GRADE [XI or XII]
+   ## CHAPTER [NN]: [TITLE]
+   ### DOMAIN: [Understanding / Skills / STS]
+   - SLO: [SYNTHETIC_CODE]: [TEXT]
 
-5. NO NOISE: Scrub page numbers, board member lists, and instructions to authors.
-6. VERTICALITY: Process the document vertically. Do not interleave chapters.
+2. SLO SYNTHESIS & SEQUENCING:
+   - Identify every bullet following "Student will:".
+   - Generate a deterministic code: [SUB]-[GRADE]-[CH]-[DOMAIN_KEY]-[INDEX]
+   - Example: BIO-XI-C01-U-01 (Biology, Grade XI, Ch 1, Understanding, SLO 1).
+   - Domain Keys: U (Understanding), S (Skills), T (STS).
+   - Chapter Keys: C01 through C27 as defined in the contents.
+   - Indices MUST be sequential (01, 02, 03...) within each domain block.
+
+3. CONTENT ISOLATION:
+   - Complete ALL of Grade XI (Chapters 1-13) before starting Grade XII (Chapters 14-27).
+   - Do NOT interleave content. If a page break splits a chapter, merge the text back together logically.
+   - REMOVE ALL: page numbers (e.g., "129 | P a g e"), repeating headers, member lists, and aims/objectives lists. Focus ONLY on the Chapter-wise Learning Outcomes.
+
+4. STEM FIDELITY:
+   - Wrap all chemical symbols, formulas, and math in LaTeX $...$ (e.g., $CO_2$, $C_6H_{12}O_6$).
 
 OUTPUT ONLY THE MARKDOWN starting with # MASTER MD.`;
 
   const prompt = `
-[COMMAND: SURGICAL PEDAGOGICAL EXTRACTION]
-Analyze the provided curriculum stream. Reconstruct it following the vertical Grade XI -> Grade XII hierarchy.
-For the "Learning Outcomes" sections, identify every "Student will:" bullet and assign it a deterministic code like BIO-XI-C01-01.
+[COMMAND: SURGICAL SEQUENTIAL RECONSTRUCTION]
+Process the Sindh Biology 2019 curriculum text. 
+1. Map out the Chapters sequentially (1-27).
+2. Assign each "Student will:" bullet to its correct Chapter and Domain (Understanding vs Skills).
+3. Assign a deterministic code like BIO-XI-C01-U-01 to every objective.
+4. Ensure Grade XI and Grade XII are in distinct, non-interleaved blocks.
 
-RAW INPUT STREAM (SINDH BIOLOGY 2019):
+RAW INPUT STREAM:
 ${rawText.substring(0, 800000)}
 
 [FINAL INSTRUCTION]: 
-Generate the high-fidelity, minimalistic, accurately ordered Master MD. Use LaTeX $...$ for chemical formulas.
+Generate the high-fidelity Master MD with perfect vertical alignment.
 `;
 
   try {

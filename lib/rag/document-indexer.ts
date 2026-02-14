@@ -3,9 +3,9 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 /**
- * HIERARCHICAL PEDAGOGICAL INDEXER (v250.0)
- * Logic: Hierarchical Context Injection.
- * Optimized for: Grade-Domain-Standard preservation.
+ * HIERARCHICAL PEDAGOGICAL INDEXER (v260.0)
+ * Logic: Strict Hierarchy Context Injection.
+ * Optimized for: Grade -> Chapter -> Domain preservation.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -23,8 +23,8 @@ export async function indexDocumentForRAG(
     const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || preExtractedMeta?.dialect || 'Standard';
 
     let currentGrade = "N/A";
+    let currentChapter = "N/A";
     let currentDomain = "N/A";
-    let currentStandard = "General";
     
     const nodes: any[] = [];
     let buffer = "";
@@ -37,10 +37,13 @@ export async function indexDocumentForRAG(
       // HIERARCHY DETECTION
       if (line.startsWith('# GRADE')) {
         currentGrade = line.replace('# GRADE', '').trim();
-      } else if (line.startsWith('## DOMAIN')) {
-        currentDomain = line.replace('## DOMAIN', '').trim();
-      } else if (line.startsWith('**Standard:**')) {
-        currentStandard = line.replace('**Standard:**', '').trim();
+        currentChapter = "N/A";
+        currentDomain = "N/A";
+      } else if (line.startsWith('## CHAPTER')) {
+        currentChapter = line.replace('## CHAPTER', '').trim();
+        currentDomain = "N/A";
+      } else if (line.startsWith('### DOMAIN')) {
+        currentDomain = line.replace('### DOMAIN', '').trim();
       }
 
       // SLO CODE EXTRACTION
@@ -52,10 +55,13 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK SEGMENTATION (800 chars average for pedagogical density)
-      if (buffer.length >= 800 || i === lines.length - 1) {
-        // CONTEXT INJECTION: Prepend the path to ensure the vector "remembers" its location
-        const contextHeader = `[CURRICULUM_CONTEXT: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard}]\n`;
+      // CHUNK SEGMENTATION (Logic: Header change or 1200 chars)
+      const nextLine = lines[i+1]?.trim() || "";
+      const isHeaderChange = nextLine.startsWith('#');
+
+      if (buffer.length >= 1200 || isHeaderChange || i === lines.length - 1) {
+        // CONTEXT INJECTION: Prepend hierarchy to ensure vector "remembers" its location
+        const contextHeader = `[CURRICULUM_CONTEXT: Grade=${currentGrade} | Chapter=${currentChapter} | Domain=${currentDomain}]\n`;
         const enrichedText = contextHeader + buffer.trim();
 
         if (buffer.trim().length > 30) {
@@ -63,8 +69,8 @@ export async function indexDocumentForRAG(
             text: enrichedText,
             metadata: {
               grade: currentGrade,
+              chapter: currentChapter,
               domain: currentDomain,
-              standard: currentStandard,
               slo_codes: Array.from(codesInChunk),
               dialect: dialect
             }

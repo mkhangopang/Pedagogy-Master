@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
@@ -43,32 +42,30 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     let text = activeDoc.extractedText;
 
     // 1. Grade-Level Aesthetic Chapters
-    // Matches: # GRADE IX
     text = text.replace(/^# GRADE\s+(.+)$/gm, '\n\n<div class="grade-gate pt-20 mt-20 border-t-8 border-indigo-600/10"><div class="flex flex-col items-center text-center"><div class="w-16 h-16 bg-indigo-600 rounded-3xl flex items-center justify-center text-white shadow-2xl mb-6"><GraduationCap size={32}/></div><span class="text-indigo-600 font-black text-xs uppercase tracking-[0.5em] mb-4">Vertical Curriculum Node</span><h1 class="text-6xl md:text-8xl font-black text-slate-900 dark:text-white tracking-tighter uppercase mb-16">$1</h1></div></div>');
     
-    // 2. Domain Block Architecture
-    // Matches: ## DOMAIN A: Title
-    text = text.replace(/^## DOMAIN\s+([A-Z]):\s+(.+)$/gm, '\n\n<div class="domain-wrapper mt-16 mb-8 bg-slate-50 dark:bg-white/5 p-10 rounded-[3.5rem] border border-slate-100 dark:border-white/5 shadow-sm"><div class="flex items-center gap-4 mb-2"><span class="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500">Subject Domain</span><div class="h-px bg-indigo-500/20 flex-1"></div></div><h2 class="text-3xl md:text-5xl font-black text-slate-900 dark:text-white uppercase tracking-tight">$1: $2</h2></div>');
+    // 2. Chapter / Domain Block Architecture
+    text = text.replace(/^## CHAPTER\s+(\d+):\s*(.+)$/gm, '\n\n<div class="chapter-wrapper mt-16 mb-8 bg-indigo-50 dark:bg-indigo-950/20 p-10 rounded-[3.5rem] border border-indigo-100 dark:border-indigo-500/20"><div class="flex items-center gap-4 mb-2"><span class="text-[10px] font-black uppercase tracking-[0.3em] text-indigo-500">Chapter $1</span><div class="h-px bg-indigo-500/20 flex-1"></div></div><h2 class="text-3xl md:text-5xl font-black text-slate-900 dark:text-white uppercase tracking-tight">$2</h2></div>');
+    
+    text = text.replace(/^### DOMAIN:\s*(.+)$/gm, '\n\n<div class="domain-header mt-10 mb-4 px-4"><span class="text-[11px] font-black uppercase tracking-[0.4em] text-slate-400">$1 Focus Area</span></div>');
 
     // 3. Policy & Strategy Blocks
     text = text.replace(/^\*\*Standard:\*\*\s*(.+)$/gm, '<div class="bg-indigo-600/5 dark:bg-indigo-400/5 p-8 rounded-3xl border-l-4 border-indigo-600 mb-10"><strong class="block text-[10px] font-black uppercase tracking-widest text-indigo-600 mb-2">Institutional Standard</strong><p class="text-xl font-bold text-slate-800 dark:text-slate-100 leading-snug">$1</p></div>');
-    text = text.replace(/^\*\*Benchmark\s+(.+):\*\*\s*(.+)$/gm, '<div class="mt-12 mb-6 pl-6 border-l-2 border-slate-200 dark:border-white/10"><span class="text-[9px] font-black uppercase text-slate-400 tracking-widest">Benchmark $1</span><h4 class="text-2xl font-bold text-slate-900 dark:text-white mt-1">$2</h4></div>');
-
-    // 4. Interactive SLO Identity Cards
-    // Matches: - SLO: P-09-A-01: [Description]
+    
+    // 4. Interactive SLO Identity Cards (Supports synthetic codes)
     const sloRegex = /^- SLO:\s*([A-Z0-9-]+):\s*([^\n<]+)/gm;
     text = text.replace(sloRegex, (match, code, desc) => {
         return `\n<div class="slo-card group relative bg-white dark:bg-[#151515] p-6 rounded-[2rem] border border-slate-100 dark:border-white/5 shadow-sm hover:shadow-xl hover:border-indigo-500/50 transition-all cursor-pointer mb-5 slo-interactive-pill overflow-hidden" data-slo="${code.trim()}">
           <div class="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-10 transition-opacity"><Database size={40} /></div>
           <div class="flex items-start gap-6">
-             <div class="px-5 py-2.5 bg-indigo-600 text-white rounded-xl font-black text-[12px] tracking-widest shadow-lg shadow-indigo-600/20 shrink-0 border-b-4 border-indigo-800">
+             <div class="px-4 py-2 bg-indigo-600 text-white rounded-xl font-black text-[10px] tracking-widest shadow-lg shadow-indigo-600/20 shrink-0 border-b-4 border-indigo-800">
                ${code.trim()}
              </div>
              <div class="flex-1 min-w-0">
-               <p class="text-[16px] font-bold leading-relaxed text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">${desc.trim()}</p>
+               <p class="text-[15px] font-bold leading-relaxed text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">${desc.trim()}</p>
              </div>
              <div class="opacity-0 group-hover:opacity-100 transition-opacity p-2 bg-slate-50 dark:bg-white/5 rounded-xl text-slate-400">
-               <Copy size={18} />
+               <Copy size={16} />
              </div>
           </div>
         </div>`;
@@ -97,7 +94,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-2xl shadow-indigo-600/20"><FileText size={24}/></div>
           <div>
             <h2 className="text-base font-black uppercase tracking-tight dark:text-white leading-none mb-1">{activeDoc.name}</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.4em]">Verified Master Ledger • Vertical Sequence v2.0</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.4em]">Verified Master Ledger • Vertical Sequence v3.0</p>
           </div>
         </div>
         <button onClick={onClose} className="p-3.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-2xl transition-all hover:scale-105 active:scale-95"><X size={24}/></button>

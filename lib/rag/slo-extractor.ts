@@ -11,13 +11,13 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // 1. New Synthetic Biology/Physics Code: BIO-XI-C01-01 or PHY-IX-A-01
-  /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?([A-Z])?(\d{1,2})[-\s]?(\d{1,3})\b/g,
+  // 1. New v85.0 Synthetic Biology Code: BIO-XI-C01-U-01
+  /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?C(\d{1,2})[-\s]?([UST])[-\s]?(\d{1,3})\b/g,
 
   // 2. Synthesized Logic Code (Subject-Grade-CH-Domain-Index)
   /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?CH(\d{1,2})[-\s]?([US])[-\s]?(\d{1,3})\b/g,
 
-  // 3. New Master MD Generated 5-Part Code: B-11-J-13-01
+  // 3. Compact Sindh/Master MD Code: B-11-J-13-01
   /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{1,3})\b/g,
 
   // 4. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
@@ -70,7 +70,7 @@ function calculateConfidence(code: string, context: string): number {
   let confidence = 0.5;
   const lowerContext = context.toLowerCase();
   
-  if (/^[A-Z]{2,4}[IVX\d]+C\d+\d+$/.test(code)) return 0.99; // Synthetic
+  if (/^[A-Z]{2,4}[IVX\d]+C\d+[UST]\d+$/.test(code)) return 0.99; // Synthetic v85
   if (/^[A-Z]{1,3}\d{1,2}[A-Z]\d{1,2}\d{1,3}$/.test(code)) return 0.98; // 5-part
   if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,4}$/.test(code)) return 0.95; // 4-part
 
