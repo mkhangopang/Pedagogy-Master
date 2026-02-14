@@ -2,7 +2,7 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM INGESTION NODE (v4.0 - NEURAL BRAIN)
+ * UNIVERSAL CURRICULUM INGESTION NODE (v4.0 - MASTER MD)
  * Protocol: Unrolled Column Protocol
  * Logic: Linearizes complex curriculum hierarchies into atomic, RAG-optimized segments.
  */
@@ -17,42 +17,50 @@ CORE TRANSFORMATION RULES:
 
 1. 🏛️ UNROLLED COLUMN PROTOCOL:
    - Each grade must be a self-contained unit.
+   - Separate grades with '---'.
    - Use strict markdown hierarchy:
      # GRADE [NUM] (e.g., # GRADE IX)
-     ## DOMAIN [IDENTIFIER]: [NAME] (e.g., ## DOMAIN C: MECHANICS)
-     **Standard:** [Standard statement]
-     **Benchmark [NUM]:** [Benchmark description]
-   - Use '---' to separate grade levels.
+     ## DOMAIN [ID]: [NAME] (e.g., ## DOMAIN C: MECHANICS)
+     **Standard:** [Full standard statement]
+     **Benchmark [NUM]:** [Full benchmark description]
 
 2. 🧬 SURGICAL SLO EXTRACTION:
-   - Parse every Student Learning Outcome (SLO) as a discrete unit.
+   - Identify every Student Learning Outcome (SLO) as an atomic unit.
    - Generate/Verify Unique ID: [Subject Code]-[Grade]-[Domain]-[Number] (e.g., P-09-C-01).
-   - Format: "- SLO: [ID]: [Action Verb] [Content] [Context in brackets]."
-   - Deep Bloom's Analysis: Identify action verbs and map to cognitive levels (Remember, Understand, Apply, Analyze, Evaluate, Create).
+   - Use exact wording. Maintain all formulas in LaTeX $...$ or $$...$$.
+   - Maintain all bracketed qualifiers [including...] and parenthetical context.
 
-3. 🧪 STEM FIDELITY:
-   - Wrap ALL formulas and equations in LaTeX $...$ or $$...$$.
-   - Maintain all bracketed qualifiers [including...] and parenthetical context exactly.
+3. 🧠 DEEP BLOOM'S ANALYSIS:
+   - For every SLO, identify the cognitive level: Remember, Understand, Apply, Analyze, Evaluate, Create.
+   - Logic: 
+     - Remember: Define, State, List, Identify.
+     - Understand: Explain, Differentiate, Illustrate, Justify.
+     - Apply: Calculate, Solve, Use, Apply, Determine.
+     - Analyze: Analyze, Critique, Assess, Investigate.
 
 4. 🧹 ADMINISTRATIVE SCRUBBING:
-   - Remove prefaces, page numbers, and institutional boilerplate unless it contains core metadata.
-   - Separate "mingled" text where headers are fused with body content.
+   - Remove headers, footers, prefaces, and page numbers.
+   - Handle mid-sentence page breaks by joining text before ID assignment.
 
-RESULT: A RAG-optimized pedagogical masterpiece.`;
+OUTPUT FORMAT:
+# MASTER MD: [CURRICULUM NAME] ([YEAR])
+## PREAMBLE
+[Protocol declaration and metadata]
+---
+# GRADE [N]
+## DOMAIN [LETTER]: [NAME]
+**Standard:** ...
+**Benchmark [N]:** ...
+- SLO: [ID]: [Action Verb] [Content] [Context].
+...`;
 
   const prompt = `
 [MISSION: UNIVERSAL CURRICULUM TRANSFORMATION]
-Analyze the following curriculum stream and output a MASTER MD file following the Unrolled Column Protocol.
+Analyze the curriculum text and produce a high-fidelity MASTER MD following the Unrolled Column Protocol. 
+Ensure every SLO has a unique ID and is independently retrievable.
 
-RAW TEXT:
-${rawText.substring(0, 450000)}
-
-[OUTPUT SPECIFICATION]:
-- Start with # MASTER MD: [CURRICULUM NAME] ([YEAR])
-- Include a PREAMBLE section with processing metadata.
-- Group all content by GRADE, then DOMAIN, then STANDARD/BENCHMARK.
-- Ensure every SLO has a unique code.
-- Wrap all math in $...$.`;
+RAW DATA:
+${rawText.substring(0, 450000)}`;
 
   try {
     const response = await ai.models.generateContent({
@@ -67,11 +75,10 @@ ${rawText.substring(0, 450000)}
 
     const masterMd = response.text || rawText;
     
-    // Dialect Detection for registry
+    // Dialect registry tag
     let dialect = 'Standard';
     if (masterMd.toLowerCase().includes('sindh')) dialect = 'Pakistani-Sindh-2024';
     else if (masterMd.toLowerCase().includes('cambridge')) dialect = 'Cambridge-IGCSE';
-    else if (masterMd.toLowerCase().includes('ksa')) dialect = 'KSA-Vision-2030';
     
     return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n<!-- INGESTION_ENGINE: v40.0-PRO -->\n${masterMd}`;
   } catch (err) {
