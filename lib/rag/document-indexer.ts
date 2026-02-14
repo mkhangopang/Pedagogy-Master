@@ -3,9 +3,9 @@ import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 
 /**
- * HIGH-FIDELITY PEDAGOGICAL INDEXER (v242.0 - RECOVERY MODE)
- * Logic: Continuum-Aware Hierarchical Mapping.
- * Implements Protocol 3: Context Prepending [CTX: ...]
+ * HIERARCHICAL PEDAGOGICAL INDEXER (v245.0)
+ * Logic: Context-Aware Recursive Segmentation.
+ * Implements Protocol 4: Hierarchical Prepending.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -25,7 +25,6 @@ export async function indexDocumentForRAG(
     let currentGrade = "N/A";
     let currentDomain = "General";
     let currentStandard = "General";
-    let currentBenchmark = "I";
     
     const nodes: any[] = [];
     let buffer = "";
@@ -35,18 +34,15 @@ export async function indexDocumentForRAG(
       const line = lines[i].trim();
       if (!line) continue;
 
-      // DETECT CONTEXTUAL HIERARCHY
-      if (line.startsWith('# GRADE')) {
-        currentGrade = line.replace('# GRADE', '').trim();
+      // DETECT PEDAGOGICAL PARENTAGE
+      if (line.includes('Institutional Grade Node') || line.startsWith('# GRADE')) {
+        currentGrade = line.replace(/# GRADE|Institutional Grade Node/g, '').trim();
       } else if (line.startsWith('## DOMAIN')) {
         currentDomain = line.replace('## DOMAIN', '').trim();
       } else if (line.startsWith('**Standard:**')) {
         currentStandard = line.replace('**Standard:**', '').trim();
-      } else if (line.startsWith('**Benchmark')) {
-        currentBenchmark = line.match(/Benchmark\s*([IVXLCDM\d]+)/i)?.[1] || "I";
       }
 
-      // EXTRACT & NORMALIZE SLO CODES
       const foundCodes = extractSLOCodes(line);
       foundCodes.forEach(c => { 
         const normalized = normalizeSLO(c.code);
@@ -55,10 +51,11 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK TRIGGER (1200 chars for optimal reasoning density)
-      if (buffer.length >= 1200 || i === lines.length - 1) {
-        const descriptor = `[CTX: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard} | Benchmark=${currentBenchmark}]\n`;
-        const enrichedText = descriptor + buffer.trim();
+      // CHUNK TRIGGER (Optimal for Educational Content)
+      if (buffer.length >= 1000 || i === lines.length - 1) {
+        // HIERARCHICAL PREPENDING (Protocol 4)
+        const contextHeader = `[CONTEXT: Grade=${currentGrade} | Domain=${currentDomain} | Standard=${currentStandard}]\n`;
+        const enrichedText = contextHeader + buffer.trim();
 
         if (buffer.trim().length > 30) {
           nodes.push({
@@ -67,7 +64,6 @@ export async function indexDocumentForRAG(
               grade: currentGrade,
               domain: currentDomain,
               standard: currentStandard,
-              benchmark: currentBenchmark,
               slo_codes: Array.from(codesInChunk),
               dialect: dialect
             }
@@ -79,12 +75,12 @@ export async function indexDocumentForRAG(
       }
     }
 
-    if (nodes.length === 0) throw new Error("Neural segmentation yielded zero nodes.");
+    if (nodes.length === 0) throw new Error("Segmentation failure.");
 
-    // Scorch previous segments to prevent ghosting
+    // Scorch old chunks
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    const BATCH_SIZE = 10;
+    const BATCH_SIZE = 12;
     let chunksWritten = 0;
 
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
@@ -113,14 +109,11 @@ export async function indexDocumentForRAG(
           if (insertError) throw insertError;
           chunksWritten += records.length;
         }
-      } catch (err: any) {
-        console.error(`❌ Batch Failure [${i}]:`, err.message);
+      } catch (err) {
+        console.error(`❌ Batch Sync Fault [${i}]`);
       }
     }
 
-    if (chunksWritten === 0) throw new Error("Vector grid refused all segments.");
-
-    // Update master record only on verifiable success
     await supabase.from('documents').update({ 
       status: 'ready',
       rag_indexed: true,
