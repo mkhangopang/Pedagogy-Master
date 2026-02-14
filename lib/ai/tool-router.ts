@@ -1,7 +1,7 @@
 
 /**
  * NEURAL TOOL ROUTER (v4.0)
- * Logic: Analyzes user intent to map queries to specialized pedagogical expert nodes.
+ * Logic: Weighted signal analysis to map queries to specialized expert nodes.
  */
 
 export type ToolType = 'master_plan' | 'neural_quiz' | 'fidelity_rubric' | 'audit_tagger';
@@ -17,56 +17,56 @@ export function detectToolIntent(userQuery: string): ToolRoute {
   
   const toolSignatures = {
     master_plan: {
-      weight: 0,
-      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy'],
-      phrases: ['how to teach', 'create a plan', 'lesson for']
+      score: 0,
+      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy', 'curriculum map'],
+      phrases: ['how to teach', 'create a plan', 'lesson for', 'sequence of learning']
     },
     neural_quiz: {
-      weight: 0,
-      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'formative', 'summative', 'check for understanding'],
-      phrases: ['generate questions', 'make a quiz', 'test items']
+      score: 0,
+      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'formative', 'summative', 'check for understanding', 'assessment item'],
+      phrases: ['generate questions', 'make a quiz', 'test items', 'evaluate mastery']
     },
     fidelity_rubric: {
-      weight: 0,
-      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'evaluate', 'scale', 'descriptor', 'performance task'],
-      phrases: ['create a rubric', 'grade this', 'success criteria']
+      score: 0,
+      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'evaluate', 'scale', 'descriptor', 'performance task', 'success criteria'],
+      phrases: ['create a rubric', 'grade this', 'how to score', 'marking guide']
     },
     audit_tagger: {
-      weight: 0,
-      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'standard', 'alignment', 'mapping', 'audit'],
-      phrases: ['tag this', 'align to standards', 'check slo']
+      score: 0,
+      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'standard', 'alignment', 'mapping', 'audit', 'vertical alignment'],
+      phrases: ['tag this', 'align to standards', 'check slo', 'mapping standards']
     }
   };
 
-  // Calculate scores
+  // 1. Calculate weighted scores
   Object.entries(toolSignatures).forEach(([tool, sig]) => {
-    sig.keywords.forEach(kw => { if (query.includes(kw)) sig.weight += 1; });
-    sig.phrases.forEach(ph => { if (query.includes(ph)) sig.weight += 3; });
+    sig.keywords.forEach(kw => { if (query.includes(kw)) sig.score += 2; });
+    sig.phrases.forEach(ph => { if (query.includes(ph)) sig.score += 5; });
   });
 
-  const sortedTools = Object.entries(toolSignatures)
-    .sort((a, b) => b[1].weight - a[1].weight);
-
-  const bestTool = sortedTools[0][0] as ToolType;
-  const bestWeight = sortedTools[0][1].weight;
+  // 2. Resolve highest signal
+  const sorted = Object.entries(toolSignatures).sort((a, b) => b[1].score - a[1].score);
+  const bestTool = sorted[0][0] as ToolType;
+  const bestScore = sorted[0][1].score;
   
-  // Normalizing confidence
-  const totalWeight = Object.values(toolSignatures).reduce((acc, s) => acc + s.weight, 0);
-  const confidence = totalWeight > 0 ? bestWeight / totalWeight : 0;
+  // 3. Confidence Calculation
+  const totalScore = Object.values(toolSignatures).reduce((acc, s) => acc + s.score, 0);
+  const confidence = totalScore > 0 ? bestScore / totalScore : 0.5;
 
   return {
     tool: bestTool,
-    confidence: bestWeight > 0 ? confidence : 0.5, // Default to most likely if weight is 0
-    reasoning: `Matched ${bestWeight} neural signals for ${bestTool}.`
+    confidence: bestScore > 0 ? confidence : 0.5,
+    reasoning: `Found ${bestScore} weighted signals for ${bestTool}.`
   };
 }
 
-export function getToolDisplayName(toolId: ToolType): string {
+export function getToolDisplayName(toolId: ToolType | null): string {
+  if (!toolId) return 'Synthesis Engine';
   const names = {
-    master_plan: 'Master Plan',
-    neural_quiz: 'Neural Quiz',
-    fidelity_rubric: 'Fidelity Rubric',
-    audit_tagger: 'Audit Tagger'
+    master_plan: 'Master Plan Architect',
+    neural_quiz: 'Assessment Scientist',
+    fidelity_rubric: 'Evaluation Engineer',
+    audit_tagger: 'Standards Auditor'
   };
   return names[toolId];
 }
