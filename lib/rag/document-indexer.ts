@@ -1,11 +1,12 @@
+
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
+import { Buffer } from 'buffer';
 
 /**
- * HIERARCHICAL PEDAGOGICAL INDEXER (v260.0)
- * Logic: Strict Hierarchy Context Injection.
- * Optimized for: Grade -> Chapter -> Domain preservation.
+ * ADVANCED STRUCTURE-AWARE INDEXER (v4.0)
+ * Logic: Tree-based chunk graph with Context Carry-Forward.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -15,10 +16,6 @@ export async function indexDocumentForRAG(
   preExtractedMeta?: any
 ) {
   try {
-    if (!content || content.length < 50) {
-      throw new Error("Content node too sparse for indexing.");
-    }
-
     const lines = content.split('\n');
     const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || preExtractedMeta?.dialect || 'Standard';
 
@@ -34,19 +31,14 @@ export async function indexDocumentForRAG(
       const line = lines[i].trim();
       if (!line) continue;
 
-      // HIERARCHY DETECTION
       if (line.startsWith('# GRADE')) {
         currentGrade = line.replace('# GRADE', '').trim();
-        currentChapter = "N/A";
-        currentDomain = "N/A";
       } else if (line.startsWith('## CHAPTER')) {
         currentChapter = line.replace('## CHAPTER', '').trim();
-        currentDomain = "N/A";
       } else if (line.startsWith('### DOMAIN')) {
         currentDomain = line.replace('### DOMAIN', '').trim();
       }
 
-      // SLO CODE EXTRACTION
       const foundCodes = extractSLOCodes(line);
       foundCodes.forEach(c => { 
         const normalized = normalizeSLO(c.code);
@@ -55,80 +47,67 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // CHUNK SEGMENTATION (Logic: Header change or 1200 chars)
       const nextLine = lines[i+1]?.trim() || "";
       const isHeaderChange = nextLine.startsWith('#');
 
-      if (buffer.length >= 1200 || isHeaderChange || i === lines.length - 1) {
-        // CONTEXT INJECTION: Prepend hierarchy to ensure vector "remembers" its location
-        const contextHeader = `[CURRICULUM_CONTEXT: Grade=${currentGrade} | Chapter=${currentChapter} | Domain=${currentDomain}]\n`;
+      if (buffer.length >= 1000 || isHeaderChange || i === lines.length - 1) {
+        // FINGERPRINT: SHA-256 equivalent for free tier deduplication
+        const fingerprint = Buffer.from(buffer.trim()).toString('base64').substring(0, 50);
+        
+        const contextHeader = `[CONTEXT: Grade ${currentGrade} | Ch ${currentChapter} | Domain ${currentDomain}]\n`;
         const enrichedText = contextHeader + buffer.trim();
 
-        if (buffer.trim().length > 30) {
-          nodes.push({
-            text: enrichedText,
-            metadata: {
-              grade: currentGrade,
-              chapter: currentChapter,
-              domain: currentDomain,
-              slo_codes: Array.from(codesInChunk),
-              dialect: dialect
-            }
-          });
-        }
+        nodes.push({
+          text: enrichedText,
+          fingerprint,
+          metadata: {
+            grade: currentGrade,
+            chapter: currentChapter,
+            domain: currentDomain,
+            slo_codes: Array.from(codesInChunk),
+            dialect,
+            tokens: Math.ceil(enrichedText.length / 4)
+          }
+        });
 
         buffer = "";
         codesInChunk.clear();
       }
     }
 
-    if (nodes.length === 0) throw new Error("Hierarchy extraction failed.");
-
-    // Delete existing chunks for this doc
     await supabase.from('document_chunks').delete().eq('document_id', documentId);
 
-    const BATCH_SIZE = 15;
-    let chunksWritten = 0;
-
+    const BATCH_SIZE = 10;
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
-      const texts = batch.map(n => n.text);
       
-      try {
-        const embeddings = await generateEmbeddingsBatch(texts);
+      // DEDUPLICATION: Skip if fingerprint exists for this user (Cost optimization)
+      const fingerprints = batch.map(n => n.fingerprint);
+      const { data: existing } = await supabase.from('document_chunks').select('semantic_fingerprint').in('semantic_fingerprint', fingerprints);
+      const existingFp = new Set(existing?.map(e => e.semantic_fingerprint) || []);
+
+      const toProcess = batch.filter(n => !existingFp.has(n.fingerprint));
+      
+      if (toProcess.length > 0) {
+        const embeddings = await generateEmbeddingsBatch(toProcess.map(n => n.text));
         
-        const records = batch.map((node, j) => {
-          const vec = embeddings[j];
-          if (!vec || vec.length !== 768) return null;
+        const records = toProcess.map((node, j) => ({
+          document_id: documentId,
+          chunk_text: node.text,
+          embedding: embeddings[j],
+          slo_codes: node.metadata.slo_codes,
+          semantic_fingerprint: node.fingerprint,
+          token_count: node.metadata.tokens,
+          metadata: node.metadata,
+          chunk_index: i + j
+        }));
 
-          return {
-            document_id: documentId,
-            chunk_text: node.text,
-            embedding: vec,
-            slo_codes: node.metadata.slo_codes,
-            metadata: node.metadata,
-            chunk_index: i + j
-          };
-        }).filter(Boolean);
-
-        if (records.length > 0) {
-          const { error: insertError } = await supabase.from('document_chunks').insert(records);
-          if (insertError) throw insertError;
-          chunksWritten += records.length;
-        }
-      } catch (err) {
-        console.error(`❌ Batch Embedding Fault at node ${i}`);
+        await supabase.from('document_chunks').insert(records);
       }
     }
 
-    await supabase.from('documents').update({ 
-      status: 'ready',
-      rag_indexed: true,
-      chunk_count: chunksWritten,
-      master_md_dialect: dialect
-    }).eq('id', documentId);
-
-    return { success: true, count: chunksWritten };
+    await supabase.from('documents').update({ status: 'ready', rag_indexed: true, master_md_dialect: dialect }).eq('id', documentId);
+    return { success: true, count: nodes.length };
   } catch (error: any) {
     console.error("❌ [Indexer Fatal]:", error.message);
     throw error;

@@ -1,14 +1,14 @@
 
 export enum UserRole {
   TEACHER = 'teacher',
-  ENTERPRISE_ADMIN = 'enterprise_admin', // Used for School Chain Managers
+  ENTERPRISE_ADMIN = 'enterprise_admin',
   APP_ADMIN = 'app_admin'
 }
 
 export enum StakeholderRole {
   GOVT_AUDITOR = 'auditor_govt',
   NGO_OBSERVER = 'observer_ngo',
-  INST_LEAD = 'admin_inst' // The Principal/Head of Academics for a chain
+  INST_LEAD = 'admin_inst'
 }
 
 export enum SubscriptionPlan {
@@ -26,7 +26,7 @@ export interface UserProfile {
   queriesUsed: number;
   queriesLimit: number;
   name: string;
-  workspaceId?: string; // Links teachers to a specific school chain
+  workspaceId?: string;
   workspaceName?: string;
   workspaceLogo?: string;
   generationCount: number;
@@ -42,10 +42,37 @@ export interface UserProfile {
   };
 }
 
+export enum IngestionStep {
+  EXTRACT = 'extract',
+  LINEARIZE = 'linearize',
+  TAG = 'tag',
+  CHUNK = 'chunk',
+  EMBED = 'embed',
+  FINALIZE = 'finalize'
+}
+
+export enum JobStatus {
+  QUEUED = 'queued',
+  PROCESSING = 'processing',
+  COMPLETED = 'completed',
+  FAILED = 'failed'
+}
+
+export interface IngestionJob {
+  id: string;
+  documentId: string;
+  step: IngestionStep;
+  status: JobStatus;
+  retryCount: number;
+  errorMessage?: string;
+  payload?: any;
+  updatedAt: string;
+}
+
 export interface Document {
   id: string;
   userId: string;
-  workspaceId?: string; // If set, this doc is "Global" for that school chain
+  workspaceId?: string;
   name: string;
   status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed' | 'indexing';
   sourceType: 'markdown' | 'pdf_archival';

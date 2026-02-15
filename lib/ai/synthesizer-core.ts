@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -34,8 +35,8 @@ export class SynthesizerCore {
       endpoint: 'native',
       model: 'gemini-3-pro-preview',
       apiKeyEnv: 'API_KEY',
-      maxTokens: 8192,
-      thinkingBudget: 2048, 
+      maxTokens: 16384,
+      thinkingBudget: 4096, 
       rpm: 10,
       rpd: 2000,
       tier: 1,
@@ -69,9 +70,35 @@ export class SynthesizerCore {
       enabled: !!process.env.GROQ_API_KEY
     });
 
+    providers.set('deepseek', {
+      id: 'deepseek',
+      name: 'DeepSeek R1',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-reasoner',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      maxTokens: 8192,
+      rpm: 5,
+      rpd: 500,
+      tier: 1,
+      enabled: !!process.env.DEEPSEEK_API_KEY
+    });
+
+    providers.set('sambanova', {
+      id: 'sambanova',
+      name: 'SambaNova Llama',
+      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
+      model: 'Meta-Llama-3.1-405B-Instruct',
+      apiKeyEnv: 'SAMBANOVA_API_KEY',
+      maxTokens: 4096,
+      rpm: 20,
+      rpd: 1000,
+      tier: 1,
+      enabled: !!process.env.SAMBANOVA_API_KEY
+    });
+
     providers.set('cerebras', {
       id: 'cerebras',
-      name: 'Cerebras Llama',
+      name: 'Cerebras Ultra-Fast',
       endpoint: 'https://api.cerebras.ai/v1/chat/completions',
       model: 'llama3.1-70b',
       apiKeyEnv: 'CEREBRAS_API_KEY',
@@ -98,23 +125,22 @@ export class SynthesizerCore {
 
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
-    
-    const isSurgicalExtract = prompt.includes('SURGICAL_PRECISION_VAULT_EXTRACT');
-    const isConversion = prompt.includes('Linearizing Curriculum');
+    const preferredId = options.preferredId;
 
     let candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id));
+
+    // Strategic priority for preferred provider if healthy
+    if (preferredId && this.providers.has(preferredId) && !this.failedProviders.has(preferredId)) {
+      candidates = [this.providers.get(preferredId)!, ...candidates.filter(p => p.id !== preferredId)];
+    }
 
     if (candidates.length === 0) {
       this.failedProviders.clear();
       candidates = Array.from(this.providers.values()).filter(p => p.enabled);
     }
 
-    if (candidates.length === 0) {
-      throw new Error("AI Alert: Synthesis grid exception.");
-    }
-
-    candidates.sort((a, b) => a.tier - b.tier);
+    if (candidates.length === 0) throw new Error("AI Alert: Synthesis grid saturated.");
 
     for (const provider of candidates) {
       try {
@@ -124,18 +150,6 @@ export class SynthesizerCore {
 
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
-          const config: any = { 
-            temperature: 0.1, 
-            maxOutputTokens: provider.maxTokens 
-          };
-          
-          if (provider.thinkingBudget !== undefined) {
-            let budget = provider.thinkingBudget;
-            if (isConversion) budget = Math.min(budget * 2, 8192);
-            if (isSurgicalExtract) budget = 0; 
-            config.thinkingConfig = { thinkingBudget: budget };
-          }
-
           const contents = [
             ...history.map((h: any) => ({ 
               role: h.role === 'user' ? 'user' : 'model', 
@@ -147,17 +161,18 @@ export class SynthesizerCore {
           const res = await ai.models.generateContent({
             model: provider.model,
             contents,
-            config: { ...config, systemInstruction: systemPrompt }
+            config: { 
+              systemInstruction: systemPrompt,
+              maxOutputTokens: provider.maxTokens,
+              temperature: 0.1,
+              thinkingConfig: provider.thinkingBudget ? { thinkingBudget: provider.thinkingBudget } : undefined
+            }
           });
-          
           content = res.text || "";
         } else {
           const res = await fetch(provider.endpoint, {
             method: 'POST',
-            headers: { 
-              'Authorization': `Bearer ${apiKey}`, 
-              'Content-Type': 'application/json'
-            },
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model: provider.model,
               messages: [
@@ -169,22 +184,19 @@ export class SynthesizerCore {
               max_tokens: provider.maxTokens
             })
           });
-
           if (!res.ok) throw new Error(`Node Refusal: ${res.status}`);
           const data = await res.json();
           content = data.choices[0].message.content;
         }
 
-        if (content && content.trim().length > 0) {
-          return { text: content, provider: provider.name };
-        }
+        if (content) return { text: content, provider: provider.name };
       } catch (e: any) {
-        this.failedProviders.set(provider.id, Date.now() + 5000); 
-        console.warn(`[Synthesizer] Failover from ${provider.name}:`, e.message);
+        this.failedProviders.set(provider.id, Date.now() + 10000); 
+        console.warn(`[Failover] Node ${provider.name} failed:`, e.message);
       }
     }
 
-    throw new Error(`AI Alert: Synthesis grid saturated.`);
+    throw new Error("AI Alert: Critical grid failure.");
   }
 
   public getProviderStatus() {
@@ -192,8 +204,7 @@ export class SynthesizerCore {
       id: p.id,
       name: p.name,
       status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : 'active',
-      tier: p.tier,
-      lastError: p.lastError
+      tier: p.tier
     }));
   }
 }
@@ -205,5 +216,5 @@ export function getSynthesizer(): SynthesizerCore {
 }
 
 export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string) => {
-  return getSynthesizer().synthesize(prompt, { history, systemPrompt: system, hasDocs });
+  return getSynthesizer().synthesize(prompt, { history, systemPrompt: system, preferredId: preferred });
 };
