@@ -37,7 +37,7 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     const results = await Promise.all(uncachedTexts.map(text => 
       ai.models.embedContent({
         model: "text-embedding-004",
-        contents: { parts: [{ text }] }
+        content: { parts: [{ text }] }
       })
     ));
 

@@ -1,4 +1,3 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks } from '../rag/retriever';
@@ -8,7 +7,7 @@ import { kv } from '../kv';
 import { Buffer } from 'buffer';
 
 /**
- * MULTI-STAGE RETRIEVAL CASCADE (v126.0)
+ * MULTI-STAGE RETRIEVAL CASCADE (v126.1)
  * T1: Redis Cache | T2: Intent Routing | T3: Surgical Match | T4: Semantic Hybrid | T5: Self-Eval Log
  */
 export async function generateAIResponse(
@@ -37,6 +36,7 @@ export async function generateAIResponse(
   let vaultContent = "";
   let isGrounded = false;
   let topChunkIds: string[] = [];
+  let sourceDocName = "";
   
   const { data: activeDocs } = await supabase.from('documents')
     .select('id, name, authority, subject, grade_level, master_md_dialect')
@@ -45,6 +45,7 @@ export async function generateAIResponse(
   const activeDoc = activeDocs?.[0];
 
   if (activeDoc) {
+    sourceDocName = activeDoc.name;
     // Stage A: Surgical Code Match (Regex precision)
     const codes = extractSLOCodes(userPrompt);
     if (codes.length > 0) {
@@ -121,6 +122,6 @@ USER_QUERY: "${userPrompt}"`;
   return {
     text: result.text,
     provider: result.provider,
-    metadata: { isGrounded, intent: intentData.intent, latency, chunkCount: topChunkIds.length }
+    metadata: { isGrounded, sourceDocument: sourceDocName, intent: intentData.intent, latency, chunkCount: topChunkIds.length }
   };
 }
