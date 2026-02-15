@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
@@ -9,9 +8,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v4.2)
- * PROTOCOL: NODEJS RUNTIME
- * FEATURE: Pre-extracted text support for timeout mitigation.
+ * WORLD-CLASS UPLOAD HANDSHAKE (v130.0)
+ * FIX: Signature Mismatch Resolution.
+ * Removed Metadata from PutObjectCommand to ensure simple PUT handshake compatibility.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -26,31 +25,27 @@ export async function POST(req: NextRequest) {
     const { name, contentType, extractedText } = body;
 
     if (!name || !contentType) {
-      return NextResponse.json({ error: 'Metadata missing (name, contentType)' }, { status: 400 });
+      return NextResponse.json({ error: 'Metadata missing' }, { status: 400 });
     }
 
     if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Node Offline.");
 
     const documentId = crypto.randomUUID();
-    const r2Key = `raw/${user.id}/${documentId}/${name.replace(/\s+/g, '_')}`;
+    const cleanFileName = name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const r2Key = `raw/${user.id}/${documentId}/${cleanFileName}`;
 
-    // 1. Generate Pre-signed URL for direct R2 upload
+    // 1. Generate Pre-signed URL (SIMPLIFIED for Mobile Reliability)
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
-      ContentType: contentType,
-      Metadata: {
-        documentId: documentId,
-        userId: user.id
-      }
+      ContentType: contentType
+      // Removed Metadata block: Browser fetch fails if meta headers aren't mirrored exactly
     });
 
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
 
-    // 2. Initialize Record in Supabase
+    // 2. Initialize Institutional Record
     const supabase = getSupabaseServerClient(token);
-    
-    // Clear previous selection
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -63,7 +58,7 @@ export async function POST(req: NextRequest) {
       subject: 'Identifying...',
       grade_level: 'Auto',
       is_selected: true,
-      document_summary: 'Waiting for binary handshake...',
+      document_summary: 'Initializing binary sync...',
       rag_indexed: false,
       extracted_text: extractedText || "",
       is_approved: false,
@@ -81,9 +76,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error("❌ [Upload Handshake Error]:", error);
-    return NextResponse.json({ 
-      error: error.message || 'Synthesis grid exception.' 
-    }, { status: 500 });
+    console.error("❌ [Handshake Node Fault]:", error);
+    return NextResponse.json({ error: error.message || 'Synthesis grid exception.' }, { status: 500 });
   }
 }
