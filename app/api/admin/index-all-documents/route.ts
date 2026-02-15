@@ -1,7 +1,7 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
-// Removed missing ADMIN_EMAILS import from constants
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,8 +20,6 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await anonClient.auth.getUser(token);
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    // Add comment above each fix
-    // Fix: Retrieve admin emails from environment variable to resolve missing export error from constants
     const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
@@ -43,7 +41,8 @@ export async function POST(req: NextRequest) {
     let successCount = 0;
     for (const doc of documents) {
       try {
-        await indexDocumentForRAG(doc.id, doc.extracted_text || "", doc.file_path, supabase);
+        // Fix: Removed doc.file_path to match (documentId, content, supabase, jobId?) signature
+        await indexDocumentForRAG(doc.id, doc.extracted_text || "", supabase);
         successCount++;
       } catch (e: any) {
         console.error(`❌ Sync failed for ${doc.name}:`, e.message);

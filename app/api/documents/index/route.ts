@@ -57,7 +57,8 @@ export async function POST(request: NextRequest) {
     
     // Execute indexing with higher timeout resilience
     try {
-      await indexDocumentForRAG(documentId, text, doc.file_path, supabase);
+      // Fix: Call with correct signature (documentId, content, supabase, jobId?)
+      await indexDocumentForRAG(documentId, text, supabase);
     } catch (indexErr: any) {
       console.error('[Indexing Logic Failure]:', indexErr);
       return NextResponse.json({ 

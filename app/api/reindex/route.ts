@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { indexDocumentForRAG } from '../../../lib/rag/document-indexer';
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     // If text is missing in DB, try to pull it from R2/Storage
     let textToProcess = doc.extracted_text;
-    if (!textToProcess && doc.file_path && doc.storage_type === 'r2') {
+    if (!textToProcess && doc.file_path) {
        console.log(`📥 [REINDEX] Missing text in DB. Fetching from R2...`);
        try {
          textToProcess = await getObjectText(doc.file_path);
@@ -54,8 +55,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'The document has no extractable text. Try re-uploading the file.' }, { status: 422 });
     }
 
-    // Re-index using established content or R2 fallback
-    await indexDocumentForRAG(documentId, textToProcess, doc.file_path, supabase);
+    // Fix: Re-index using (documentId, content, supabase, jobId?) signature
+    await indexDocumentForRAG(documentId, textToProcess, supabase);
 
     return NextResponse.json({
       success: true,
