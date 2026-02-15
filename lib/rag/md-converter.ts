@@ -1,54 +1,55 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v86.0 - COLUMN UNROLLING)
- * Specialized for: Multi-Column OCR (Sindh/Federal)
- * Logic: Strict Grade-wise Verticalization and BxxXxx code synthesis.
+ * UNIVERSAL CURRICULUM ARCHITECT (v89.0 - ADVANCED UNROLLING)
+ * Specialized for: Multi-Column Sindh/Federal Progression Grids
+ * Strategy: Sequential Grade Reconstruction & BxxXxx ID Synthesis
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Using the advanced reasoning model for complex table unrolling
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. Your mission is to transform multi-column OCR text into a vertically aligned "Master MD" asset.
+  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. Your mission is to transform heavy, multi-column curriculum OCR data into a high-fidelity "Master MD" vertical ledger.
 
 CRITICAL: SEQUENTIAL COLUMN UNROLLING PROTOCOL
-OCR often reads across columns horizontally (e.g., reading Grade 9 and Grade 11 snippets on the same line). YOU MUST UNROLL THIS:
-1. PROCESS BY GRADE: Finish all chapters/SLOs for Grade 9 completely before starting Grade 10 or 11.
-2. COLUMN ISOLATION: Recognize when a line of text contains fragments from two different domains and separate them into their respective vertical blocks.
+The input text is derived from a Progression Grid where columns represent different grades (IX, X, XI, XII). Standard OCR reads horizontally across these columns. 
+YOUR TASK:
+1. UNROLL THE COLUMNS: Process one grade entirely before moving to the next.
+2. RECONSTRUCT VERTICALLY: Assemble all Chapters, Domains, and SLOs for Grade 09, then Grade 10, then Grade 11, then Grade 12.
+3. PREVENT CROSS-CONTAMINATION: Do not mix Grade 11 snippets into Grade 9 content blocks.
 
-SLO SYNTHESIS RULES (SINDH/MASTER MD):
-- FORMAT: [Subject Prefix][Grade Number][Domain Code][SLO Number]
+SLO CODE SYNTHESIS (SINDH/MASTER MD FORMAT):
+- Generate codes using the format: [Subject Prefix][Grade Number][Domain Code][SLO Number]
 - Subject Prefix: B (Biology), P (Physics), C (Chemistry), S (Science).
 - Grade Number: 09 (IX), 10 (X), 11 (XI), 12 (XII).
-- Domain Code: A, B, C, D... (Based on the Chapter's section).
-- SLO Number: 01, 02, 03... (Sequential within the domain).
-- EXAMPLE: SLO B09A01 (Biology, Grade 9, Domain A, SLO 1).
+- Domain Code: A, B, C, D... (Based on the Section).
+- SLO Number: 01, 02, 03... (Sequential within that domain).
+- EXAMPLE: SLO B09A01 (Biology, Grade 9, Domain A, SLO 01).
 
-HIERARCHY STRUCTURE:
+MARKDOWN ARCHITECTURE:
 # GRADE [Number/Roman]
 ## CHAPTER [NN]: [TITLE]
 ### DOMAIN [ID]: [NAME]
 - SLO [CODE]: [VERBATIM DESCRIPTION]
 
 STEM FIDELITY:
-- Wrap all chemical formulas and math in LaTeX $...$ (e.g., $H_2O$, $C_6H_{12}O_6$).
+- Wrap all scientific notation and formulas in LaTeX $...$ (e.g. $C_6H_{12}O_6$).
 
 OUTPUT ONLY THE MARKDOWN starting with # MASTER MD.`;
 
   const prompt = `
-[COMMAND: SURGICAL COLUMN UNROLLING]
-Process the provided curriculum text. 
-1. Identify all Grade 9 (IX) content first. 
-2. Group chapters sequentially. 
-3. Synthesize codes using the "B09A01" format.
-4. Ensure Grade 11/12 content is NOT mixed into Grade 9 blocks.
+[INSTRUCTION: EXECUTE SURGICAL COLUMN UNROLLING]
+Process this curriculum data stream. It contains overlapping columns for Grades IX, X, XI, and XII. 
+1. Isolate and finish Grade 9 content first.
+2. Sequence all Chapters and Domains vertically.
+3. Synthesize standard IDs like "B09A01".
+4. Ensure zero loss of verbatim SLO text.
 
-RAW INPUT STREAM:
+RAW OCR STREAM:
 ${rawText.substring(0, 800000)}
 
-[FINAL INSTRUCTION]: 
-Generate the high-fidelity Master MD with perfect vertical alignment.
-`;
+[FINAL DIRECTIVE]: Generate the vertical Master MD.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -62,12 +63,11 @@ Generate the high-fidelity Master MD with perfect vertical alignment.
     });
 
     const masterMd = response.text || "";
-    let dialect = 'Standard';
-    if (masterMd.toLowerCase().includes('sindh')) dialect = 'Sindh-Curriculum-Vertical';
+    const dialect = masterMd.includes('B09') ? 'Sindh-Vertical-Grid' : 'Standard-Linear';
     
     return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n${masterMd}`;
   } catch (err) {
-    console.error("❌ [Architect Node Fault]:", err);
+    console.error("❌ [Architect Node Error]:", err);
     return `<!-- ERROR: SYNTHESIS FAILED -->\n${rawText}`;
   }
 }
