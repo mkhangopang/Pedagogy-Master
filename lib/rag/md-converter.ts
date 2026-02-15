@@ -1,51 +1,47 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v85.0 - SEQUENTIAL FIDELITY)
- * Specialized for: Sindh Biology 2019 / Natural Language SLOs
- * Logic: Strict sectional verticalization and hierarchical code synthesis.
+ * UNIVERSAL CURRICULUM ARCHITECT (v86.0 - COLUMN UNROLLING)
+ * Specialized for: Multi-Column OCR (Sindh/Federal)
+ * Logic: Strict Grade-wise Verticalization and BxxXxx code synthesis.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. Your mission is to transform messy OCR curriculum text into a structured, vertically aligned "Master MD" asset.
+  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. Your mission is to transform multi-column OCR text into a vertically aligned "Master MD" asset.
 
-CRITICAL: SEQUENTIAL RECONSTRUCTION PROTOCOL
-The input text for Sindh Biology 2019 is often mixed due to OCR reading columns horizontally. You MUST re-sort and unroll this into a linear progression.
+CRITICAL: SEQUENTIAL COLUMN UNROLLING PROTOCOL
+OCR often reads across columns horizontally (e.g., reading Grade 9 and Grade 11 snippets on the same line). YOU MUST UNROLL THIS:
+1. PROCESS BY GRADE: Finish all chapters/SLOs for Grade 9 completely before starting Grade 10 or 11.
+2. COLUMN ISOLATION: Recognize when a line of text contains fragments from two different domains and separate them into their respective vertical blocks.
 
-RECONSTRUCTION RULES:
-1. HIERARCHY (STRICT): 
-   # GRADE [XI or XII]
-   ## CHAPTER [NN]: [TITLE]
-   ### DOMAIN: [Understanding / Skills / STS]
-   - SLO: [SYNTHETIC_CODE]: [TEXT]
+SLO SYNTHESIS RULES (SINDH/MASTER MD):
+- FORMAT: [Subject Prefix][Grade Number][Domain Code][SLO Number]
+- Subject Prefix: B (Biology), P (Physics), C (Chemistry), S (Science).
+- Grade Number: 09 (IX), 10 (X), 11 (XI), 12 (XII).
+- Domain Code: A, B, C, D... (Based on the Chapter's section).
+- SLO Number: 01, 02, 03... (Sequential within the domain).
+- EXAMPLE: SLO B09A01 (Biology, Grade 9, Domain A, SLO 1).
 
-2. SLO SYNTHESIS & SEQUENCING:
-   - Identify every bullet following "Student will:".
-   - Generate a deterministic code: [SUB]-[GRADE]-[CH]-[DOMAIN_KEY]-[INDEX]
-   - Example: BIO-XI-C01-U-01 (Biology, Grade XI, Ch 1, Understanding, SLO 1).
-   - Domain Keys: U (Understanding), S (Skills), T (STS).
-   - Chapter Keys: C01 through C27 as defined in the contents.
-   - Indices MUST be sequential (01, 02, 03...) within each domain block.
+HIERARCHY STRUCTURE:
+# GRADE [Number/Roman]
+## CHAPTER [NN]: [TITLE]
+### DOMAIN [ID]: [NAME]
+- SLO [CODE]: [VERBATIM DESCRIPTION]
 
-3. CONTENT ISOLATION:
-   - Complete ALL of Grade XI (Chapters 1-13) before starting Grade XII (Chapters 14-27).
-   - Do NOT interleave content. If a page break splits a chapter, merge the text back together logically.
-   - REMOVE ALL: page numbers (e.g., "129 | P a g e"), repeating headers, member lists, and aims/objectives lists. Focus ONLY on the Chapter-wise Learning Outcomes.
-
-4. STEM FIDELITY:
-   - Wrap all chemical symbols, formulas, and math in LaTeX $...$ (e.g., $CO_2$, $C_6H_{12}O_6$).
+STEM FIDELITY:
+- Wrap all chemical formulas and math in LaTeX $...$ (e.g., $H_2O$, $C_6H_{12}O_6$).
 
 OUTPUT ONLY THE MARKDOWN starting with # MASTER MD.`;
 
   const prompt = `
-[COMMAND: SURGICAL SEQUENTIAL RECONSTRUCTION]
-Process the Sindh Biology 2019 curriculum text. 
-1. Map out the Chapters sequentially (1-27).
-2. Assign each "Student will:" bullet to its correct Chapter and Domain (Understanding vs Skills).
-3. Assign a deterministic code like BIO-XI-C01-U-01 to every objective.
-4. Ensure Grade XI and Grade XII are in distinct, non-interleaved blocks.
+[COMMAND: SURGICAL COLUMN UNROLLING]
+Process the provided curriculum text. 
+1. Identify all Grade 9 (IX) content first. 
+2. Group chapters sequentially. 
+3. Synthesize codes using the "B09A01" format.
+4. Ensure Grade 11/12 content is NOT mixed into Grade 9 blocks.
 
 RAW INPUT STREAM:
 ${rawText.substring(0, 800000)}
@@ -67,7 +63,7 @@ Generate the high-fidelity Master MD with perfect vertical alignment.
 
     const masterMd = response.text || "";
     let dialect = 'Standard';
-    if (masterMd.toLowerCase().includes('sindh')) dialect = 'Sindh-Curriculum-2019';
+    if (masterMd.toLowerCase().includes('sindh')) dialect = 'Sindh-Curriculum-Vertical';
     
     return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n${masterMd}`;
   } catch (err) {
