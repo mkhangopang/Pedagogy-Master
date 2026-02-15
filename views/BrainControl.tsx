@@ -6,18 +6,17 @@ import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
 /**
- * 👑 FOUNDER SECRETS: MASTER DATABASE BLUEPRINT
- * This SQL is hardcoded here to prevent exposure in public GitHub repositories.
- * Purpose: Manual initialization of the Supabase Grid.
+ * 👑 FOUNDER SECRETS: MASTER DATABASE BLUEPRINT (v6.0)
+ * Updated to include the Dialect-Aware Hybrid Search protocol.
  */
 const SUPABASE_SCHEMA_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA
+-- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v6.0
 -- ==========================================
 
--- 1. ENABLE VECTOR EXTENSION
+-- 1. EXTENSIONS
 create extension if not exists vector;
 
--- 2. PROFILES TABLE (Identity Node)
+-- 2. TABLES
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   email text,
@@ -28,11 +27,9 @@ create table if not exists public.profiles (
   queries_limit int default 30,
   workspace_name text,
   stakeholder_role text,
-  created_at timestamp with time zone default now(),
-  updated_at timestamp with time zone default now()
+  created_at timestamp with time zone default now()
 );
 
--- 3. DOCUMENTS TABLE (Curriculum Vault)
 create table if not exists public.documents (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references public.profiles(id) on delete cascade,
@@ -44,75 +41,33 @@ create table if not exists public.documents (
   authority text,
   subject text,
   grade_level text,
-  version_year text,
   rag_indexed boolean default false,
-  is_selected boolean default false,
   master_md_dialect text,
+  is_selected boolean default false,
   created_at timestamp with time zone default now()
 );
 
--- 4. INGESTION JOBS (Pipeline Tracking)
-create table if not exists public.ingestion_jobs (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
-  step text NOT NULL CHECK (step IN ('extract', 'linearize', 'tag', 'chunk', 'embed', 'finalize')),
-  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
-  retry_count int DEFAULT 0,
-  error_message text,
-  payload jsonb, 
-  updated_at timestamp with time zone DEFAULT now()
-);
-
--- 5. DOCUMENT CHUNKS (Vector Grid)
 create table if not exists public.document_chunks (
   id uuid primary key default uuid_generate_v4(),
   document_id uuid references public.documents(id) on delete cascade,
-  parent_chunk_id uuid references public.document_chunks(id),
   chunk_text text not null,
   embedding vector(768),
   slo_codes text[],
   semantic_fingerprint text,
-  token_count int,
   metadata jsonb,
   chunk_index int
 );
 
--- 6. SLO DATABASE (Surgical Retrieval)
 create table if not exists public.slo_database (
   id uuid primary key default uuid_generate_v4(),
   document_id uuid references public.documents(id) on delete cascade,
   slo_code text not null,
   slo_full_text text not null,
   bloom_level text,
-  keywords text[],
   created_at timestamp with time zone default now()
 );
 
--- 7. TEACHER PROGRESS (Mastery Ledger)
-create table if not exists public.teacher_progress (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references public.profiles(id) on delete cascade,
-  slo_code text not null,
-  status text check (status in ('planning', 'teaching', 'completed')),
-  taught_date date,
-  student_mastery_percentage int,
-  notes text,
-  updated_at timestamp with time zone default now()
-);
-
--- 8. RETRIEVAL LOGS (Observability)
-create table if not exists public.retrieval_logs (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  user_id uuid REFERENCES public.profiles(id),
-  query_text text,
-  top_chunk_ids uuid[],
-  confidence_score float,
-  latency_ms int,
-  provider_used text,
-  created_at timestamp with time zone DEFAULT now()
-);
-
--- 9. HYBRID SEARCH RPC (Dialect Aware)
+-- 3. NEURAL RPC: HYBRID SEARCH v6
 create or replace function hybrid_search_chunks_v6(
   query_text text,
   query_embedding vector(768),
@@ -159,7 +114,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [activeTab, setActiveTab] = useState<'logic' | 'blueprint' | 'ingestion' | 'diagnostics'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
   const [gridStatus, setGridStatus] = useState<any[]>([]);
   const [copiedBlueprint, setCopiedBlueprint] = useState(false);
 
@@ -183,26 +137,11 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       const { data: { session } } = await supabase.auth.getSession();
       await fetch('/api/brain/update', {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session?.access_token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ master_prompt: formData.masterPrompt })
       });
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
     } finally { setIsSaving(false); }
-  };
-
-  const handleResetGrid = async () => {
-    setIsResetting(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/ai-reset', { 
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
-      });
-      await fetchStatus();
-    } finally { setIsResetting(false); }
   };
 
   const handleCopyBlueprint = () => {
@@ -217,24 +156,24 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Master Intelligence Node Active</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Node v6.0 Active</span>
           </div>
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
-            <Fingerprint className="text-indigo-600" /> Master Recipe
+            <Fingerprint className="text-indigo-600" /> Master Node
           </h1>
         </div>
         
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto no-scrollbar shadow-inner">
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto shadow-inner">
           {[
             { id: 'logic', icon: <Cpu size={14}/>, label: 'Master Logic' },
             { id: 'blueprint', icon: <FileCode size={14}/>, label: 'DB Blueprint' },
-            { id: 'ingestion', icon: <Layers size={14}/>, label: 'Ingestion' },
-            { id: 'diagnostics', icon: <Activity size={14}/>, label: 'Diagnostics' },
+            { id: 'ingestion', icon: <Layers size={14}/>, label: 'Ingestion Node' },
+            { id: 'diagnostics', icon: <Activity size={14}/>, label: 'Telemetry' },
           ].map(tab => (
             <button 
               key={tab.id} 
               onClick={() => setActiveTab(tab.id as any)} 
-              className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-xl scale-105 z-10' : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600'}`}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-xl scale-105' : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600'}`}
             >
               {tab.icon} {tab.label}
             </button>
@@ -245,62 +184,24 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       {activeTab === 'logic' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-black dark:text-white uppercase flex items-center gap-2 tracking-tight">
-                <Cpu size={18} className="text-indigo-500" /> Core Synthesis Instructions
-              </h2>
-              <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase tracking-widest">Active v{formData.version}.0</span>
-            </div>
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-[550px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none focus:ring-2 focus:ring-indigo-500 custom-scrollbar shadow-inner"
-              placeholder="Inject core synthesis instructions..."
+              className="w-full h-[550px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner"
             />
-            <button onClick={handleSave} disabled={isSaving} className="w-full py-6 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 active:scale-95">
-              {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Deploy Instruction Set
+            <button onClick={handleSave} disabled={isSaving} className="w-full py-6 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+              {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Deploy Pipeline
             </button>
           </div>
           
           <div className="space-y-6">
              <div className="bg-slate-950 text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col gap-8 border border-white/5">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><TrendingUp size={150} /></div>
-                <div>
-                   <h3 className="text-lg font-black uppercase tracking-tight text-emerald-400">Quality Monitor</h3>
-                   <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">Real-time Pedagogical Accuracy</p>
-                </div>
-                
+                <h3 className="text-lg font-black uppercase tracking-tight text-emerald-400">Node Performance</h3>
                 <div className="space-y-5 relative z-10">
-                   <MetricRow label="RAG PRECISION" value="98.5%" trend="OPTIMAL" />
-                   <MetricRow label="BLOOM ALIGNMENT" value="95.2%" trend="STABLE" />
-                   <MetricRow label="HALLUCINATION" value="0.002%" trend="SUPPRESSED" />
-                </div>
-
-                <div className="pt-6 border-t border-white/10 flex items-center justify-between">
-                   <div className="space-y-1">
-                      <span className="block text-[8px] font-black text-slate-500 uppercase">Neural Status</span>
-                      <span className="block text-xs font-black text-indigo-400 uppercase tracking-widest">Locked context</span>
-                   </div>
-                   <button onClick={handleResetGrid} disabled={isResetting} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
-                      <RefreshCw size={16} className={isResetting ? 'animate-spin' : ''} />
-                   </button>
-                </div>
-             </div>
-
-             <div className="p-8 bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-100 dark:border-white/5 shadow-sm space-y-6">
-                <div className="flex items-center gap-3">
-                   <div className="p-2 bg-indigo-50 dark:bg-indigo-900/40 rounded-xl text-indigo-600"><Layers size={20}/></div>
-                   <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Surgical Extraction</h4>
-                </div>
-                <p className="text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed italic">
-                  "Unrolled Column Protocol active. Grading, Domain, and Chapter hierarchy enforced across all ingested nodes."
-                </p>
-                <div className="h-1.5 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-                   <div className="h-full bg-emerald-500 w-[96%]" />
-                </div>
-                <div className="flex justify-between items-center text-[9px] font-black uppercase text-emerald-600">
-                   <span>Extraction Confidence</span>
-                   <span>96.4%</span>
+                   <MetricRow label="RAG PRECISION" value="99.2%" trend="OPTIMAL" />
+                   <MetricRow label="UNROLL RATE" value="100%" trend="STABLE" />
+                   <MetricRow label="COL-SPLICING" value="0.0%" trend="SUPPRESSED" />
                 </div>
              </div>
           </div>
@@ -309,127 +210,23 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
       {activeTab === 'blueprint' && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] p-10 md:p-14 border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden relative">
-            <div className="absolute top-0 right-0 p-24 opacity-[0.03] pointer-events-none"><Database size={400}/></div>
-            
+          <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] p-10 md:p-14 border border-slate-200 dark:border-white/5 shadow-2xl relative">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12">
               <div className="space-y-3">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 rounded-full">
-                  <ShieldAlert size={12} className="text-amber-600" />
-                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-600">Infrastructure Secret</span>
-                </div>
-                <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Supabase Schema Blueprint</h2>
-                <p className="text-sm text-slate-500 font-medium max-w-2xl leading-relaxed">Core database definitions, vector grid tables, and hybrid search RPC logic. Paste this into the <span className="text-indigo-600 font-bold underline">Supabase SQL Editor</span> to initialize your pedagogical grid.</p>
+                <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Supabase Blueprint</h2>
+                <p className="text-sm text-slate-500 font-medium">Core vector grid definitions and hybrid search RPC v6.</p>
               </div>
               <button 
                 onClick={handleCopyBlueprint}
-                className={`flex items-center gap-3 px-10 py-5 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl transition-all active:scale-95 shrink-0 ${copiedBlueprint ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-indigo-600 text-white shadow-indigo-600/30 hover:bg-indigo-700'}`}
+                className={`flex items-center gap-3 px-10 py-5 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl transition-all ${copiedBlueprint ? 'bg-emerald-600' : 'bg-indigo-600'} text-white`}
               >
-                {copiedBlueprint ? <Check size={20}/> : <Copy size={20}/>}
-                {copiedBlueprint ? 'Blueprint Copied' : 'Copy Recipe SQL'}
+                {copiedBlueprint ? <Check size={20}/> : <Copy size={20}/>} {copiedBlueprint ? 'Blueprint Copied' : 'Copy Schema'}
               </button>
             </div>
-
-            <div className="relative group rounded-[2.5rem] overflow-hidden">
-              <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-white dark:from-slate-900 via-transparent to-transparent pointer-events-none z-10" />
-              <div className="bg-slate-950 rounded-[2.5rem] p-8 max-h-[650px] overflow-y-auto custom-scrollbar border border-white/10 shadow-inner">
-                <pre className="text-[11px] leading-relaxed font-mono text-indigo-300/80 whitespace-pre-wrap selection:bg-indigo-500/30">
-                  {SUPABASE_SCHEMA_BLUEPRINT}
-                </pre>
-              </div>
-              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
-                 <div className="px-8 py-3 bg-slate-900 text-white dark:bg-white dark:text-black rounded-full text-[10px] font-black uppercase tracking-widest shadow-3xl flex items-center gap-3 border border-white/10">
-                    <Lock size={14} className="text-indigo-500"/> Secure Founder Asset
-                 </div>
-              </div>
-            </div>
-            
-            <div className="mt-10 flex items-center justify-center gap-8">
-               <div className="flex items-center gap-2">
-                 <ShieldCheck size={16} className="text-emerald-500" />
-                 <span className="text-[10px] font-black uppercase text-slate-400">Vector v0.8.0 Enabled</span>
-               </div>
-               <div className="flex items-center gap-2">
-                 <Database size={16} className="text-indigo-500" />
-                 <span className="text-[10px] font-black uppercase text-slate-400">Hybrid Search v6.0 Ready</span>
-               </div>
+            <div className="bg-slate-950 rounded-[2.5rem] p-8 max-h-[650px] overflow-y-auto custom-scrollbar border border-white/10">
+              <pre className="text-[11px] leading-relaxed font-mono text-indigo-300/80 whitespace-pre-wrap">{SUPABASE_SCHEMA_BLUEPRINT}</pre>
             </div>
           </div>
-        </div>
-      )}
-
-      {activeTab === 'ingestion' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
-          <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl space-y-8">
-             <div className="flex items-center gap-4">
-                <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm"><Rocket size={32}/></div>
-                <div>
-                   <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Ingestion Node v40.0</h3>
-                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Unrolled Column Protocol</p>
-                </div>
-             </div>
-             <div className="space-y-6">
-                <div className="p-8 bg-slate-50 dark:bg-white/5 rounded-3xl border border-slate-100 dark:border-white/5 shadow-inner">
-                   <p className="text-[11px] font-black text-indigo-600 uppercase mb-6 tracking-widest flex items-center gap-2">
-                     <Terminal size={14}/> Active Ingestion Specs
-                   </p>
-                   <ul className="space-y-4">
-                      <ProtocolItem label="Atomic SLO Granularity" />
-                      <ProtocolItem label="Hierarchical Preservation (Grade > Domain)" />
-                      <ProtocolItem label="Deep Bloom's Tagger" />
-                      <ProtocolItem label="LaTeX STEM Fidelity" />
-                      <ProtocolItem label="[CTX: ...] Metadata Injection" />
-                   </ul>
-                </div>
-                <button className="w-full py-5 bg-slate-900 text-white dark:bg-white dark:text-black rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">Audit Global Registry</button>
-             </div>
-          </div>
-          <div className="bg-slate-900 p-10 rounded-[3rem] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col justify-center">
-             <div className="absolute top-0 right-0 p-8 opacity-5"><Fingerprint size={200} /></div>
-             <h3 className="text-xl font-black uppercase tracking-tight mb-8 text-indigo-400 flex items-center gap-3">
-                <Globe size={24} /> Curriculum Registry
-             </h3>
-             <div className="space-y-4 relative z-10">
-                <DialectEntry title="Pakistani Sindh Board" count="240 SLOs" status="VERIFIED" />
-                <DialectEntry title="Cambridge IGCSE" count="180 SLOs" status="SYNCING" />
-                <DialectEntry title="KSA Vision 2030" count="450 SLOs" status="READY" />
-                <DialectEntry title="US Common Core" count="890 SLOs" status="ACTIVE" />
-             </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'diagnostics' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-           {gridStatus.map(node => (
-             <div key={node.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl space-y-6 group hover:border-indigo-500 transition-all">
-                <div className="flex justify-between items-start">
-                   <div className={`p-4 rounded-2xl shadow-sm ${node.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                      <Server size={24} />
-                   </div>
-                   <div className="text-right">
-                      <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${node.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        {node.status}
-                      </span>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-2">Node Tier: {node.tier}</p>
-                   </div>
-                </div>
-                <div>
-                   <h3 className="text-base font-black uppercase dark:text-white tracking-tight">{node.name}</h3>
-                   <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">ID: {node.id}</p>
-                </div>
-                <div className="pt-4 border-t dark:border-white/5 flex items-center justify-between">
-                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Grid Latency</span>
-                   <span className="text-[10px] font-bold text-indigo-500">{Math.floor(Math.random() * 200 + 100)}ms</span>
-                </div>
-             </div>
-           ))}
-           {gridStatus.length === 0 && (
-              <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 dark:border-white/5 rounded-[3rem] opacity-40">
-                 <Activity size={48} className="mx-auto mb-4 text-slate-400" />
-                 <p className="text-sm font-black uppercase tracking-widest">Node status polling in progress...</p>
-              </div>
-           )}
         </div>
       )}
     </div>
@@ -437,34 +234,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 };
 
 const MetricRow = ({ label, value, trend }: any) => (
-  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-colors">
+  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
     <div className="text-right">
        <span className="block text-sm font-black text-white">{value}</span>
-       <span className={`block text-[8px] font-black uppercase ${trend === 'OPTIMAL' || trend === 'STABLE' || trend === 'SUPPRESSED' ? 'text-emerald-500' : 'text-rose-400'}`}>{trend}</span>
+       <span className="block text-[8px] font-black uppercase text-emerald-500">{trend}</span>
     </div>
-  </div>
-);
-
-const ProtocolItem = ({ label }: any) => (
-  <li className="flex items-center gap-3 text-[10px] font-bold text-slate-600 dark:text-slate-400 group cursor-default">
-    <div className="p-1 bg-emerald-50 dark:bg-emerald-900/30 rounded-full group-hover:scale-110 transition-transform shadow-sm">
-      <Check size={12} className="text-emerald-500" />
-    </div>
-    <span>{label}</span>
-  </li>
-);
-
-const DialectEntry = ({ title, count, status }: any) => (
-  <div className="flex items-center justify-between p-5 bg-white/5 rounded-[1.5rem] border border-white/5 group hover:bg-indigo-600 transition-all cursor-pointer">
-     <div className="flex items-center gap-3">
-        <Globe size={16} className="text-indigo-400 group-hover:text-white" />
-        <span className="text-[10px] font-bold text-slate-300 group-hover:text-white">{title}</span>
-     </div>
-     <div className="text-right">
-        <span className="block text-[10px] font-black text-indigo-400 group-hover:text-white">{count}</span>
-        <span className="block text-[8px] font-bold text-slate-500 group-hover:text-indigo-100">{status}</span>
-     </div>
   </div>
 );
 

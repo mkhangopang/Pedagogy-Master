@@ -1,8 +1,7 @@
-
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { BrainCircuit, RefreshCw, UploadCloud, AlertCircle, ShieldCheck, Database, Search, Zap, CheckCircle2, Loader2 } from 'lucide-react';
+import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loader2, Info } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import * as pdfjs from 'pdfjs-dist';
 
@@ -23,8 +22,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       poller = setInterval(async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
+          if (!session) return;
+          
           const res = await fetch(`/api/docs/status/${docId}`, {
-            headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            headers: { 'Authorization': `Bearer ${session.access_token}` }
           });
           if (!res.ok) return;
           const data = await res.json();
@@ -33,24 +34,20 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             clearInterval(poller);
             setProgress(100);
             setStatus('Neural Alignment Complete!');
-            setTimeout(() => onComplete(data), 1500);
+            setTimeout(() => onComplete(data), 1000);
           } else if (data.status === 'failed') {
             clearInterval(poller);
-            setError(data.error || 'A critical processing node encountered a fault.');
+            setError(data.error || 'The neural processor encountered a logic fault.');
             setIsUploading(false);
           } else {
-            // Adaptive progress visualization
-            let p = 50;
-            if (data.summary?.includes('Linearizing')) p = 65;
-            if (data.status === 'indexing') p = 85;
-            
-            setProgress(Math.max(progress, p));
-            setStatus(data.summary || 'Processing...');
+            let p = Math.max(progress, data.progress || 50);
+            setProgress(p);
+            setStatus(data.summary || 'Unrolling columns...');
           }
         } catch (e) {
-          console.error("Polling sync error:", e);
+          console.error("Polling error:", e);
         }
-      }, 2000);
+      }, 3000);
     }
     return () => clearInterval(poller);
   }, [docId, isUploading, progress, onComplete]);
@@ -69,6 +66,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       }
       return fullText;
     } catch (err) {
+      console.warn("Local extraction node failed:", err);
       return "";
     }
   };
@@ -78,100 +76,130 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     if (!file) return;
 
     if (file.size > 50 * 1024 * 1024) {
-      setError("File exceeds 50MB institutional limit.");
+      setError("File exceeds 50MB limit.");
       return;
     }
 
     setError(null);
     setIsUploading(true);
     setProgress(5);
-    setStatus('Local Extracting...');
+    setStatus('Pre-flight check...');
 
     try {
-      const extractedText = await extractTextLocally(file);
+      // 1. Session Verification (Prevent "Failed to fetch" due to unauthorized)
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Authentication offline.");
-      
-      const detectedType = file.type || 'application/pdf';
+      if (!session) {
+        throw new Error("Grid authorization missing. Please sign in again.");
+      }
 
-      setProgress(15);
-      setStatus('Neural Handshake...');
+      // 2. Extraction Node
+      setStatus('Local extraction node active...');
+      const extractedText = await extractTextLocally(file);
+      
+      // 3. Handshake Node
+      setProgress(20);
+      setStatus('Cloud handshake...');
       const handshake = await fetch('/api/docs/upload', {
         method: 'POST',
         headers: { 
-          'Authorization': `Bearer ${session?.access_token}`,
+          'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ 
           name: file.name.replace(/\.[^/.]+$/, ""), 
-          contentType: detectedType,
+          contentType: file.type || 'application/pdf',
           extractedText: extractedText 
         })
       });
 
-      if (!handshake.ok) throw new Error("Grid handshake refused.");
+      if (!handshake.ok) {
+        const errData = await handshake.json().catch(() => ({}));
+        throw new Error(errData.error || "Handshake node refusal.");
+      }
+      
       const { uploadUrl, documentId } = await handshake.json();
       setDocId(documentId);
       
-      setProgress(25);
-      setStatus('Streaming Binary Vault...');
-      const uploadRes = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': detectedType } });
-      if (!uploadRes.ok) throw new Error("Vault upload failed.");
+      // 4. Binary Stream Node
+      setProgress(30);
+      setStatus('Streaming binary payload...');
+      const uploadRes = await fetch(uploadUrl, { 
+        method: 'PUT', 
+        body: file, 
+        headers: { 'Content-Type': file.type || 'application/pdf' } 
+      });
+      
+      if (!uploadRes.ok) throw new Error("Object storage stream interrupted.");
 
+      // 5. Trigger Neural Pipeline
       setProgress(40);
-      setStatus('Initializing Universal Pipeline...');
+      setStatus('Neural pipeline initialized...');
       await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
 
     } catch (err: any) {
-      setError(err.message || "Ingestion fault.");
+      console.error("❌ Ingestion Node Fault:", err);
+      setError(err.message || "A network node failed to respond.");
       setIsUploading(false);
     }
   };
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-10 md:p-16 w-full max-w-2xl shadow-2xl border dark:border-white/5 relative overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
+    <div className="bg-white dark:bg-[#0d0d0d] rounded-[3.5rem] p-10 md:p-16 w-full max-w-2xl shadow-[0_32px_128px_-16px_rgba(0,0,0,0.5)] border-2 border-slate-100 dark:border-white/5 relative overflow-hidden text-left">
+      <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-600" />
       <div className="space-y-8">
         <div className="flex items-center justify-between">
-          <div className="w-16 h-16 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-xl relative">
+          <div className="w-16 h-16 bg-indigo-600 text-white rounded-[1.5rem] flex items-center justify-center shadow-2xl relative rotate-3 group-hover:rotate-0 transition-transform">
              {isUploading ? <BrainCircuit size={32} className="animate-pulse" /> : <UploadCloud size={32} />}
           </div>
-          <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-950/30 rounded-xl border border-emerald-100 flex items-center gap-2">
-             <ShieldCheck size={16} className="text-emerald-500" />
-             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Enterprise Ingestion</span>
+          <div className="px-5 py-2.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-500/20 flex items-center gap-3">
+             <ShieldCheck size={18} className="text-emerald-500" />
+             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Enterprise Protocol Secure</span>
           </div>
         </div>
 
         <div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase">Curriculum Engine</h2>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mt-2">Universal Extraction v25.0</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Curriculum Engine</h2>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">Node v125.0 • Multi-Column Logic</p>
         </div>
 
         {error ? (
-          <div className="p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 rounded-2xl space-y-4">
-            <div className="flex items-start gap-3 text-rose-600">
-               <AlertCircle size={20} className="shrink-0 mt-0.5" />
-               <p className="text-xs font-bold">{error}</p>
+          <div className="p-8 bg-rose-50 dark:bg-rose-950/30 border-2 border-rose-100 dark:border-rose-900/30 rounded-[2rem] space-y-5 animate-in slide-in-from-top-2">
+            <div className="flex items-start gap-4 text-rose-600">
+               <AlertCircle size={24} className="shrink-0 mt-0.5" />
+               <div className="space-y-1">
+                 <p className="text-sm font-black uppercase tracking-tight">Ingestion Failure</p>
+                 <p className="text-xs font-bold opacity-80 leading-relaxed">{error}</p>
+               </div>
             </div>
-            <button onClick={() => {setError(null); setIsUploading(false);}} className="text-[10px] font-black uppercase tracking-widest text-rose-600 underline">Try Again</button>
+            <div className="flex gap-4">
+              <button onClick={() => {setError(null); setIsUploading(false);}} className="flex-1 py-3 bg-rose-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all">Retry Handshake</button>
+              <button onClick={onCancel} className="flex-1 py-3 bg-slate-100 dark:bg-white/5 text-slate-500 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Abort Task</button>
+            </div>
           </div>
         ) : isUploading ? (
-          <div className="space-y-4 py-4">
-             <div className="h-2 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
-                <div className="h-full bg-indigo-600 transition-all duration-700" style={{ width: `${progress}%` }} />
+          <div className="space-y-6 py-6">
+             <div className="h-3 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
+                <div className="h-full bg-indigo-600 transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(79,70,229,0.5)]" style={{ width: `${progress}%` }} />
              </div>
-             <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 animate-pulse">{status}</p>
+             <div className="flex items-center gap-3">
+               <Loader2 size={16} className="text-indigo-600 animate-spin" />
+               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 animate-pulse">{status}</p>
+             </div>
+             <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 flex gap-3">
+                <Info size={16} className="text-indigo-600 shrink-0" />
+                <p className="text-[9px] font-bold text-slate-500 leading-relaxed">Processing heavy curriculum docs involves column unrolling. This can take 2-4 minutes depending on node saturation.</p>
+             </div>
           </div>
         ) : (
           <label className="group relative cursor-pointer block">
             <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
-            <div className="py-20 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-[2.5rem] group-hover:border-indigo-500 transition-all bg-slate-50/50 dark:bg-white/5 text-center">
-              <UploadCloud size={48} className="text-slate-300 group-hover:text-indigo-500 transition-all mx-auto mb-4" />
-              <p className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-tight">Drop Curriculum PDF</p>
-              <p className="text-[9px] font-bold text-slate-400 uppercase mt-2">Max 50MB per identity node</p>
+            <div className="py-24 border-3 border-dashed border-slate-200 dark:border-white/10 rounded-[3rem] group-hover:border-indigo-600 transition-all bg-slate-50/50 dark:bg-white/5 text-center group-hover:bg-indigo-50/50 dark:group-hover:bg-indigo-900/10">
+              <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-600 transition-all mx-auto mb-6 group-hover:scale-110" />
+              <p className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">Drop Curriculum Ledger</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 tracking-widest opacity-60">Max 50MB • PDF Standard Node</p>
             </div>
           </label>
         )}

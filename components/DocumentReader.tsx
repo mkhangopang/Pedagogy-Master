@@ -21,8 +21,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
   const handleShare = async () => {
     const shareData = {
-      title: `Curriculum Ledger | ${activeDoc.name}`,
-      text: `Accessing institutional asset: ${activeDoc.name}`,
+      title: `Curriculum Master | ${activeDoc.name}`,
+      text: `Reviewing institutional asset: ${activeDoc.name}`,
       url: window.location.origin,
     };
     if (navigator.share) {
@@ -39,28 +39,28 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   const renderedHtml = useMemo(() => {
     if (!activeDoc.extractedText) return '<div class="py-20 text-center opacity-40 italic font-black uppercase tracking-widest text-[10px]">Neural sync active...</div>';
     
-    // Split MD from structured JSON metadata if present
+    // STRIP STRUCTURED INDEX: Don't show raw JSON blocks to human eyes
     let text = activeDoc.extractedText.split('<STRUCTURED_INDEX>')[0].trim();
 
-    // 1. GRADE GATES (Landmarks for vertical unrolling)
-    text = text.replace(/^# GRADE\s+(.+)$/gm, '\n\n<div class="grade-gate pt-20 mt-12 border-t-8 border-indigo-600/10 text-center"><div class="inline-flex w-16 h-16 bg-indigo-600 rounded-[2rem] items-center justify-center text-white shadow-2xl mb-4 animate-pulse"><GraduationCap size={32}/></div><p class="text-indigo-600 font-black text-[10px] uppercase tracking-[0.5em] mb-4">Vertical Curriculum Node</p><h1 class="text-6xl md:text-9xl font-black text-slate-900 dark:text-white tracking-tighter uppercase mb-16">$1</h1></div>');
+    // 1. GRADE GATES
+    text = text.replace(/^# GRADE\s+(.+)$/gm, '\n\n<div class="grade-gate pt-20 mt-12 border-t-8 border-indigo-600/10 text-center"><div class="inline-flex w-16 h-16 bg-indigo-600 rounded-[2rem] items-center justify-center text-white shadow-2xl mb-4 animate-pulse"><GraduationCap size={32}/></div><p class="text-indigo-600 font-black text-[10px] uppercase tracking-[0.5em] mb-4">Institutional Node</p><h1 class="text-6xl md:text-9xl font-black text-slate-900 dark:text-white tracking-tighter uppercase mb-16">$1</h1></div>');
     
-    // 2. CHAPTER BLOCKS
-    text = text.replace(/^## CHAPTER\s+(\d+):\s*(.+)$/gm, '\n\n<div class="chapter-node mt-16 mb-10 bg-indigo-50 dark:bg-indigo-950/20 p-8 md:p-14 rounded-[4rem] border-2 border-indigo-100 dark:border-indigo-500/20"><div class="flex items-center gap-4 mb-3"><span class="px-5 py-2 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">UNIT $1</span><div class="h-px bg-indigo-500/20 flex-1"></div></div><h2 class="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none">$2</h2></div>');
+    // 2. CHAPTER WRAPPERS
+    text = text.replace(/^## CHAPTER\s+(\d+):\s*(.+)$/gm, '\n\n<div class="chapter-node mt-16 mb-10 bg-indigo-50 dark:bg-indigo-950/20 p-10 md:p-16 rounded-[4rem] border-2 border-indigo-100 dark:border-indigo-500/20 shadow-xl"><div class="flex items-center gap-4 mb-4"><span class="px-6 py-2 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">Unit $1</span><div class="h-px bg-indigo-500/20 flex-1"></div></div><h2 class="text-4xl md:text-7xl font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none">$2</h2></div>');
     
     // 3. DOMAIN HEADERS
-    text = text.replace(/^### DOMAIN\s*([A-Z]):\s*(.+)$/gm, '\n\n<div class="domain-focus mt-12 mb-8 px-6 flex items-center gap-5"><div class="w-12 h-12 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-black flex items-center justify-center font-black text-xl shadow-lg">$1</div><h3 class="text-3xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">$2</h3></div>');
+    text = text.replace(/^### DOMAIN\s*([A-Z]):\s*(.+)$/gm, '\n\n<div class="domain-focus mt-12 mb-8 px-6 flex items-center gap-6"><div class="w-14 h-14 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-black flex items-center justify-center font-black text-2xl shadow-xl">$1</div><h3 class="text-3xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">$2</h3></div>');
 
     // 4. TOUCH-OPTIMIZED SLO CARDS
     const sloRegex = /^- SLO\s*([A-Z0-9-]+):\s*([^\n<]+)/gm;
     text = text.replace(sloRegex, (match, code, desc) => {
-        return `\n<div class="slo-card group bg-white dark:bg-white/5 p-6 md:p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm hover:border-indigo-500/50 transition-all cursor-pointer mb-5 slo-interactive-pill" data-slo="${code.trim()}">
-          <div class="flex items-start gap-6">
-             <div class="px-5 py-2.5 bg-slate-100 dark:bg-indigo-600/20 text-slate-900 dark:text-indigo-400 rounded-2xl font-black text-xs tracking-widest shadow-inner shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+        return `\n<div class="slo-card group bg-white dark:bg-white/5 p-8 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm hover:border-indigo-500/50 transition-all cursor-pointer mb-6 slo-interactive-pill" data-slo="${code.trim()}">
+          <div class="flex items-start gap-8">
+             <div class="px-6 py-3 bg-slate-100 dark:bg-indigo-600/20 text-slate-900 dark:text-indigo-400 rounded-2xl font-black text-sm tracking-widest shadow-inner shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-all">
                ${code.trim()}
              </div>
              <div class="flex-1 min-w-0">
-               <p class="text-lg md:text-xl font-bold leading-relaxed text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 transition-colors">${desc.trim()}</p>
+               <p class="text-xl md:text-2xl font-bold leading-relaxed text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 transition-colors">${desc.trim()}</p>
              </div>
           </div>
         </div>`;
@@ -77,16 +77,16 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           <div className="min-w-0">
             <h2 className="text-sm md:text-base font-black uppercase tracking-tight dark:text-white truncate mb-0.5">{activeDoc.name}</h2>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <Layout size={12}/> Universal Ingestion Node v120.0
+              <Layout size={12}/> Universal Master Ledger v125.0
             </p>
           </div>
         </div>
         <button onClick={onClose} className="p-3.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-2xl transition-all shrink-0 hover:scale-110 active:scale-95"><X size={24}/></button>
       </header>
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#080808] p-0 md:p-10 print:p-0">
+      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#080808] p-0 md:p-6 lg:p-10 print:p-0">
         <div 
-          className="max-w-6xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-3xl md:rounded-[4.5rem] p-6 md:p-20 lg:p-24 border border-slate-100 dark:border-white/5 min-h-full relative overflow-hidden print:shadow-none print:border-none print:p-0"
+          className="max-w-none mx-auto bg-white dark:bg-[#0d0d0d] shadow-3xl md:rounded-[4.5rem] p-6 md:p-20 lg:p-32 border border-slate-100 dark:border-white/5 min-h-full relative overflow-hidden print:shadow-none print:border-none print:p-0"
         >
           <div className="absolute top-0 right-0 p-12 opacity-[0.01] -z-10 no-print"><BookOpen size={800} /></div>
           
@@ -95,22 +95,22 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                 <Fingerprint size={18} className="text-indigo-600" />
                 <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Verified Institutional Asset</span>
              </div>
-             <p className="text-[11px] md:text-[12px] font-bold text-slate-400 uppercase tracking-[0.3em] px-4 leading-relaxed">
+             <p className="text-[11px] md:text-[14px] font-bold text-slate-400 uppercase tracking-[0.4em] px-4 leading-relaxed">
                Authority: {activeDoc.authority} • Subject: {activeDoc.subject} • Grade Node: {activeDoc.gradeLevel}
              </p>
           </div>
 
-          <div className="prose dark:prose-invert prose-base md:prose-xl max-w-none reader-canvas select-text w-full artifact-canvas-container"
+          <div className="prose dark:prose-invert prose-base md:prose-xl lg:prose-2xl max-w-none reader-canvas select-text w-full artifact-canvas-container"
                dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           
           <div className="mt-60 pt-20 border-t-2 dark:border-white/5 text-center opacity-20 pb-40 no-print">
-             <p className="text-[10px] font-black uppercase tracking-[0.8em] mb-10">End of Curriculum Ledger</p>
+             <p className="text-[10px] font-black uppercase tracking-[0.8em] mb-10">End of Curriculum Segment</p>
              <div className="flex justify-center"><Fingerprint size={64} /></div>
           </div>
         </div>
       </main>
 
-      {/* Floating Action Glass Bar */}
+      {/* Glassmorphism Floating Bar */}
       <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[550] w-[95%] max-w-md no-print animate-in slide-in-from-bottom-12 duration-700">
         <div className="flex items-center justify-around bg-slate-900/95 dark:bg-white/95 backdrop-blur-3xl px-10 py-6 rounded-[3rem] shadow-[0_32px_80px_-16px_rgba(0,0,0,0.5)] border border-white/10 dark:border-slate-200">
            <button onClick={() => window.print()} className="flex items-center gap-4 text-white dark:text-slate-900 hover:opacity-70 text-xs font-black uppercase tracking-widest transition-all active:scale-95">
