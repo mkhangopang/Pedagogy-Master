@@ -37,22 +37,23 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   };
 
   const renderedHtml = useMemo(() => {
-    if (!activeDoc.extractedText) return '<div class="py-20 text-center opacity-40 italic font-bold uppercase tracking-widest text-[10px]">Initializing neural sync...</div>';
+    if (!activeDoc.extractedText) return '<div class="py-20 text-center opacity-40 italic font-bold uppercase tracking-widest text-[10px]">Neural sync in progress...</div>';
     
     let text = activeDoc.extractedText;
 
-    // 1. Grade-Level Aesthetic Chapters (Mobile Optimized)
+    // 1. GRADE GATES (Vertical Landmarks)
     text = text.replace(/^# GRADE\s+(.+)$/gm, '\n\n<div class="grade-gate pt-12 mt-12 border-t-4 border-indigo-600/10 text-center"><div class="inline-flex w-12 h-12 bg-indigo-600 rounded-2xl items-center justify-center text-white shadow-xl mb-4"><GraduationCap size={24}/></div><p class="text-indigo-600 font-black text-[10px] uppercase tracking-[0.3em] mb-2">Vertical Node</p><h1 class="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tighter uppercase mb-10">$1</h1></div>');
     
-    // 2. Chapter / Domain Block Architecture
-    text = text.replace(/^## CHAPTER\s+(\d+):\s*(.+)$/gm, '\n\n<div class="chapter-wrapper mt-10 mb-6 bg-indigo-50 dark:bg-indigo-950/20 p-6 md:p-8 rounded-[2rem] border border-indigo-100 dark:border-indigo-500/20"><div class="flex items-center gap-3 mb-1"><span class="text-[9px] font-black uppercase tracking-widest text-indigo-500">Chapter $1</span><div class="h-px bg-indigo-500/10 flex-1"></div></div><h2 class="text-2xl md:text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">$2</h2></div>');
+    // 2. CHAPTER BLOCKS
+    text = text.replace(/^## CHAPTER\s+(\d+):\s*(.+)$/gm, '\n\n<div class="chapter-wrapper mt-10 mb-6 bg-indigo-50 dark:bg-indigo-950/20 p-6 md:p-8 rounded-[2rem] border border-indigo-100 dark:border-indigo-500/20 shadow-sm"><div class="flex items-center gap-3 mb-1"><span class="text-[9px] font-black uppercase tracking-widest text-indigo-500">Chapter $1</span><div class="h-px bg-indigo-500/10 flex-1"></div></div><h2 class="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">$2</h2></div>');
     
+    // 3. DOMAIN HEADERS
     text = text.replace(/^### DOMAIN\s*([A-Z]):\s*(.+)$/gm, '\n\n<div class="domain-header mt-8 mb-4 px-2 flex items-center gap-3"><span class="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">DOMAIN $1</span><div class="h-px bg-slate-200 dark:bg-white/5 flex-1"></div></div><h3 class="text-xl font-bold dark:text-slate-200 mb-6 px-2">$2</h3>');
 
-    // 3. Compact SLO Identity Cards (Vertical Sindh/Master Format)
+    // 4. COMPACT SINDH SLO CARDS (Touch Optimized)
     const sloRegex = /^- SLO\s*([A-Z0-9-]+):\s*([^\n<]+)/gm;
     text = text.replace(sloRegex, (match, code, desc) => {
-        return `\n<div class="slo-card group relative bg-white dark:bg-white/5 p-4 md:p-5 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm hover:border-indigo-500/40 transition-all cursor-pointer mb-3 slo-interactive-pill overflow-hidden" data-slo="${code.trim()}">
+        return `\n<div class="slo-card group relative bg-white dark:bg-white/5 p-4 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm hover:border-indigo-500/40 transition-all cursor-pointer mb-3 slo-interactive-pill overflow-hidden" data-slo="${code.trim()}">
           <div class="flex items-start gap-4">
              <div class="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-black text-[9px] tracking-widest shadow-md shrink-0">
                ${code.trim()}
@@ -95,7 +96,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
       <main className="flex-1 overflow-y-auto custom-scrollbar p-0 bg-slate-50 dark:bg-[#080808]">
         <div 
-          className="max-w-4xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-xl md:my-10 md:rounded-[3rem] p-6 md:p-16 lg:p-24 border border-slate-100 dark:border-white/5 min-h-full relative overflow-hidden"
+          className="max-w-4xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-xl md:my-10 md:rounded-[3rem] p-4 md:p-16 lg:p-24 border border-slate-100 dark:border-white/5 min-h-full relative overflow-hidden"
           onClick={handleCopyCode}
         >
           <div className="absolute top-0 right-0 p-12 opacity-[0.01] -z-10"><BookOpen size={600} /></div>
@@ -127,14 +128,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
         </div>
       )}
 
-      {/* Optimized Floating Bar for Mobile */}
+      {/* Responsive Floating Bar */}
       <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[550] w-[90%] max-w-sm">
         <div className="flex items-center justify-around bg-slate-900/95 dark:bg-white/95 backdrop-blur-2xl px-4 py-4 rounded-[2rem] shadow-3xl border border-white/10 dark:border-slate-200">
-           <button onClick={() => window.print()} className="flex items-center gap-2 text-white dark:text-slate-900 hover:opacity-80 text-[10px] font-black uppercase tracking-widest transition-all">
+           <button onClick={() => window.print()} className="flex-1 flex items-center justify-center gap-2 text-white dark:text-slate-900 hover:opacity-80 text-[10px] font-black uppercase tracking-widest transition-all">
               <Printer size={18} className="text-indigo-400" /> Print
            </button>
            <div className="w-px h-6 bg-white/10 dark:bg-slate-200" />
-           <button onClick={handleShare} className="flex items-center gap-2 text-white dark:text-slate-900 hover:opacity-80 text-[10px] font-black uppercase tracking-widest transition-all">
+           <button onClick={handleShare} className="flex-1 flex items-center justify-center gap-2 text-white dark:text-slate-900 hover:opacity-80 text-[10px] font-black uppercase tracking-widest transition-all">
               <Share2 size={18} className="text-emerald-400" /> Share
            </button>
         </div>

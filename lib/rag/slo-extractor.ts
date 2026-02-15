@@ -11,20 +11,17 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // 1. New v85.0 Synthetic Biology Code: BIO-XI-C01-U-01
+  // 1. Master Vertical Sindh Format: B09A01 or B-09-A-01
+  /\b([B-Z])(\d{2})([A-Z])(\d{2,4})\b/g,
+  
+  // 2. New v85.0 Synthetic Biology Code: BIO-XI-C01-U-01
   /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?C(\d{1,2})[-\s]?([UST])[-\s]?(\d{1,3})\b/g,
-
-  // 2. Synthesized Logic Code (Subject-Grade-CH-Domain-Index)
-  /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?CH(\d{1,2})[-\s]?([US])[-\s]?(\d{1,3})\b/g,
 
   // 3. Compact Sindh/Master MD Code: B-11-J-13-01
   /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{1,3})\b/g,
 
   // 4. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
   /(?:\[|\b)SL[O0]\s*[:\s-]*([A-Z]{1,3})\s*[:\s-]+\s*(\d{2})\s*[:\s-]+\s*([A-Z])\s*[:\s-]+\s*(\d{1,3})(?:\]|\b)/gi,
-
-  // 5. Compact/Standard: B09A01 or B-09-A-01
-  /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,3})\b/g,
 ];
 
 export function extractSLOCodes(documentText: string): ExtractedSLO[] {
@@ -70,6 +67,7 @@ function calculateConfidence(code: string, context: string): number {
   let confidence = 0.5;
   const lowerContext = context.toLowerCase();
   
+  if (/^[B-Z]\d{2}[A-Z]\d{2,4}$/.test(code)) return 0.99; // Vertical Sindh Node
   if (/^[A-Z]{2,4}[IVX\d]+C\d+[UST]\d+$/.test(code)) return 0.99; // Synthetic v85
   if (/^[A-Z]{1,3}\d{1,2}[A-Z]\d{1,2}\d{1,3}$/.test(code)) return 0.98; // 5-part
   if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,4}$/.test(code)) return 0.95; // 4-part
