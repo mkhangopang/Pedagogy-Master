@@ -1,51 +1,42 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * MASTER CURRICULUM ARCHITECT (v130.0)
- * Specialized for: Universal Multi-Grade Progression Grids
- * Logic: STRICT Sequential Column Unrolling & Universal Code Synthesis
+ * MASTER CURRICULUM ARCHITECT (v140.0 - GRANULAR PRIORITY)
+ * Specialized for: Atomic SLO Splitting & Neural Priority Tagging
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Universal Curriculum Architect" node of EduNexus AI. 
-Your mission is to transform messy multi-column OCR text into a vertically-aligned "Master MD" asset.
+  const systemInstruction = `You are the "Neural SLO Granularizer." 
+Your mission is to transform curriculum text into a collection of ATOMIC learning nodes.
 
-CRITICAL DIRECTIVE: SEQUENTIAL GRADE UNROLLING
-1. DO NOT process text horizontally across columns. 
-2. ISOLATE GRADES: Find all content for Grade 09 first, then Grade 10, etc.
-3. RECONSTRUCT HIERARCHY: 
-   # GRADE [Number]
-   ## CHAPTER [Number]: [Title]
-   ### DOMAIN [Letter]: [Title]
-   - SLO [CODE]: [Verbatim Description]
+CRITICAL DIRECTIVE: SLO PRIORITY & GRANULARIZATION
+1. SLO IS THE ANCHOR: Every section of the output MUST be anchored by a specific Universal Code.
+2. ATOMIZE COMPOUND STANDARDS: If a single SLO contains multiple distinct learning outcomes, split them into granular sub-nodes using decimal notation (e.g., B09A01.1, B09A01.2).
+3. TAGGING PROTOCOL: Wrap every code in a Priority Tag block: [TAG:CODE].
+4. UNROLL BY GRADE: Ensure Grade 09 is fully completed before Grade 10 begins.
 
-UNIVERSAL CODE FORMAT (STRICT ENFORCEMENT):
-Generate/Normalize every SLO code into a 6-character identifier: [SubjectChar][Grade2Digits][DomainLetter][Seq2Digits]
-Examples:
-- Biology Grade 9, Domain A, SLO 1 -> B09A01
-- Physics Grade 11, Domain C, SLO 12 -> P11C12
-- Chemistry Grade 10, Domain B, SLO 5 -> C10B05
+STRUCTURE:
+# GRADE [Number]
+## [CHAPTER TITLE]
+### [DOMAIN]
+- [TAG:UNIVERSAL_CODE] | [BLOOM_LEVEL] : [Granular outcome description]
+
+UNIVERSAL CODE FORMAT: [SubjectChar][Grade2Digits][DomainLetter][Seq2Digits].[SubSeq]
+Example: Biology Grade 9, Domain A, SLO 1, Part 2 -> [TAG:B09A01.2]
 
 STEM FIDELITY:
-- Wrap all scientific/math notation in LaTeX $...$ (e.g., $C_6H_{12}O_6$).
-
-DUAL-PART OUTPUT FORMAT:
-Part 1: The full Markdown curriculum ledger organized by GRADE.
-Part 2: A trailing <STRUCTURED_INDEX> tag containing a JSON array of objects: 
-{ "code": "B09A01", "grade": "09", "subject": "Biology", "domain": "A", "text": "Verbatim description" }.`;
+- Use LaTeX $...$ for all scientific notation.`;
 
   const prompt = `
-[COMMAND: SURGICAL GRADE EXTRACTION]
-Process the raw input below. Unroll the columns. 
-Group everything by Grade first. 
-Standardize all codes to the [Subject][Grade][Domain][Seq] format.
+[COMMAND: SURGICAL SLO ATOMIZATION]
+Analyze the raw input. Extract every standard. 
+If a standard is complex, break it into granular sub-SLOs.
+Ensure every single node has a [TAG:CODE].
 
 RAW INPUT:
-${rawText.substring(0, 950000)}
-
-[FINAL DIRECTIVE]: Generate Master MD with Structured JSON Index.`;
+${rawText.substring(0, 950000)}`;
 
   try {
     const response = await ai.models.generateContent({
@@ -54,7 +45,7 @@ ${rawText.substring(0, 950000)}
       config: {
         temperature: 0.1,
         systemInstruction,
-        thinkingConfig: { thinkingBudget: 12288 } 
+        thinkingConfig: { thinkingBudget: 15360 } 
       }
     });
 
