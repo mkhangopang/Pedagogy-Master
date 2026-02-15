@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { indexDocumentForRAG } from '../../../lib/rag/document-indexer';
@@ -10,7 +9,6 @@ export const dynamic = 'force-dynamic';
 /**
  * REINDEX ENDPOINT
  * Triggers a neural refresh for a specific curriculum asset.
- * Fetches text from R2 if database extract is missing.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -40,10 +38,8 @@ export async function POST(req: NextRequest) {
 
     console.log(`🔄 [REINDEX] Refreshing neural nodes for: ${doc.name}`);
 
-    // If text is missing in DB, try to pull it from R2/Storage
     let textToProcess = doc.extracted_text;
     if (!textToProcess && doc.file_path) {
-       console.log(`📥 [REINDEX] Missing text in DB. Fetching from R2...`);
        try {
          textToProcess = await getObjectText(doc.file_path);
        } catch (r2Err) {
@@ -52,15 +48,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (!textToProcess || textToProcess.length < 10) {
-      return NextResponse.json({ error: 'The document has no extractable text. Try re-uploading the file.' }, { status: 422 });
+      return NextResponse.json({ error: 'The document has no extractable text.' }, { status: 422 });
     }
 
-    // Fix: Re-index using (documentId, content, supabase, jobId?) signature
+    // Fix: Aligned with (id, content, supabase) signature
     await indexDocumentForRAG(documentId, textToProcess, supabase);
 
     return NextResponse.json({
       success: true,
-      message: `Document "${doc.name}" has been successfully re-synchronized with the vector grid.`,
+      message: `Document "${doc.name}" synchronized.`,
       id: documentId
     });
 

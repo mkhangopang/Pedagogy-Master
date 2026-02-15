@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
@@ -41,7 +40,7 @@ export async function POST(req: NextRequest) {
     let successCount = 0;
     for (const doc of documents) {
       try {
-        // Fix: Removed doc.file_path to match (documentId, content, supabase, jobId?) signature
+        // Fix: Parameter 3 is the SupabaseClient, not file_path
         await indexDocumentForRAG(doc.id, doc.extracted_text || "", supabase);
         successCount++;
       } catch (e: any) {

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, FileText, Share2, Check, BookOpen, Fingerprint, GraduationCap, Printer, Layout, Table as TableIcon } from 'lucide-react';
+import { X, FileText, Share2, Check, BookOpen, Fingerprint, GraduationCap, Printer, Layout } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
 
@@ -21,8 +21,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
   const handleShare = async () => {
     const shareData = {
-      title: `Curriculum Master | ${activeDoc.name}`,
-      text: `Reviewing institutional asset: ${activeDoc.name}`,
+      title: `Curriculum Ledger | ${activeDoc.name}`,
+      text: `Accessing institutional asset: ${activeDoc.name}`,
       url: window.location.origin,
     };
     if (navigator.share) {
@@ -37,94 +37,88 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   };
 
   const renderedHtml = useMemo(() => {
-    if (!activeDoc.extractedText) return '<div class="py-20 text-center opacity-40 italic font-bold uppercase tracking-widest text-[10px]">Neural sync in progress...</div>';
+    if (!activeDoc.extractedText) return '<div class="py-20 text-center opacity-40 italic font-black uppercase tracking-widest text-[10px]">Neural sync active...</div>';
     
-    // Scrub debug report before rendering
-    let text = activeDoc.extractedText.split('<DEBUG_REPORT>')[0].trim();
+    // Split MD from structured JSON metadata if present
+    let text = activeDoc.extractedText.split('<STRUCTURED_INDEX>')[0].trim();
 
-    // 1. GRADE GATES (Landmarks for long scrolls)
-    text = text.replace(/^## Grade\s+(.+)$/gm, '\n\n<div class="grade-node pt-16 mt-16 border-t-4 border-indigo-600/10 text-center"><div class="inline-flex w-14 h-14 bg-indigo-600 rounded-2xl items-center justify-center text-white shadow-xl mb-4"><GraduationCap size={28}/></div><p class="text-indigo-600 font-black text-[10px] uppercase tracking-[0.4em] mb-2">Curriculum Node</p><h2 class="text-4xl md:text-7xl font-black text-slate-900 dark:text-white tracking-tighter uppercase mb-10">Grade $1</h2></div>');
+    // 1. GRADE GATES (Landmarks for vertical unrolling)
+    text = text.replace(/^# GRADE\s+(.+)$/gm, '\n\n<div class="grade-gate pt-20 mt-12 border-t-8 border-indigo-600/10 text-center"><div class="inline-flex w-16 h-16 bg-indigo-600 rounded-[2rem] items-center justify-center text-white shadow-2xl mb-4 animate-pulse"><GraduationCap size={32}/></div><p class="text-indigo-600 font-black text-[10px] uppercase tracking-[0.5em] mb-4">Vertical Curriculum Node</p><h1 class="text-6xl md:text-9xl font-black text-slate-900 dark:text-white tracking-tighter uppercase mb-16">$1</h1></div>');
+    
+    // 2. CHAPTER BLOCKS
+    text = text.replace(/^## CHAPTER\s+(\d+):\s*(.+)$/gm, '\n\n<div class="chapter-node mt-16 mb-10 bg-indigo-50 dark:bg-indigo-950/20 p-8 md:p-14 rounded-[4rem] border-2 border-indigo-100 dark:border-indigo-500/20"><div class="flex items-center gap-4 mb-3"><span class="px-5 py-2 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest">UNIT $1</span><div class="h-px bg-indigo-500/20 flex-1"></div></div><h2 class="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none">$2</h2></div>');
+    
+    // 3. DOMAIN HEADERS
+    text = text.replace(/^### DOMAIN\s*([A-Z]):\s*(.+)$/gm, '\n\n<div class="domain-focus mt-12 mb-8 px-6 flex items-center gap-5"><div class="w-12 h-12 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-black flex items-center justify-center font-black text-xl shadow-lg">$1</div><h3 class="text-3xl font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">$2</h3></div>');
 
-    // 2. DOMAIN SEPARATORS (If present in text)
-    text = text.replace(/^### Domain\s+([A-Z]):\s*(.+)$/gm, '\n\n<div class="domain-gate mt-12 mb-6 px-4 py-3 bg-slate-50 dark:bg-white/5 rounded-2xl border-l-4 border-indigo-500 flex items-center gap-4"><div class="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center font-black">$1</div><h3 class="text-xl font-bold dark:text-slate-200 uppercase tracking-tight">$2</h3></div>');
-
-    // 3. TABLE WRAPPING (Fixes "squished" mobile view)
-    // The actual table rendering is handled by Marked/renderSTEM, but we inject a wrapper here if needed.
-    // However, the globals.css already has artifact-canvas-container table styles.
-    // We just ensure the Markdown tables are surrounded by a scroll-safe div.
+    // 4. TOUCH-OPTIMIZED SLO CARDS
+    const sloRegex = /^- SLO\s*([A-Z0-9-]+):\s*([^\n<]+)/gm;
+    text = text.replace(sloRegex, (match, code, desc) => {
+        return `\n<div class="slo-card group bg-white dark:bg-white/5 p-6 md:p-8 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-sm hover:border-indigo-500/50 transition-all cursor-pointer mb-5 slo-interactive-pill" data-slo="${code.trim()}">
+          <div class="flex items-start gap-6">
+             <div class="px-5 py-2.5 bg-slate-100 dark:bg-indigo-600/20 text-slate-900 dark:text-indigo-400 rounded-2xl font-black text-xs tracking-widest shadow-inner shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+               ${code.trim()}
+             </div>
+             <div class="flex-1 min-w-0">
+               <p class="text-lg md:text-xl font-bold leading-relaxed text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 transition-colors">${desc.trim()}</p>
+             </div>
+          </div>
+        </div>`;
+    });
 
     return renderSTEM(text);
   }, [activeDoc.extractedText]);
 
-  const handleCopyCode = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    // Special handling for SLO codes inside tables
-    if (target.tagName === 'TD' || target.tagName === 'B' || target.tagName === 'SPAN') {
-      const text = target.innerText.trim();
-      if (/^[A-Z]\d{2}[A-Z]-\d{2}$/.test(text) || /^[A-Z]\d{2}[A-Z]\d{2}$/.test(text)) {
-        navigator.clipboard.writeText(text);
-        setCopyFeedback(text);
-        setTimeout(() => setCopyFeedback(null), 2000);
-      }
-    }
-  };
-
   return (
     <div className="fixed inset-0 z-[500] bg-white dark:bg-[#050505] flex flex-col animate-in fade-in duration-300 print:bg-white overflow-hidden">
-      <header className="h-16 md:h-20 border-b dark:border-white/5 bg-white/95 dark:bg-[#0d0d0d]/95 backdrop-blur-2xl flex items-center justify-between px-4 md:px-8 shrink-0 z-50 no-print">
-        <div className="flex items-center gap-4 min-w-0">
-          <div className="w-10 h-10 md:w-12 md:h-12 bg-indigo-600 rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0"><FileText size={20}/></div>
+      <header className="h-20 border-b dark:border-white/5 bg-white/95 dark:bg-[#0d0d0d]/95 backdrop-blur-3xl flex items-center justify-between px-6 md:px-12 shrink-0 z-50 no-print">
+        <div className="flex items-center gap-6 min-w-0">
+          <div className="w-12 h-12 bg-indigo-600 rounded-[1.2rem] flex items-center justify-center text-white shadow-2xl shrink-0 rotate-3"><FileText size={24}/></div>
           <div className="min-w-0">
-            <h2 className="text-xs md:text-sm font-black uppercase tracking-tight dark:text-white truncate mb-0.5">{activeDoc.name}</h2>
-            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><Layout size={10}/> v110.0 Master Ledger</p>
+            <h2 className="text-sm md:text-base font-black uppercase tracking-tight dark:text-white truncate mb-0.5">{activeDoc.name}</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <Layout size={12}/> Universal Ingestion Node v120.0
+            </p>
           </div>
         </div>
-        <button onClick={onClose} className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-xl transition-all shrink-0 hover:scale-110 active:scale-95"><X size={20}/></button>
+        <button onClick={onClose} className="p-3.5 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-rose-500 rounded-2xl transition-all shrink-0 hover:scale-110 active:scale-95"><X size={24}/></button>
       </header>
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#080808] p-0 md:p-6 print:p-0">
+      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-[#080808] p-0 md:p-10 print:p-0">
         <div 
-          className="max-w-6xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-2xl md:rounded-[4rem] p-5 md:p-16 lg:p-24 border border-slate-100 dark:border-white/5 min-h-full relative overflow-hidden print:shadow-none print:border-none print:p-0"
-          onClick={handleCopyCode}
+          className="max-w-6xl mx-auto bg-white dark:bg-[#0d0d0d] shadow-3xl md:rounded-[4.5rem] p-6 md:p-20 lg:p-24 border border-slate-100 dark:border-white/5 min-h-full relative overflow-hidden print:shadow-none print:border-none print:p-0"
         >
-          <div className="absolute top-0 right-0 p-12 opacity-[0.01] -z-10 no-print"><BookOpen size={600} /></div>
+          <div className="absolute top-0 right-0 p-12 opacity-[0.01] -z-10 no-print"><BookOpen size={800} /></div>
           
-          <div className="mb-12 md:mb-20 text-center space-y-4 no-print">
-             <div className="inline-flex items-center gap-2 px-5 py-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-full border border-indigo-100 dark:border-indigo-500/20">
-                <Fingerprint size={16} className="text-indigo-600" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Universal Ingestion Node</span>
+          <div className="mb-24 text-center space-y-6 no-print">
+             <div className="inline-flex items-center gap-3 px-6 py-2.5 bg-indigo-50 dark:bg-indigo-900/20 rounded-full border border-indigo-100 dark:border-indigo-500/20">
+                <Fingerprint size={18} className="text-indigo-600" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Verified Institutional Asset</span>
              </div>
-             <p className="text-[10px] md:text-[11px] font-bold text-slate-400 uppercase tracking-[0.2em] px-4 leading-relaxed">Authority: {activeDoc.authority} • Subject: {activeDoc.subject} • Mode: Production</p>
+             <p className="text-[11px] md:text-[12px] font-bold text-slate-400 uppercase tracking-[0.3em] px-4 leading-relaxed">
+               Authority: {activeDoc.authority} • Subject: {activeDoc.subject} • Grade Node: {activeDoc.gradeLevel}
+             </p>
           </div>
 
-          <div className="prose dark:prose-invert prose-sm md:prose-lg max-w-none reader-canvas select-text artifact-canvas-container"
+          <div className="prose dark:prose-invert prose-base md:prose-xl max-w-none reader-canvas select-text w-full artifact-canvas-container"
                dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           
-          <div className="mt-40 pt-20 border-t-2 dark:border-white/5 text-center opacity-20 pb-40 no-print">
-             <p className="text-[10px] font-black uppercase tracking-[0.6em] mb-8">End of Ingested Curriculum Segment</p>
-             <div className="flex justify-center"><Fingerprint size={48} /></div>
+          <div className="mt-60 pt-20 border-t-2 dark:border-white/5 text-center opacity-20 pb-40 no-print">
+             <p className="text-[10px] font-black uppercase tracking-[0.8em] mb-10">End of Curriculum Ledger</p>
+             <div className="flex justify-center"><Fingerprint size={64} /></div>
           </div>
         </div>
       </main>
 
-      {copyFeedback && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[600] animate-in slide-in-from-top-4">
-          <div className="bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border border-white/10">
-            <Check size={14} className="text-emerald-500" />
-            <span className="text-[10px] font-black uppercase tracking-widest">{copyFeedback} Captured</span>
-          </div>
-        </div>
-      )}
-
       {/* Floating Action Glass Bar */}
-      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[550] w-[90%] max-w-sm no-print animate-in slide-in-from-bottom-8">
-        <div className="flex items-center justify-around bg-slate-900/95 dark:bg-white/95 backdrop-blur-3xl px-6 py-4 rounded-[2.5rem] shadow-3xl border border-white/10 dark:border-slate-200">
-           <button onClick={() => window.print()} className="flex items-center gap-2.5 text-white dark:text-slate-900 hover:opacity-70 text-[10px] font-black uppercase tracking-widest transition-all">
-              <Printer size={18} className="text-indigo-400" /> Print
+      <div className="fixed bottom-12 left-1/2 -translate-x-1/2 z-[550] w-[95%] max-w-md no-print animate-in slide-in-from-bottom-12 duration-700">
+        <div className="flex items-center justify-around bg-slate-900/95 dark:bg-white/95 backdrop-blur-3xl px-10 py-6 rounded-[3rem] shadow-[0_32px_80px_-16px_rgba(0,0,0,0.5)] border border-white/10 dark:border-slate-200">
+           <button onClick={() => window.print()} className="flex items-center gap-4 text-white dark:text-slate-900 hover:opacity-70 text-xs font-black uppercase tracking-widest transition-all active:scale-95">
+              <Printer size={22} className="text-indigo-400" /> Print
            </button>
-           <div className="w-px h-6 bg-white/10 dark:bg-slate-200" />
-           <button onClick={handleShare} className="flex items-center gap-2.5 text-white dark:text-slate-900 hover:opacity-70 text-[10px] font-black uppercase tracking-widest transition-all">
-              <Share2 size={18} className="text-emerald-400" /> Share
+           <div className="w-px h-10 bg-white/10 dark:bg-slate-200" />
+           <button onClick={handleShare} className="flex items-center gap-4 text-white dark:text-slate-900 hover:opacity-70 text-xs font-black uppercase tracking-widest transition-all active:scale-95">
+              <Share2 size={22} className="text-emerald-400" /> Share
            </button>
         </div>
       </div>

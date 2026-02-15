@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { getObjectText } from '../../../../lib/r2';
@@ -6,7 +5,7 @@ import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300; // Extend timeout to 5 minutes for large curriculum files
+export const maxDuration = 300; 
 
 /**
  * MANUAL INDEX TRIGGER
@@ -29,7 +28,6 @@ export async function POST(request: NextRequest) {
     
     const supabase = getSupabaseServerClient(token);
 
-    // Verify document existence and ownership
     const { data: doc, error: docError } = await supabase
       .from('documents')
       .select('*')
@@ -38,10 +36,9 @@ export async function POST(request: NextRequest) {
       .single();
     
     if (docError || !doc) {
-      return NextResponse.json({ error: 'Document not found or access denied.' }, { status: 404 });
+      return NextResponse.json({ error: 'Document not found.' }, { status: 404 });
     }
     
-    // Attempt text retrieval for indexing
     let text = doc.extracted_text;
     if (!text && doc.file_path) {
       try {
@@ -52,23 +49,22 @@ export async function POST(request: NextRequest) {
     }
     
     if (!text || text.length < 10) {
-      return NextResponse.json({ error: 'No usable text content found for indexing.' }, { status: 422 });
+      return NextResponse.json({ error: 'No usable text content found.' }, { status: 422 });
     }
     
-    // Execute indexing with higher timeout resilience
     try {
-      // Fix: Call with correct signature (documentId, content, supabase, jobId?)
+      // Fix: Aligned with (id, content, supabase) signature
       await indexDocumentForRAG(documentId, text, supabase);
     } catch (indexErr: any) {
       console.error('[Indexing Logic Failure]:', indexErr);
       return NextResponse.json({ 
-        error: `Neural processing failed: ${indexErr.message || 'The operation took too long or the document format is invalid.'}` 
+        error: `Neural processing failed: ${indexErr.message}` 
       }, { status: 500 });
     }
     
     return NextResponse.json({
       success: true,
-      message: `Curriculum asset "${doc.name}" indexed successfully.`,
+      message: `Indexed successfully.`,
     });
     
   } catch (error: any) {
