@@ -1,48 +1,52 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM ARCHITECT (v92.0 - COLUMN UNROLLING)
- * Specialized for: Multi-Column OCR (Sindh/Federal Boards)
- * Strategy: Vertical Grade-Node Reconstruction & B09A01 ID Synthesis
+ * UNIVERSAL CURRICULUM ARCHITECT (v95.0 - VERTICAL SYNTHESIS)
+ * Specialized for: Multi-Column Sindh/Federal Boards
+ * Protocol: Sequential Grade Unrolling & B09A01 Indexing
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. Your mission is to transform multi-column OCR streams into a vertically-aligned "Master MD" asset.
+  const systemInstruction = `You are the "Master Architect" node for EduNexus AI. Your mission is to transform multi-column OCR streams into a high-fidelity "Master MD" vertical ledger.
 
 CRITICAL: SEQUENTIAL COLUMN UNROLLING PROTOCOL
-OCR data for curriculum grids often reads across columns (e.g., Reading Grade 9 and Grade 11 snippets on the same line). YOU MUST UNROLL THIS:
-1. PROCESS BY GRADE: Complete all Chapters, Domains, and SLOs for Grade 09 entirely before moving to Grade 10, 11, or 12.
-2. COLUMN ISOLATION: Recognize when text fragments belong to different vertical domains and re-order them into their correct hierarchical sequence.
-3. HIERARCHY: # GRADE -> ## CHAPTER -> ### DOMAIN -> - SLO.
+The source document is a "Progression Grid" where different grades (IX, X, XI, XII) appear as horizontal columns. OCR reads these horizontally, mixing grades. 
+YOUR PRIMARY COMMAND:
+1. UNROLL BY GRADE: Completely finish Grade 09 (IX) before starting Grade 10, 11, or 12.
+2. VERTICAL NODE RECONSTRUCTION: Reassemble every Domain and Chapter into a continuous vertical sequence.
+3. PREVENT CROSS-TALK: If you see Grade 11 snippets on the same line as Grade 9, move them to the end of the Grade 9 section.
 
-SLO SYNTHESIS RULES (SINDH/MASTER MD FORMAT):
-- FORMAT: [Subject Prefix][Grade Number][Domain Code][SLO Number]
-- Subject Prefix: B (Biology), P (Physics), C (Chemistry), S (Science).
-- Grade Number: 09 (IX), 10 (X), 11 (XI), 12 (XII).
-- Domain Code: A, B, C, D... (Based on the Section/Chapter).
-- SLO Number: 01, 02, 03... (Sequential within the domain).
-- EXAMPLE: SLO B09A01 (Biology, Grade 9, Domain A, SLO 1).
+SLO ID SYNTHESIS (SINDH FORMAT):
+- Generate codes: [Subject][Grade][Domain][Index]
+- Example: B09A01 (Biology Grade 9 Domain A SLO 1)
+- Grades: 09, 10, 11, 12.
+- Subject: B (Bio), P (Phys), C (Chem), S (Gen Science).
+
+MARKDOWN ARCHITECTURE:
+# GRADE [Number]
+## CHAPTER [NN]: [TITLE]
+### DOMAIN [ID]: [NAME]
+- SLO [CODE]: [VERBATIM DESCRIPTION]
 
 STEM FIDELITY:
-- Wrap all chemical formulas, symbols, and math in LaTeX $...$ (e.g., $H_2O$, $C_6H_{12}O_6$).
+- Wrap chemical formulas and math in LaTeX $...$ (e.g., $H_2O$).
 
-OUTPUT ONLY THE MARKDOWN starting with # MASTER MD.`;
+OUTPUT: Produce the full Markdown ledger. Append a <SLO_INDEX_JSON> tag at the end containing a JSON array of all generated SLO codes and their verbatim text.`;
 
   const prompt = `
 [COMMAND: SURGICAL COLUMN UNROLLING]
-Process the provided raw OCR text which contains multi-grade columns.
-1. Isolate and finish all Grade 9 (IX) content first. 
-2. Group all chapters sequentially for Grade 9.
-3. Use the "B09A01" ID format.
-4. Ensure Grade 11/12 content is NOT interleaved into Grade 9 blocks.
-5. Verbatim Accuracy: Do not summarize; the SLO text must be preserved.
+Process this multi-grade OCR stream. 
+1. Isolate Grade 9 first.
+2. Sequence Chapters vertically.
+3. Synthesize standard IDs (e.g., B09A01).
+4. Do NOT summarize. Every word of the SLO must be preserved.
 
-RAW OCR INPUT:
-${rawText.substring(0, 900000)}
+RAW INPUT:
+${rawText.substring(0, 950000)}
 
-[FINAL DIRECTIVE]: Generate the verticalized Master MD ledger.`;
+[FINAL DIRECTIVE]: Generate the verticalized Master MD and JSON index.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -51,14 +55,11 @@ ${rawText.substring(0, 900000)}
       config: {
         temperature: 0.1,
         systemInstruction,
-        thinkingConfig: { thinkingBudget: 8192 } // Increased for complex unrolling
+        thinkingConfig: { thinkingBudget: 8192 }
       }
     });
 
-    const masterMd = response.text || "";
-    const dialect = masterMd.includes('B09') ? 'Sindh-Vertical-Grid' : 'Standard-Linear';
-    
-    return `<!-- MASTER_MD_DIALECT: ${dialect} -->\n${masterMd}`;
+    return response.text || "<!-- SYNTHESIS_FAILURE -->";
   } catch (err) {
     console.error("❌ [Architect Node Critical Error]:", err);
     return `<!-- ERROR: SYNTHESIS FAILED -->\n${rawText}`;
