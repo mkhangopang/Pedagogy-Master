@@ -1,18 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp, Copy, Code2, Lock
+  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp, Copy, Code2, Lock, FileCode
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
 /**
- * SYSTEM FOUNDER SECRETS: SUPABASE SCHEMA BLUEPRINT
- * Hardcoded here to prevent public exposure in GitHub SQL files.
+ * 👑 FOUNDER SECRETS: MASTER DATABASE BLUEPRINT
+ * This SQL is hardcoded here to prevent exposure in public GitHub repositories.
+ * Purpose: Manual initialization of the Supabase Grid.
  */
-const SUPABASE_SCHEMA_BLUEPRINT = `-- ENABLE VECTOR EXTENSION
+const SUPABASE_SCHEMA_BLUEPRINT = `-- ==========================================
+-- EDUNEXUS AI: MASTER INFRASTRUCTURE SCHEMA
+-- ==========================================
+
+-- 1. ENABLE VECTOR EXTENSION
 create extension if not exists vector;
 
--- PROFILES TABLE
+-- 2. PROFILES TABLE (Identity Node)
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   email text,
@@ -27,7 +32,7 @@ create table if not exists public.profiles (
   updated_at timestamp with time zone default now()
 );
 
--- DOCUMENTS TABLE
+-- 3. DOCUMENTS TABLE (Curriculum Vault)
 create table if not exists public.documents (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references public.profiles(id) on delete cascade,
@@ -46,7 +51,7 @@ create table if not exists public.documents (
   created_at timestamp with time zone default now()
 );
 
--- INGESTION JOBS
+-- 4. INGESTION JOBS (Pipeline Tracking)
 create table if not exists public.ingestion_jobs (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -58,7 +63,7 @@ create table if not exists public.ingestion_jobs (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- DOCUMENT CHUNKS (Structure-Aware RAG)
+-- 5. DOCUMENT CHUNKS (Vector Grid)
 create table if not exists public.document_chunks (
   id uuid primary key default uuid_generate_v4(),
   document_id uuid references public.documents(id) on delete cascade,
@@ -72,7 +77,42 @@ create table if not exists public.document_chunks (
   chunk_index int
 );
 
--- HYBRID SEARCH RPC (v6 Dialect Aware)
+-- 6. SLO DATABASE (Surgical Retrieval)
+create table if not exists public.slo_database (
+  id uuid primary key default uuid_generate_v4(),
+  document_id uuid references public.documents(id) on delete cascade,
+  slo_code text not null,
+  slo_full_text text not null,
+  bloom_level text,
+  keywords text[],
+  created_at timestamp with time zone default now()
+);
+
+-- 7. TEACHER PROGRESS (Mastery Ledger)
+create table if not exists public.teacher_progress (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.profiles(id) on delete cascade,
+  slo_code text not null,
+  status text check (status in ('planning', 'teaching', 'completed')),
+  taught_date date,
+  student_mastery_percentage int,
+  notes text,
+  updated_at timestamp with time zone default now()
+);
+
+-- 8. RETRIEVAL LOGS (Observability)
+create table if not exists public.retrieval_logs (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id uuid REFERENCES public.profiles(id),
+  query_text text,
+  top_chunk_ids uuid[],
+  confidence_score float,
+  latency_ms int,
+  provider_used text,
+  created_at timestamp with time zone DEFAULT now()
+);
+
+-- 9. HYBRID SEARCH RPC (Dialect Aware)
 create or replace function hybrid_search_chunks_v6(
   query_text text,
   query_embedding vector(768),
@@ -116,7 +156,7 @@ interface BrainControlProps {
 }
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'diagnostics' | 'dialects' | 'ingestion' | 'blueprint'>('logic');
+  const [activeTab, setActiveTab] = useState<'logic' | 'blueprint' | 'ingestion' | 'diagnostics'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -140,11 +180,15 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await supabase.from('neural_brain').insert([{ 
-        master_prompt: formData.masterPrompt, 
-        version: formData.version + 1, 
-        is_active: true 
-      }]);
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/api/brain/update', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({ master_prompt: formData.masterPrompt })
+      });
       onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
     } finally { setIsSaving(false); }
   };
@@ -152,7 +196,11 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const handleResetGrid = async () => {
     setIsResetting(true);
     try {
-      await fetch('/api/ai-reset', { method: 'POST' });
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/api/ai-reset', { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
       await fetchStatus();
     } finally { setIsResetting(false); }
   };
@@ -175,17 +223,18 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
             <Fingerprint className="text-indigo-600" /> Master Recipe
           </h1>
         </div>
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto no-scrollbar">
+        
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto no-scrollbar shadow-inner">
           {[
             { id: 'logic', icon: <Cpu size={14}/>, label: 'Master Logic' },
-            { id: 'blueprint', icon: <Code2 size={14}/>, label: 'DB Blueprint' },
+            { id: 'blueprint', icon: <FileCode size={14}/>, label: 'DB Blueprint' },
             { id: 'ingestion', icon: <Layers size={14}/>, label: 'Ingestion' },
             { id: 'diagnostics', icon: <Activity size={14}/>, label: 'Diagnostics' },
           ].map(tab => (
             <button 
               key={tab.id} 
               onClick={() => setActiveTab(tab.id as any)} 
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600'}`}
+              className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-xl scale-105 z-10' : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600'}`}
             >
               {tab.icon} {tab.label}
             </button>
@@ -205,10 +254,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-[550px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none focus:ring-2 focus:ring-indigo-500 custom-scrollbar"
+              className="w-full h-[550px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none focus:ring-2 focus:ring-indigo-500 custom-scrollbar shadow-inner"
               placeholder="Inject core synthesis instructions..."
             />
-            <button onClick={handleSave} disabled={isSaving} className="w-full py-5 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+            <button onClick={handleSave} disabled={isSaving} className="w-full py-6 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 active:scale-95">
               {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Deploy Instruction Set
             </button>
           </div>
@@ -260,39 +309,50 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
       {activeTab === 'blueprint' && (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] p-10 border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden relative">
+          <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] p-10 md:p-14 border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden relative">
             <div className="absolute top-0 right-0 p-24 opacity-[0.03] pointer-events-none"><Database size={400}/></div>
             
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10">
-              <div className="space-y-2">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-12">
+              <div className="space-y-3">
                 <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 rounded-full">
                   <ShieldAlert size={12} className="text-amber-600" />
                   <span className="text-[9px] font-black uppercase tracking-widest text-amber-600">Infrastructure Secret</span>
                 </div>
-                <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Supabase SQL Recipe</h2>
-                <p className="text-xs text-slate-500 font-medium">Core database definitions and hybrid search logic. Paste this into the Supabase SQL Editor to initialize or repair the grid.</p>
+                <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Supabase Schema Blueprint</h2>
+                <p className="text-sm text-slate-500 font-medium max-w-2xl leading-relaxed">Core database definitions, vector grid tables, and hybrid search RPC logic. Paste this into the <span className="text-indigo-600 font-bold underline">Supabase SQL Editor</span> to initialize your pedagogical grid.</p>
               </div>
               <button 
                 onClick={handleCopyBlueprint}
-                className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 ${copiedBlueprint ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700'}`}
+                className={`flex items-center gap-3 px-10 py-5 rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl transition-all active:scale-95 shrink-0 ${copiedBlueprint ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-indigo-600 text-white shadow-indigo-600/30 hover:bg-indigo-700'}`}
               >
-                {copiedBlueprint ? <Check size={18}/> : <Copy size={18}/>}
-                {copiedBlueprint ? 'Blueprint Copied' : 'Copy SQL Recipe'}
+                {copiedBlueprint ? <Check size={20}/> : <Copy size={20}/>}
+                {copiedBlueprint ? 'Blueprint Copied' : 'Copy Recipe SQL'}
               </button>
             </div>
 
-            <div className="relative group">
-              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white dark:to-slate-900 pointer-events-none z-10" />
-              <div className="bg-slate-950 rounded-[2.5rem] p-8 max-h-[600px] overflow-y-auto custom-scrollbar border border-white/10 shadow-inner">
-                <pre className="text-[11px] leading-relaxed font-mono text-indigo-300/90 whitespace-pre-wrap">
+            <div className="relative group rounded-[2.5rem] overflow-hidden">
+              <div className="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-white dark:from-slate-900 via-transparent to-transparent pointer-events-none z-10" />
+              <div className="bg-slate-950 rounded-[2.5rem] p-8 max-h-[650px] overflow-y-auto custom-scrollbar border border-white/10 shadow-inner">
+                <pre className="text-[11px] leading-relaxed font-mono text-indigo-300/80 whitespace-pre-wrap selection:bg-indigo-500/30">
                   {SUPABASE_SCHEMA_BLUEPRINT}
                 </pre>
               </div>
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
-                 <div className="px-6 py-2 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-2xl flex items-center gap-2">
-                    <Lock size={12}/> Secure Internal Asset
+              <div className="absolute bottom-8 left-1/2 -translate-x-1/2 z-20">
+                 <div className="px-8 py-3 bg-slate-900 text-white dark:bg-white dark:text-black rounded-full text-[10px] font-black uppercase tracking-widest shadow-3xl flex items-center gap-3 border border-white/10">
+                    <Lock size={14} className="text-indigo-500"/> Secure Founder Asset
                  </div>
               </div>
+            </div>
+            
+            <div className="mt-10 flex items-center justify-center gap-8">
+               <div className="flex items-center gap-2">
+                 <ShieldCheck size={16} className="text-emerald-500" />
+                 <span className="text-[10px] font-black uppercase text-slate-400">Vector v0.8.0 Enabled</span>
+               </div>
+               <div className="flex items-center gap-2">
+                 <Database size={16} className="text-indigo-500" />
+                 <span className="text-[10px] font-black uppercase text-slate-400">Hybrid Search v6.0 Ready</span>
+               </div>
             </div>
           </div>
         </div>
@@ -302,16 +362,18 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl space-y-8">
              <div className="flex items-center gap-4">
-                <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><Rocket size={32}/></div>
+                <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl shadow-sm"><Rocket size={32}/></div>
                 <div>
                    <h3 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Ingestion Node v40.0</h3>
                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Unrolled Column Protocol</p>
                 </div>
              </div>
              <div className="space-y-6">
-                <div className="p-6 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5">
-                   <p className="text-[11px] font-black text-indigo-600 uppercase mb-4 tracking-widest">Active Ingestion Specs</p>
-                   <ul className="space-y-3">
+                <div className="p-8 bg-slate-50 dark:bg-white/5 rounded-3xl border border-slate-100 dark:border-white/5 shadow-inner">
+                   <p className="text-[11px] font-black text-indigo-600 uppercase mb-6 tracking-widest flex items-center gap-2">
+                     <Terminal size={14}/> Active Ingestion Specs
+                   </p>
+                   <ul className="space-y-4">
                       <ProtocolItem label="Atomic SLO Granularity" />
                       <ProtocolItem label="Hierarchical Preservation (Grade > Domain)" />
                       <ProtocolItem label="Deep Bloom's Tagger" />
@@ -319,12 +381,14 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                       <ProtocolItem label="[CTX: ...] Metadata Injection" />
                    </ul>
                 </div>
-                <button className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl">Audit Global Registry</button>
+                <button className="w-full py-5 bg-slate-900 text-white dark:bg-white dark:text-black rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl active:scale-95 transition-all">Audit Global Registry</button>
              </div>
           </div>
           <div className="bg-slate-900 p-10 rounded-[3rem] border border-white/5 shadow-2xl relative overflow-hidden flex flex-col justify-center">
              <div className="absolute top-0 right-0 p-8 opacity-5"><Fingerprint size={200} /></div>
-             <h3 className="text-xl font-black uppercase tracking-tight mb-8 text-indigo-400">Curriculum Registry</h3>
+             <h3 className="text-xl font-black uppercase tracking-tight mb-8 text-indigo-400 flex items-center gap-3">
+                <Globe size={24} /> Curriculum Registry
+             </h3>
              <div className="space-y-4 relative z-10">
                 <DialectEntry title="Pakistani Sindh Board" count="240 SLOs" status="VERIFIED" />
                 <DialectEntry title="Cambridge IGCSE" count="180 SLOs" status="SYNCING" />
@@ -340,7 +404,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            {gridStatus.map(node => (
              <div key={node.id} className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-xl space-y-6 group hover:border-indigo-500 transition-all">
                 <div className="flex justify-between items-start">
-                   <div className={`p-4 rounded-2xl ${node.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                   <div className={`p-4 rounded-2xl shadow-sm ${node.status === 'active' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                       <Server size={24} />
                    </div>
                    <div className="text-right">
@@ -360,6 +424,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                 </div>
              </div>
            ))}
+           {gridStatus.length === 0 && (
+              <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-200 dark:border-white/5 rounded-[3rem] opacity-40">
+                 <Activity size={48} className="mx-auto mb-4 text-slate-400" />
+                 <p className="text-sm font-black uppercase tracking-widest">Node status polling in progress...</p>
+              </div>
+           )}
         </div>
       )}
     </div>
@@ -367,7 +437,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 };
 
 const MetricRow = ({ label, value, trend }: any) => (
-  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
+  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 hover:bg-white/10 transition-colors">
     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{label}</span>
     <div className="text-right">
        <span className="block text-sm font-black text-white">{value}</span>
@@ -377,14 +447,16 @@ const MetricRow = ({ label, value, trend }: any) => (
 );
 
 const ProtocolItem = ({ label }: any) => (
-  <li className="flex items-center gap-3 text-[10px] font-bold text-slate-600 dark:text-slate-400">
-    <Check size={14} className="text-emerald-500" />
+  <li className="flex items-center gap-3 text-[10px] font-bold text-slate-600 dark:text-slate-400 group cursor-default">
+    <div className="p-1 bg-emerald-50 dark:bg-emerald-900/30 rounded-full group-hover:scale-110 transition-transform shadow-sm">
+      <Check size={12} className="text-emerald-500" />
+    </div>
     <span>{label}</span>
   </li>
 );
 
 const DialectEntry = ({ title, count, status }: any) => (
-  <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5 group hover:bg-indigo-600 transition-all">
+  <div className="flex items-center justify-between p-5 bg-white/5 rounded-[1.5rem] border border-white/5 group hover:bg-indigo-600 transition-all cursor-pointer">
      <div className="flex items-center gap-3">
         <Globe size={16} className="text-indigo-400 group-hover:text-white" />
         <span className="text-[10px] font-bold text-slate-300 group-hover:text-white">{title}</span>
