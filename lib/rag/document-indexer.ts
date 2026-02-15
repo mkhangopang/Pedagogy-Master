@@ -5,19 +5,18 @@ import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 import { Buffer } from 'buffer';
 
 /**
- * ADVANCED STRUCTURE-AWARE INDEXER (v4.0)
- * Logic: Tree-based chunk graph with Context Carry-Forward.
+ * ADVANCED STRUCTURE-AWARE INDEXER (v5.0)
+ * Logic: Tree-based chunk graph with "Context Carry-Forward" & Fingerprinting.
  */
 export async function indexDocumentForRAG(
   documentId: string,
   content: string,
-  filePath: string,
   supabase: SupabaseClient,
-  preExtractedMeta?: any
+  jobId?: string
 ) {
   try {
     const lines = content.split('\n');
-    const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || preExtractedMeta?.dialect || 'Standard';
+    const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
     let currentGrade = "N/A";
     let currentChapter = "N/A";
@@ -27,6 +26,7 @@ export async function indexDocumentForRAG(
     let buffer = "";
     let codesInChunk = new Set<string>();
 
+    // 1. Structural Decomposition
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
@@ -50,10 +50,11 @@ export async function indexDocumentForRAG(
       const nextLine = lines[i+1]?.trim() || "";
       const isHeaderChange = nextLine.startsWith('#');
 
+      // Adaptive Chunking (1000 chars or Header Break)
       if (buffer.length >= 1000 || isHeaderChange || i === lines.length - 1) {
-        // FINGERPRINT: SHA-256 equivalent for free tier deduplication
         const fingerprint = Buffer.from(buffer.trim()).toString('base64').substring(0, 50);
         
+        // Context Carry-Forward: Prepend high-level metadata to the embedding string
         const contextHeader = `[CONTEXT: Grade ${currentGrade} | Ch ${currentChapter} | Domain ${currentDomain}]\n`;
         const enrichedText = contextHeader + buffer.trim();
 
@@ -75,17 +76,25 @@ export async function indexDocumentForRAG(
       }
     }
 
-    await supabase.from('document_chunks').delete().eq('document_id', documentId);
-
-    const BATCH_SIZE = 10;
+    // 2. Batch Processing with Deduplication
+    const BATCH_SIZE = 5; // Small batches to avoid free-tier timeouts
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
       
-      // DEDUPLICATION: Skip if fingerprint exists for this user (Cost optimization)
-      const fingerprints = batch.map(n => n.fingerprint);
-      const { data: existing } = await supabase.from('document_chunks').select('semantic_fingerprint').in('semantic_fingerprint', fingerprints);
-      const existingFp = new Set(existing?.map(e => e.semantic_fingerprint) || []);
+      // Update Job status for UI progress
+      if (jobId) {
+        await supabase.from('ingestion_jobs').update({ 
+          payload: { processed: i, total: nodes.length } 
+        }).eq('id', jobId);
+      }
 
+      // SHA-deduplication check
+      const fingerprints = batch.map(n => n.fingerprint);
+      const { data: existing } = await supabase.from('document_chunks')
+        .select('semantic_fingerprint')
+        .in('semantic_fingerprint', fingerprints);
+      
+      const existingFp = new Set(existing?.map(e => e.semantic_fingerprint) || []);
       const toProcess = batch.filter(n => !existingFp.has(n.fingerprint));
       
       if (toProcess.length > 0) {
@@ -106,7 +115,6 @@ export async function indexDocumentForRAG(
       }
     }
 
-    await supabase.from('documents').update({ status: 'ready', rag_indexed: true, master_md_dialect: dialect }).eq('id', documentId);
     return { success: true, count: nodes.length };
   } catch (error: any) {
     console.error("❌ [Indexer Fatal]:", error.message);

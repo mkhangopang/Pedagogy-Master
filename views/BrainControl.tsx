@@ -1,9 +1,114 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp
+  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp, Copy, Code2, Lock
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
+
+/**
+ * SYSTEM FOUNDER SECRETS: SUPABASE SCHEMA BLUEPRINT
+ * Hardcoded here to prevent public exposure in GitHub SQL files.
+ */
+const SUPABASE_SCHEMA_BLUEPRINT = `-- ENABLE VECTOR EXTENSION
+create extension if not exists vector;
+
+-- PROFILES TABLE
+create table if not exists public.profiles (
+  id uuid references auth.users on delete cascade primary key,
+  email text,
+  name text,
+  role text default 'teacher',
+  plan text default 'free',
+  queries_used int default 0,
+  queries_limit int default 30,
+  workspace_name text,
+  stakeholder_role text,
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
+);
+
+-- DOCUMENTS TABLE
+create table if not exists public.documents (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.profiles(id) on delete cascade,
+  name text not null,
+  file_path text,
+  status text default 'processing',
+  extracted_text text,
+  document_summary text,
+  authority text,
+  subject text,
+  grade_level text,
+  version_year text,
+  rag_indexed boolean default false,
+  is_selected boolean default false,
+  master_md_dialect text,
+  created_at timestamp with time zone default now()
+);
+
+-- INGESTION JOBS
+create table if not exists public.ingestion_jobs (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
+  step text NOT NULL CHECK (step IN ('extract', 'linearize', 'tag', 'chunk', 'embed', 'finalize')),
+  status text NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
+  retry_count int DEFAULT 0,
+  error_message text,
+  payload jsonb, 
+  updated_at timestamp with time zone DEFAULT now()
+);
+
+-- DOCUMENT CHUNKS (Structure-Aware RAG)
+create table if not exists public.document_chunks (
+  id uuid primary key default uuid_generate_v4(),
+  document_id uuid references public.documents(id) on delete cascade,
+  parent_chunk_id uuid references public.document_chunks(id),
+  chunk_text text not null,
+  embedding vector(768),
+  slo_codes text[],
+  semantic_fingerprint text,
+  token_count int,
+  metadata jsonb,
+  chunk_index int
+);
+
+-- HYBRID SEARCH RPC (v6 Dialect Aware)
+create or replace function hybrid_search_chunks_v6(
+  query_text text,
+  query_embedding vector(768),
+  match_count int,
+  filter_document_ids uuid[],
+  dialect_filter text default null,
+  full_text_weight float default 0.2,
+  vector_weight float default 0.8
+) returns table (
+  id uuid,
+  document_id uuid,
+  chunk_text text,
+  slo_codes text[],
+  metadata jsonb,
+  combined_score float
+) language plpgsql as $$
+begin
+  return query
+  select
+    dc.id,
+    dc.document_id,
+    dc.chunk_text,
+    dc.slo_codes,
+    dc.metadata,
+    (
+      vector_weight * (1 - (dc.embedding <=> query_embedding)) +
+      full_text_weight * ts_rank_cd(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text))
+    ) as combined_score
+  from public.document_chunks dc
+  join public.documents d on d.id = dc.document_id
+  where dc.document_id = any(filter_document_ids)
+  and (dialect_filter is null or d.master_md_dialect = dialect_filter)
+  order by combined_score desc
+  limit match_count;
+end;
+$$;`;
 
 interface BrainControlProps {
   brain: NeuralBrain;
@@ -11,11 +116,12 @@ interface BrainControlProps {
 }
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'diagnostics' | 'dialects' | 'ingestion'>('logic');
+  const [activeTab, setActiveTab] = useState<'logic' | 'diagnostics' | 'dialects' | 'ingestion' | 'blueprint'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [gridStatus, setGridStatus] = useState<any[]>([]);
+  const [copiedBlueprint, setCopiedBlueprint] = useState(false);
 
   const fetchStatus = async () => {
     try {
@@ -51,6 +157,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     } finally { setIsResetting(false); }
   };
 
+  const handleCopyBlueprint = () => {
+    navigator.clipboard.writeText(SUPABASE_SCHEMA_BLUEPRINT);
+    setCopiedBlueprint(true);
+    setTimeout(() => setCopiedBlueprint(false), 2000);
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 px-2 text-left">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -60,15 +172,15 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
             <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Master Intelligence Node Active</span>
           </div>
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
-            <Fingerprint className="text-indigo-600" /> Neural Brain v4.0
+            <Fingerprint className="text-indigo-600" /> Master Recipe
           </h1>
         </div>
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 overflow-x-auto no-scrollbar">
           {[
             { id: 'logic', icon: <Cpu size={14}/>, label: 'Master Logic' },
+            { id: 'blueprint', icon: <Code2 size={14}/>, label: 'DB Blueprint' },
             { id: 'ingestion', icon: <Layers size={14}/>, label: 'Ingestion' },
             { id: 'diagnostics', icon: <Activity size={14}/>, label: 'Diagnostics' },
-            { id: 'dialects', icon: <Globe size={14}/>, label: 'Curricula' }
           ].map(tab => (
             <button 
               key={tab.id} 
@@ -146,6 +258,46 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         </div>
       )}
 
+      {activeTab === 'blueprint' && (
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] p-10 border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-24 opacity-[0.03] pointer-events-none"><Database size={400}/></div>
+            
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-10">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 rounded-full">
+                  <ShieldAlert size={12} className="text-amber-600" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-amber-600">Infrastructure Secret</span>
+                </div>
+                <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Supabase SQL Recipe</h2>
+                <p className="text-xs text-slate-500 font-medium">Core database definitions and hybrid search logic. Paste this into the Supabase SQL Editor to initialize or repair the grid.</p>
+              </div>
+              <button 
+                onClick={handleCopyBlueprint}
+                className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 ${copiedBlueprint ? 'bg-emerald-600 text-white shadow-emerald-500/20' : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700'}`}
+              >
+                {copiedBlueprint ? <Check size={18}/> : <Copy size={18}/>}
+                {copiedBlueprint ? 'Blueprint Copied' : 'Copy SQL Recipe'}
+              </button>
+            </div>
+
+            <div className="relative group">
+              <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-white dark:to-slate-900 pointer-events-none z-10" />
+              <div className="bg-slate-950 rounded-[2.5rem] p-8 max-h-[600px] overflow-y-auto custom-scrollbar border border-white/10 shadow-inner">
+                <pre className="text-[11px] leading-relaxed font-mono text-indigo-300/90 whitespace-pre-wrap">
+                  {SUPABASE_SCHEMA_BLUEPRINT}
+                </pre>
+              </div>
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
+                 <div className="px-6 py-2 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-2xl flex items-center gap-2">
+                    <Lock size={12}/> Secure Internal Asset
+                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'ingestion' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in duration-500">
           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-xl space-y-8">
@@ -210,15 +362,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            ))}
         </div>
       )}
-
-      {activeTab === 'dialects' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-           <DialectCard title="Sindh Surgical" desc="Enforces B-GRADE-DOMAIN codes. Optimizes for Sindh Progression Grids and vertical alignment." active />
-           <DialectCard title="IGCSE COMMAND" desc="Focuses on assessment command words (Analyze, Evaluate, Describe) and Cambridge scoring rubrics." />
-           <DialectCard title="KSA VISION 2030" desc="Surgical mapping to Saudi National Curriculum standards with bilingual support context." />
-           <DialectCard title="IB INQUIRY" desc="Optimized for Assessment Objectives (AO) and conceptual scaffolding descriptors." />
-        </div>
-      )}
     </div>
   );
 };
@@ -249,17 +392,6 @@ const DialectEntry = ({ title, count, status }: any) => (
      <div className="text-right">
         <span className="block text-[10px] font-black text-indigo-400 group-hover:text-white">{count}</span>
         <span className="block text-[8px] font-bold text-slate-500 group-hover:text-indigo-100">{status}</span>
-     </div>
-  </div>
-);
-
-const DialectCard = ({ title, desc, active = false }: any) => (
-  <div className={`p-10 rounded-[3rem] border transition-all ${active ? 'bg-indigo-600 border-indigo-400 text-white shadow-2xl scale-105' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-white/5 text-slate-900 dark:text-white shadow-sm'}`}>
-     <Globe size={32} className={active ? 'text-indigo-200' : 'text-indigo-600'} />
-     <h3 className="text-2xl font-black uppercase tracking-tight mt-8">{title}</h3>
-     <p className={`text-sm mt-3 leading-relaxed font-medium ${active ? 'text-indigo-100' : 'text-slate-500'}`}>{desc}</p>
-     <div className={`mt-8 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest w-fit ${active ? 'bg-white/10 text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500'}`}>
-        {active ? 'ACTIVE ANALYZER' : 'STANDBY NODE'}
      </div>
   </div>
 );

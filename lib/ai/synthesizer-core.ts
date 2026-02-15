@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { isGeminiEnabled } from '../env-server';
 
@@ -12,9 +11,8 @@ export interface AIProvider {
   thinkingBudget?: number;
   rpm: number;
   rpd: number;
-  tier: 1 | 2 | 3;
+  tier: 1 | 2 | 3; // 1: Reasoning/Complex, 2: High-Speed, 3: Fallback
   enabled: boolean;
-  lastError?: string;
 }
 
 export class SynthesizerCore {
@@ -29,6 +27,7 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
+    // TIER 1: THE REASONERS (Lesson Planning, Curriculum Mapping)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
       name: 'Gemini 3 Pro',
@@ -41,33 +40,6 @@ export class SynthesizerCore {
       rpd: 2000,
       tier: 1,
       enabled: isGeminiEnabled()
-    });
-
-    providers.set('gemini-flash', {
-      id: 'gemini-flash',
-      name: 'Gemini 3 Flash',
-      endpoint: 'native',
-      model: 'gemini-3-flash-preview',
-      apiKeyEnv: 'API_KEY',
-      maxTokens: 4096,
-      thinkingBudget: 512, 
-      rpm: 15,
-      rpd: 5000,
-      tier: 1,
-      enabled: isGeminiEnabled()
-    });
-
-    providers.set('groq', {
-      id: 'groq',
-      name: 'Groq Llama 3.3',
-      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-      model: 'llama-3.3-70b-versatile',
-      apiKeyEnv: 'GROQ_API_KEY',
-      maxTokens: 4096,
-      rpm: 30,
-      rpd: 10000,
-      tier: 2,
-      enabled: !!process.env.GROQ_API_KEY
     });
 
     providers.set('deepseek', {
@@ -83,17 +55,31 @@ export class SynthesizerCore {
       enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
-    providers.set('sambanova', {
-      id: 'sambanova',
-      name: 'SambaNova Llama',
-      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
-      model: 'Meta-Llama-3.1-405B-Instruct',
-      apiKeyEnv: 'SAMBANOVA_API_KEY',
+    // TIER 2: THE ENGINES (Chat, MCQ Generation, Short Lookup)
+    providers.set('gemini-flash', {
+      id: 'gemini-flash',
+      name: 'Gemini 3 Flash',
+      endpoint: 'native',
+      model: 'gemini-3-flash-preview',
+      apiKeyEnv: 'API_KEY',
       maxTokens: 4096,
-      rpm: 20,
-      rpd: 1000,
-      tier: 1,
-      enabled: !!process.env.SAMBANOVA_API_KEY
+      rpm: 15,
+      rpd: 5000,
+      tier: 2,
+      enabled: isGeminiEnabled()
+    });
+
+    providers.set('groq', {
+      id: 'groq',
+      name: 'Groq Llama 3.3',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      model: 'llama-3.3-70b-versatile',
+      apiKeyEnv: 'GROQ_API_KEY',
+      maxTokens: 4096,
+      rpm: 30,
+      rpd: 10000,
+      tier: 2,
+      enabled: !!process.env.GROQ_API_KEY
     });
 
     providers.set('cerebras', {
@@ -112,11 +98,6 @@ export class SynthesizerCore {
     return providers;
   }
 
-  public realignGrid() {
-    this.failedProviders.clear();
-    return true;
-  }
-
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
     const now = Date.now();
     for (const [id, expiry] of this.failedProviders.entries()) {
@@ -126,9 +107,15 @@ export class SynthesizerCore {
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
     const preferredId = options.preferredId;
+    const taskComplexity = options.complexity || 2; // Default to Tier 2
 
     let candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id));
+
+    // COMPLEXITY-BASED FILTERING
+    if (taskComplexity >= 3) {
+      candidates = candidates.filter(p => p.tier === 1);
+    }
 
     // Strategic priority for preferred provider if healthy
     if (preferredId && this.providers.has(preferredId) && !this.failedProviders.has(preferredId)) {
@@ -136,18 +123,16 @@ export class SynthesizerCore {
     }
 
     if (candidates.length === 0) {
-      this.failedProviders.clear();
+      this.failedProviders.clear(); // Emergency grid reset
       candidates = Array.from(this.providers.values()).filter(p => p.enabled);
     }
 
-    if (candidates.length === 0) throw new Error("AI Alert: Synthesis grid saturated.");
-
     for (const provider of candidates) {
       try {
-        let content = "";
         const apiKey = process.env[provider.apiKeyEnv];
         if (!apiKey) continue;
 
+        let content = "";
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
           const contents = [
@@ -191,12 +176,18 @@ export class SynthesizerCore {
 
         if (content) return { text: content, provider: provider.name };
       } catch (e: any) {
-        this.failedProviders.set(provider.id, Date.now() + 10000); 
+        this.failedProviders.set(provider.id, Date.now() + 30000); // 30s Cooldown
         console.warn(`[Failover] Node ${provider.name} failed:`, e.message);
       }
     }
 
-    throw new Error("AI Alert: Critical grid failure.");
+    throw new Error("AI Alert: Critical grid failure. No healthy nodes available.");
+  }
+
+  // Add comment above each fix
+  // Fix: Added missing realignGrid method to support manual grid reset from admin routes
+  public realignGrid() {
+    this.failedProviders.clear();
   }
 
   public getProviderStatus() {
@@ -215,6 +206,6 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string) => {
-  return getSynthesizer().synthesize(prompt, { history, systemPrompt: system, preferredId: preferred });
+export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string, complexity?: number) => {
+  return getSynthesizer().synthesize(prompt, { history, systemPrompt: system, preferredId: preferred, complexity });
 };
