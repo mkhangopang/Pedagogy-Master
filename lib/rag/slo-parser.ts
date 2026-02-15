@@ -1,7 +1,6 @@
-
 /**
- * WORLD-CLASS SLO PARSER (v11.0)
- * Optimized for Sindh, Federal, and Master MD generated standards.
+ * WORLD-CLASS SLO PARSER (v12.0)
+ * Optimized for Universal standard: [Subject][Grade][Domain][Number]
  */
 
 export interface ParsedSLO {
@@ -10,20 +9,17 @@ export interface ParsedSLO {
   subjectFull: string;
   grade: string;
   domain: string;
-  chapter?: string;
   number: number;
   searchable: string;
 }
 
 const SUBJECT_MAP: Record<string, string> = {
-  'S': 'Science',
   'B': 'Biology',
-  'X': 'Experiment', 
-  'M': 'Mathematics',
-  'E': 'English',
-  'SS': 'Social Studies',
   'P': 'Physics',
   'C': 'Chemistry',
+  'M': 'Mathematics',
+  'E': 'English',
+  'S': 'Science',
   'CS': 'Computer Science',
   'GS': 'General Science',
   'U': 'Urdu',
@@ -42,17 +38,31 @@ export function parseSLOCode(code: string): ParsedSLO | null {
     .replace(/^\s*SL[O0][:.\s-]*/, '')
     .replace(/[:\s-]/g, '');
   
-  // 1. EXTENDED 5-PART: Subject(1-3) + Grade(1-2) + Domain(1) + Chapter(1-2) + Number(1-3)
-  // Example: B11J1301 (B-11-J-13-01)
+  // 1. UNIVERSAL FORMAT (v130): [SubjectChar(1)][Grade(2)][Domain(1)][Seq(2+)]
+  // Example: B09A01, P11C12
+  const universalPattern = /^([A-Z])(\d{2})([A-Z])(\d{1,4})$/;
+
+  // 2. EXTENDED FORMAT: Subject(1-3) + Grade(1-2) + Domain(1) + Chapter(1-2) + Number(1-3)
   const extendedPattern = /^([A-Z]{1,3})(\d{1,2})([A-Z])(\d{1,2})(\d{1,3})$/;
 
-  // 2. STANDARD 4-PART: Subject + Grade + Domain + Number
+  // 3. STANDARD HYPHENATED: B-11-J-01
   const standardPattern = /^([A-Z]{1,3})(\d{1,2})([A-Z])(\d{1,3})$/;
-  
-  // 3. LEGACY PATTERN: S8a5
-  const legacyPattern = /^([A-Z])(\d{1,2})([A-Z])(\d{1,2})$/i;
 
-  let match = cleanCode.match(extendedPattern);
+  let match = cleanCode.match(universalPattern);
+  if (match) {
+    const [_, sub, grade, domain, num] = match;
+    return {
+      original: code,
+      subject: sub,
+      subjectFull: SUBJECT_MAP[sub] || sub,
+      grade: grade,
+      domain: domain,
+      number: parseInt(num, 10),
+      searchable: `${sub}${grade}${domain}${num}`
+    };
+  }
+
+  match = cleanCode.match(extendedPattern);
   if (match) {
     const [_, sub, grade, domain, chapter, num] = match;
     const subUpper = sub.toUpperCase();
@@ -62,15 +72,12 @@ export function parseSLOCode(code: string): ParsedSLO | null {
       subjectFull: SUBJECT_MAP[subUpper] || subUpper,
       grade: grade.padStart(2, '0'),
       domain: domain.toUpperCase(),
-      chapter: chapter,
       number: parseInt(num, 10),
-      searchable: `${subUpper}${grade.padStart(2, '0')}${domain}${chapter}${num}`
+      searchable: `${subUpper}${grade.padStart(2, '0')}${domain}${num}`
     };
   }
 
   match = cleanCode.match(standardPattern);
-  if (!match) match = cleanCode.match(legacyPattern);
-  
   if (match) {
     const [_, sub, grade, domain, num] = match;
     const subUpper = sub.toUpperCase();
@@ -81,7 +88,7 @@ export function parseSLOCode(code: string): ParsedSLO | null {
       grade: grade.padStart(2, '0'),
       domain: domain.toUpperCase(),
       number: parseInt(num, 10),
-      searchable: `${subUpper}${grade.padStart(2, '0')}${domain.toUpperCase()}${parseInt(num, 10)}`
+      searchable: `${subUpper}${grade.padStart(2, '0')}${domain}${num}`
     };
   }
 

@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
@@ -11,14 +10,13 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR (v3.0)
- * Uses the ingestion_jobs state machine for failure isolation and recovery.
+ * NEURAL INGESTION ORCHESTRATOR (v4.0)
+ * FEATURE: JSON Metadata Extraction & Structured SLO Database Population.
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ documentId: string }> }) {
   const { documentId } = await props.params;
   const adminSupabase = getSupabaseAdminClient();
 
-  // 1. Initialize or find existing Job
   let { data: job } = await adminSupabase.from('ingestion_jobs')
     .select('*')
     .eq('document_id', documentId)
@@ -40,7 +38,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     const { data: doc } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
     if (!doc) throw new Error("Document node missing.");
 
-    // STEP: EXTRACT (Binary -> Text)
+    // STEP: EXTRACT
     if (job.step === IngestionStep.EXTRACT) {
       const buffer = await getObjectBuffer(doc.file_path);
       if (!buffer) throw new Error("Vault unreachable.");
@@ -52,17 +50,49 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       job.step = IngestionStep.LINEARIZE;
     }
 
-    // STEP: LINEARIZE (Raw -> Master MD)
+    // STEP: LINEARIZE (Raw -> Master MD + JSON Index)
     if (job.step === IngestionStep.LINEARIZE) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
-      const cleanMd = await convertToPedagogicalMarkdown(currentDoc?.extracted_text || "");
+      const architectOutput = await convertToPedagogicalMarkdown(currentDoc?.extracted_text || "");
       
-      await adminSupabase.from('documents').update({ extracted_text: cleanMd }).eq('id', documentId);
+      // Extract Structured Index
+      const indexMatch = architectOutput.match(/<STRUCTURED_INDEX>([\s\S]+?)<\/STRUCTURED_INDEX>/);
+      if (indexMatch) {
+        try {
+           const sloIndex = JSON.parse(indexMatch[1].trim());
+           if (Array.isArray(sloIndex)) {
+             const sloRecords = sloIndex.map((s: any) => ({
+               document_id: documentId,
+               slo_code: s.code,
+               slo_full_text: s.text,
+               bloom_level: s.bloomLevel || 'Understand',
+               created_at: new Date().toISOString()
+             }));
+             
+             // Populate surgical database
+             await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+             await adminSupabase.from('slo_database').insert(sloRecords);
+             
+             // Update main doc metadata
+             if (sloIndex.length > 0) {
+                await adminSupabase.from('documents').update({
+                  subject: sloIndex[0].subject,
+                  grade_level: `Grade ${sloIndex[0].grade}`,
+                  authority: 'Master MD Generated'
+                }).eq('id', documentId);
+             }
+           }
+        } catch (e) {
+          console.warn("Structured Index Parse Failure:", e);
+        }
+      }
+
+      await adminSupabase.from('documents').update({ extracted_text: architectOutput }).eq('id', documentId);
       await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.EMBED }).eq('id', job.id);
       job.step = IngestionStep.EMBED;
     }
 
-    // STEP: EMBED (Master MD -> Vector Chunks)
+    // STEP: EMBED
     if (job.step === IngestionStep.EMBED) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       await indexDocumentForRAG(documentId, currentDoc?.extracted_text || "", adminSupabase, job.id);

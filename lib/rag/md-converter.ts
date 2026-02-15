@@ -1,40 +1,51 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * MASTER CURRICULUM ARCHITECT (v125.0)
- * Specialized for: Multi-Grade Progression Grids (Sindh/Federal)
- * Logic: Sequential Column Unrolling & Structured Indexing
+ * MASTER CURRICULUM ARCHITECT (v130.0)
+ * Specialized for: Universal Multi-Grade Progression Grids
+ * Logic: STRICT Sequential Column Unrolling & Universal Code Synthesis
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
   
-  const systemInstruction = `You are the "Master Architect" node of EduNexus AI. Your mission is to transform messy multi-column OCR into a vertically-aligned "Master MD" asset.
+  const systemInstruction = `You are the "Universal Curriculum Architect" node of EduNexus AI. 
+Your mission is to transform messy multi-column OCR text into a vertically-aligned "Master MD" asset.
 
-CRITICAL: SEQUENTIAL COLUMN UNROLLING
-The source often reads across columns (e.g., Grade 9 and Grade 11 snippets on the same horizontal line). YOU MUST UNROLL THIS:
-1. PROCESS BY GRADE: Complete all Chapters, Domains, and SLOs for Grade 09 before starting Grade 10, etc.
-2. PRESERVE HIERARCHY: # GRADE -> ## CHAPTER -> ### DOMAIN -> - SLO.
-3. CODE SYNTHESIS: Generate codes in format [Subject][Grade][Domain][Sequence] (e.g., B09A01).
+CRITICAL DIRECTIVE: SEQUENTIAL GRADE UNROLLING
+1. DO NOT process text horizontally across columns. 
+2. ISOLATE GRADES: Find all content for Grade 09 first, then Grade 10, etc.
+3. RECONSTRUCT HIERARCHY: 
+   # GRADE [Number]
+   ## CHAPTER [Number]: [Title]
+   ### DOMAIN [Letter]: [Title]
+   - SLO [CODE]: [Verbatim Description]
+
+UNIVERSAL CODE FORMAT (STRICT ENFORCEMENT):
+Generate/Normalize every SLO code into a 6-character identifier: [SubjectChar][Grade2Digits][DomainLetter][Seq2Digits]
+Examples:
+- Biology Grade 9, Domain A, SLO 1 -> B09A01
+- Physics Grade 11, Domain C, SLO 12 -> P11C12
+- Chemistry Grade 10, Domain B, SLO 5 -> C10B05
 
 STEM FIDELITY:
-- Wrap chemical/math formulas in LaTeX $...$ (e.g., $C_6H_{12}O_6$).
+- Wrap all scientific/math notation in LaTeX $...$ (e.g., $C_6H_{12}O_6$).
 
-DUAL-PART OUTPUT:
-Part 1: The full Markdown curriculum ledger.
-Part 2: A trailing <STRUCTURED_INDEX> tag containing a JSON array of objects: { "code": "B09A01", "text": "Verbatim SLO description" }. This is critical for exact-match RAG.`;
+DUAL-PART OUTPUT FORMAT:
+Part 1: The full Markdown curriculum ledger organized by GRADE.
+Part 2: A trailing <STRUCTURED_INDEX> tag containing a JSON array of objects: 
+{ "code": "B09A01", "grade": "09", "subject": "Biology", "domain": "A", "text": "Verbatim description" }.`;
 
   const prompt = `
-[COMMAND: SURGICAL COLUMN UNROLLING]
-Process the provided raw OCR text.
-1. Isolate Grade 9 chapters first, then Grade 10, etc.
-2. Reconstruct the progression grid vertically.
-3. Ensure verbatim accuracy for all SLO text.
+[COMMAND: SURGICAL GRADE EXTRACTION]
+Process the raw input below. Unroll the columns. 
+Group everything by Grade first. 
+Standardize all codes to the [Subject][Grade][Domain][Seq] format.
 
 RAW INPUT:
 ${rawText.substring(0, 950000)}
 
-[FINAL DIRECTIVE]: Generate Master MD and Structured JSON Index.`;
+[FINAL DIRECTIVE]: Generate Master MD with Structured JSON Index.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -43,7 +54,7 @@ ${rawText.substring(0, 950000)}
       config: {
         temperature: 0.1,
         systemInstruction,
-        thinkingConfig: { thinkingBudget: 8192 } 
+        thinkingConfig: { thinkingBudget: 12288 } 
       }
     });
 
