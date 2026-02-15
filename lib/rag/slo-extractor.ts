@@ -11,14 +11,14 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // 1. Master Vertical Sindh Format: B09A01 or B-09-A-01
-  /\b([B-Z])(\d{2})([A-Z])(\d{2,4})\b/g,
+  // 1. v110.0 Master Prefix Format: P09A-01, B11J-13, S08C-03
+  /\b([P|B|C|S|M|E])(\d{2})([A-Z])[-]?(\d{1,4})\b/g,
   
-  // 2. New v85.0 Synthetic Biology Code: BIO-XI-C01-U-01
-  /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?C(\d{1,2})[-\s]?([UST])[-\s]?(\d{1,3})\b/g,
-
-  // 3. Compact Sindh/Master MD Code: B-11-J-13-01
+  // 2. legacy hyphenated: B-11-J-13-01
   /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{1,3})\b/g,
+
+  // 3. New v85.0 Synthetic Biology Code: BIO-XI-C01-U-01
+  /\b([A-Z]{2,4})[-\s]?([IVX]{1,3}|\d{1,2})[-\s]?C(\d{1,2})[-\s]?([UST])[-\s]?(\d{1,3})\b/g,
 
   // 4. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
   /(?:\[|\b)SL[O0]\s*[:\s-]*([A-Z]{1,3})\s*[:\s-]+\s*(\d{2})\s*[:\s-]+\s*([A-Z])\s*[:\s-]+\s*(\d{1,3})(?:\]|\b)/gi,
@@ -46,8 +46,8 @@ export function extractSLOCodes(documentText: string): ExtractedSLO[] {
       
       let description = fullMatch;
       
-      // Try to find natural language description following the code in a Markdown list
-      const listMatch = context.match(new RegExp(`${fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:–-]?\s*([^\n#<]+)`, 'i'));
+      // Try to find natural language description following the code in a Markdown list/table
+      const listMatch = context.match(new RegExp(`${fullMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*[:|–-]?\s*([^\n#<]+)`, 'i'));
       
       if (listMatch) {
         description = listMatch[1].trim();
@@ -67,7 +67,7 @@ function calculateConfidence(code: string, context: string): number {
   let confidence = 0.5;
   const lowerContext = context.toLowerCase();
   
-  if (/^[B-Z]\d{2}[A-Z]\d{2,4}$/.test(code)) return 0.99; // Vertical Sindh Node
+  if (/^[A-Z]\d{2}[A-Z]-?\d{1,4}$/.test(code)) return 0.99; // v110.0 Format
   if (/^[A-Z]{2,4}[IVX\d]+C\d+[UST]\d+$/.test(code)) return 0.99; // Synthetic v85
   if (/^[A-Z]{1,3}\d{1,2}[A-Z]\d{1,2}\d{1,3}$/.test(code)) return 0.98; // 5-part
   if (/^[A-Z]{1,3}\d{2}[A-Z]\d{1,4}$/.test(code)) return 0.95; // 4-part
@@ -81,5 +81,6 @@ function calculateConfidence(code: string, context: string): number {
 }
 
 export function normalizeSLO(sloCode: string): string {
+  // Normalize to alphanumeric-only for consistent DB key matching
   return sloCode.toUpperCase().replace(/\[|\]|SLO|[:\s-]/g, '');
 }
