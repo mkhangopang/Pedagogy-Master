@@ -7,12 +7,13 @@ import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
 const AUTHORITATIVE_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: AUTHORITATIVE SCHEMA v7.0
+-- EDUNEXUS AI: AUTHORITATIVE SCHEMA v7.5
+-- FIX: Added IF NOT EXISTS to prevent migration collisions
 -- ==========================================
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- 1. IDENTITY GRID
-CREATE TABLE public.profiles (
+CREATE TABLE IF NOT EXISTS public.profiles (
   id uuid references auth.users on delete cascade primary key,
   email text,
   name text,
@@ -28,8 +29,8 @@ CREATE TABLE public.profiles (
 );
 
 -- 2. ASSET VAULT
-CREATE TABLE public.documents (
-  id uuid primary key default uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.documents (
+  id uuid primary key default gen_random_uuid(),
   user_id uuid references public.profiles(id) on delete cascade,
   name text not null,
   file_path text,
@@ -46,8 +47,8 @@ CREATE TABLE public.documents (
 );
 
 -- 3. NEURAL NODES (VECTOR STORE)
-CREATE TABLE public.document_chunks (
-  id uuid primary key default uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.document_chunks (
+  id uuid primary key default gen_random_uuid(),
   document_id uuid references public.documents(id) on delete cascade,
   chunk_text text not null,
   embedding vector(768),
@@ -59,8 +60,8 @@ CREATE TABLE public.document_chunks (
 );
 
 -- 4. SURGICAL SLO DATABASE
-CREATE TABLE public.slo_database (
-  id uuid primary key default uuid_generate_v4(),
+CREATE TABLE IF NOT EXISTS public.slo_database (
+  id uuid primary key default gen_random_uuid(),
   document_id uuid references public.documents(id) on delete cascade,
   slo_code text not null,
   slo_full_text text not null,
@@ -69,7 +70,7 @@ CREATE TABLE public.slo_database (
 );
 
 -- 5. ORCHESTRATION TELEMETRY
-CREATE TABLE public.ai_model_usage (
+CREATE TABLE IF NOT EXISTS public.ai_model_usage (
   id uuid primary key default gen_random_uuid(),
   model_name text not null,
   task_type text not null, -- pdf_parse, code_gen, rag_query, etc.
@@ -81,7 +82,7 @@ CREATE TABLE public.ai_model_usage (
 );
 
 -- 6. INGESTION PIPELINE STATE
-CREATE TABLE public.ingestion_jobs (
+CREATE TABLE IF NOT EXISTS public.ingestion_jobs (
   id uuid primary key default gen_random_uuid(),
   document_id uuid references public.documents(id) on delete cascade,
   step text, -- extract, linearize, embed, finalize
@@ -93,7 +94,7 @@ CREATE TABLE public.ingestion_jobs (
 );
 
 -- 7. NEURAL BRAIN (MASTER PROMPT AUTHORITY)
-CREATE TABLE public.neural_brain (
+CREATE TABLE IF NOT EXISTS public.neural_brain (
   id text primary key,
   master_prompt text,
   is_active boolean default true,
@@ -140,7 +141,7 @@ const BrainControl: React.FC<{ brain: NeuralBrain; onUpdate: (b: NeuralBrain) =>
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ master_prompt: formData.masterPrompt })
       });
-      if (res.ok) onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
+      if (res.ok) onUpdate({...formData, version: (formData.version || 0) + 1, updatedAt: new Date().toISOString()});
     } finally { setIsSaving(false); }
   };
 
@@ -156,7 +157,7 @@ const BrainControl: React.FC<{ brain: NeuralBrain; onUpdate: (b: NeuralBrain) =>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Infrastructure Authority v7.0</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Infrastructure Authority v7.5</span>
           </div>
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
             <Fingerprint className="text-indigo-600" /> Neural Hub
@@ -186,7 +187,7 @@ const BrainControl: React.FC<{ brain: NeuralBrain; onUpdate: (b: NeuralBrain) =>
           <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl space-y-6">
             <div className="flex items-center justify-between">
                <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-2"><Zap size={18} className="text-indigo-600"/> Master System Prompt</h3>
-               <span className="text-[9px] font-bold text-slate-400 uppercase">Version {formData.version}.0</span>
+               <span className="text-[9px] font-bold text-slate-400 uppercase">Version {formData.version || 1}.0</span>
             </div>
             <textarea 
               value={formData.masterPrompt}
@@ -206,7 +207,7 @@ const BrainControl: React.FC<{ brain: NeuralBrain; onUpdate: (b: NeuralBrain) =>
                    <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
                       <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Active Multi-Model Grid</p>
                       <div className="flex flex-wrap gap-2">
-                        {['Gemini 3', 'DeepSeek', 'Grok', 'Cerebras', 'SambaNova'].map(m => (
+                        {['Gemini 3', 'Grok', 'DeepSeek', 'Cerebras', 'SambaNova'].map(m => (
                           <span key={m} className="px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded text-[8px] font-black uppercase">{m}</span>
                         ))}
                       </div>
@@ -227,7 +228,7 @@ const BrainControl: React.FC<{ brain: NeuralBrain; onUpdate: (b: NeuralBrain) =>
                 <div className="p-3 bg-indigo-50 dark:bg-white/5 text-indigo-600 rounded-2xl"><Code2 size={24}/></div>
                 <div>
                   <h2 className="text-xl font-black dark:text-white uppercase tracking-tight">Supabase Data Grid</h2>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Authoritative SQL Blueprint v7.0</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Authoritative SQL Blueprint v7.5</p>
                 </div>
               </div>
               <button 
