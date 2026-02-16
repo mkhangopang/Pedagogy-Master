@@ -1,50 +1,57 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * MASTER CURRICULUM ARCHITECT (v145.0 - WORLD-CLASS INGESTION)
- * Mission: Transform raw text into Atomic Master MD with Structured Indexing.
+ * UNIVERSAL CURRICULUM DOCUMENT INGESTION & CONVERSION ENGINE (v145.0)
+ * Optimized for Sindh, Federal, and International Progression Grids.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
 
-  const systemInstruction = `# UNIVERSAL CURRICULUM DOCUMENT INGESTION ENGINE
+  const systemInstruction = `You are a Universal Curriculum Document Ingestion and Conversion Engine. Your task is to process provided curriculum text and convert it into a single, clean master Markdown (.md) file.
 
-You are a world-class pedagogy architect. Your task is to transform raw curriculum text into a standardized Master MD format.
+### 1. INGESTION & CLEANING PHASE
+- Extract all text, treating tables as Markdown and images as alt-text descriptions.
+- Remove artifacts: Headers/footers, page numbers, repeated lines, hyphenations.
+- Normalize SLOs: Ensure format [TAG:CODE] | BLOOM : DESCRIPTION. Fix typos (e.g., "SL0" to "SLO").
+- Conversion: Use Markdown | tables for progression grids/TOC.
 
-### 🧬 ATOMIC SLO PROTOCOL
-1. **ATOMIZE**: If a single objective contains multiple outcomes (e.g., "Define and explain..."), split them into granular sub-nodes using decimal notation (e.g., B09A01.1, B09A01.2).
-2. **TAGGING**: Wrap every code in a Priority Tag block: [TAG:CODE].
-3. **FIDELITY**: Preserve 100% of the original content. Do NOT summarize or omit sections.
-4. **STEM**: Use LaTeX $...$ for all scientific/mathematical notation.
+### 2. HIERARCHY & STRUCTURE
+# [Curriculum Title]
+## Table of Contents (as MD list with links)
+## Preface/Introduction
+## Cross-Cutting Themes (if present)
+## Progression Grid
+   ### Domain [A-Z]: [Name]
+     - [TAG:CODE] | [BLOOM] : [Text]
+       - **DOK**: [1-4]
+       - **Action Verb**: [Specific Verb]
+## Grade-wise Contents
+   ### Grade [IX-XII]
+     Domain-wise SLOs
+## Assessment and Evaluation
 
-### 🏗️ MASTER MD STRUCTURE
-# GRADE [X]
-## CHAPTER [N]: [TITLE]
-### DOMAIN [A-Z]: [TITLE]
-- [TAG:CODE] | [BLOOM_LEVEL] : [Granular Outcome Text]
-  - **DOK**: [1-4]
-  - **Action Verb**: [Specific Verb]
+### 3. ATOMIC SLO PROTOCOL
+- If an objective contains multiple outcomes (e.g., "Define and explain..."), atomize them into granular sub-nodes: B09A01.1, B09A01.2.
+- STEM: Use LaTeX $...$ for all scientific/mathematical notation.
 
-### 📊 STRUCTURED INDEX REQUIREMENT
-At the VERY END of your response, you MUST provide a JSON block wrapped in <STRUCTURED_INDEX> tags. This index is used for database population.
-Format:
+### 4. OUTPUT REQUIREMENTS
+- Respond ONLY with the master MD content.
+- If input is truncated, note in MD as <!-- Comment: Truncated at page X -->.
+- MUST append a JSON block wrapped in <STRUCTURED_INDEX> tags at the very end.
+
 <STRUCTURED_INDEX>
 [
-  { "code": "B09A01.1", "text": "Full outcome text", "subject": "Biology", "grade": "09", "bloomLevel": "Understand" }
+  { "code": "B09A01.1", "text": "...", "subject": "...", "grade": "09", "bloomLevel": "..." }
 ]
 </STRUCTURED_INDEX>`;
 
   const prompt = `
-[COMMAND: SURGICAL TRANSFORMATION]
-Process the raw input into Master MD. 
-1. Identify Grades, Chapters, and Domains.
-2. Extract and Atomize ALL SLOs.
-3. Apply Bloom's Taxonomy and Webb's DOK tagging.
-4. Generate the <STRUCTURED_INDEX> JSON block.
+[COMMAND: SURGICAL CONVERSION]
+Analyze the following raw curriculum dump and produce the High-Fidelity Master MD file.
 
 RAW INPUT:
-${rawText.substring(0, 900000)}`;
+${rawText.substring(0, 950000)}`;
 
   try {
     const response = await ai.models.generateContent({
@@ -57,9 +64,9 @@ ${rawText.substring(0, 900000)}`;
       }
     });
 
-    return response.text || "<!-- INGESTION_FAILURE -->";
+    return response.text || "<!-- ERROR: EMPTY_SYNTHESIS -->";
   } catch (err) {
-    console.error("❌ [Architect Node Error]:", err);
-    return `<!-- ERROR: SYNTHESIS FAILED -->\n${rawText}`;
+    console.error("❌ [Conversion Node Error]:", err);
+    return `<!-- CRITICAL_FAULT: Fallback to Raw -->\n${rawText}`;
   }
 }
