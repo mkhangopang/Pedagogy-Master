@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
@@ -61,6 +60,29 @@ export default function App() {
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
     getSupabaseHealth().then(setHealthStatus);
     
+    // 1. Fetch Brain / System Prompt from DB
+    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    if (currentSession) {
+      fetch('/api/brain/get', {
+        headers: { 'Authorization': `Bearer ${currentSession.access_token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.brain) {
+          setBrain({
+            id: data.brain.id,
+            masterPrompt: data.brain.master_prompt,
+            bloomRules: DEFAULT_BLOOM_RULES,
+            version: data.brain.version || 1,
+            isActive: data.brain.is_active,
+            updatedAt: data.brain.updated_at
+          });
+        }
+      })
+      .catch(e => console.error("Neural Brain Fetch Error:", e));
+    }
+
+    // 2. Fetch Profile
     getOrCreateProfile(userId, email).then(profile => {
       if (profile) {
         setUserProfile({
@@ -73,6 +95,7 @@ export default function App() {
       }
     });
 
+    // 3. Fetch Documents
     supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => {
         if (data) {
@@ -96,31 +119,8 @@ export default function App() {
     let authSubscription: { unsubscribe: () => void } | null = null;
 
     const initializeAuth = async () => {
-      console.log('📡 [System] Infrastructure Handshake: INITIATED');
-      
       refreshSupabaseInstance();
-
       const pulseSuccess = await pulseCredentialsFromServer();
-      if (pulseSuccess) {
-        console.log('📡 [System] Pulse Success: Keys recovered from server context.');
-      }
-
-      let retries = 0;
-      const maxRetries = 5; 
-      
-      while (retries < maxRetries) {
-        if (isSupabaseConfigured()) break;
-        console.warn(`📡 [System] Handshake attempt ${retries + 1}/${maxRetries}...`);
-        await new Promise(r => setTimeout(r, 600));
-        retries++;
-      }
-
-      if (!isSupabaseConfigured()) {
-        console.warn('📡 [System] Handshake Failed: Running in degraded mode.');
-        // Allow application to proceed even if keys are missing
-      } else {
-        console.log('📡 [System] Infrastructure Handshake: VERIFIED');
-      }
       
       try {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
@@ -154,59 +154,6 @@ export default function App() {
       if (authSubscription) authSubscription.unsubscribe();
     };
   }, [fetchAppData]);
-
-  if (infraError && !bypassHandshake) {
-    const creds = getCredentials();
-    return (
-      <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6 text-left">
-        <div className="max-w-md w-full bg-white dark:bg-slate-900 p-10 rounded-[3rem] shadow-2xl border border-rose-100 dark:border-rose-900/30 text-center space-y-6">
-          <div className="w-20 h-20 bg-rose-50 dark:bg-rose-900/20 rounded-full flex items-center justify-center mx-auto">
-            <AlertTriangle className="w-12 h-12 text-rose-500" />
-          </div>
-          <div className="space-y-2">
-            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Handshake Fault</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">{infraError}</p>
-          </div>
-          
-          <div className="p-4 bg-slate-50 dark:bg-black/20 rounded-2xl text-left space-y-4">
-             <div>
-               <p className="text-[10px] font-black uppercase text-slate-400 mb-2">Discovery Diagnostics</p>
-               <ul className="text-[11px] text-slate-500 space-y-1 font-medium list-disc ml-4">
-                 <li>Check <b>Vercel Settings</b> for key presence.</li>
-                 <li>Verify <b>NEXT_PUBLIC_</b> prefix is correct.</li>
-                 <li><b>Re-Deploy:</b> Ensure values are inlined during build.</li>
-               </ul>
-             </div>
-
-             <div className="pt-2 border-t dark:border-white/5">
-                <button 
-                  onClick={() => setShowRuntimeDebug(!showRuntimeDebug)}
-                  className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-indigo-500"
-                >
-                  {showRuntimeDebug ? <EyeOff size={10}/> : <Eye size={10}/>} {showRuntimeDebug ? 'Hide' : 'Inspect'} Scavenger Results
-                </button>
-                {showRuntimeDebug && (
-                  <div className="mt-3 p-3 bg-black rounded-xl font-mono text-[9px] text-emerald-400 overflow-x-auto text-left">
-                    <div>URL_STATUS: {creds.url ? 'DETECTED' : 'MISSING'}</div>
-                    <div>KEY_STATUS: {creds.key ? 'DETECTED' : 'MISSING'}</div>
-                    <div className="mt-2 text-slate-500">// Discovery Grid v32.0</div>
-                  </div>
-                )}
-             </div>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <button onClick={() => window.location.reload()} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold uppercase tracking-widest text-xs shadow-xl hover:scale-[1.02] transition-all flex items-center justify-center gap-2">
-              <RefreshCw size={14} /> Retry Handshake
-            </button>
-            <button onClick={() => setBypassHandshake(true)} className="w-full py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center justify-center gap-2">
-              Emergency Bypass <ArrowRight size={12} />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (isAuthResolving && !bypassHandshake) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">

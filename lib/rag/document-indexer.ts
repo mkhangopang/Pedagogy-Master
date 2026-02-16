@@ -1,12 +1,11 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 import { Buffer } from 'buffer';
 
 /**
- * ADVANCED STRUCTURE-AWARE INDEXER (v5.0)
- * Logic: Tree-based chunk graph with "Context Carry-Forward" & Fingerprinting.
+ * ADVANCED STRUCTURE-AWARE INDEXER (v6.0)
+ * Logic: Tree-based chunk graph with "Universal Document Hierarchy" context injection.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -18,23 +17,23 @@ export async function indexDocumentForRAG(
     const lines = content.split('\n');
     const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
+    let currentSubject = "N/A";
     let currentGrade = "N/A";
-    let currentChapter = "N/A";
     let currentDomain = "N/A";
     
     const nodes: any[] = [];
     let buffer = "";
     let codesInChunk = new Set<string>();
 
-    // 1. Structural Decomposition
+    // 1. Structural Decomposition with Hierarchy Carry-Forward
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      if (line.startsWith('# GRADE')) {
+      if (line.match(/^Board:|^Subject:/i)) {
+        currentSubject = line.split(':')[1]?.trim() || currentSubject;
+      } else if (line.startsWith('# GRADE')) {
         currentGrade = line.replace('# GRADE', '').trim();
-      } else if (line.startsWith('## CHAPTER')) {
-        currentChapter = line.replace('## CHAPTER', '').trim();
       } else if (line.startsWith('### DOMAIN')) {
         currentDomain = line.replace('### DOMAIN', '').trim();
       }
@@ -47,23 +46,20 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      const nextLine = lines[i+1]?.trim() || "";
-      const isHeaderChange = nextLine.startsWith('#');
-
-      // Adaptive Chunking (1000 chars or Header Break)
-      if (buffer.length >= 1000 || isHeaderChange || i === lines.length - 1) {
+      // Adaptive Chunking with Contextual Headers
+      if (buffer.length >= 1000 || i === lines.length - 1) {
         const fingerprint = Buffer.from(buffer.trim()).toString('base64').substring(0, 50);
         
-        // Context Carry-Forward: Prepend high-level metadata to the embedding string
-        const contextHeader = `[CONTEXT: Grade ${currentGrade} | Ch ${currentChapter} | Domain ${currentDomain}]\n`;
+        // SURGICAL CONTEXT: Every chunk knows its parent hierarchy
+        const contextHeader = `[NODE_PATH: ${currentSubject} > ${currentGrade} > ${currentDomain}]\n`;
         const enrichedText = contextHeader + buffer.trim();
 
         nodes.push({
           text: enrichedText,
           fingerprint,
           metadata: {
+            subject: currentSubject,
             grade: currentGrade,
-            chapter: currentChapter,
             domain: currentDomain,
             slo_codes: Array.from(codesInChunk),
             dialect,
@@ -77,18 +73,16 @@ export async function indexDocumentForRAG(
     }
 
     // 2. Batch Processing with Deduplication
-    const BATCH_SIZE = 5; // Small batches to avoid free-tier timeouts
+    const BATCH_SIZE = 10; 
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
       
-      // Update Job status for UI progress
       if (jobId) {
         await supabase.from('ingestion_jobs').update({ 
-          payload: { processed: i, total: nodes.length } 
+          payload: { processed: i, total: nodes.length, status: 'embedding_vectors' } 
         }).eq('id', jobId);
       }
 
-      // SHA-deduplication check
       const fingerprints = batch.map(n => n.fingerprint);
       const { data: existing } = await supabase.from('document_chunks')
         .select('semantic_fingerprint')
@@ -111,7 +105,8 @@ export async function indexDocumentForRAG(
           chunk_index: i + j
         }));
 
-        await supabase.from('document_chunks').insert(records);
+        const { error: insertError } = await supabase.from('document_chunks').insert(records);
+        if (insertError) throw insertError;
       }
     }
 
