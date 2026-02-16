@@ -6,11 +6,11 @@ import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
 /**
- * 👑 FOUNDER SECRETS: MASTER DATABASE BLUEPRINT (v6.0)
- * Updated with Diagnostic RPCs and Health Monitoring Views.
+ * 👑 FOUNDER SECRETS: MASTER DATABASE BLUEPRINT (v6.1)
+ * Updated with Diagnostic RPCs, Health Monitoring Views, and column stability fixes.
  */
 const SUPABASE_SCHEMA_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v6.0
+-- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v6.1
 -- ==========================================
 
 -- 1. EXTENSIONS
@@ -27,7 +27,8 @@ create table if not exists public.profiles (
   queries_limit int default 30,
   workspace_name text,
   stakeholder_role text,
-  created_at timestamp with time zone default now()
+  created_at timestamp with time zone default now(),
+  updated_at timestamp with time zone default now()
 );
 
 create table if not exists public.documents (
@@ -41,9 +42,10 @@ create table if not exists public.documents (
   authority text,
   subject text,
   grade_level text,
+  version_year text,
   rag_indexed boolean default false,
-  master_md_dialect text,
   is_selected boolean default false,
+  master_md_dialect text,
   created_at timestamp with time zone default now()
 );
 
@@ -54,6 +56,7 @@ create table if not exists public.document_chunks (
   embedding vector(768),
   slo_codes text[],
   semantic_fingerprint text,
+  token_count int,
   metadata jsonb,
   chunk_index int
 );
@@ -103,10 +106,20 @@ begin return exists (select 1 from pg_extension where extname = ext); end; $$;
 create or replace function get_vector_dimensions() returns int language plpgsql as $$
 begin return (select atttypmod - 4 from pg_attribute where attrelid = 'public.document_chunks'::regclass and attname = 'embedding'); end; $$;
 
--- 5. MONITORING VIEW
-create or replace view rag_health_report as
-select d.id, d.name, count(dc.id) as chunks, case when count(dc.id) > 0 then 'HEALTHY' else 'BROKEN' end as status
-from documents d left join document_chunks dc on d.id = dc.document_id group by d.id, d.name;`;
+-- 5. MONITORING VIEW (v6.1 FIX: Use DROP to allow column renaming)
+drop view if exists rag_health_report;
+create view rag_health_report as
+select
+  d.id as document_id,
+  d.name as document_name,
+  count(dc.id) as chunk_count,
+  case
+    when count(dc.id) > 0 then 'HEALTHY'
+    else 'BROKEN_NO_CHUNKS'
+  end as health_status
+from documents d
+left join document_chunks dc on d.id = dc.document_id
+group by d.id, d.name;`;
 
 interface BrainControlProps {
   brain: NeuralBrain;
@@ -159,7 +172,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Node v6.0 Active</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Node v6.1 Active</span>
           </div>
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
             <Fingerprint className="text-indigo-600" /> Master Node
