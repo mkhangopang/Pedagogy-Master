@@ -1,5 +1,5 @@
 /**
- * NEURAL TOOL ROUTER (v4.0)
+ * NEURAL TOOL ROUTER (v4.0 - EXPERT EDITION)
  * Logic: Weighted signal analysis to map queries to specialized expert nodes.
  */
 
@@ -17,23 +17,23 @@ export function detectToolIntent(userQuery: string): ToolRoute {
   const toolSignatures = {
     master_plan: {
       score: 0,
-      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy', 'curriculum map'],
-      phrases: ['how to teach', 'create a plan', 'lesson for', 'sequence of learning']
+      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy', 'curriculum map', 'scaffold', 'modeling', 'anticipatory'],
+      phrases: ['how to teach', 'create a plan', 'lesson for', 'sequence of learning', 'instructional sequence']
     },
     neural_quiz: {
       score: 0,
-      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'formative', 'summative', 'check for understanding', 'assessment item'],
-      phrases: ['generate questions', 'make a quiz', 'test items', 'evaluate mastery']
+      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'formative', 'summative', 'check for understanding', 'assessment item', 'distractor', 'answer key'],
+      phrases: ['generate questions', 'make a quiz', 'test items', 'evaluate mastery', 'summative evaluation']
     },
     fidelity_rubric: {
       score: 0,
-      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'evaluate', 'scale', 'descriptor', 'performance task', 'success criteria'],
-      phrases: ['create a rubric', 'grade this', 'how to score', 'marking guide']
+      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'evaluate', 'scale', 'descriptor', 'performance task', 'success criteria', 'marking', 'competency'],
+      phrases: ['create a rubric', 'grade this', 'how to score', 'marking guide', 'analytical rubric']
     },
     audit_tagger: {
       score: 0,
-      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'standard', 'alignment', 'mapping', 'audit', 'vertical alignment'],
-      phrases: ['tag this', 'align to standards', 'check slo', 'mapping standards']
+      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'standard', 'alignment', 'mapping', 'audit', 'vertical alignment', 'gap analysis'],
+      phrases: ['tag this', 'align to standards', 'check slo', 'mapping standards', 'identify gaps']
     }
   };
 
@@ -62,10 +62,10 @@ export function detectToolIntent(userQuery: string): ToolRoute {
 export function getToolDisplayName(toolId: ToolType | string | null): string {
   if (!toolId) return 'Synthesis Engine';
   const names: Record<string, string> = {
-    master_plan: 'Master Plan Architect',
+    master_plan: 'Instructional Architect',
     neural_quiz: 'Assessment Scientist',
     fidelity_rubric: 'Evaluation Engineer',
-    audit_tagger: 'Standards Auditor'
+    audit_tagger: 'Curriculum Auditor'
   };
   return names[toolId as string] || 'Expert Node';
 }

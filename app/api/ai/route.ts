@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
@@ -10,8 +9,8 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
 /**
- * UNIFIED SYNTHESIS GATEWAY (v54.0 - MASTER ARCHITECT)
- * FEATURE: Tool-Specialized Routing & Institutional Branding
+ * UNIFIED SYNTHESIS GATEWAY (v4.0 - MASTER ARCHITECT)
+ * FEATURE: Tool-Specialized Routing & Modular Prompting
  */
 export async function POST(req: NextRequest) {
   try {
@@ -25,46 +24,41 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { toolType, userInput, priorityDocumentId, adaptiveContext, history } = body;
     
-    const promptText = userInput || "";
-    
     // 1. Resolve Workspace Identity
     const supabase = getSupabaseServerClient(token);
     const { data: profile } = await supabase.from('profiles').select('workspace_name, name').eq('id', user.id).single();
-    const brandName = profile?.workspace_name || 'EduNexus Grid';
+    const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
-    // 2. Specialized Routing Logic
-    const routeInfo = toolType ? { tool: toolType as ToolType } : detectToolIntent(promptText);
+    // 2. Resolve Specialist Node
+    const routeInfo = toolType ? { tool: toolType as ToolType } : detectToolIntent(userInput || "");
     const effectiveTool = routeInfo.tool;
     const expertTitle = getToolDisplayName(effectiveTool);
 
-    // 3. Modular Prompt Synthesis
-    const customContext = `[INSTITUTION: ${brandName}]\n[USER_ROLE: Educator Specialist]\n[INSTRUCTION: Format all headers to match ${brandName} institutional standards.]`;
-    const assembledSystemPrompt = await getFullPrompt(effectiveTool, customContext);
+    // 3. Construct Specialized Context
+    const customContext = `[INSTITUTION: ${brandName}]\n[INSTRUCTION: Format headers for ${brandName} standards.]\n[SPECIALIST: ${expertTitle}]`;
+    const systemPrompt = await getFullPrompt(effectiveTool, customContext);
 
-    // 4. Multi-Provider Execution
+    // 4. Execute Synthesis with Gemini 3 Pro for high-stakes tasks
     const { text, provider, metadata } = await generateAIResponse(
-      promptText,
+      userInput || "",
       history || [],
       user.id,
       supabase,
       adaptiveContext,
       undefined,
       effectiveTool,
-      assembledSystemPrompt, 
+      systemPrompt, 
       priorityDocumentId
     );
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       start(controller) {
-        // Enqueue the primary synthesis
         controller.enqueue(encoder.encode(text));
         
-        // 🚀 INSTITUTIONAL WATERMARK & WORKFLOW ROUTING
-        const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
+        // Institutional Watermark
         const groundedNote = metadata?.isGrounded ? ` | Standards Anchored: ${metadata.sourceDocument}` : '';
-        
-        const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment Match${groundedNote}\n\n*Created with Pedagogy Master AI — [Institutional Access Active](${appUrl})*`;
+        const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment${groundedNote}`;
         
         controller.enqueue(encoder.encode(footer));
         controller.close();
@@ -72,7 +66,7 @@ export async function POST(req: NextRequest) {
     }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 
   } catch (error: any) {
-    console.error("❌ [Neural Gateway Fault]:", error);
+    console.error("❌ [Synthesis Fault]:", error);
     return NextResponse.json({ 
       error: "Synthesis grid exception. Verify usage limits.",
       details: error.message
