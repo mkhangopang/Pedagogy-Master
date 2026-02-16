@@ -1,55 +1,133 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp, Copy, Code2, Lock, FileCode, Search, HardDrive,
-  // Add comment above each fix
-  // Fix: Added missing imports CheckCircle2 and AlertTriangle
-  CheckCircle2, AlertTriangle
+  RefreshCw, Zap, Check, Terminal, Cpu, Activity, Database, TrendingUp, Copy, Code2, FileCode, HardDrive,
+  CheckCircle2, AlertTriangle, RefreshCcw, Layers, Fingerprint
 } from 'lucide-react';
 import { NeuralBrain } from '../types';
 import { supabase } from '../lib/supabase';
 
-const SUPABASE_SCHEMA_BLUEPRINT = `-- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v6.1 (FOUNDER EDITION) --
--- See supabase_schema.sql for the complete authoritative grid definition. --`;
+const AUTHORITATIVE_SQL_BLUEPRINT = `-- ==========================================
+-- EDUNEXUS AI: AUTHORITATIVE SCHEMA v7.0
+-- ==========================================
+CREATE EXTENSION IF NOT EXISTS vector;
 
-interface BrainControlProps {
-  brain: NeuralBrain;
-  onUpdate: (brain: NeuralBrain) => void;
-}
+-- 1. IDENTITY GRID
+CREATE TABLE public.profiles (
+  id uuid references auth.users on delete cascade primary key,
+  email text,
+  name text,
+  role text default 'teacher', -- teacher, enterprise_admin, app_admin
+  plan text default 'free',
+  queries_used int default 0,
+  queries_limit int default 30,
+  workspace_name text,
+  stakeholder_role text, -- auditor_govt, observer_ngo, admin_inst
+  generation_count int default 0,
+  success_rate float default 0.0,
+  created_at timestamp with time zone default now()
+);
 
-const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'logic' | 'blueprint' | 'ingestion' | 'diagnostics'>('logic');
+-- 2. ASSET VAULT
+CREATE TABLE public.documents (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.profiles(id) on delete cascade,
+  name text not null,
+  file_path text,
+  status text default 'processing', -- draft, processing, indexing, ready, failed
+  extracted_text text, -- Stores linearized Master Markdown
+  subject text,
+  grade_level text,
+  authority text,
+  rag_indexed boolean default false,
+  is_selected boolean default false,
+  is_approved boolean default false,
+  version int default 1,
+  created_at timestamp with time zone default now()
+);
+
+-- 3. NEURAL NODES (VECTOR STORE)
+CREATE TABLE public.document_chunks (
+  id uuid primary key default uuid_generate_v4(),
+  document_id uuid references public.documents(id) on delete cascade,
+  chunk_text text not null,
+  embedding vector(768),
+  slo_codes text[], -- Array of normalized SLO tags
+  semantic_fingerprint text unique,
+  token_count int,
+  chunk_index int,
+  metadata jsonb
+);
+
+-- 4. SURGICAL SLO DATABASE
+CREATE TABLE public.slo_database (
+  id uuid primary key default uuid_generate_v4(),
+  document_id uuid references public.documents(id) on delete cascade,
+  slo_code text not null,
+  slo_full_text text not null,
+  bloom_level text,
+  created_at timestamp with time zone default now()
+);
+
+-- 5. ORCHESTRATION TELEMETRY
+CREATE TABLE public.ai_model_usage (
+  id uuid primary key default gen_random_uuid(),
+  model_name text not null,
+  task_type text not null, -- pdf_parse, code_gen, rag_query, etc.
+  tokens_used int not null,
+  success boolean default true,
+  error_message text,
+  execution_time_ms int,
+  timestamp timestamptz default now()
+);
+
+-- 6. INGESTION PIPELINE STATE
+CREATE TABLE public.ingestion_jobs (
+  id uuid primary key default gen_random_uuid(),
+  document_id uuid references public.documents(id) on delete cascade,
+  step text, -- extract, linearize, embed, finalize
+  status text, -- queued, processing, completed, failed
+  retry_count int default 0,
+  error_message text,
+  payload jsonb,
+  updated_at timestamp with time zone default now()
+);
+
+-- 7. NEURAL BRAIN (MASTER PROMPT AUTHORITY)
+CREATE TABLE public.neural_brain (
+  id text primary key,
+  master_prompt text,
+  is_active boolean default true,
+  updated_at timestamp with time zone default now()
+);`;
+
+const BrainControl: React.FC<{ brain: NeuralBrain; onUpdate: (b: NeuralBrain) => void }> = ({ brain, onUpdate }) => {
+  const [activeTab, setActiveTab] = useState<'logic' | 'blueprint' | 'vault' | 'telemetry'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
   const [copiedBlueprint, setCopiedBlueprint] = useState(false);
-  
-  // v120+ Diagnostic State
+  const [modelStats, setModelStats] = useState<any[]>([]);
   const [ragHealth, setRagHealth] = useState<any>(null);
-  const [telemetry, setTelemetry] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchDiagnostics = async () => {
+  const fetchStats = async () => {
     setIsRefreshing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const headers = { 'Authorization': `Bearer ${session?.access_token}` };
       
-      const [healthRes, metricsRes] = await Promise.all([
-        fetch('/api/admin/rag-health', { headers }),
-        fetch('/api/metrics', { headers })
+      const [statsRes, healthRes] = await Promise.all([
+        fetch('/api/admin/model-stats', { headers }),
+        fetch('/api/admin/rag-health', { headers })
       ]);
       
+      if (statsRes.ok) setModelStats(await statsRes.json());
       if (healthRes.ok) setRagHealth(await healthRes.json());
-      if (metricsRes.ok) setTelemetry(await metricsRes.json());
-    } catch (e) {
-      console.error("Diagnostic Node unreachable.");
-    } finally {
-      setIsRefreshing(false);
-    }
+    } finally { setIsRefreshing(false); }
   };
 
   useEffect(() => {
-    fetchDiagnostics();
-    const interval = setInterval(fetchDiagnostics, 30000);
+    fetchStats();
+    const interval = setInterval(fetchStats, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -57,13 +135,19 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     setIsSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      await fetch('/api/brain/update', {
+      const res = await fetch('/api/brain/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
         body: JSON.stringify({ master_prompt: formData.masterPrompt })
       });
-      onUpdate({...formData, version: (formData.version || 1) + 1, updatedAt: new Date().toISOString()});
+      if (res.ok) onUpdate({...formData, version: formData.version + 1, updatedAt: new Date().toISOString()});
     } finally { setIsSaving(false); }
+  };
+
+  const copyBlueprint = () => {
+    navigator.clipboard.writeText(AUTHORITATIVE_SQL_BLUEPRINT);
+    setCopiedBlueprint(true);
+    setTimeout(() => setCopiedBlueprint(false), 2000);
   };
 
   return (
@@ -72,7 +156,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-ping" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Master Control v120.4 Active</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Infrastructure Authority v7.0</span>
           </div>
           <h1 className="text-3xl font-black flex items-center gap-3 tracking-tight uppercase dark:text-white">
             <Fingerprint className="text-indigo-600" /> Neural Hub
@@ -83,8 +167,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
           {[
             { id: 'logic', icon: <Cpu size={14}/>, label: 'Master Logic' },
             { id: 'blueprint', icon: <FileCode size={14}/>, label: 'DB Blueprint' },
-            { id: 'ingestion', icon: <HardDrive size={14}/>, label: 'Vault Health' },
-            { id: 'diagnostics', icon: <Activity size={14}/>, label: 'Telemetry' },
+            { id: 'vault', icon: <HardDrive size={14}/>, label: 'Vault Health' },
+            { id: 'telemetry', icon: <Activity size={14}/>, label: 'Telemetry' },
           ].map(tab => (
             <button 
               key={tab.id} 
@@ -98,56 +182,81 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       </header>
 
       {activeTab === 'logic' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-in slide-in-from-bottom-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl space-y-6">
+            <div className="flex items-center justify-between">
+               <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-2"><Zap size={18} className="text-indigo-600"/> Master System Prompt</h3>
+               <span className="text-[9px] font-bold text-slate-400 uppercase">Version {formData.version}.0</span>
+            </div>
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-[550px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner dark:text-indigo-200"
+              className="w-full h-[500px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner dark:text-indigo-200"
             />
-            <div className="flex gap-4">
-               <button onClick={handleSave} disabled={isSaving} className="flex-1 py-6 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 active:scale-95">
-                 {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Commit Neural Changes
-               </button>
-               {/* Add comment above each fix */}
-               {/* Fix: Changed RefreshCcw to RefreshCw which is already imported */}
-               <button onClick={fetchDiagnostics} className="px-8 bg-slate-100 dark:bg-white/5 text-slate-500 rounded-[1.5rem] hover:bg-slate-200 transition-all"><RefreshCw size={18} className={isRefreshing ? 'animate-spin' : ''}/></button>
-            </div>
+            <button onClick={handleSave} disabled={isSaving} className="w-full py-6 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+              {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Commit Neural Changes
+            </button>
           </div>
           
           <div className="space-y-6">
              <div className="bg-slate-950 text-white p-8 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col gap-8 border border-white/5">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><TrendingUp size={150} /></div>
-                <h3 className="text-lg font-black uppercase tracking-tight text-emerald-400">Grid Performance</h3>
+                <h3 className="text-lg font-black uppercase tracking-tight text-emerald-400">Model Orchestration</h3>
                 <div className="space-y-5 relative z-10">
-                   <MetricRow label="RAG PRECISION" value={telemetry?.grid?.performance?.summary?.embedding_batch_api_call?.avg ? "99.8%" : "Pending"} trend="OPTIMAL" />
-                   <MetricRow label="VECTOR DIM" value={ragHealth?.actualDimensions || "768"} trend="MATCHED" />
-                   <MetricRow label="UPTIME" value={telemetry?.grid?.performance?.uptime ? `${Math.floor(telemetry.grid.performance.uptime / 3600)}h` : "---"} trend="STABLE" />
-                </div>
-             </div>
-             
-             <div className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 shadow-sm">
-                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 mb-6">Master Stats</h3>
-                <div className="space-y-4">
-                   <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-slate-500">Vault Segments</span><span className="text-sm font-black dark:text-white">{ragHealth?.summary?.totalDocs || 0}</span></div>
-                   <div className="flex justify-between items-center"><span className="text-[10px] font-bold text-slate-500">Active SLOs</span><span className="text-sm font-black text-emerald-500">{telemetry?.grid?.caching?.status === 'active' ? 'Sync' : 'Fail'}</span></div>
+                   <div className="p-4 bg-white/5 rounded-2xl border border-white/5">
+                      <p className="text-[10px] font-black text-slate-400 uppercase mb-2">Active Multi-Model Grid</p>
+                      <div className="flex flex-wrap gap-2">
+                        {['Gemini 3', 'DeepSeek', 'Grok', 'Cerebras', 'SambaNova'].map(m => (
+                          <span key={m} className="px-2 py-1 bg-emerald-500/20 text-emerald-400 rounded text-[8px] font-black uppercase">{m}</span>
+                        ))}
+                      </div>
+                   </div>
+                   <MetricRow label="VECTOR DIM" value={ragHealth?.actualDimensions || "768"} trend="STABLE" />
+                   <MetricRow label="HEALTHY NODES" value={ragHealth?.summary?.healthy || 0} trend="OPTIMAL" />
                 </div>
              </div>
           </div>
         </div>
       )}
 
-      {activeTab === 'ingestion' && (
+      {activeTab === 'blueprint' && (
+        <div className="animate-in slide-in-from-bottom-2 space-y-6">
+          <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-indigo-50 dark:bg-white/5 text-indigo-600 rounded-2xl"><Code2 size={24}/></div>
+                <div>
+                  <h2 className="text-xl font-black dark:text-white uppercase tracking-tight">Supabase Data Grid</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Authoritative SQL Blueprint v7.0</p>
+                </div>
+              </div>
+              <button 
+                onClick={copyBlueprint}
+                className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${copiedBlueprint ? 'bg-emerald-500 text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500 hover:text-indigo-600'}`}
+              >
+                {copiedBlueprint ? <Check size={14}/> : <Copy size={14}/>} {copiedBlueprint ? 'Copied to Buffer' : 'Copy SQL Schema'}
+              </button>
+            </div>
+            <div className="relative group">
+              <pre className="p-8 bg-slate-950 text-indigo-300 font-mono text-[10px] leading-relaxed rounded-[2rem] overflow-x-auto max-h-[600px] custom-scrollbar border border-white/5">
+                {AUTHORITATIVE_SQL_BLUEPRINT}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'vault' && (
         <div className="space-y-6 animate-in fade-in duration-500">
            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <HealthBox label="Operational" value={ragHealth?.summary?.healthy || 0} color="text-emerald-500" icon={<CheckCircle2 size={16}/>} />
+              <HealthBox label="Ready" value={ragHealth?.summary?.healthy || 0} color="text-emerald-500" icon={<CheckCircle2 size={16}/>} />
               <HealthBox label="Sync Needed" value={ragHealth?.summary?.broken || 0} color="text-amber-500" icon={<AlertTriangle size={16}/>} />
-              <HealthBox label="Orphans" value={ragHealth?.summary?.orphanedChunks || 0} color="text-rose-500" icon={<Trash2 size={16}/>} />
+              <HealthBox label="Orphans" value={ragHealth?.summary?.orphanedChunks || 0} color="text-rose-500" icon={<Database size={16}/>} />
            </div>
            <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
               <table className="w-full text-left text-xs">
-                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-black uppercase tracking-[0.2em] text-[9px]">
-                    <tr><th className="p-6">Document Node</th><th className="p-6">Chunk Vol</th><th className="p-6">Status</th></tr>
+                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-black uppercase tracking-widest text-[9px]">
+                    <tr><th className="p-6">Document Node</th><th className="p-6">Vectors</th><th className="p-6">Health</th></tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100 dark:divide-white/5">
                     {ragHealth?.report?.map((r: any) => (
@@ -163,27 +272,39 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         </div>
       )}
 
-      {activeTab === 'diagnostics' && telemetry && (
-         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in zoom-in-95">
-            <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm">
-               <h3 className="text-sm font-black uppercase tracking-widest text-indigo-600 mb-8 flex items-center gap-2"><Activity size={18}/> Real-time Latency</h3>
-               <div className="space-y-6">
-                  {Object.entries(telemetry.grid.performance.summary).map(([key, val]: [string, any]) => (
-                    <div key={key} className="space-y-2">
-                       <div className="flex justify-between items-center"><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{key.replace(/_/g, ' ')}</span><span className="text-xs font-black dark:text-white">{val.avg.toFixed(1)}ms</span></div>
-                       <div className="h-1.5 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden"><div className="h-full bg-indigo-500 transition-all" style={{width: `${Math.min(100, val.avg/20)}%`}} /></div>
-                    </div>
-                  ))}
-               </div>
-            </div>
-            <div className="bg-slate-950 p-10 rounded-[3rem] text-white shadow-2xl relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-10 opacity-5"><Terminal size={150}/></div>
-               <h3 className="text-sm font-black uppercase tracking-widest text-emerald-400 mb-8">Node Telemetry</h3>
-               <pre className="text-[10px] font-mono text-indigo-300 leading-relaxed overflow-x-auto max-h-[400px] custom-scrollbar">
-                  {JSON.stringify(telemetry, null, 2)}
-               </pre>
-            </div>
-         </div>
+      {activeTab === 'telemetry' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in zoom-in-95">
+          {modelStats.map((m: any) => {
+            const usagePercent = Math.min(100, (m.total_tokens / 50000) * 100);
+            return (
+              <div key={m.model_name} className="bg-white dark:bg-slate-900 p-8 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm space-y-6">
+                <div className="flex justify-between items-start">
+                  <div className="p-3 bg-indigo-50 dark:bg-white/5 text-indigo-600 rounded-xl"><Layers size={20}/></div>
+                  <span className={`text-[8px] font-black uppercase px-2 py-1 rounded ${usagePercent > 80 ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                    {usagePercent > 80 ? 'Threshold Alert' : 'Healthy Node'}
+                  </span>
+                </div>
+                <div>
+                   <h4 className="text-xl font-black dark:text-white uppercase tracking-tight">{m.model_name}</h4>
+                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Provider Telemetry</p>
+                </div>
+                <div className="space-y-2">
+                   <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase">
+                      <span>Daily Load</span>
+                      <span>{Math.round(usagePercent)}%</span>
+                   </div>
+                   <div className="h-2 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                      <div className={`h-full transition-all duration-1000 ${usagePercent > 80 ? 'bg-rose-500' : usagePercent > 50 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${usagePercent}%` }} />
+                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-50 dark:border-white/5">
+                   <div><p className="text-[8px] font-black text-slate-400 uppercase">Avg Latency</p><p className="text-sm font-black dark:text-white">{Math.round(m.avg_execution_time)}ms</p></div>
+                   <div><p className="text-[8px] font-black text-slate-400 uppercase">Success Rate</p><p className="text-sm font-black text-emerald-500">{m.success_rate}%</p></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -205,7 +326,5 @@ const MetricRow = ({ label, value, trend }: any) => (
     </div>
   </div>
 );
-
-const Trash2 = ({ size, className }: any) => <Activity size={size} className={className}/>;
 
 export default BrainControl;

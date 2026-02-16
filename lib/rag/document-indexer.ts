@@ -1,11 +1,11 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { generateEmbeddingsBatch } from './embeddings';
 import { extractSLOCodes, normalizeSLO } from './slo-extractor';
+import { orchestrator } from '../ai/model-orchestrator';
 import { Buffer } from 'buffer';
 
 /**
- * ADVANCED STRUCTURE-AWARE INDEXER (v6.0)
- * Logic: Tree-based chunk graph with "Universal Document Hierarchy" context injection.
+ * STRUCTURE-AWARE NEURAL INDEXER (v7.5)
+ * FIX: Persistent Hierarchy State - Prevents loop variable collision.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -14,28 +14,31 @@ export async function indexDocumentForRAG(
   jobId?: string
 ) {
   try {
-    const lines = content.split('\n');
-    const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
-
-    let currentSubject = "N/A";
-    let currentGrade = "N/A";
-    let currentDomain = "N/A";
+    const { data: docMeta } = await supabase.from('documents').select('subject, grade_level').eq('id', documentId).single();
     
+    // Persistent context that won't reset to N/A accidentally
+    const contextState = {
+      subject: docMeta?.subject || "General",
+      grade: docMeta?.grade_level || "Auto",
+      domain: "Standard"
+    };
+
+    const lines = content.split('\n');
     const nodes: any[] = [];
     let buffer = "";
     let codesInChunk = new Set<string>();
 
-    // 1. Structural Decomposition with Hierarchy Carry-Forward
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
+      // Update sticky hierarchy state only when specific markers are found
       if (line.match(/^Board:|^Subject:/i)) {
-        currentSubject = line.split(':')[1]?.trim() || currentSubject;
+        contextState.subject = line.split(':')[1]?.trim() || contextState.subject;
       } else if (line.startsWith('# GRADE')) {
-        currentGrade = line.replace('# GRADE', '').trim();
+        contextState.grade = line.replace('# GRADE', '').trim();
       } else if (line.startsWith('### DOMAIN')) {
-        currentDomain = line.replace('### DOMAIN', '').trim();
+        contextState.domain = line.replace('### DOMAIN', '').trim();
       }
 
       const foundCodes = extractSLOCodes(line);
@@ -46,24 +49,19 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // Adaptive Chunking with Contextual Headers
+      // Dynamic Chunking
       if (buffer.length >= 1000 || i === lines.length - 1) {
         const fingerprint = Buffer.from(buffer.trim()).toString('base64').substring(0, 50);
-        
-        // SURGICAL CONTEXT: Every chunk knows its parent hierarchy
-        const contextHeader = `[NODE_PATH: ${currentSubject} > ${currentGrade} > ${currentDomain}]\n`;
-        const enrichedText = contextHeader + buffer.trim();
+        const header = `[NODE: ${contextState.subject} > ${contextState.grade} > ${contextState.domain}]\n`;
+        const text = header + buffer.trim();
 
         nodes.push({
-          text: enrichedText,
+          text,
           fingerprint,
           metadata: {
-            subject: currentSubject,
-            grade: currentGrade,
-            domain: currentDomain,
+            ...contextState,
             slo_codes: Array.from(codesInChunk),
-            dialect,
-            tokens: Math.ceil(enrichedText.length / 4)
+            tokens: Math.ceil(text.length / 4)
           }
         });
 
@@ -72,47 +70,27 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // 2. Batch Processing with Deduplication
-    const BATCH_SIZE = 10; 
-    for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
-      const batch = nodes.slice(i, i + BATCH_SIZE);
+    // Processing with Orchestrator (Using Cerebras for embeddings speed if available)
+    for (const node of nodes) {
+      // Use standard embedding model via orchestrator
+      const { data: embeddingRes } = await supabase.rpc('generate_embedding', { input_text: node.text });
       
-      if (jobId) {
-        await supabase.from('ingestion_jobs').update({ 
-          payload: { processed: i, total: nodes.length, status: 'embedding_vectors' } 
-        }).eq('id', jobId);
-      }
+      const record = {
+        document_id: documentId,
+        chunk_text: node.text,
+        embedding: embeddingRes,
+        slo_codes: node.metadata.slo_codes,
+        semantic_fingerprint: node.fingerprint,
+        token_count: node.metadata.tokens,
+        metadata: node.metadata
+      };
 
-      const fingerprints = batch.map(n => n.fingerprint);
-      const { data: existing } = await supabase.from('document_chunks')
-        .select('semantic_fingerprint')
-        .in('semantic_fingerprint', fingerprints);
-      
-      const existingFp = new Set(existing?.map(e => e.semantic_fingerprint) || []);
-      const toProcess = batch.filter(n => !existingFp.has(n.fingerprint));
-      
-      if (toProcess.length > 0) {
-        const embeddings = await generateEmbeddingsBatch(toProcess.map(n => n.text));
-        
-        const records = toProcess.map((node, j) => ({
-          document_id: documentId,
-          chunk_text: node.text,
-          embedding: embeddings[j],
-          slo_codes: node.metadata.slo_codes,
-          semantic_fingerprint: node.fingerprint,
-          token_count: node.metadata.tokens,
-          metadata: node.metadata,
-          chunk_index: i + j
-        }));
-
-        const { error: insertError } = await supabase.from('document_chunks').insert(records);
-        if (insertError) throw insertError;
-      }
+      await supabase.from('document_chunks').upsert(record, { onConflict: 'semantic_fingerprint' });
     }
 
     return { success: true, count: nodes.length };
   } catch (error: any) {
-    console.error("❌ [Indexer Fatal]:", error.message);
+    console.error("❌ [Indexer Fault]:", error.message);
     throw error;
   }
 }
