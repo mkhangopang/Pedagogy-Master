@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
-// Removed missing ADMIN_EMAILS import from constants
 import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 
@@ -23,8 +22,6 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    // Add comment above each fix
-    // Fix: Resolve missing export error by retrieving admin emails from environment variable directly
     const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
@@ -90,7 +87,7 @@ export async function GET(request: NextRequest) {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: 'Ping connectivity test'
+          contents: [{ role: 'user', parts: [{ text: 'Ping connectivity test' }] }]
         });
         results.push({
           name: 'Gemini AI Synthesis Engine',

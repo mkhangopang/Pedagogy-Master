@@ -1,4 +1,3 @@
-
 /**
  * NEURAL TOOL ROUTER (v4.0)
  * Logic: Weighted signal analysis to map queries to specialized expert nodes.
@@ -46,7 +45,7 @@ export function detectToolIntent(userQuery: string): ToolRoute {
 
   // 2. Resolve highest signal
   const sorted = Object.entries(toolSignatures).sort((a, b) => b[1].score - a[1].score);
-  const bestTool = sorted[0][0] as ToolType;
+  const bestTool = (sorted[0][1].score > 0 ? sorted[0][0] : 'master_plan') as ToolType;
   const bestScore = sorted[0][1].score;
   
   // 3. Confidence Calculation
@@ -56,17 +55,17 @@ export function detectToolIntent(userQuery: string): ToolRoute {
   return {
     tool: bestTool,
     confidence: bestScore > 0 ? confidence : 0.5,
-    reasoning: `Found ${bestScore} weighted signals for ${bestTool}.`
+    reasoning: `Detected "${bestTool}" based on ${bestScore} weighted pedagogical signals.`
   };
 }
 
-export function getToolDisplayName(toolId: ToolType | null): string {
+export function getToolDisplayName(toolId: ToolType | string | null): string {
   if (!toolId) return 'Synthesis Engine';
-  const names = {
+  const names: Record<string, string> = {
     master_plan: 'Master Plan Architect',
     neural_quiz: 'Assessment Scientist',
     fidelity_rubric: 'Evaluation Engineer',
     audit_tagger: 'Standards Auditor'
   };
-  return names[toolId];
+  return names[toolId as string] || 'Expert Node';
 }

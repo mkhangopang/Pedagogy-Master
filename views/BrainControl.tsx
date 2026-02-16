@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 
 /**
  * 👑 FOUNDER SECRETS: MASTER DATABASE BLUEPRINT (v6.0)
- * Updated to include the Dialect-Aware Hybrid Search protocol.
+ * Updated with Diagnostic RPCs and Health Monitoring Views.
  */
 const SUPABASE_SCHEMA_BLUEPRINT = `-- ==========================================
 -- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v6.0
@@ -58,15 +58,6 @@ create table if not exists public.document_chunks (
   chunk_index int
 );
 
-create table if not exists public.slo_database (
-  id uuid primary key default uuid_generate_v4(),
-  document_id uuid references public.documents(id) on delete cascade,
-  slo_code text not null,
-  slo_full_text text not null,
-  bloom_level text,
-  created_at timestamp with time zone default now()
-);
-
 -- 3. NEURAL RPC: HYBRID SEARCH v6
 create or replace function hybrid_search_chunks_v6(
   query_text text,
@@ -103,7 +94,19 @@ begin
   order by combined_score desc
   limit match_count;
 end;
-$$;`;
+$$;
+
+-- 4. DIAGNOSTIC INTERFACE
+create or replace function get_extension_status(ext text) returns boolean language plpgsql as $$
+begin return exists (select 1 from pg_extension where extname = ext); end; $$;
+
+create or replace function get_vector_dimensions() returns int language plpgsql as $$
+begin return (select atttypmod - 4 from pg_attribute where attrelid = 'public.document_chunks'::regclass and attname = 'embedding'); end; $$;
+
+-- 5. MONITORING VIEW
+create or replace view rag_health_report as
+select d.id, d.name, count(dc.id) as chunks, case when count(dc.id) > 0 then 'HEALTHY' else 'BROKEN' end as status
+from documents d left join document_chunks dc on d.id = dc.document_id group by d.id, d.name;`;
 
 interface BrainControlProps {
   brain: NeuralBrain;
