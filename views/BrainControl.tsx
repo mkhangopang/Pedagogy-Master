@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, 
-  AlertCircle, AlertTriangle, Server, Globe, BarChart3, Fingerprint, Layers, 
-  Rocket, ShieldAlert, TrendingUp, Copy, Code2, Lock, FileCode, Search, Trash2, 
-  Clock, CheckCircle2, XCircle, Eye
+  RefreshCw, Zap, Check, ShieldCheck, Cpu, Activity, Layers, 
+  Rocket, TrendingUp, Copy, Lock, FileCode, Search, Database, 
+  AlertTriangle, CheckCircle2, X
 } from 'lucide-react';
 import { NeuralBrain, JobStatus, IngestionStep } from '../types';
 import { supabase } from '../lib/supabase';
@@ -12,6 +11,50 @@ interface BrainControlProps {
   brain: NeuralBrain;
   onUpdate: (brain: NeuralBrain) => void;
 }
+
+const BLUEPRINT_SQL = `-- PEDAGOGY MASTER: INFRASTRUCTURE BLUEPRINT v6.1
+-- Optimized for Pakistan Sindh/Federal Board Scaling
+
+create table if not exists public.neural_brain (
+  id text primary key,
+  master_prompt text not null,
+  bloom_rules text,
+  version int default 1,
+  is_active boolean default true,
+  updated_at timestamp with time zone default now()
+);
+
+create table if not exists public.documents (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users on delete cascade,
+  name text not null,
+  file_path text,
+  status text default 'processing',
+  extracted_text text,
+  document_summary text,
+  grade_level text,
+  rag_indexed boolean default false,
+  is_selected boolean default false,
+  created_at timestamp with time zone default now()
+);
+
+create table if not exists public.ingestion_jobs (
+  id uuid primary key default uuid_generate_v4(),
+  document_id uuid references documents(id) on delete cascade,
+  step text not null check (step in ('extract', 'linearize', 'tag', 'chunk', 'embed', 'finalize')),
+  status text default 'queued' check (status in ('queued', 'processing', 'completed', 'failed')),
+  payload jsonb,
+  updated_at timestamp with time zone default now()
+);
+
+create table if not exists public.document_chunks (
+  id uuid primary key default uuid_generate_v4(),
+  document_id uuid references documents(id) on delete cascade,
+  chunk_text text not null,
+  embedding vector(768),
+  slo_codes text[],
+  metadata jsonb
+);`;
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [activeTab, setActiveTab] = useState<'logic' | 'blueprint' | 'ingestion' | 'diagnostics'>('logic');
@@ -74,8 +117,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     } finally { setIsSaving(false); }
   };
 
-  const copyLogic = () => {
-    navigator.clipboard.writeText(formData.masterPrompt);
+  const copyBlueprint = () => {
+    navigator.clipboard.writeText(BLUEPRINT_SQL);
     setCopiedBlueprint(true);
     setTimeout(() => setCopiedBlueprint(false), 2000);
   };
@@ -86,7 +129,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse" />
-            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">Master Control Node</span>
+            <span className="text-[9px] font-black uppercase tracking-[0.3em] text-indigo-500">System Founder Console</span>
           </div>
           <h1 className="text-3xl font-bold flex items-center gap-3 tracking-tight uppercase dark:text-white">
              Neural Brain
@@ -115,7 +158,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm space-y-6">
             <div className="flex items-center justify-between">
-               <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Master Pedagogical Logic</h3>
+               <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Master Secret Recipe (Prompt)</h3>
                <span className="text-[9px] font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 px-3 py-1 rounded-full">v{brain.version}.0 Active</span>
             </div>
             <textarea 
@@ -132,7 +175,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
           <div className="space-y-6">
              <div className="bg-slate-950 text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden flex flex-col gap-6 border border-white/5">
                 <div className="absolute top-0 right-0 p-8 opacity-5"><Activity size={120} /></div>
-                <h3 className="text-lg font-bold uppercase tracking-tight text-emerald-400">Node Performance</h3>
+                <h3 className="text-lg font-bold uppercase tracking-tight text-emerald-400">Node Pulse</h3>
                 <div className="space-y-5 relative z-10">
                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">RAG PRECISION</span>
@@ -142,11 +185,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">UNROLL RATE</span>
                       <span className="text-xs font-black text-emerald-400">100% STABLE</span>
                    </div>
-                   <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">COL-SPLICING</span>
-                      <span className="text-xs font-black text-emerald-400">0.0% SUPPRESSED</span>
-                   </div>
                 </div>
+                <p className="text-[9px] text-slate-500 font-medium italic">Master logic is persistent and decoupled from public constants for system founder security.</p>
              </div>
           </div>
         </div>
@@ -156,15 +196,15 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm space-y-8 animate-in fade-in">
            <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-bold uppercase tracking-tight dark:text-white">Active Grid Blueprint</h3>
-                <p className="text-xs text-slate-500 font-medium">Read-only view of the currently deployed system instructions.</p>
+                <h3 className="text-xl font-bold uppercase tracking-tight dark:text-white">Infrastructure Blueprint</h3>
+                <p className="text-xs text-slate-500 font-medium">SQL DDL for latest functional app updates.</p>
               </div>
-              <button onClick={copyLogic} className="flex items-center gap-2 px-6 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">
-                {copiedBlueprint ? <Check size={14}/> : <Copy size={14}/>} {copiedBlueprint ? 'Copied' : 'Copy Payload'}
+              <button onClick={copyBlueprint} className="flex items-center gap-2 px-6 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">
+                {copiedBlueprint ? <CheckCircle2 size={14}/> : <Copy size={14}/>} {copiedBlueprint ? 'Copied' : 'Copy SQL'}
               </button>
            </div>
-           <pre className="p-8 bg-slate-50 dark:bg-black/40 rounded-[2rem] border border-slate-200 dark:border-white/5 text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap dark:text-indigo-200 max-h-[600px] custom-scrollbar shadow-inner">
-             {brain.masterPrompt}
+           <pre className="p-8 bg-slate-50 dark:bg-black/40 rounded-[2rem] border border-slate-200 dark:border-white/5 text-[10px] font-mono leading-relaxed overflow-x-auto whitespace-pre dark:text-indigo-200 max-h-[600px] custom-scrollbar shadow-inner">
+             {BLUEPRINT_SQL}
            </pre>
         </div>
       )}
@@ -187,7 +227,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-bold uppercase tracking-widest text-[8px]">
                       <tr>
                          <th className="p-5">Asset Node</th>
-                         <th className="p-5">Pipeline Phase</th>
+                         <th className="p-5">Phase</th>
                          <th className="p-5">Status</th>
                          <th className="p-5">Last Synced</th>
                       </tr>
@@ -195,7 +235,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <tbody className="divide-y divide-slate-50 dark:divide-white/5">
                       {jobs.length > 0 ? jobs.map((job) => (
                         <tr key={job.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
-                           <td className="p-5 font-bold dark:text-white truncate max-w-[200px]">{job.documents?.name || 'Inert Node'}</td>
+                           <td className="p-5 font-bold dark:text-white truncate max-w-[200px]">{job.documents?.name || 'Processing...'}</td>
                            <td className="p-5 uppercase font-black tracking-widest text-indigo-500">{job.step}</td>
                            <td className="p-5">
                               <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest ${
@@ -218,34 +258,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                 </table>
              </div>
           </div>
-        </div>
-      )}
-
-      {activeTab === 'diagnostics' && healthReport && (
-        <div className="space-y-6 animate-in fade-in">
-           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <StatCardMini label="Healthy Segments" value={healthReport.summary.healthy} icon={<ShieldCheck className="text-emerald-500" size={18}/>} />
-              <StatCardMini label="Orphaned Chunks" value={healthReport.summary.orphanedChunks} icon={<AlertTriangle className="text-amber-500" size={18}/>} />
-              <StatCardMini label="Embedding Dim" value={healthReport.actualDimensions} icon={<Layers className="text-purple-500" size={18}/>} />
-              <StatCardMini label="Vector Extension" value={healthReport.extensionActive ? 'Active' : 'Offline'} icon={<Database className="text-indigo-500" size={18}/>} />
-           </div>
-
-           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-sm">
-             <div className="p-8 border-b dark:border-white/5">
-                <h3 className="text-lg font-bold uppercase tracking-tight dark:text-white flex items-center gap-3"><Activity size={18} className="text-indigo-600" /> RAG Health Ledger</h3>
-             </div>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8">
-                {healthReport.report.map((r: any) => (
-                  <div key={r.document_id} className="p-6 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 flex items-center justify-between hover:border-indigo-400 transition-all">
-                     <div>
-                        <p className="font-bold text-sm dark:text-white truncate max-w-[200px]">{r.document_name}</p>
-                        <p className="text-[10px] font-medium text-slate-400 mt-1 uppercase tracking-widest">{r.chunk_count} Chunks Indexed</p>
-                     </div>
-                     <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase ${r.health_status === 'HEALTHY' ? 'text-emerald-500' : 'text-rose-500'}`}>{r.health_status}</span>
-                  </div>
-                ))}
-             </div>
-           </div>
         </div>
       )}
     </div>

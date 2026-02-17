@@ -2,11 +2,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  FileText, Zap, Activity, GraduationCap,
-  BookOpen, CheckCircle, Clock, ArrowRight, Sparkles, Building, Cloud, CloudOff, Timer, Users, BarChart, Settings, Save,
-  Loader2, SearchCheck, ShieldCheck, Eye, TrendingUp, UserPlus, ClipboardList
+  FileText, Zap, Activity, BookOpen, ArrowRight, Building, 
+  Cloud, CloudOff, Settings, Save, TrendingUp, Loader2, X
 } from 'lucide-react';
-import { UserProfile, Document, SubscriptionPlan, StakeholderRole } from '../types';
+import { UserProfile, Document, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
 
 interface DashboardProps {
@@ -25,7 +24,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   const [isSavingBranding, setIsSavingBranding] = useState(false);
 
   const brandName = user.workspaceName || 'EduNexus AI';
-  const isPro = user.plan !== SubscriptionPlan.FREE;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -108,6 +106,38 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
           </div>
         </section>
       </div>
+
+      {/* Settings Modal */}
+      {isEditingBranding && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
+           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8">
+              <div className="flex items-center justify-between">
+                <h3 className="text-2xl font-bold dark:text-white tracking-tight uppercase">Settings</h3>
+                <button onClick={() => setIsEditingBranding(false)} className="p-2 text-slate-400 hover:text-rose-500"><X size={24} /></button>
+              </div>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Workspace Identity</label>
+                  <input 
+                    type="text" 
+                    value={tempWorkspaceName} 
+                    onChange={(e) => setTempWorkspaceName(e.target.value)}
+                    className="w-full px-5 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
+                    placeholder="Workspace Name"
+                  />
+                </div>
+                <button 
+                  onClick={handleSaveBranding}
+                  disabled={isSavingBranding}
+                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {isSavingBranding ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
+                  Commit Identity Changes
+                </button>
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };

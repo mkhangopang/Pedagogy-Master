@@ -8,8 +8,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * PRODUCTION UPLOAD GATEWAY (v136.0)
- * Logic: Streamlined pre-signed URL generation to ensure cross-browser R2 compatibility.
+ * PRODUCTION UPLOAD GATEWAY (v136.5)
+ * Fix: Lean header generation to ensure R2 PutObject stability across all regions.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -33,16 +33,18 @@ export async function POST(req: NextRequest) {
     const cleanFileName = name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const r2Key = `raw/${user.id}/${documentId}/${cleanFileName}`;
 
-    // PRE-SIGNED URL: Remove complex metadata to ensure PUT stability
+    // PRE-SIGNED URL GENERATION (Lean Mode)
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
       ContentType: contentType,
     });
 
+    // 15-minute validity
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
 
     const supabase = getSupabaseServerClient(token);
+    // De-select old context
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -52,10 +54,10 @@ export async function POST(req: NextRequest) {
       file_path: r2Key,
       status: 'processing',
       mime_type: contentType,
-      subject: 'Identifying...',
+      subject: 'Detecting...',
       grade_level: 'Auto',
       is_selected: true,
-      document_summary: 'Initializing light-speed sync...',
+      document_summary: 'Binary payload streaming...',
       rag_indexed: false,
       extracted_text: extractedText || "",
       is_approved: false,
