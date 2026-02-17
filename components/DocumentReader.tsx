@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Copy, Check, Target, Layers, Hash, BookOpen, ChevronRight, Zap, Filter, Search } from 'lucide-react';
+import { X, Copy, Check, Target, Zap, Search } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
 
@@ -17,6 +17,8 @@ interface ParsedSLO {
   domain: string;
   bloom: string;
 }
+
+type HierarchicalData = Record<string, Record<string, ParsedSLO[]>>;
 
 export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: activeDoc, onClose }) => {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -35,12 +37,12 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   };
 
   // 🧠 SURGICAL PARSER: Extract only SLO nodes for the Radar View
-  const hierarchicalSLOs = useMemo(() => {
-    if (!activeDoc.extractedText) return [];
+  const hierarchicalSLOs = useMemo<HierarchicalData>(() => {
+    if (!activeDoc.extractedText) return {};
     
     const slos: ParsedSLO[] = [];
     const lines = activeDoc.extractedText.split('\n');
-    let currentGrade = "9";
+    let currentGrade = "09";
     let currentDomain = "A";
 
     lines.forEach(line => {
@@ -68,7 +70,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     });
 
     // Grouping Logic
-    const grouped: Record<string, Record<string, ParsedSLO[]>> = {};
+    const grouped: HierarchicalData = {};
     slos.forEach(s => {
       if (!grouped[s.grade]) grouped[s.grade] = {};
       if (!grouped[s.grade][s.domain]) grouped[s.grade][s.domain] = [];
@@ -78,7 +80,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     return grouped;
   }, [activeDoc.extractedText]);
 
-  const sortedGrades = Object.keys(hierarchicalSLOs).sort();
+  const sortedGrades = useMemo(() => Object.keys(hierarchicalSLOs).sort(), [hierarchicalSLOs]);
 
   return (
     <div className="fixed inset-0 z-[500] bg-slate-50 dark:bg-[#050505] flex flex-col animate-in fade-in duration-300 overflow-hidden">
