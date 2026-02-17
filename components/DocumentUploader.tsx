@@ -42,12 +42,12 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           } else {
             let p = Math.max(progress, data.progress || 50);
             setProgress(p);
-            setStatus(data.summary || 'Unrolling columns...');
+            setStatus(data.summary || 'Unrolling curriculum domains...');
           }
         } catch (e) {
           console.error("Polling error:", e);
         }
-      }, 3000);
+      }, 2500);
     }
     return () => clearInterval(poller);
   }, [docId, isUploading, progress, onComplete]);
@@ -83,127 +83,107 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     setError(null);
     setIsUploading(true);
     setProgress(5);
-    setStatus('Initializing nodes...');
+    setStatus('Initializing light-speed sync...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Session expired. Please sign in.");
 
-      // 1. Extraction Node
-      setStatus('Pre-extracting curriculum text...');
+      setStatus('Pre-extracting curriculum...');
       const extractedText = await extractTextLocally(file);
       
-      // 2. Cloud Handshake
       setProgress(20);
-      setStatus('Securing cloud handshake...');
+      setStatus('Securing cloud node...');
       const contentType = file.type || 'application/pdf';
       
-      const handshake = await fetch('/api/docs/upload', {
-        method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ 
-          name: file.name, 
-          contentType,
-          extractedText: extractedText 
-        })
-      });
-
-      if (!handshake.ok) {
-        const errData = await handshake.json().catch(() => ({}));
-        throw new Error(errData.error || "Handshake node refusal.");
-      }
-      
-      const { uploadUrl, documentId } = await handshake.json();
+      const handshake = await handshakeWithGateway(file.name, contentType, extractedText, session.access_token);
+      const { uploadUrl, documentId } = handshake;
       setDocId(documentId);
       
-      // 3. Binary Bridge (CRITICAL: Header Sync)
       setProgress(30);
       setStatus('Streaming binary payload...');
       
       const uploadRes = await fetch(uploadUrl, { 
         method: 'PUT', 
         body: file, 
-        headers: { 
-          'Content-Type': contentType // MUST match handshake contentType exactly
-        } 
+        headers: { 'Content-Type': contentType } 
       });
       
-      if (!uploadRes.ok) {
-        throw new Error(`Cloud storage refusal: ${uploadRes.statusText}`);
-      }
+      if (!uploadRes.ok) throw new Error(`Cloud node refusal.`);
 
-      // 4. Activate Pipeline
       setProgress(40);
-      setStatus('Neural unrolling initialized...');
+      setStatus('High-speed unrolling initialized...');
       await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
 
     } catch (err: any) {
-      console.error("❌ Ingestion Node Fault:", err);
       setError(err.message || "Binary stream node failure.");
       setIsUploading(false);
     }
   };
 
+  async function handshakeWithGateway(name: string, contentType: string, extractedText: string, token: string) {
+    const handshake = await fetch('/api/docs/upload', {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ name, contentType, extractedText })
+    });
+    if (!handshake.ok) throw new Error("Handshake node refusal.");
+    return await handshake.json();
+  }
+
   return (
-    <div className="bg-white dark:bg-[#0d0d0d] rounded-[3.5rem] p-8 md:p-16 w-full max-w-2xl shadow-[0_32px_128px_-16px_rgba(0,0,0,0.5)] border-2 border-slate-100 dark:border-white/5 relative overflow-hidden text-left">
-      <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-emerald-600" />
-      <div className="space-y-8">
+    <div className="bg-white dark:bg-[#0d0d0d] rounded-[3rem] p-6 md:p-12 w-full max-w-xl shadow-2xl border border-slate-100 dark:border-white/5 relative overflow-hidden text-left">
+      <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-emerald-500" />
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div className="w-16 h-16 bg-indigo-600 text-white rounded-[1.5rem] flex items-center justify-center shadow-2xl relative rotate-3 group-hover:rotate-0 transition-transform">
-             {isUploading ? <BrainCircuit size={32} className="animate-pulse" /> : <UploadCloud size={32} />}
+          <div className="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-xl">
+             {isUploading ? <Loader2 size={24} className="animate-spin" /> : <UploadCloud size={24} />}
           </div>
-          <div className="px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-500/20 flex items-center gap-2">
-             <ShieldCheck size={16} className="text-emerald-500" />
-             <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Secure Protocol v130</span>
+          <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/30 rounded-full border border-emerald-100 dark:border-emerald-500/20 flex items-center gap-1.5">
+             <Zap size={12} className="text-emerald-500" />
+             <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-600">Fast Sync v150</span>
           </div>
         </div>
 
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Curriculum Ingestor</h2>
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mt-2">Sequential Grade Unrolling Active</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">Curriculum Ingestor</h2>
+          <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mt-1">Adaptive Domain Linearization</p>
         </div>
 
         {error ? (
-          <div className="p-8 bg-rose-50 dark:bg-rose-950/30 border-2 border-rose-100 dark:border-rose-900/30 rounded-[2.5rem] space-y-6 animate-in slide-in-from-top-2">
-            <div className="flex items-start gap-4 text-rose-600">
-               <AlertCircle size={24} className="shrink-0 mt-0.5" />
+          <div className="p-6 bg-rose-50 dark:bg-rose-950/30 border border-rose-100 dark:border-rose-900/30 rounded-2xl space-y-4 animate-in slide-in-from-top-2">
+            <div className="flex items-start gap-3 text-rose-600">
+               <AlertCircle size={20} className="shrink-0 mt-0.5" />
                <div className="space-y-1">
-                 <p className="text-sm font-black uppercase tracking-tight">Handshake Fault</p>
-                 <p className="text-xs font-bold opacity-80 leading-relaxed">{error}</p>
+                 <p className="text-xs font-bold uppercase tracking-tight">Handshake Fault</p>
+                 <p className="text-[10px] font-medium leading-relaxed opacity-90">{error}</p>
                </div>
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => {setError(null); setIsUploading(false);}} className="flex-1 py-4 bg-rose-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all">Retry Link</button>
-              <button onClick={onCancel} className="flex-1 py-4 bg-slate-100 dark:bg-white/5 text-slate-500 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Abort</button>
-            </div>
+            <button onClick={() => {setError(null); setIsUploading(false);}} className="w-full py-3 bg-rose-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all">Retry Link</button>
           </div>
         ) : isUploading ? (
-          <div className="space-y-6 py-4">
-             <div className="h-4 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden shadow-inner p-1">
-                <div className="h-full bg-indigo-600 rounded-full transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(79,70,229,0.5)]" style={{ width: `${progress}%` }} />
+          <div className="space-y-4 py-2">
+             <div className="h-2.5 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
+                <div className="h-full bg-indigo-600 rounded-full transition-all duration-700 ease-out" style={{ width: `${progress}%` }} />
              </div>
-             <div className="flex items-center gap-3">
-               <Loader2 size={16} className="text-indigo-600 animate-spin" />
-               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 animate-pulse">{status}</p>
-             </div>
-             <div className="p-5 bg-indigo-50 dark:bg-indigo-900/10 rounded-[2rem] border border-indigo-100 dark:border-indigo-800/30 flex gap-4">
-                <Info size={20} className="text-indigo-600 shrink-0" />
-                <p className="text-[10px] font-bold text-slate-500 leading-relaxed">Synthesis of multi-column Sindh Progression Grids requires vertical unrolling. This takes 2-5 minutes to ensure 100% RAG fidelity.</p>
+             <div className="flex items-center gap-2">
+               <Loader2 size={12} className="text-indigo-600 animate-spin" />
+               <p className="text-[9px] font-bold uppercase tracking-widest text-indigo-600">{status}</p>
              </div>
           </div>
         ) : (
           <label className="group relative cursor-pointer block">
             <input type="file" className="hidden" accept=".pdf" onChange={handleFileUpload} />
-            <div className="py-20 md:py-28 border-3 border-dashed border-slate-200 dark:border-white/10 rounded-[3rem] group-hover:border-indigo-600 transition-all bg-slate-50/50 dark:bg-white/5 text-center group-hover:bg-indigo-50/50 dark:group-hover:bg-indigo-900/10">
-              <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-600 transition-all mx-auto mb-6 group-hover:scale-110" />
-              <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Drop Multi-Grade Ledger</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase mt-2 tracking-widest opacity-60">PDF Support • Standard Alignment Mode</p>
+            <div className="py-16 md:py-20 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-[2.5rem] group-hover:border-indigo-500 transition-all bg-slate-50/30 dark:bg-white/5 text-center">
+              <UploadCloud size={48} className="text-slate-300 group-hover:text-indigo-600 transition-all mx-auto mb-4" />
+              <p className="text-lg font-bold text-slate-900 dark:text-white uppercase tracking-tight">Drop Ledger</p>
+              <p className="text-[8px] font-semibold text-slate-400 uppercase mt-1 tracking-widest opacity-60">High-Speed Flash Node Enabled</p>
             </div>
           </label>
         )}

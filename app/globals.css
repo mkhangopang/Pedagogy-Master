@@ -27,115 +27,15 @@
   }
 
   * {
-    @apply transition-colors duration-300;
+    @apply transition-colors duration-200;
     -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* 🖨️ WORLD-CLASS HIGH-FIDELITY PRINT ENGINE (v3.0 - STABILIZED) */
-@media print {
-  @page {
-    margin: 1.5cm;
-    size: A4 portrait;
-  }
+/* Typographic Normalization: Smooth Moderate Weights */
+.font-black { @apply font-bold; }
+.tracking-tighter { @apply tracking-tight; }
 
-  /* CRITICAL: Force break of app-shell height constraints */
-  html, body, #root, [data-reactroot], main, .flex, .grid {
-    background: white !important;
-    color: black !important;
-    height: auto !important;
-    min-height: 0 !important;
-    max-height: none !important;
-    overflow: visible !important;
-    position: static !important;
-    display: block !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /* Aggressive scrubbing of UI chrome */
-  header, nav, aside, footer, button, .no-print, .shrink-0, 
-  [role="button"], .sidebar-wrapper, .input-container, 
-  .ProviderStatusBar, [class*="ProviderStatusBar"] {
-    display: none !important;
-    visibility: hidden !important;
-    height: 0 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-
-  /* Reset Artifact Wrapper padding which causes overflow/empty pages */
-  .artifact-wrapper, .max-w-6xl, .max-w-4xl {
-    padding: 0 !important;
-    margin: 0 !important;
-    max-width: none !important;
-    width: 100% !important;
-  }
-
-  .print-container {
-    display: block !important;
-    width: 100% !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    background: white !important;
-  }
-
-  /* Content Flow Control */
-  .prose {
-    font-family: 'Inter', 'Segoe UI', serif !important;
-    color: black !important;
-    line-height: 1.5 !important;
-    font-size: 11pt !important;
-  }
-
-  .prose h1, .prose h2, .prose h3 {
-    page-break-after: avoid;
-    break-after: avoid;
-    margin-top: 1.5em !important;
-    color: #000 !important;
-  }
-
-  .prose p, .prose li {
-    page-break-inside: avoid;
-    break-inside: avoid;
-  }
-
-  /* Table Fidelity */
-  table {
-    page-break-inside: auto !important;
-    width: 100% !important;
-    border-collapse: collapse !important;
-  }
-
-  tr {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  /* Institutional Header Styling for Print */
-  .print-header {
-    display: flex !important;
-    border-bottom: 2pt solid #4f46e5 !important;
-    padding-bottom: 10pt !important;
-    margin-bottom: 20pt !important;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .print-footer {
-    display: block !important;
-    position: running(footer);
-    text-align: center;
-    font-size: 8pt;
-    color: #64748b;
-    border-top: 0.5pt solid #e2e8f0;
-    margin-top: 20pt;
-  }
-}
-
-/* Neural Animations */
 @keyframes gradient-x {
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
@@ -143,73 +43,35 @@
 
 .animate-gradient-x {
   background-size: 200% 200%;
-  animation: gradient-x 10s ease infinite;
-}
-
-@keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  animation: gradient-x 8s ease infinite;
 }
 
 .animate-spin-slow {
-  animation: spin-slow 20s linear infinite;
+  animation: spin 20s linear infinite;
 }
 
 .reveal-node {
   will-change: transform, opacity;
-  transition: transform 1.2s cubic-bezier(0.16, 1, 0.3, 1), 
-              opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
-              scale 1.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-/* Glass & Blur Effects */
-.glass-panel {
-  @apply bg-white/70 dark:bg-black/70 backdrop-blur-2xl border border-white/20 dark:border-white/5;
-}
-
-/* Advanced Scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
-}
-
-::-webkit-scrollbar-track {
-  @apply bg-transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-slate-200 dark:bg-slate-800 rounded-full hover:bg-indigo-500 transition-colors;
-}
-
-/* Prose Refinements & Responsive Table Fix */
-.prose {
-  @apply text-slate-600 dark:text-slate-400 leading-relaxed;
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), 
+              opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .prose h1, .prose h2, .prose h3 {
-  @apply font-black text-slate-900 dark:text-white mt-12 mb-6 tracking-tighter uppercase;
+  @apply font-bold text-slate-900 dark:text-white mt-8 mb-4 tracking-tight uppercase;
 }
 
 .prose strong {
-  @apply font-bold text-slate-900 dark:text-indigo-400;
+  @apply font-semibold text-slate-900 dark:text-indigo-400;
 }
 
-.prose ul {
-  @apply space-y-4 my-8;
-}
-
-.prose li {
-  @apply pl-6 relative before:content-[''] before:absolute before:left-0 before:top-2.5 before:w-1.5 before:h-1.5 before:bg-indigo-600 before:rounded-full;
-}
-
-/* FIX: Table Overflow in Artifact Canvas */
 .artifact-canvas-container table {
-  @apply w-full border-collapse my-8 block overflow-x-auto;
+  @apply w-full border-collapse my-6 block overflow-x-auto;
 }
 
 .artifact-canvas-container th {
-  @apply px-4 py-3 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white font-black text-xs uppercase border border-slate-200 dark:border-white/10;
+  @apply px-4 py-3 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white font-bold text-xs uppercase border border-slate-200 dark:border-white/10;
 }
 
 .artifact-canvas-container td {
-  @apply px-4 py-3 text-sm border border-slate-100 dark:border-white/5;
+  @apply px-4 py-3 text-sm border border-slate-100 dark:border-white/5 font-medium;
 }
