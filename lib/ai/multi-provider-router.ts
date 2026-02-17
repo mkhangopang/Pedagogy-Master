@@ -2,14 +2,13 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { synthesize } from './synthesizer-core';
 import { retrieveRelevantChunks } from '../rag/retriever';
 import { extractSLOCodes, normalizeSLO } from '../rag/slo-extractor';
-import { parseSLOCode } from '../rag/slo-parser';
 import { classifyIntent } from './intent-classifier';
 import { kv } from '../kv';
 import { Buffer } from 'buffer';
 
 /**
- * MULTI-STAGE RETRIEVAL CASCADE (v127.0 - UNIVERSAL LOGIC)
- * T1: Redis Cache | T2: Intent Routing | T3: Parsed Atomic Match | T4: Hybrid Semantic
+ * MULTI-STAGE RETRIEVAL CASCADE (v126.1)
+ * T1: Redis Cache | T2: Intent Routing | T3: Surgical Match | T4: Semantic Hybrid | T5: Self-Eval Log
  */
 export async function generateAIResponse(
   userPrompt: string,
@@ -25,15 +24,15 @@ export async function generateAIResponse(
   
   const start = Date.now();
   
-  // 1. INTENT CLASSIFICATION
+  // 1. INTENT CLASSIFICATION (Gemini 3 Flash)
   const intentData = await classifyIntent(userPrompt);
 
-  // 2. CACHE LOOKUP
+  // 2. CACHE LOOKUP (Upstash Redis)
   const cacheKey = `synth:${Buffer.from(userPrompt).toString('base64').substring(0, 40)}`;
   const cached = await kv.get<string>(cacheKey);
   if (cached) return { text: cached, provider: 'Neural Cache', metadata: { cached: true } };
 
-  // 3. RETRIEVAL CASCADE (UNIVERSAL DOCUMENT LOGIC)
+  // 3. RETRIEVAL CASCADE
   let vaultContent = "";
   let isGrounded = false;
   let topChunkIds: string[] = [];
@@ -47,21 +46,17 @@ export async function generateAIResponse(
 
   if (activeDoc) {
     sourceDocName = activeDoc.name;
-    
-    // Stage A: High-Fidelity Parsed Code Match
-    const parsedCodes = extractSLOCodes(userPrompt);
-    if (parsedCodes.length > 0) {
-      const parsedSlo = parseSLOCode(parsedCodes[0].code);
-      const searchKey = parsedSlo?.searchable || normalizeSLO(parsedCodes[0].code);
-      
+    // Stage A: Surgical Code Match (Regex precision)
+    const codes = extractSLOCodes(userPrompt);
+    if (codes.length > 0) {
       const { data: sloMatch } = await supabase.from('document_chunks')
         .select('id, chunk_text')
-        .contains('slo_codes', [searchKey])
+        .contains('slo_codes', [normalizeSLO(codes[0].code)])
         .eq('document_id', activeDoc.id)
         .limit(1);
       
       if (sloMatch?.[0]) {
-        vaultContent = `### UNIVERSAL_NODE: ${searchKey}\n${sloMatch[0].chunk_text}`;
+        vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch[0].chunk_text}`;
         topChunkIds = [sloMatch[0].id];
         isGrounded = true;
       }
@@ -73,7 +68,7 @@ export async function generateAIResponse(
         query: userPrompt,
         documentIds: [activeDoc.id],
         supabase,
-        matchCount: 10,
+        matchCount: 8,
         dialect: activeDoc.master_md_dialect
       });
       vaultContent = chunks.map(c => c.chunk_text).join('\n---\n');
@@ -82,12 +77,11 @@ export async function generateAIResponse(
     }
   }
 
-  // 4. NEURAL SYNTHESIS
+  // 4. NEURAL SYNTHESIS (Complexity-Aware Routing)
   const systemInstruction = customSystem || "You are the Pedagogy Master AI.";
   const finalPrompt = `
 <CONTEXT>
 INTENT: ${intentData.intent} | COMPLEXITY: ${intentData.complexity}
-GROUNDING: ${isGrounded ? 'ACTIVE' : 'INACTIVE'}
 ${adaptiveContext || ''}
 </CONTEXT>
 
@@ -107,8 +101,20 @@ USER_QUERY: "${userPrompt}"`;
     intentData.complexity
   );
 
+  // 5. OBSERVABILITY & CACHING
   const latency = Date.now() - start;
   
+  // Async log to retrieval_logs for analytics
+  supabase.from('retrieval_logs').insert({
+    user_id: userId,
+    query_text: userPrompt,
+    top_chunk_ids: topChunkIds,
+    confidence_score: isGrounded ? 0.95 : 0.4,
+    latency_ms: latency,
+    provider_used: result.provider
+  }).then();
+
+  // Only cache stable, non-creative lookups
   if (intentData.complexity < 3 && !userPrompt.includes('create')) {
     await kv.set(cacheKey, result.text, 3600);
   }

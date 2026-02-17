@@ -1,57 +1,50 @@
 import { GoogleGenAI } from "@google/genai";
 
 /**
- * UNIVERSAL CURRICULUM DOCUMENT INGESTION & CONVERSION ENGINE (v145.0)
- * Optimized for Sindh, Federal, and International Progression Grids.
+ * MASTER CURRICULUM ARCHITECT (v146.0 - SYMBOL FIDELITY)
+ * Mission: Transform raw text into Atomic Master MD with Neural Symbol Reconstruction.
  */
 export async function convertToPedagogicalMarkdown(rawText: string): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-pro-preview'; 
 
-  const systemInstruction = `You are a Universal Curriculum Document Ingestion and Conversion Engine. Your task is to process provided curriculum text and convert it into a single, clean master Markdown (.md) file.
+  const systemInstruction = `# UNIVERSAL CURRICULUM INGESTION & SYMBOL RECONSTRUCTION
 
-### 1. INGESTION & CLEANING PHASE
-- Extract all text, treating tables as Markdown and images as alt-text descriptions.
-- Remove artifacts: Headers/footers, page numbers, repeated lines, hyphenations.
-- Normalize SLOs: Ensure format [TAG:CODE] | BLOOM : DESCRIPTION. Fix typos (e.g., "SL0" to "SLO").
-- Conversion: Use Markdown | tables for progression grids/TOC.
+You are a world-class pedagogy architect. Your task is to transform raw curriculum text into a standardized Master MD format.
 
-### 2. HIERARCHY & STRUCTURE
-# [Curriculum Title]
-## Table of Contents (as MD list with links)
-## Preface/Introduction
-## Cross-Cutting Themes (if present)
-## Progression Grid
-   ### Domain [A-Z]: [Name]
-     - [TAG:CODE] | [BLOOM] : [Text]
-       - **DOK**: [1-4]
-       - **Action Verb**: [Specific Verb]
-## Grade-wise Contents
-   ### Grade [IX-XII]
-     Domain-wise SLOs
-## Assessment and Evaluation
+### 🛡️ CRITICAL: SYMBOL SANITY CHECK
+Many input texts have corrupted Unicode mappings (Mojibake). If you see unexpected Korean, Chinese, or gibberish characters (e.g., '쇗', '퐴') in a Physics/Math context:
+1. **INFER**: Determine the intended symbol from context (e.g., '1/2 쇗쇗 = 1/2 kx^2' is clearly Elastic Potential Energy 'U' or 'E_p').
+2. **RESTORE**: Replace corrupted symbols with proper LaTeX notation: $...$.
+3. **EQUATIONS**: Always wrap math in $...$. Ensure 'delta' becomes $\Delta$, 'mu' becomes $\mu$, etc.
 
-### 3. ATOMIC SLO PROTOCOL
-- If an objective contains multiple outcomes (e.g., "Define and explain..."), atomize them into granular sub-nodes: B09A01.1, B09A01.2.
-- STEM: Use LaTeX $...$ for all scientific/mathematical notation.
+### 🧬 ATOMIC SLO PROTOCOL
+1. **ATOMIZE**: Split compound objectives into granular sub-nodes (e.g., B09A01.1).
+2. **TAGGING**: Wrap every code in a Priority Tag block: [TAG:CODE].
+3. **FIDELITY**: Preserve original pedagogical intent but scrub non-instructional PDF noise.
 
-### 4. OUTPUT REQUIREMENTS
-- Respond ONLY with the master MD content.
-- If input is truncated, note in MD as <!-- Comment: Truncated at page X -->.
-- MUST append a JSON block wrapped in <STRUCTURED_INDEX> tags at the very end.
+### 🏗️ MASTER MD STRUCTURE
+# GRADE [X]
+## CHAPTER [N]: [TITLE]
+### DOMAIN [A-Z]: [TITLE]
+- [TAG:CODE] | [BLOOM_LEVEL] : [Granular Outcome Text]
+  - **DOK**: [1-4]
+  - **Action Verb**: [Specific Verb]
 
+### 📊 STRUCTURED INDEX REQUIREMENT
+At the VERY END, provide a JSON block wrapped in <STRUCTURED_INDEX> tags for database syncing.
 <STRUCTURED_INDEX>
 [
-  { "code": "B09A01.1", "text": "...", "subject": "...", "grade": "09", "bloomLevel": "..." }
+  { "code": "P09A01.1", "text": "Cleaned outcome text", "subject": "Physics", "grade": "09", "domain": "A", "bloomLevel": "Understand" }
 ]
 </STRUCTURED_INDEX>`;
 
   const prompt = `
-[COMMAND: SURGICAL CONVERSION]
-Analyze the following raw curriculum dump and produce the High-Fidelity Master MD file.
+[COMMAND: SURGICAL RECONSTRUCTION]
+Clean and format this raw text. Pay special attention to fixing corrupted math symbols and organizing by Grade/Domain hierarchy.
 
 RAW INPUT:
-${rawText.substring(0, 950000)}`;
+${rawText.substring(0, 900000)}`;
 
   try {
     const response = await ai.models.generateContent({
@@ -64,9 +57,9 @@ ${rawText.substring(0, 950000)}`;
       }
     });
 
-    return response.text || "<!-- ERROR: EMPTY_SYNTHESIS -->";
+    return response.text || "<!-- INGESTION_FAILURE -->";
   } catch (err) {
-    console.error("❌ [Conversion Node Error]:", err);
-    return `<!-- CRITICAL_FAULT: Fallback to Raw -->\n${rawText}`;
+    console.error("❌ [Architect Node Error]:", err);
+    return `<!-- ERROR: SYNTHESIS FAILED -->\n${rawText}`;
   }
 }
