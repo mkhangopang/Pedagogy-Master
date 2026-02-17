@@ -1,6 +1,6 @@
 /**
  * NEURAL TOOL ROUTER (v4.0 - EXPERT EDITION)
- * Logic: Weighted signal analysis to map queries to specialized expert nodes.
+ * Logic: Weighted keyword signal analysis to route queries to specialized expert nodes.
  */
 
 export type ToolType = 'master_plan' | 'neural_quiz' | 'fidelity_rubric' | 'audit_tagger';
@@ -17,12 +17,12 @@ export function detectToolIntent(userQuery: string): ToolRoute {
   const toolSignatures = {
     master_plan: {
       score: 0,
-      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy', 'curriculum map', 'scaffold', 'modeling', 'anticipatory'],
-      phrases: ['how to teach', 'create a plan', 'lesson for', 'sequence of learning', 'instructional sequence']
+      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy', 'curriculum map', 'scaffold', 'modeling', 'anticipatory', 'hook'],
+      phrases: ['how to teach', 'create a plan', 'lesson for', 'instructional sequence', 'design a class']
     },
     neural_quiz: {
       score: 0,
-      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'formative', 'summative', 'check for understanding', 'assessment item', 'distractor', 'answer key'],
+      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'formative', 'summative', 'check for understanding', 'distractor', 'answer key', 'items'],
       phrases: ['generate questions', 'make a quiz', 'test items', 'evaluate mastery', 'summative evaluation']
     },
     fidelity_rubric: {
@@ -37,7 +37,7 @@ export function detectToolIntent(userQuery: string): ToolRoute {
     }
   };
 
-  // 1. Calculate weighted scores
+  // 1. Calculate weighted scores (Keywords = 2, Multi-word Phrases = 5)
   Object.entries(toolSignatures).forEach(([tool, sig]) => {
     sig.keywords.forEach(kw => { if (query.includes(kw)) sig.score += 2; });
     sig.phrases.forEach(ph => { if (query.includes(ph)) sig.score += 5; });
@@ -55,7 +55,7 @@ export function detectToolIntent(userQuery: string): ToolRoute {
   return {
     tool: bestTool,
     confidence: bestScore > 0 ? confidence : 0.5,
-    reasoning: `Detected "${bestTool}" based on ${bestScore} weighted pedagogical signals.`
+    reasoning: `Detected "${bestTool}" via ${bestScore} pedagogical weight signals.`
   };
 }
 

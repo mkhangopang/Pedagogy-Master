@@ -12,30 +12,17 @@ interface BrainControlProps {
   onUpdate: (brain: NeuralBrain) => void;
 }
 
-const BLUEPRINT_SQL = `-- PEDAGOGY MASTER: INFRASTRUCTURE BLUEPRINT v6.2
--- Optimized for Sindh & Federal Board Scaling Protocols
+const BLUEPRINT_SQL = `-- PEDAGOGY MASTER: INFRASTRUCTURE BLUEPRINT v6.5 (v4.0 Tooling)
+-- Optimized for Pakistan Sindh/Federal Board Scaling
 
-create table if not exists public.neural_brain (
-  id text primary key,
-  master_prompt text not null,
-  bloom_rules text,
-  version int default 1,
+create table if not exists public.tool_specialized_prompts (
+  id uuid primary key default gen_random_uuid(),
+  tool_type text not null, -- 'master_plan', 'neural_quiz', 'fidelity_rubric', 'audit_tagger'
+  version float not null,
+  prompt text not null,
   is_active boolean default true,
-  updated_at timestamp with time zone default now()
-);
-
-create table if not exists public.documents (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users on delete cascade,
-  name text not null,
-  file_path text,
-  status text default 'processing',
-  extracted_text text,
-  document_summary text,
-  grade_level text,
-  rag_indexed boolean default false,
-  is_selected boolean default false,
-  created_at timestamp with time zone default now()
+  created_at timestamptz default now(),
+  unique(tool_type, version)
 );
 
 create table if not exists public.ingestion_jobs (
@@ -47,28 +34,19 @@ create table if not exists public.ingestion_jobs (
   updated_at timestamp with time zone default now()
 );
 
-create or replace function hybrid_search_chunks_v6(
-  query_text text,
-  query_embedding vector(768),
-  match_count int,
-  filter_document_ids uuid[]
-) returns table (
-  id uuid,
-  document_id uuid,
-  chunk_text text,
-  slo_codes text[],
-  metadata jsonb,
-  combined_score float
-) language plpgsql as $$
-begin
-  return query
-  select dc.id, dc.document_id, dc.chunk_text, dc.slo_codes, dc.metadata,
-  (1 - (dc.embedding <=> query_embedding)) as combined_score
-  from document_chunks dc
-  where dc.document_id = any(filter_document_ids)
-  order by combined_score desc limit match_count;
-end;
-$$;`;
+drop view if exists rag_health_report;
+create view rag_health_report as
+select
+  d.id as document_id,
+  d.name as document_name,
+  count(dc.id) as chunk_count,
+  case
+    when count(dc.id) > 0 then 'HEALTHY'
+    else 'BROKEN_NO_CHUNKS'
+  end as health_status
+from documents d
+left join document_chunks dc on d.id = dc.document_id
+group by d.id, d.name;`;
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [activeTab, setActiveTab] = useState<'logic' | 'blueprint' | 'ingestion' | 'diagnostics'>('logic');
@@ -200,12 +178,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                 <h3 className="text-lg font-bold uppercase tracking-tight text-emerald-400">Node Pulse</h3>
                 <div className="space-y-5 relative z-10">
                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">RAG PRECISION</span>
-                      <span className="text-xs font-black text-emerald-400">99.2% OPTIMAL</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">TOOL ROUTING</span>
+                      <span className="text-xs font-black text-emerald-400">V4.0 ACTIVE</span>
                    </div>
                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">UNROLL RATE</span>
-                      <span className="text-xs font-black text-emerald-400">100% STABLE</span>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">RAG PRECISION</span>
+                      <span className="text-xs font-black text-emerald-400">99.2% OPTIMAL</span>
                    </div>
                 </div>
                 <p className="text-[9px] text-slate-500 font-medium italic">Master logic is persistent and decoupled from public constants for system founder security.</p>
@@ -219,7 +197,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-bold uppercase tracking-tight dark:text-white">Infrastructure Blueprint</h3>
-                <p className="text-xs text-slate-500 font-medium">SQL DDL for latest functional app updates.</p>
+                <p className="text-xs text-slate-500 font-medium">SQL DDL for latest Pedagogy Master v4.0 updates.</p>
               </div>
               <button onClick={copyBlueprint} className="flex items-center gap-2 px-6 py-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all">
                 {copiedBlueprint ? <CheckCircle2 size={14}/> : <Copy size={14}/>} {copiedBlueprint ? 'Copied' : 'Copy SQL'}

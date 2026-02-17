@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { X, Copy, Check, Target, Zap, Search, LayoutGrid, List, AlertTriangle } from 'lucide-react';
+import { X, Copy, Check, Target, Zap, Search, AlertTriangle, FileText, LayoutList } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
 
@@ -23,6 +23,7 @@ type HierarchicalData = Record<string, Record<string, ParsedSLO[]>>;
 export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: activeDoc, onClose }) => {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<'structured' | 'raw'>('structured');
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => { e.key === 'Escape' && onClose(); };
@@ -37,9 +38,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   };
 
   /**
-   * 🧠 INDESTRUCTIBLE NEURAL PARSER (v169)
-   * Advanced regex suite designed to catch SLOs in even the messiest MD extractions.
-   * Resolves the "Neural Reader Idle" fault for Physics/STEM curricula.
+   * 🧠 INDESTRUCTIBLE NEURAL PARSER (v170)
+   * Aggressive heuristic matching for curriculum nodes.
    */
   const hierarchicalSLOs = useMemo<HierarchicalData>(() => {
     const content = activeDoc.extractedText || "";
@@ -50,51 +50,38 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     let currentGrade = activeDoc.gradeLevel?.replace(/\D/g, '') || "09";
     let currentDomain = "A";
 
-    // Normalize grade padding
-    if (currentGrade.length === 1) currentGrade = `0${currentGrade}`;
-
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      // 1. Structure Sentinel: Detect Grade/Domain shifts
+      // 1. Structural Detectors
       const gMatch = line.match(/(?:# GRADE|Grade:)\s*([\dIXV]+)/i);
       if (gMatch) {
         let g = gMatch[1].toUpperCase();
         if (g === 'IX') g = '09';
         else if (g === 'X') g = '10';
-        else if (g === 'XI') g = '11';
-        else if (g === 'XII') g = '12';
         currentGrade = g.padStart(2, '0');
       }
 
       const dMatch = line.match(/(?:### DOMAIN|Domain:)\s*([A-Z0-9])/i);
       if (dMatch) currentDomain = dMatch[1].toUpperCase();
 
-      // 2. High-Yield Heuristic Patterns
+      // 2. Multi-Format Matcher: [TAG:CODE], [SLO:CODE], or Code | Text
       const patterns = [
-        // Standard: - [TAG:P09A01] | Remember : Description
         /^(?:[-*]\s*)?\[(?:TAG|SLO|SL0):([A-Z0-9.-]+)\]\s*(?:\|)?\s*([A-Za-z]+)?\s*[:]\s*([^\n<]+)/i,
-        // Concise: - P09A01 | Remember : Description
-        /^(?:[-*]\s*)?([A-Z][0-9]{2}[A-Z][0-9]{2,}(?:\.\d+)?)\s*\|\s*([A-Za-z]+)\s*[:]\s*([^\n<]+)/i,
-        // Wrapped: [TAG:P09A01] Description
+        /^(?:[-*]\s*)?([A-Z][0-9]{2}[A-Z][0-9]{2,})\s*\|\s*([A-Za-z]+)\s*[:]\s*([^\n<]+)/i,
         /^(?:[-*]\s*)?\[(?:TAG|SLO|SL0):([A-Z0-9.-]+)\]\s*(.+)/i,
-        // Minimal: - P09A01: Description
-        /^(?:[-*]\s*)?([A-Z][0-9]{2}[A-Z][0-9]{2,}(?:\.\d+)?)\s*[:]\s*(.+)/i,
-        // Bold Key: **P09A01** Description
-        /^\*\*([A-Z][0-9]{2}[A-Z][0-9]{2,}(?:\.\d+)?)\*\*\s*(.+)/i
+        /^(?:[-*]\s*)?([A-Z][0-9]{2}[A-Z][0-9]{2,})\s*[:]\s*(.+)/i
       ];
 
-      let matched = false;
       for (const pattern of patterns) {
         const match = line.match(pattern);
         if (match) {
           const code = match[1].trim().toUpperCase().replace(/[:\[\]\s]/g, '');
-          const bloom = (match[2] && match[2].length < 20 ? match[2].trim() : "Understand");
+          const bloom = (match[2]?.length < 20 ? match[2]?.trim() : null) || "Analyze";
           const text = (match[3] || match[2] || "").trim();
 
-          // Validation to filter out false positives
-          if (code.length >= 4 && /[A-Z0-9]/.test(code)) {
+          if (code.length >= 4) {
             slos.push({
               code,
               bloom,
@@ -102,20 +89,11 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
               grade: currentGrade,
               domain: currentDomain
             });
-            matched = true;
             break;
           }
         }
       }
     }
-
-    // Secondary pass: Find domain context from codes if headers missed it
-    slos.forEach(s => {
-      if (s.code.length >= 5) {
-        const charAt4 = s.code.charAt(3);
-        if (/[A-Z]/.test(charAt4)) s.domain = charAt4;
-      }
-    });
 
     const grouped: HierarchicalData = {};
     slos.forEach(s => {
@@ -136,10 +114,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Zap size={18}/></div>
           <div className="min-w-0">
             <h2 className="text-sm font-bold uppercase tracking-tight dark:text-white truncate max-w-md">{activeDoc.name}</h2>
-            <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest">Surgical Radar v169 • Indestructible Heuristics</p>
+            <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest">Surgical Radar v170 • Resilience Active</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
+          <div className="bg-slate-100 dark:bg-slate-800 p-1 rounded-xl flex gap-1">
+             <button onClick={() => setViewMode('structured')} className={`p-2 rounded-lg transition-all ${viewMode === 'structured' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-400'}`} title="Grid View"><LayoutList size={14}/></button>
+             <button onClick={() => setViewMode('raw')} className={`p-2 rounded-lg transition-all ${viewMode === 'raw' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm' : 'text-slate-400'}`} title="Raw Text View"><FileText size={14}/></button>
+          </div>
           <div className="relative hidden sm:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input 
@@ -156,47 +138,39 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
       <main className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-12">
         <div className="max-w-6xl mx-auto space-y-12">
-          {sortedGrades.length > 0 ? sortedGrades.map(grade => (
+          {viewMode === 'raw' ? (
+             <div className="bg-slate-50 dark:bg-white/5 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 font-mono text-xs leading-relaxed whitespace-pre-wrap dark:text-slate-300 shadow-inner">
+               {activeDoc.extractedText || "No raw text detected."}
+             </div>
+          ) : sortedGrades.length > 0 ? sortedGrades.map(grade => (
             <section key={grade} className="space-y-8">
               <div className="flex items-center gap-4">
-                <div className="px-8 py-3 bg-indigo-600 text-white rounded-[1.5rem] font-bold text-xl shadow-xl tracking-tight">GRADE {grade}</div>
+                <div className="px-8 py-3 bg-indigo-600 text-white rounded-[1.5rem] font-bold text-xl shadow-xl">GRADE {grade}</div>
                 <div className="h-px bg-slate-200 dark:bg-white/10 flex-1" />
               </div>
-
               <div className="space-y-10">
                 {Object.keys(hierarchicalSLOs[grade]).sort().map(domain => {
                   const filtered = hierarchicalSLOs[grade][domain].filter(s => 
                     s.code.includes(searchTerm.toUpperCase()) || s.text.toLowerCase().includes(searchTerm.toLowerCase())
                   );
                   if (filtered.length === 0) return null;
-                  
                   return (
                     <div key={domain} className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold text-xs border border-indigo-500/20">{domain}</div>
-                        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Curriculum Domain {domain}</h3>
+                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs border border-emerald-500/20">{domain}</div>
+                        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">DOMAIN {domain}</h3>
                       </div>
-
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                         {filtered.map((slo) => (
-                          <div 
-                            key={slo.code}
-                            onClick={() => handleCopy(slo.code)}
-                            className="group relative bg-white dark:bg-white/5 p-6 rounded-[2rem] border border-slate-200 dark:border-white/5 hover:border-indigo-500 transition-all cursor-pointer shadow-sm active:scale-[0.98]"
-                          >
+                          <div key={slo.code} onClick={() => handleCopy(slo.code)} className="group relative bg-white dark:bg-white/5 p-6 rounded-[2rem] border border-slate-200 dark:border-white/5 hover:border-indigo-500 transition-all cursor-pointer shadow-sm active:scale-[0.98]">
                             <div className="flex items-start justify-between mb-3">
                               <div className="flex items-center gap-2">
-                                <span className="px-3 py-1 bg-indigo-600 text-white rounded-full text-[9px] font-bold tracking-widest uppercase">
-                                  {slo.code}
-                                </span>
-                                <span className="text-[8px] font-semibold uppercase text-slate-400 bg-slate-50 dark:bg-white/10 px-2 py-1 rounded-md">
-                                  {slo.bloom}
-                                </span>
+                                <span className="px-3 py-1 bg-indigo-600 text-white rounded-full text-[9px] font-bold tracking-widest uppercase">{slo.code}</span>
+                                <span className="text-[8px] font-semibold uppercase text-slate-400 bg-slate-50 dark:bg-white/10 px-2 py-1 rounded-md">{slo.bloom}</span>
                               </div>
-                              {copiedCode === slo.code ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="text-slate-300 opacity-0 group-hover:opacity-100 transition-all" />}
+                              {copiedCode === slo.code ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="text-slate-300 opacity-0 group-hover:opacity-100" />}
                             </div>
-                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed group-hover:text-indigo-600 transition-colors"
-                               dangerouslySetInnerHTML={{ __html: renderSTEM(slo.text) }} />
+                            <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed group-hover:text-indigo-600 transition-colors" dangerouslySetInnerHTML={{ __html: renderSTEM(slo.text) }} />
                           </div>
                         ))}
                       </div>
@@ -208,10 +182,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           )) : (
             <div className="flex flex-col items-center justify-center py-40 text-center opacity-30">
                <AlertTriangle size={48} className="mb-6 text-slate-400" />
-               <h3 className="text-lg font-bold uppercase tracking-widest text-slate-900 dark:text-white">Curriculum Extraction Fault</h3>
-               <p className="text-xs font-medium mt-2 max-w-xs mx-auto text-slate-500 leading-relaxed">
-                 The neural reader could not find structured tags. This asset may need to be re-linearized via Mission Control or the Master MD grid.
-               </p>
+               <h3 className="text-lg font-bold uppercase tracking-widest">Parser Calibration Needed</h3>
+               <p className="text-xs font-medium mt-2 max-w-xs mx-auto">Neural nodes failed to group SLOs. Switch to "Raw Mode" to verify extraction integrity.</p>
+               <button onClick={() => setViewMode('raw')} className="mt-8 px-6 py-3 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Verify Raw Extraction</button>
             </div>
           )}
         </div>
