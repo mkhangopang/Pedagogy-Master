@@ -81,6 +81,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
       </header>
 
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
+        {/* STAT FIX: Ensure Vault count includes all documents regardless of state */}
         <StatCard title="Vault" value={documents.length.toString()} icon={<FileText size={18} className="text-indigo-600" />} color="indigo" />
         <StatCard title="Latency" value={latency} icon={<Activity size={18} className="text-emerald-500" />} color="emerald" />
         <StatCard title="Sync Rate" value="99.9%" icon={<Zap size={18} className="text-amber-500" />} color="amber" />
@@ -107,7 +108,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </section>
       </div>
 
-      {/* Settings Modal */}
       {isEditingBranding && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8">

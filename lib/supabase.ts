@@ -1,4 +1,3 @@
-
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan } from '../types';
 
@@ -15,12 +14,10 @@ let cachedUrl: string | null = null;
 let cachedKey: string | null = null;
 
 /**
- * PRODUCTION CREDENTIAL RESOLVER (v32.1 - ULTRA RESILIENT)
- * Orchestrates an aggressive search for infrastructure keys to fix discovery exhaustion.
+ * PRODUCTION CREDENTIAL RESOLVER (v32.2 - ULTRA RESILIENT)
+ * Fixed 'Neural Handshake' failure by aggressively purging placeholder state.
  */
 export const getCredentials = () => {
-  if (cachedUrl && cachedKey) return { url: cachedUrl, key: cachedKey };
-
   const isBrowser = typeof window !== 'undefined';
   const win = isBrowser ? (window as any) : {};
 
@@ -30,93 +27,55 @@ export const getCredentials = () => {
     return v !== '' && v !== 'undefined' && v !== 'null' && v !== '[object Object]' && !v.includes('placeholder');
   };
 
-  // TIER 1: Explicit Compiler Literals (Bundler Replacement)
+  // TIER 1: Explicit Compiler Literals
   let url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
   let key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
-  // TIER 2: Unified Namespace Scan (Deep Crawl)
+  // TIER 2: Aggressive Discovery
   if (!isValid(url) || !isValid(key)) {
     const sources = [
       win.env,
       win.process?.env,
       win.ai_config,
-      // Check for common Vercel/Next.js injection patterns
       (win as any).__NEXT_DATA__?.runtimeConfig,
-      (win as any).__ENV,
       isBrowser ? JSON.parse(localStorage.getItem('sb-infra-cache') || '{}') : null,
       win
     ].filter(Boolean);
 
     for (const src of sources) {
-      if (!isValid(url)) url = src.NEXT_PUBLIC_SUPABASE_URL || src.SUPABASE_URL || src.supabase_url || src.VITE_SUPABASE_URL || '';
-      if (!isValid(key)) key = src.NEXT_PUBLIC_SUPABASE_ANON_KEY || src.SUPABASE_ANON_KEY || src.supabase_anon_key || src.VITE_SUPABASE_ANON_KEY || '';
-      
-      // Stop if we found a valid pair
-      if (isValid(url) && isValid(key) && String(url).startsWith('http')) break;
+      if (!isValid(url)) url = src.NEXT_PUBLIC_SUPABASE_URL || src.SUPABASE_URL || src.supabase_url || '';
+      if (!isValid(key)) key = src.NEXT_PUBLIC_SUPABASE_ANON_KEY || src.SUPABASE_ANON_KEY || src.supabase_anon_key || '';
+      if (isValid(url) && isValid(key)) break;
     }
   }
 
   const finalUrl = String(url || '').trim();
   const finalKey = String(key || '').trim();
 
-  // Cache only if valid to prevent locking in bad values
   if (finalUrl.startsWith('http') && finalKey.length >= 10) {
     cachedUrl = finalUrl;
     cachedKey = finalKey;
-    // Persist to local storage for subsequent reloads resilience
     if (isBrowser) {
-        try {
-            localStorage.setItem('sb-infra-cache', JSON.stringify({ NEXT_PUBLIC_SUPABASE_URL: finalUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: finalKey }));
-        } catch (e) { /* ignore */ }
+        try { localStorage.setItem('sb-infra-cache', JSON.stringify({ NEXT_PUBLIC_SUPABASE_URL: finalUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: finalKey })); } catch (e) {}
     }
-    console.log('📡 [System] Handshake: Credentials Resolved.');
   }
 
   return { url: finalUrl, key: finalKey };
 };
 
-export const pulseCredentialsFromServer = async (): Promise<boolean> => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const res = await fetch('/api/check-env', { cache: 'no-store' });
-    if (!res.ok) return false;
-    const data = await res.json();
-    
-    if (data.config?.url && data.config?.key) {
-      const win = window as any;
-      win.env = win.env || {};
-      win.env.NEXT_PUBLIC_SUPABASE_URL = data.config.url;
-      win.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = data.config.key;
-      refreshSupabaseInstance();
-      return true;
-    }
-    return false;
-  } catch (err) {
-    return false;
-  }
-};
-
-export const isSupabaseConfigured = (): boolean => {
-  const { url, key } = getCredentials();
-  return !!(url && url.startsWith('http') && key && key.length > 15);
-};
-
-export const refreshSupabaseInstance = () => {
-  if (typeof window !== 'undefined') {
-    delete (window as any).__supabaseInstance;
-    cachedUrl = null;
-    cachedKey = null;
-  }
-};
-
 export const getSupabaseClient = (): SupabaseClient => {
   const isServer = typeof window === 'undefined';
   if (!isServer && (window as any).__supabaseInstance) {
-    return (window as any).__supabaseInstance;
+    // RE-SYNC CHECK: If instance exists but is using placeholder, force recreation
+    const currentUrl = (window as any).__supabaseInstance.supabaseUrl;
+    if (currentUrl?.includes('placeholder')) {
+      delete (window as any).__supabaseInstance;
+    } else {
+      return (window as any).__supabaseInstance;
+    }
   }
 
   const { url, key } = getCredentials();
-  // Allow partial configuration for bypass modes, but prefer valid
   const isValid = url.startsWith('http') && key.length > 10;
   
   const client = createClient(
@@ -133,10 +92,7 @@ export const getSupabaseClient = (): SupabaseClient => {
     }
   );
 
-  if (!isServer) {
-    (window as any).__supabaseInstance = client;
-  }
-  
+  if (!isServer) (window as any).__supabaseInstance = client;
   return client;
 };
 
@@ -148,29 +104,35 @@ export const supabase = new Proxy({} as SupabaseClient, {
   }
 });
 
-export const getSupabaseServerClient = (token?: string): SupabaseClient => {
+export const refreshSupabaseInstance = () => {
+  if (typeof window !== 'undefined') {
+    delete (window as any).__supabaseInstance;
+    cachedUrl = null;
+    cachedKey = null;
+  }
+};
+
+export const isSupabaseConfigured = (): boolean => {
   const { url, key } = getCredentials();
-  const options: any = {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  };
-  if (token) options.global = { headers: { Authorization: `Bearer ${token}` } };
-  return createClient(url || 'https://placeholder.supabase.co', key || 'dummy', options);
+  return !!(url && url.startsWith('http') && key && key.length > 15);
 };
 
-export const getSupabaseAdminClient = (): SupabaseClient => {
-  const { url } = getCredentials();
-  // Server-side process.env check for Service Role Key
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  return createClient(url || 'https://placeholder.supabase.co', serviceKey || 'dummy', {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  });
-};
-
-export const getURL = () => {
-  let url = process?.env?.NEXT_PUBLIC_SITE_URL ?? process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 'http://localhost:3000/';
-  url = url.includes('http') ? url : `https://${url}`;
-  url = url.endsWith('/') ? url : `${url}/`;
-  return url;
+export const pulseCredentialsFromServer = async (): Promise<boolean> => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const res = await fetch('/api/check-env', { cache: 'no-store' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (data.config?.url && data.config?.key) {
+      const win = window as any;
+      win.env = win.env || {};
+      win.env.NEXT_PUBLIC_SUPABASE_URL = data.config.url;
+      win.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = data.config.key;
+      refreshSupabaseInstance();
+      return true;
+    }
+    return false;
+  } catch (err) { return false; }
 };
 
 export async function getOrCreateProfile(userId: string, email?: string) {
@@ -181,10 +143,8 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (profile) return profile;
-    const metadata = (await supabase.auth.getUser())?.data?.user?.user_metadata || {};
-    const fallbackName = metadata.full_name || metadata.name || email?.split('@')[0] || 'Educator';
     const { data: newProfile } = await supabase.from('profiles').upsert({
-      id: userId, email: email || '', name: fallbackName,
+      id: userId, email: email || '', name: email?.split('@')[0] || 'Educator',
       role: isAdminUser ? 'app_admin' : 'teacher', plan: isAdminUser ? 'enterprise' : 'free',
       queries_limit: isAdminUser ? 999999 : 30
     }, { onConflict: 'id' }).select().single();
@@ -198,7 +158,25 @@ export const getSupabaseHealth = async () => {
     const { error } = await supabase.from('profiles').select('id').limit(1);
     if (error && error.code !== 'PGRST116') throw error;
     return { status: 'connected', message: 'Active' };
-  } catch (err: any) {
-    return { status: 'disconnected', message: 'Offline' };
-  }
+  } catch (err) { return { status: 'disconnected', message: 'Offline' }; }
+};
+
+export const getSupabaseServerClient = (token?: string): SupabaseClient => {
+  const { url, key } = getCredentials();
+  const options: any = { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } };
+  if (token) options.global = { headers: { Authorization: `Bearer ${token}` } };
+  return createClient(url || 'https://placeholder.supabase.co', key || 'dummy', options);
+};
+
+export const getSupabaseAdminClient = (): SupabaseClient => {
+  const { url } = getCredentials();
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  return createClient(url || 'https://placeholder.supabase.co', serviceKey || 'dummy', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+};
+
+export const getURL = () => {
+  let url = process?.env?.NEXT_PUBLIC_SITE_URL ?? process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 'http://localhost:3000/';
+  url = url.includes('http') ? url : `https://${url}`;
+  url = url.endsWith('/') ? url : `${url}/`;
+  return url;
 };
