@@ -10,8 +10,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR (v4.0)
- * FEATURE: JSON Metadata Extraction & Structured SLO Database Population.
+ * NEURAL INGESTION ORCHESTRATOR (v4.1)
+ * FEATURE: Surgical metadata extraction and alignment.
  */
 export async function POST(req: NextRequest, props: { params: Promise<{ documentId: string }> }) {
   const { documentId } = await props.params;
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     const { data: doc } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
     if (!doc) throw new Error("Document node missing.");
 
-    // STEP: EXTRACT
+    // PHASE 1: EXTRACT
     if (job.step === IngestionStep.EXTRACT) {
       const buffer = await getObjectBuffer(doc.file_path);
       if (!buffer) throw new Error("Vault unreachable.");
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       job.step = IngestionStep.LINEARIZE;
     }
 
-    // STEP: LINEARIZE (Raw -> Master MD + JSON Index)
+    // PHASE 2: LINEARIZE (Raw -> Master MD + JSON Index)
     if (job.step === IngestionStep.LINEARIZE) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       const architectOutput = await convertToPedagogicalMarkdown(currentDoc?.extracted_text || "");
@@ -73,12 +73,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
              await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
              await adminSupabase.from('slo_database').insert(sloRecords);
              
-             // Update main doc metadata
+             // CRITICAL FIX: Persist Subject/Grade metadata to parent record
              if (sloIndex.length > 0) {
                 await adminSupabase.from('documents').update({
-                  subject: sloIndex[0].subject,
-                  grade_level: `Grade ${sloIndex[0].grade}`,
-                  authority: 'Master MD Generated'
+                  subject: sloIndex[0].subject || 'General',
+                  grade_level: sloIndex[0].grade ? `Grade ${sloIndex[0].grade}` : 'Auto',
+                  document_summary: `Progression grid with ${sloIndex.length} surgical nodes.`
                 }).eq('id', documentId);
              }
            }
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       job.step = IngestionStep.EMBED;
     }
 
-    // STEP: EMBED
+    // PHASE 3: EMBED (Standard RAG Indexing)
     if (job.step === IngestionStep.EMBED) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       await indexDocumentForRAG(documentId, currentDoc?.extracted_text || "", adminSupabase, job.id);
@@ -103,6 +103,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
+    console.error("❌ Orchestrator Fault:", error);
     await adminSupabase.from('ingestion_jobs').update({ 
       status: JobStatus.FAILED, 
       error_message: error.message,
