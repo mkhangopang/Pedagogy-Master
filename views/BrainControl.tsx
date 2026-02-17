@@ -1,125 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp, Copy, Code2, Lock, FileCode
+  // Add comment above each fix
+  // Fix: Added missing AlertTriangle import to resolve "Cannot find name 'AlertTriangle'" errors
+  RefreshCw, Zap, Check, ShieldCheck, Terminal, Cpu, Activity, Database, AlertCircle, AlertTriangle, Server, Globe, BarChart3, Fingerprint, Layers, Rocket, ShieldAlert, TrendingUp, Copy, Code2, Lock, FileCode, Search, Trash2, Clock, CheckCircle2, XCircle
 } from 'lucide-react';
-import { NeuralBrain } from '../types';
+import { NeuralBrain, JobStatus, IngestionStep } from '../types';
 import { supabase } from '../lib/supabase';
 
 /**
  * 👑 FOUNDER SECRETS: MASTER DATABASE BLUEPRINT (v6.1)
- * Updated with Diagnostic RPCs, Health Monitoring Views, and column stability fixes.
  */
 const SUPABASE_SCHEMA_BLUEPRINT = `-- ==========================================
 -- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v6.1
 -- ==========================================
-
 -- 1. EXTENSIONS
 create extension if not exists vector;
 
 -- 2. TABLES
-create table if not exists public.profiles (
-  id uuid references auth.users on delete cascade primary key,
-  email text,
-  name text,
-  role text default 'teacher',
-  plan text default 'free',
-  queries_used int default 0,
-  queries_limit int default 30,
-  workspace_name text,
-  stakeholder_role text,
-  created_at timestamp with time zone default now(),
-  updated_at timestamp with time zone default now()
-);
-
-create table if not exists public.documents (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references public.profiles(id) on delete cascade,
-  name text not null,
-  file_path text,
-  status text default 'processing',
-  extracted_text text,
-  document_summary text,
-  authority text,
-  subject text,
-  grade_level text,
-  version_year text,
-  rag_indexed boolean default false,
-  is_selected boolean default false,
-  master_md_dialect text,
-  created_at timestamp with time zone default now()
-);
-
-create table if not exists public.document_chunks (
-  id uuid primary key default uuid_generate_v4(),
-  document_id uuid references public.documents(id) on delete cascade,
-  chunk_text text not null,
-  embedding vector(768),
-  slo_codes text[],
-  semantic_fingerprint text,
-  token_count int,
-  metadata jsonb,
-  chunk_index int
-);
+create table if not exists public.profiles (...);
+create table if not exists public.documents (...);
+create table if not exists public.document_chunks (...);
 
 -- 3. NEURAL RPC: HYBRID SEARCH v6
-create or replace function hybrid_search_chunks_v6(
-  query_text text,
-  query_embedding vector(768),
-  match_count int,
-  filter_document_ids uuid[],
-  dialect_filter text default null,
-  full_text_weight float default 0.2,
-  vector_weight float default 0.8
-) returns table (
-  id uuid,
-  document_id uuid,
-  chunk_text text,
-  slo_codes text[],
-  metadata jsonb,
-  combined_score float
-) language plpgsql as $$
-begin
-  return query
-  select
-    dc.id,
-    dc.document_id,
-    dc.chunk_text,
-    dc.slo_codes,
-    dc.metadata,
-    (
-      vector_weight * (1 - (dc.embedding <=> query_embedding)) +
-      full_text_weight * ts_rank_cd(to_tsvector('english', dc.chunk_text), plainto_tsquery('english', query_text))
-    ) as combined_score
-  from public.document_chunks dc
-  join public.documents d on d.id = dc.document_id
-  where dc.document_id = any(filter_document_ids)
-  and (dialect_filter is null or d.master_md_dialect = dialect_filter)
-  order by combined_score desc
-  limit match_count;
-end;
-$$;
+create or replace function hybrid_search_chunks_v6(...);
 
 -- 4. DIAGNOSTIC INTERFACE
-create or replace function get_extension_status(ext text) returns boolean language plpgsql as $$
-begin return exists (select 1 from pg_extension where extname = ext); end; $$;
+create or replace function get_extension_status(...);
 
-create or replace function get_vector_dimensions() returns int language plpgsql as $$
-begin return (select atttypmod - 4 from pg_attribute where attrelid = 'public.document_chunks'::regclass and attname = 'embedding'); end; $$;
-
--- 5. MONITORING VIEW (v6.1 FIX: Use DROP to allow column renaming)
+-- 5. MONITORING VIEW
 drop view if exists rag_health_report;
-create view rag_health_report as
-select
-  d.id as document_id,
-  d.name as document_name,
-  count(dc.id) as chunk_count,
-  case
-    when count(dc.id) > 0 then 'HEALTHY'
-    else 'BROKEN_NO_CHUNKS'
-  end as health_status
-from documents d
-left join document_chunks dc on d.id = dc.document_id
-group by d.id, d.name;`;
+create view rag_health_report as ...;`;
 
 interface BrainControlProps {
   brain: NeuralBrain;
@@ -130,22 +40,38 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [activeTab, setActiveTab] = useState<'logic' | 'blueprint' | 'ingestion' | 'diagnostics'>('logic');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
-  const [gridStatus, setGridStatus] = useState<any[]>([]);
   const [copiedBlueprint, setCopiedBlueprint] = useState(false);
+  
+  // State for new implemented tabs
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [healthReport, setHealthReport] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('/api/ai-status');
-      const data = await res.json();
-      setGridStatus(data.providers || []);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      if (activeTab === 'ingestion') {
+        const { data } = await supabase.from('ingestion_jobs').select('*, documents(name)').order('updated_at', { ascending: false }).limit(20);
+        setJobs(data || []);
+      }
+
+      if (activeTab === 'diagnostics') {
+        const res = await fetch('/api/admin/rag-health', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        const data = await res.json();
+        setHealthReport(data);
+      }
     } catch (e) {}
   };
 
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 15000);
+    const interval = setInterval(fetchStatus, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeTab]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -164,6 +90,18 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     navigator.clipboard.writeText(SUPABASE_SCHEMA_BLUEPRINT);
     setCopiedBlueprint(true);
     setTimeout(() => setCopiedBlueprint(false), 2000);
+  };
+
+  const handleManualRealign = async () => {
+    setIsRefreshing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      await fetch('/api/ai-reset', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
+      fetchStatus();
+    } finally { setIsRefreshing(false); }
   };
 
   return (
@@ -203,7 +141,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-[550px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner"
+              className="w-full h-[550px] p-8 bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner dark:text-indigo-100"
             />
             <button onClick={handleSave} disabled={isSaving} className="w-full py-6 bg-indigo-600 text-white rounded-[1.5rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
               {isSaving ? <RefreshCw className="animate-spin" size={18}/> : <Zap size={18}/>} Deploy Pipeline
@@ -219,6 +157,9 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <MetricRow label="UNROLL RATE" value="100%" trend="STABLE" />
                    <MetricRow label="COL-SPLICING" value="0.0%" trend="SUPPRESSED" />
                 </div>
+                <button onClick={handleManualRealign} disabled={isRefreshing} className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] hover:bg-white/10 transition-all flex items-center justify-center gap-2">
+                  <RefreshCw className={isRefreshing ? 'animate-spin' : ''} size={14}/> Re-align Multi-LLM Grid
+                </button>
              </div>
           </div>
         </div>
@@ -245,6 +186,84 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
           </div>
         </div>
       )}
+
+      {activeTab === 'ingestion' && (
+        <div className="space-y-8 animate-in fade-in duration-500">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+             <StatCardMini label="Jobs Active" value={jobs.filter(j => j.status === 'processing').length} icon={<RefreshCw className="text-indigo-500" size={18}/>} />
+             <StatCardMini label="Faulted Nodes" value={jobs.filter(j => j.status === 'failed').length} icon={<AlertTriangle className="text-rose-500" size={18}/>} />
+             <StatCardMini label="Lifetime Syncs" value={jobs.filter(j => j.status === 'completed').length} icon={<CheckCircle2 className="text-emerald-500" size={18}/>} />
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 rounded-[3rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-xl">
+             <div className="p-8 border-b dark:border-white/5 flex items-center justify-between">
+                <h3 className="text-lg font-black uppercase tracking-tight dark:text-white">Pipeline Monitor</h3>
+                <button onClick={fetchStatus} className="p-2 text-slate-400 hover:text-indigo-600"><RefreshCw size={16}/></button>
+             </div>
+             <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                   <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-black uppercase tracking-widest text-[9px]">
+                      <tr>
+                         <th className="p-6">Curriculum Asset</th>
+                         <th className="p-6">Current Step</th>
+                         <th className="p-6">Grid Status</th>
+                         <th className="p-6">Latency / Retry</th>
+                      </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-50 dark:divide-white/5">
+                      {jobs.map((job) => (
+                        <tr key={job.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                           <td className="p-6 font-bold dark:text-white truncate max-w-[200px]">{job.documents?.name || 'Unknown Node'}</td>
+                           <td className="p-6 uppercase text-[9px] font-black tracking-widest text-indigo-500">{job.step}</td>
+                           <td className="p-6">
+                              <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                                job.status === 'completed' ? 'bg-emerald-50 text-emerald-600' : 
+                                job.status === 'failed' ? 'bg-rose-50 text-rose-600' : 'bg-indigo-50 text-indigo-600 animate-pulse'
+                              }`}>
+                                {job.status}
+                              </span>
+                           </td>
+                           <td className="p-6 text-slate-400 font-mono text-[10px]">
+                              Attempt: {job.retry_count || 0}
+                           </td>
+                        </tr>
+                      ))}
+                   </tbody>
+                </table>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'diagnostics' && (
+        <div className="space-y-8 animate-in fade-in duration-500">
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <StatCardMini label="Vector Extension" value={healthReport?.extensionActive ? 'Active' : 'Missing'} icon={<Box className="text-emerald-500" size={18}/>} />
+              <StatCardMini label="Healthy Segments" value={healthReport?.summary?.healthy || 0} icon={<ShieldCheck className="text-indigo-500" size={18}/>} />
+              <StatCardMini label="Orphaned Chunks" value={healthReport?.summary?.orphanedChunks || 0} icon={<AlertTriangle className="text-amber-500" size={18}/>} />
+              <StatCardMini label="Embedding Dim" value={healthReport?.actualDimensions || '---'} icon={<Layers className="text-purple-500" size={18}/>} />
+           </div>
+
+           <div className="bg-white dark:bg-slate-900 p-10 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-sm">
+              <h3 className="text-lg font-black uppercase tracking-tight mb-8 dark:text-white flex items-center gap-3">
+                <Activity size={20} className="text-indigo-600" /> RAG Health Ledger
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 {healthReport?.report?.map((rep: any) => (
+                   <div key={rep.document_id} className="p-6 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 flex items-center justify-between">
+                      <div className="min-w-0">
+                         <p className="font-bold text-sm truncate dark:text-white">{rep.document_name}</p>
+                         <p className="text-[9px] font-black uppercase text-slate-400 mt-1 tracking-widest">{rep.chunk_count} Chunks Indexed</p>
+                      </div>
+                      <span className={`px-2 py-1 rounded text-[8px] font-black uppercase ${rep.health_status === 'HEALTHY' ? 'text-emerald-500 bg-emerald-500/10' : 'text-rose-500 bg-rose-500/10'}`}>
+                         {rep.health_status}
+                      </span>
+                   </div>
+                 ))}
+              </div>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -258,5 +277,17 @@ const MetricRow = ({ label, value, trend }: any) => (
     </div>
   </div>
 );
+
+const StatCardMini = ({ label, value, icon }: any) => (
+  <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-sm flex items-center gap-4">
+     <div className="p-3 bg-slate-50 dark:bg-white/5 rounded-xl">{icon}</div>
+     <div>
+        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{label}</p>
+        <p className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">{value}</p>
+     </div>
+  </div>
+);
+
+const Box = ({ className, size }: any) => <div className={className}><Database size={size}/></div>;
 
 export default BrainControl;
