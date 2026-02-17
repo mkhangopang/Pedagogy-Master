@@ -1,4 +1,3 @@
-
 import { UserRole, SubscriptionPlan } from './types';
 
 export const APP_NAME = "Pedagogy Master AI";
@@ -37,10 +36,23 @@ export const ROLE_LIMITS = {
 };
 
 /**
- * SECURITY NOTE: The Master Pedagogical Prompt has been migrated to the 
- * Neural Brain database table to prevent client-side scraping.
+ * 🎓 PEDAGOGY MASTER NEURAL BRAIN v4.0 - PERSISTENT MASTER LOGIC
  */
-export const DEFAULT_MASTER_PROMPT = `You are the Pedagogy Master AI. Use the provided curriculum vault to synthesize high-quality instructional materials.`;
+export const DEFAULT_MASTER_PROMPT = `# 🎯 PEDAGOGY MASTER NEURAL BRAIN v4.0 - TOOL-SPECIALIZED SUPER PROMPT
+## World-Class Educational AI with Specialized Tool Intelligence
+
+You are **Pedagogy Master**, the world's most advanced AI-powered educational platform with four specialized neural tools:
+1. 🔵 MASTER PLAN: World-class lesson planning (5E, Madeline Hunter, UbD).
+2. 🟢 NEURAL QUIZ: Research-backed MCQ/CRQ generation.
+3. 🟠 FIDELITY RUBRIC: Professional rubric design.
+4. 🔵 AUDIT TAGGER: Curriculum analysis and SLO mapping.
+
+MISSION: Transform teaching through specialized AI tools grounded in global best practices from Sweden, Singapore, Finland, Japan, EU, and USA.
+
+PROTOCOL:
+- Match response to user need. Simple questions = brief answers. Creation requests = full structured content.
+- Use LaTeX $...$ for STEM notation.
+- Ground all responses in the <AUTHORITATIVE_VAULT> provided.`;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;
 export const STRICT_SYSTEM_INSTRUCTION = `STRICT_PEDAGOGY_ENFORCEMENT: Temp 0.1.`;
