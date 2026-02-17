@@ -8,9 +8,8 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * WORLD-CLASS UPLOAD HANDSHAKE (v130.0)
- * FIX: Signature Mismatch Resolution.
- * Removed Metadata from PutObjectCommand to ensure simple PUT handshake compatibility.
+ * PRODUCTION UPLOAD GATEWAY (v135.0)
+ * FIX: Removed complex metadata headers to prevent R2 Signature Mismatch during PUT.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -34,18 +33,20 @@ export async function POST(req: NextRequest) {
     const cleanFileName = name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const r2Key = `raw/${user.id}/${documentId}/${cleanFileName}`;
 
-    // 1. Generate Pre-signed URL (SIMPLIFIED for Mobile Reliability)
+    // 1. Generate Presigned URL (ULTRA-LEAN for Handshake Stability)
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
       ContentType: contentType
-      // Removed Metadata block: Browser fetch fails if meta headers aren't mirrored exactly
     });
 
+    // 15-minute window for upload completion
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
 
-    // 2. Initialize Institutional Record
+    // 2. Persistent Record Initialization
     const supabase = getSupabaseServerClient(token);
+    
+    // De-select other docs for this user to focus on the new ingest
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
@@ -55,10 +56,10 @@ export async function POST(req: NextRequest) {
       file_path: r2Key,
       status: 'processing',
       mime_type: contentType,
-      subject: 'Identifying...',
+      subject: 'Detecting...',
       grade_level: 'Auto',
       is_selected: true,
-      document_summary: 'Initializing binary sync...',
+      document_summary: 'Binary payload streaming...',
       rag_indexed: false,
       extracted_text: extractedText || "",
       is_approved: false,
@@ -71,12 +72,11 @@ export async function POST(req: NextRequest) {
       success: true, 
       documentId: docData.id,
       uploadUrl: uploadUrl,
-      r2Key: r2Key,
-      contentType: contentType
+      r2Key: r2Key
     });
 
   } catch (error: any) {
-    console.error("❌ [Handshake Node Fault]:", error);
+    console.error("❌ [Upload Gateway Fault]:", error);
     return NextResponse.json({ error: error.message || 'Synthesis grid exception.' }, { status: 500 });
   }
 }
