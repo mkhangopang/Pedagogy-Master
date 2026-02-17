@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   RefreshCw, Zap, Check, ShieldCheck, Cpu, Activity, Layers, 
   Rocket, TrendingUp, Copy, Lock, FileCode, Search, Database, 
@@ -84,7 +84,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     setFormData(brain);
   }, [brain]);
 
-  const fetchStatus = async (isInitial = false) => {
+  const fetchStatus = useCallback(async (isInitial = false) => {
     if (activeTab === 'diagnostics' && isInitial) setIsTelemetryLoading(true);
     
     try {
@@ -105,20 +105,23 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         const res = await fetch('/api/admin/rag-health', {
           headers: { 'Authorization': `Bearer ${session.access_token}` }
         });
-        if (res.ok) setHealthReport(await res.json());
+        if (res.ok) {
+          const data = await res.json();
+          setHealthReport(data);
+        }
       }
     } catch (e) {
       console.warn("Telemetry Node Offline.");
     } finally {
-      setIsTelemetryLoading(false);
+      if (isInitial) setIsTelemetryLoading(false);
     }
-  };
+  }, [activeTab]);
 
   useEffect(() => {
     fetchStatus(true);
-    const interval = setInterval(() => fetchStatus(false), 10000);
+    const interval = setInterval(() => fetchStatus(false), 8000);
     return () => clearInterval(interval);
-  }, [activeTab]);
+  }, [fetchStatus]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -239,7 +242,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-sm">
              <div className="p-6 border-b dark:border-white/5 flex items-center justify-between">
                 <h3 className="text-md font-bold uppercase tracking-tight dark:text-white">Pipeline Monitor</h3>
-                <button onClick={() => fetchStatus()} className="p-2 text-slate-400 hover:text-indigo-600"><RefreshCw size={14}/></button>
+                <button onClick={() => fetchStatus(true)} className="p-2 text-slate-400 hover:text-indigo-600 transition-all"><RefreshCw size={14}/></button>
              </div>
              <div className="overflow-x-auto">
                 <table className="w-full text-left text-[10px]">
@@ -290,27 +293,31 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            ) : healthReport ? (
              <>
                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                  <StatCardMini label="Healthy Segments" value={healthReport.summary.healthy} icon={<ShieldCheck className="text-emerald-500" size={18}/>} />
-                  <StatCardMini label="Orphaned Chunks" value={healthReport.summary.orphanedChunks} icon={<AlertTriangle className="text-amber-500" size={18}/>} />
-                  <StatCardMini label="Embedding Dim" value={healthReport.actualDimensions} icon={<Layers className="text-purple-500" size={18}/>} />
+                  <StatCardMini label="Healthy Segments" value={healthReport.summary?.healthy ?? 0} icon={<ShieldCheck className="text-emerald-500" size={18}/>} />
+                  <StatCardMini label="Orphaned Chunks" value={healthReport.summary?.orphanedChunks ?? 0} icon={<AlertTriangle className="text-amber-500" size={18}/>} />
+                  <StatCardMini label="Embedding Dim" value={healthReport.actualDimensions ?? 768} icon={<Layers className="text-purple-500" size={18}/>} />
                   <StatCardMini label="Vector Extension" value={healthReport.extensionActive ? 'Active' : 'Offline'} icon={<Database className="text-indigo-500" size={18}/>} />
                </div>
 
                <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-white/5 overflow-hidden shadow-sm">
                  <div className="p-8 border-b dark:border-white/5 flex justify-between items-center">
                     <h3 className="text-lg font-bold uppercase tracking-tight dark:text-white flex items-center gap-3"><Activity size={18} className="text-indigo-600" /> RAG Health Ledger</h3>
-                    <button onClick={() => fetchStatus(true)} className="p-2 text-slate-400 hover:text-indigo-600"><RefreshCw size={14} /></button>
+                    <button onClick={() => fetchStatus(true)} className="p-2 text-slate-400 hover:text-indigo-600 transition-all"><RefreshCw size={14} /></button>
                  </div>
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-8">
-                    {healthReport.report.map((r: any) => (
+                    {healthReport.report && healthReport.report.length > 0 ? healthReport.report.map((r: any) => (
                       <div key={r.document_id} className="p-6 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-100 dark:border-white/5 flex items-center justify-between hover:border-indigo-400 transition-all group">
                          <div>
                             <p className="font-bold text-sm dark:text-white truncate max-w-[200px]">{r.document_name}</p>
                             <p className="text-[10px] font-medium text-slate-400 mt-1 uppercase tracking-widest">{r.chunk_count} Chunks Indexed</p>
                          </div>
-                         <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase ${r.health_status === 'HEALTHY' ? 'text-emerald-500' : 'text-rose-500'}`}>{r.health_status}</span>
+                         <span className={`px-2 py-0.5 rounded-full text-[8px] font-bold uppercase ${r.health_status === 'HEALTHY' ? 'text-emerald-500 border border-emerald-100' : 'text-rose-500 border border-rose-100'}`}>{r.health_status}</span>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="col-span-full py-10 text-center opacity-30">
+                        <p className="text-xs font-bold uppercase tracking-widest">No document health records detected.</p>
+                      </div>
+                    )}
                  </div>
                </div>
              </>
@@ -318,6 +325,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
              <div className="flex flex-col items-center justify-center py-40 opacity-30">
                 <Activity size={48} className="text-slate-400 mb-4" />
                 <p className="text-sm font-bold uppercase tracking-widest">No telemetry data available.</p>
+                <button onClick={() => fetchStatus(true)} className="mt-4 text-[10px] font-black uppercase text-indigo-600 hover:underline">Force Manual Sync</button>
              </div>
            )}
         </div>

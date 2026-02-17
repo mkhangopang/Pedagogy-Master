@@ -103,13 +103,19 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(30);
       setStatus('Streaming binary payload...');
       
+      // CRITICAL: Minimal headers to prevent R2 signature mismatch errors
       const uploadRes = await fetch(uploadUrl, { 
         method: 'PUT', 
         body: file, 
-        headers: { 'Content-Type': contentType } 
+        headers: { 
+          'Content-Type': contentType 
+        } 
       });
       
-      if (!uploadRes.ok) throw new Error(`Cloud node refusal.`);
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        throw new Error(`Cloud node refusal (Status: ${uploadRes.status}).`);
+      }
 
       setProgress(40);
       setStatus('High-speed unrolling initialized...');
@@ -119,7 +125,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       });
 
     } catch (err: any) {
-      setError(err.message || "Binary stream node failure.");
+      console.error("❌ [Ingestor Fault]:", err);
+      setError(err.message?.includes('fetch') ? "Cloud node unreachable. Check your internet or CORS configuration." : (err.message || "Binary stream node failure."));
       setIsUploading(false);
     }
   };
@@ -147,7 +154,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
           <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/30 rounded-full border border-emerald-100 dark:border-emerald-500/20 flex items-center gap-1.5">
              <Zap size={12} className="text-emerald-500" />
-             <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-600">Fast Sync v150</span>
+             <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-600">Fast Sync v151</span>
           </div>
         </div>
 

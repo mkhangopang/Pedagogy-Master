@@ -37,8 +37,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   };
 
   /**
-   * 🧠 INDESTRUCTIBLE NEURAL PARSER (v168)
-   * Universal heuristic detection for SLO nodes.
+   * 🧠 INDESTRUCTIBLE NEURAL PARSER (v169)
+   * Advanced regex suite designed to catch SLOs in even the messiest MD extractions.
+   * Resolves the "Neural Reader Idle" fault for Physics/STEM curricula.
    */
   const hierarchicalSLOs = useMemo<HierarchicalData>(() => {
     const content = activeDoc.extractedText || "";
@@ -49,14 +50,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     let currentGrade = activeDoc.gradeLevel?.replace(/\D/g, '') || "09";
     let currentDomain = "A";
 
-    // Standardize grade format (e.g. "9" -> "09")
+    // Normalize grade padding
     if (currentGrade.length === 1) currentGrade = `0${currentGrade}`;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
-      // 1. Context Switchers (Grade/Domain Headers)
+      // 1. Structure Sentinel: Detect Grade/Domain shifts
       const gMatch = line.match(/(?:# GRADE|Grade:)\s*([\dIXV]+)/i);
       if (gMatch) {
         let g = gMatch[1].toUpperCase();
@@ -70,24 +71,30 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       const dMatch = line.match(/(?:### DOMAIN|Domain:)\s*([A-Z0-9])/i);
       if (dMatch) currentDomain = dMatch[1].toUpperCase();
 
-      // 2. Multi-Format SLO Recognizer
+      // 2. High-Yield Heuristic Patterns
       const patterns = [
-        /^- \[(?:TAG|SLO|SL0):([A-Z0-9.-]+)\]\s*(?:\|)?\s*([A-Za-z]+)?\s*[:]\s*([^\n<]+)/i,
-        /^- ([A-Z][0-9]{2}[A-Z][0-9]{2,})\s*\|\s*([A-Za-z]+)\s*[:]\s*([^\n<]+)/i,
-        /^\[(?:TAG|SLO|SL0):([A-Z0-9.-]+)\]\s*(.+)/i,
-        /^- ([A-Z][0-9]{2}[A-Z][0-9]{2,})\s*[:]\s*(.+)/i // Catch-all for simple bulleted codes
+        // Standard: - [TAG:P09A01] | Remember : Description
+        /^(?:[-*]\s*)?\[(?:TAG|SLO|SL0):([A-Z0-9.-]+)\]\s*(?:\|)?\s*([A-Za-z]+)?\s*[:]\s*([^\n<]+)/i,
+        // Concise: - P09A01 | Remember : Description
+        /^(?:[-*]\s*)?([A-Z][0-9]{2}[A-Z][0-9]{2,}(?:\.\d+)?)\s*\|\s*([A-Za-z]+)\s*[:]\s*([^\n<]+)/i,
+        // Wrapped: [TAG:P09A01] Description
+        /^(?:[-*]\s*)?\[(?:TAG|SLO|SL0):([A-Z0-9.-]+)\]\s*(.+)/i,
+        // Minimal: - P09A01: Description
+        /^(?:[-*]\s*)?([A-Z][0-9]{2}[A-Z][0-9]{2,}(?:\.\d+)?)\s*[:]\s*(.+)/i,
+        // Bold Key: **P09A01** Description
+        /^\*\*([A-Z][0-9]{2}[A-Z][0-9]{2,}(?:\.\d+)?)\*\*\s*(.+)/i
       ];
 
       let matched = false;
       for (const pattern of patterns) {
         const match = line.match(pattern);
         if (match) {
-          const code = match[1].trim().toUpperCase();
-          const bloom = (match[2]?.length < 15 ? match[2]?.trim() : null) || "Understand";
+          const code = match[1].trim().toUpperCase().replace(/[:\[\]\s]/g, '');
+          const bloom = (match[2] && match[2].length < 20 ? match[2].trim() : "Understand");
           const text = (match[3] || match[2] || "").trim();
 
-          // Only add if it looks like a valid code
-          if (code.length > 3) {
+          // Validation to filter out false positives
+          if (code.length >= 4 && /[A-Z0-9]/.test(code)) {
             slos.push({
               code,
               bloom,
@@ -102,7 +109,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       }
     }
 
-    // Hierarchical Grouping
+    // Secondary pass: Find domain context from codes if headers missed it
+    slos.forEach(s => {
+      if (s.code.length >= 5) {
+        const charAt4 = s.code.charAt(3);
+        if (/[A-Z]/.test(charAt4)) s.domain = charAt4;
+      }
+    });
+
     const grouped: HierarchicalData = {};
     slos.forEach(s => {
       if (!grouped[s.grade]) grouped[s.grade] = {};
@@ -122,7 +136,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg"><Zap size={18}/></div>
           <div className="min-w-0">
             <h2 className="text-sm font-bold uppercase tracking-tight dark:text-white truncate max-w-md">{activeDoc.name}</h2>
-            <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest">Surgical Radar v168 • Indestructible Parser</p>
+            <p className="text-[8px] font-semibold text-slate-400 uppercase tracking-widest">Surgical Radar v169 • Indestructible Heuristics</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -145,7 +159,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           {sortedGrades.length > 0 ? sortedGrades.map(grade => (
             <section key={grade} className="space-y-8">
               <div className="flex items-center gap-4">
-                <div className="px-8 py-3 bg-indigo-600 text-white rounded-[1.5rem] font-bold text-xl shadow-xl">GRADE {grade}</div>
+                <div className="px-8 py-3 bg-indigo-600 text-white rounded-[1.5rem] font-bold text-xl shadow-xl tracking-tight">GRADE {grade}</div>
                 <div className="h-px bg-slate-200 dark:bg-white/10 flex-1" />
               </div>
 
@@ -159,8 +173,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                   return (
                     <div key={domain} className="space-y-4">
                       <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center font-bold text-xs border border-emerald-500/20">{domain}</div>
-                        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Section {domain}</h3>
+                        <div className="w-8 h-8 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center font-bold text-xs border border-indigo-500/20">{domain}</div>
+                        <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Curriculum Domain {domain}</h3>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -196,7 +210,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                <AlertTriangle size={48} className="mb-6 text-slate-400" />
                <h3 className="text-lg font-bold uppercase tracking-widest text-slate-900 dark:text-white">Curriculum Extraction Fault</h3>
                <p className="text-xs font-medium mt-2 max-w-xs mx-auto text-slate-500 leading-relaxed">
-                 The neural reader could not find structured tags. This asset may need to be re-linearized via Mission Control or the Master Recipe grid.
+                 The neural reader could not find structured tags. This asset may need to be re-linearized via Mission Control or the Master MD grid.
                </p>
             </div>
           )}
