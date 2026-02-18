@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../lib/supabase';
+import { DEFAULT_MASTER_PROMPT } from '../../../../constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +25,8 @@ export async function GET(req: NextRequest) {
       success: true,
       brain: brain || {
         id: 'system-brain',
-        master_prompt: "",
-        blueprint_sql: "",
+        master_prompt: DEFAULT_MASTER_PROMPT,
+        blueprint_sql: "-- Standard v7.0 Infrastructure SQL placeholder",
         version: 0
       }
     });

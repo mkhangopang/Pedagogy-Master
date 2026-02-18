@@ -31,7 +31,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           });
           
           if (!res.ok) {
-            const errData = await res.json();
             if (res.status === 404) throw new Error("Document Node Purged.");
             return;
           }
@@ -47,12 +46,12 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           } else if (data.status === 'failed') {
             clearInterval(poller);
             isPolling.current = false;
-            setError(data.summary || 'Critical Ingestion Fault.');
+            setError(data.summary || data.error || 'Extraction Node Fault.');
             setIsUploading(false);
           } else {
-            // Keep status moving to prevent 'stuck' feel
-            setProgress(prev => Math.min(95, prev + (data.progress > prev ? (data.progress - prev) : 1)));
-            setStatus(data.summary || 'Unrolling Neural Domains...');
+            // Keep status moving to prevent 'stuck' feel during long AI processing
+            setProgress(prev => Math.min(98, prev + (data.progress > prev ? (data.progress - prev) : 0.5)));
+            setStatus(data.summary || 'Unrolling Curriculum Domains...');
           }
         } catch (e: any) {
           console.error("Poller Handshake Error:", e);
@@ -78,13 +77,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     setError(null);
     setIsUploading(true);
     setProgress(5);
-    setStatus('Synchronizing with Grid...');
+    setStatus('Handshaking with Grid...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Identity node unreachable.");
 
-      // Phase 1: Upload Handshake
+      // Phase 1: Upload Gateway Handshake
       const handshake = await handshakeWithGateway(file.name, file.type || 'application/pdf', "", session.access_token);
       const { uploadUrl, documentId } = handshake;
       setDocId(documentId);
@@ -92,7 +91,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(20);
       setStatus('Streaming Binary Payload...');
       
-      // Phase 2: R2 Put
+      // Phase 2: Secure R2 Storage Commit
       const uploadRes = await fetch(uploadUrl, { 
         method: 'PUT', 
         body: file, 
@@ -102,13 +101,19 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       if (!uploadRes.ok) throw new Error("R2_GATEWAY_REJECTION: Link severed.");
 
       setProgress(40);
-      setStatus('Triggering Neural Engine...');
+      setStatus('Initializing Neural Orchestrator...');
       
-      // Phase 3: Background Orchestration (Non-blocking but vital)
+      // Phase 3: Trigger Background Processing
+      // We don't await the result, but we await the start of the request
       fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session.access_token}` }
-      }).catch(e => console.warn("Background process trigger warning:", e));
+      }).then(async (res) => {
+        if (!res.ok) {
+           const errData = await res.json();
+           console.error("Orchestrator Trigger Fault:", errData);
+        }
+      }).catch(e => console.warn("Background trigger warning:", e));
 
     } catch (err: any) {
       setError(err.message || "Institutional Sync Failure.");
@@ -122,7 +127,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, contentType, extractedText })
     });
-    if (!res.ok) throw new Error("Gateway Handshake Refused.");
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error || "Gateway Handshake Refused.");
+    }
     return await res.json();
   }
 
@@ -136,7 +144,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
           <div className="px-4 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-full border border-emerald-100 dark:border-emerald-500/20 flex items-center gap-2">
              <Zap size={12} className="text-emerald-500" />
-             <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Grid Sync v162.0</span>
+             <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Grid Sync v164.0</span>
           </div>
         </div>
 
@@ -173,6 +181,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                </div>
                <span className="text-[10px] font-black text-slate-400">{Math.round(progress)}%</span>
              </div>
+             <p className="text-[9px] text-slate-400 font-medium italic">Establishing neural context nodes. Do not sever the connection.</p>
           </div>
         ) : (
           <label className="group relative cursor-pointer block">
