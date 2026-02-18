@@ -1,5 +1,5 @@
 import { ToolType } from './tool-router';
-import { DEFAULT_MASTER_PROMPT } from '../constants';
+import { DEFAULT_MASTER_PROMPT } from '../../constants';
 
 /**
  * 🎓 CORE PEDAGOGICAL IDENTITY (v4.2 - MASTER ARCHITECT)
