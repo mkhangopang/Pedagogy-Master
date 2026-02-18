@@ -15,27 +15,27 @@ export async function GET(
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     const supabase = getSupabaseServerClient(token);
 
-    const { data: document, error } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('id', documentId)
-      .single();
+    const [docRes, sloRes] = await Promise.all([
+      supabase.from('documents').select('*').eq('id', documentId).single(),
+      supabase.from('slo_database').select('*').eq('document_id', documentId).order('slo_code', { ascending: true })
+    ]);
 
-    if (error || !document) {
+    if (docRes.error || !docRes.data) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 
     return NextResponse.json({
-      id: document.id,
-      status: document.status,
-      name: document.name,
-      progress: document.status === 'ready' ? 100 : (document.rag_indexed ? 80 : 20),
-      summary: document.document_summary,
-      error: document.error_message,
+      id: docRes.data.id,
+      status: docRes.data.status,
+      name: docRes.data.name,
+      progress: docRes.data.status === 'ready' ? 100 : (docRes.data.rag_indexed ? 80 : 20),
+      summary: docRes.data.document_summary,
+      error: docRes.data.error_message,
+      slos: sloRes.data || [],
       metadata: {
-        subject: document.subject,
-        grade: document.grade_level,
-        indexed: document.rag_indexed
+        subject: docRes.data.subject,
+        grade: docRes.data.grade_level,
+        indexed: docRes.data.rag_indexed
       }
     });
   } catch (error: any) {
