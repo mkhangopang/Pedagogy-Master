@@ -5,7 +5,6 @@ import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loa
 import { supabase } from '../lib/supabase';
 import * as pdfjs from 'pdfjs-dist';
 
-// Use matching esm.sh worker for consistent environment
 if (typeof window !== 'undefined') {
   pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs`;
 }
@@ -17,7 +16,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const [error, setError] = useState<string | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
   
-  // Fix: Use a ref to track if polling is already active to avoid dependency-triggered restarts
   const isPolling = useRef(false);
 
   useEffect(() => {
@@ -39,22 +37,21 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             clearInterval(poller);
             isPolling.current = false;
             setProgress(100);
-            setStatus('Neural Alignment Complete!');
+            setStatus('Neural Alignment Verified!');
             setTimeout(() => onComplete(data), 1000);
           } else if (data.status === 'failed') {
             clearInterval(poller);
             isPolling.current = false;
-            setError(data.error || 'The neural processor encountered a logic fault.');
+            setError(data.error || 'Extraction Fault Detected.');
             setIsUploading(false);
           } else {
-            // Update progress only if it's an advancement
             setProgress(prev => Math.max(prev, data.progress || 50));
-            setStatus(data.summary || 'Unrolling curriculum domains...');
+            setStatus(data.summary || 'Unrolling Curriculum Domains...');
           }
         } catch (e) {
-          console.error("Polling error:", e);
+          console.error("Poller Error:", e);
         }
-      }, 3000);
+      }, 2500); // More aggressive polling for high-end feel
 
       return () => {
         clearInterval(poller);
@@ -76,69 +73,60 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           fullText += textContent.items.map((item: any) => item.str || "").join(" ") + "\n";
         }
         return fullText;
-      } else if (file.type.startsWith('text/') || file.name.endsWith('.md') || file.name.endsWith('.txt')) {
-        return await file.text();
       }
-      return "";
-    } catch (err) {
-      console.warn("Local extraction node failed:", err);
-      return "";
-    }
+      return await file.text();
+    } catch (err) { return ""; }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 50 * 1024 * 1024) {
-      setError("File exceeds 50MB limit.");
+    if (file.size > 100 * 1024 * 1024) {
+      setError("File exceeds institutional limit (100MB).");
       return;
     }
 
     setError(null);
     setIsUploading(true);
     setProgress(5);
-    setStatus('Initializing light-speed sync...');
+    setStatus('Handshaking with Grid...');
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Session expired. Please sign in.");
+      if (!session) throw new Error("Auth Node Offline.");
 
-      setStatus('Pre-extracting curriculum...');
+      setStatus('Pre-extracting Curriculum...');
       const extractedText = await extractTextLocally(file);
       
       setProgress(20);
-      setStatus('Securing cloud node...');
-      const contentType = file.type || 'application/pdf';
-      
-      const handshake = await handshakeWithGateway(file.name, contentType, extractedText, session.access_token);
+      setStatus('Securing Cloud Storage...');
+      const handshake = await handshakeWithGateway(file.name, file.type || 'application/pdf', extractedText, session.access_token);
       const { uploadUrl, documentId } = handshake;
       setDocId(documentId);
       
       setProgress(30);
-      setStatus('Streaming binary payload...');
+      setStatus('Streaming Binary Payload...');
       
-      // CRITICAL: Minimal headers to prevent signature mismatch with pre-signed URLs
       const uploadRes = await fetch(uploadUrl, { 
         method: 'PUT', 
         body: file, 
-        headers: { 'Content-Type': contentType } 
+        headers: { 'Content-Type': file.type || 'application/pdf' } 
       });
       
-      if (!uploadRes.ok) throw new Error(`Cloud node refusal (Status: ${uploadRes.status}).`);
+      if (!uploadRes.ok) throw new Error("R2 Gateway Refusal.");
 
       setProgress(40);
-      setStatus('High-speed unrolling initialized...');
+      setStatus('Initializing Extraction Engine...');
       
-      // Trigger background processing
+      // CRITICAL: Explicitly trigger background processing to prevent binary payload hang
       await fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
 
     } catch (err: any) {
-      console.error("❌ [Ingestion Fault]:", err);
-      setError(err.message || "Binary stream node failure.");
+      setError(err.message || "Neural Gateway Failure.");
       setIsUploading(false);
     }
   };
@@ -146,16 +134,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   async function handshakeWithGateway(name: string, contentType: string, extractedText: string, token: string) {
     const handshake = await fetch('/api/docs/upload', {
       method: 'POST',
-      headers: { 
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, contentType, extractedText })
     });
-    if (!handshake.ok) {
-      const data = await handshake.json().catch(() => ({}));
-      throw new Error(data.error || "Handshake node refusal.");
-    }
+    if (!handshake.ok) throw new Error("Gateway Refusal.");
     return await handshake.json();
   }
 
@@ -169,13 +151,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
           <div className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/30 rounded-full border border-emerald-100 dark:border-emerald-500/20 flex items-center gap-1.5">
              <Zap size={12} className="text-emerald-500" />
-             <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-600">Fast Sync v152</span>
+             <span className="text-[8px] font-bold uppercase tracking-widest text-emerald-600">Secure Sync v160</span>
           </div>
         </div>
 
         <div>
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white uppercase tracking-tight">Curriculum Ingestor</h2>
-          <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mt-1">Adaptive Domain Linearization</p>
+          <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mt-1">Institutional Standards Alignment</p>
         </div>
 
         {error ? (
@@ -183,11 +165,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             <div className="flex items-start gap-3 text-rose-600">
                <AlertCircle size={20} className="shrink-0 mt-0.5" />
                <div className="space-y-1">
-                 <p className="text-xs font-bold uppercase tracking-tight">Handshake Fault</p>
+                 <p className="text-xs font-bold uppercase tracking-tight">Sync Fault</p>
                  <p className="text-[10px] font-medium leading-relaxed opacity-90">{error}</p>
                </div>
             </div>
-            <button onClick={() => {setError(null); setIsUploading(false); setProgress(0); setDocId(null);}} className="w-full py-3 bg-rose-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all">Retry Link</button>
+            <button onClick={() => {setError(null); setIsUploading(false); setProgress(0); setDocId(null);}} className="w-full py-3 bg-rose-600 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all">Re-Sync Node</button>
           </div>
         ) : isUploading ? (
           <div className="space-y-4 py-2">
@@ -196,7 +178,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
              </div>
              <div className="flex items-center gap-2">
                <Loader2 size={12} className="text-indigo-600 animate-spin" />
-               <p className="text-[9px] font-bold uppercase tracking-widest text-indigo-600">{status}</p>
+               <p className="text-[9px] font-black uppercase tracking-widest text-indigo-600">{status}</p>
              </div>
           </div>
         ) : (
@@ -204,8 +186,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             <input type="file" className="hidden" accept=".pdf,.txt,.md" onChange={handleFileUpload} />
             <div className="py-16 md:py-20 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-[2.5rem] group-hover:border-indigo-500 transition-all bg-slate-50/30 dark:bg-white/5 text-center">
               <UploadCloud size={48} className="text-slate-300 group-hover:text-indigo-600 transition-all mx-auto mb-4" />
-              <p className="text-lg font-bold text-slate-900 dark:text-white uppercase tracking-tight">Drop Ledger</p>
-              <p className="text-[8px] font-semibold text-slate-400 uppercase mt-1 tracking-widest opacity-60">High-Speed Flash Node Enabled</p>
+              <p className="text-lg font-bold text-slate-900 dark:text-white uppercase tracking-tight">Ingest Asset</p>
+              <p className="text-[8px] font-semibold text-slate-400 uppercase mt-1 tracking-widest opacity-60">High-Fidelity PDF/MD Processor</p>
             </div>
           </label>
         )}
