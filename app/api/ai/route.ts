@@ -3,15 +3,12 @@ import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/su
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { detectToolIntent, ToolType, getToolDisplayName } from '../../../lib/ai/tool-router';
 import { getFullPrompt } from '../../../lib/ai/prompt-manager';
+import { DEFAULT_MASTER_PROMPT } from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-/**
- * UNIFIED SYNTHESIS GATEWAY (v4.0 - MASTER ARCHITECT)
- * FEATURE: Tool-Specialized Routing & Modular Prompting
- */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -24,21 +21,21 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { toolType, userInput, priorityDocumentId, adaptiveContext, history } = body;
     
-    // 1. Resolve Workspace Identity
     const supabase = getSupabaseServerClient(token);
     const { data: profile } = await supabase.from('profiles').select('workspace_name, name').eq('id', user.id).single();
     const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
-    // 2. Resolve Specialist Node
+    // SECURE BRAIN INJECTION
+    const { data: brain } = await supabase.from('neural_brain').select('master_prompt').eq('is_active', true).maybeSingle();
+    const activeMasterPrompt = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
+
     const routeInfo = toolType ? { tool: toolType as ToolType } : detectToolIntent(userInput || "");
     const effectiveTool = routeInfo.tool;
     const expertTitle = getToolDisplayName(effectiveTool);
 
-    // 3. Construct Specialized Context
     const customContext = `[INSTITUTION: ${brandName}]\n[INSTRUCTION: Format headers for ${brandName} standards.]\n[SPECIALIST: ${expertTitle}]`;
-    const systemPrompt = await getFullPrompt(effectiveTool, customContext);
+    const systemPrompt = await getFullPrompt(effectiveTool, customContext, activeMasterPrompt);
 
-    // 4. Execute Synthesis with Gemini 3 Pro for high-stakes tasks
     const { text, provider, metadata } = await generateAIResponse(
       userInput || "",
       history || [],
@@ -55,11 +52,8 @@ export async function POST(req: NextRequest) {
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        
-        // Institutional Watermark
         const groundedNote = metadata?.isGrounded ? ` | Standards Anchored: ${metadata.sourceDocument}` : '';
         const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment${groundedNote}`;
-        
         controller.enqueue(encoder.encode(footer));
         controller.close();
       }

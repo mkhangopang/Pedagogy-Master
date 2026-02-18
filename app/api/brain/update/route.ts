@@ -9,17 +9,19 @@ export async function POST(req: NextRequest) {
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    const { master_prompt } = await req.json();
+    const { master_prompt, blueprint_sql } = await req.json();
     const supabase = getSupabaseServerClient(token);
 
-    // Upsert the master prompt into the brain table
+    // Upsert the master prompt and blueprint into the brain table
     const { data, error } = await supabase
       .from('neural_brain')
       .upsert({
         id: 'system-brain',
         master_prompt: master_prompt,
+        blueprint_sql: blueprint_sql,
         is_active: true,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        version: (await getNextVersion(supabase))
       }, { onConflict: 'id' })
       .select()
       .single();
@@ -34,4 +36,9 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+}
+
+async function getNextVersion(supabase: any) {
+  const { data } = await supabase.from('neural_brain').select('version').eq('id', 'system-brain').maybeSingle();
+  return (data?.version || 0) + 1;
 }

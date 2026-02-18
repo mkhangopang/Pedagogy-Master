@@ -1,11 +1,4 @@
 import { ToolType } from './tool-router';
-import { DEFAULT_MASTER_PROMPT } from '../../constants';
-
-/**
- * 🎓 CORE PEDAGOGICAL IDENTITY (v4.2 - MASTER ARCHITECT)
- * Synchronized with Brain Control / Constants
- */
-const CORE_IDENTITY = DEFAULT_MASTER_PROMPT;
 
 const TOOL_EXPERT_PROMPTS: Record<ToolType, string> = {
   master_plan: `
@@ -33,10 +26,10 @@ At the very end of your response, always provide a "Workflow Recommendation" bas
 FORMAT: --- Workflow Recommendation: [Tool_ID] | [Short Pedagogical Reason] ---
 `;
 
-export async function getFullPrompt(tool: ToolType, customInstructions?: string): Promise<string> {
-  // Logic: Combined identity + specialized persona + workflow trigger
+export async function getFullPrompt(tool: ToolType, customInstructions: string, basePrompt: string): Promise<string> {
+  // Logic: Combined dynamic identity from DB + specialized persona + workflow trigger
   return `
-${CORE_IDENTITY}
+${basePrompt}
 ${TOOL_EXPERT_PROMPTS[tool] || 'EXPERT: PEDAGOGY GENERALIST'}
 ${WORKFLOW_LOGIC}
 CONTEXT: ${customInstructions || 'Standard Operating Procedure'}

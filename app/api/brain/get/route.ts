@@ -11,10 +11,9 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     
-    // Check if a brain record exists, if not, it will return null and we fallback in UI
     const { data, error } = await supabase
       .from('neural_brain')
-      .select('*')
+      .select('id, master_prompt, blueprint_sql, version, is_active, updated_at')
       .eq('is_active', true)
       .maybeSingle();
 

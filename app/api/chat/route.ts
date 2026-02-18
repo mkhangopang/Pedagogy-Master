@@ -1,18 +1,14 @@
-
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
 import { detectToolIntent, getToolDisplayName } from '../../../lib/ai/tool-router';
 import { getFullPrompt } from '../../../lib/ai/prompt-manager';
+import { DEFAULT_MASTER_PROMPT } from '../../../constants';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
-/**
- * CONVERSATIONAL SYNTHESIS NODE (v29.0)
- * Protocol: Chat -> Intent Detection -> Tool-Specialized Synthesis
- */
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -30,11 +26,14 @@ export async function POST(req: NextRequest) {
     const { data: profile } = await supabase.from('profiles').select('workspace_name').eq('id', user.id).single();
     const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
-    // Conversational Intent Detection
+    // SECURE BRAIN INJECTION
+    const { data: brain } = await supabase.from('neural_brain').select('master_prompt').eq('is_active', true).maybeSingle();
+    const activeMasterPrompt = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
+
     const routeInfo = detectToolIntent(message);
     const expertTitle = getToolDisplayName(routeInfo.tool);
     const customContext = `[CHAT_MODE: ACTIVE]\n[INSTITUTION: ${brandName}]\n[ROLE: Pedagogical Consultant]`;
-    const assembledSystemPrompt = await getFullPrompt(routeInfo.tool, customContext);
+    const assembledSystemPrompt = await getFullPrompt(routeInfo.tool, customContext, activeMasterPrompt);
 
     const { text, provider, metadata } = await generateAIResponse(
       message,
@@ -54,10 +53,8 @@ export async function POST(req: NextRequest) {
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        
         const groundedNote = metadata?.isGrounded ? ` | Standards Match: ${metadata.sourceDocument}` : '';
         const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via ${expertTitle} (${provider}${groundedNote})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
-        
         controller.enqueue(encoder.encode(watermark));
         controller.close();
       }

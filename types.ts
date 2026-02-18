@@ -1,4 +1,3 @@
-
 export enum UserRole {
   TEACHER = 'teacher',
   ENTERPRISE_ADMIN = 'enterprise_admin',
@@ -40,6 +39,16 @@ export interface UserProfile {
     examplesCount: number;
     structureModifications: number;
   };
+}
+
+export interface NeuralBrain {
+  id: string;
+  masterPrompt: string;
+  blueprintSql?: string;
+  bloomRules: string;
+  version: number;
+  isActive: boolean;
+  updatedAt: string;
 }
 
 export enum IngestionStep {
@@ -103,15 +112,6 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
-}
-
-export interface NeuralBrain {
-  id: string;
-  masterPrompt: string;
-  bloomRules: string;
-  version: number;
-  isActive: boolean;
-  updatedAt: string;
 }
 
 export interface TeacherProgress {
