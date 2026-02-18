@@ -106,7 +106,9 @@ export default function App() {
             versionYear: d.version_year || '2024', version: d.version || 1,
             geminiProcessed: d.rag_indexed, isSelected: d.is_selected,
             sourceType: d.source_type as any || 'markdown', extractedText: d.extracted_text,
-            createdAt: d.created_at, isApproved: d.is_approved
+            createdAt: d.created_at, isApproved: d.is_approved,
+            documentSummary: d.document_summary,
+            errorMessage: d.error_message
           })));
         }
       });

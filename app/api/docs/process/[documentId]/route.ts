@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR v9.5 (RESILIENT)
+ * NEURAL INGESTION ORCHESTRATOR v9.6 (RESILIENT)
  * Logic: Implements a recursive retry-with-fallback for high-token synthesis tasks.
  */
 async function callSurgicalLinearizer(content: string, recipe: string, model: string = 'gemini-3-pro-preview'): Promise<string> {
@@ -43,6 +43,12 @@ async function callSurgicalLinearizer(content: string, recipe: string, model: st
         return callSurgicalLinearizer(content, recipe, 'gemini-3-flash-preview');
       }
     }
+    
+    // Safety filter triggered
+    if (err.message?.includes('safety') || err.message?.includes('blocked')) {
+      throw new Error("Safety protocol triggered. Content blocked by neural filter.");
+    }
+    
     throw err;
   }
 }
@@ -81,11 +87,17 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       await adminSupabase.from('documents').update({ document_summary: 'Decoding binary curriculum payload...' }).eq('id', documentId);
       const buffer = await getObjectBuffer(doc.file_path);
       if (!buffer) throw new Error("R2_NODE_ERROR: Physical asset unreachable.");
+      
       const rawResult = await pdf(buffer);
+      if (!rawResult.text || rawResult.text.trim().length < 20) {
+        throw new Error("Extraction failure: Document appears empty or is an unreadable scanned image.");
+      }
+
       await adminSupabase.from('documents').update({ 
         extracted_text: rawResult.text.trim(),
         document_summary: 'Linearizing neural domains...' 
       }).eq('id', documentId);
+      
       await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.LINEARIZE }).eq('id', job.id);
       job.step = IngestionStep.LINEARIZE;
     }
@@ -143,7 +155,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       
       await adminSupabase.from('documents').update({ 
         status: 'ready', 
-        rag_indexed: true 
+        rag_indexed: true,
+        document_summary: 'Neural alignment verified. Context active.'
       }).eq('id', documentId);
     }
 
@@ -169,7 +182,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     
     await adminSupabase.from('documents').update({ 
       status: 'failed', 
-      document_summary: cleanMsg 
+      document_summary: cleanMsg,
+      error_message: cleanMsg // Populate diagnostic field
     }).eq('id', documentId);
     
     return NextResponse.json({ error: cleanMsg }, { status: 500 });

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Upload, FileText, Plus, 
@@ -77,13 +76,21 @@ const Documents: React.FC<DocumentsProps> = ({
         if (data) {
           data.forEach(updated => {
             const current = documents.find(d => d.id === updated.id);
-            if (current && (updated.status !== current.status || updated.document_summary !== current.documentSummary)) {
+            // Enhanced comparison check
+            const hasChanged = current && (
+              updated.status !== current.status || 
+              updated.document_summary !== current.documentSummary ||
+              updated.error_message !== current.errorMessage
+            );
+
+            if (hasChanged) {
               onUpdateDocument(updated.id, { 
                 status: updated.status as any,
                 documentSummary: updated.document_summary,
                 difficultyLevel: updated.difficulty_level,
                 geminiProcessed: updated.rag_indexed,
-                extractedText: updated.extracted_text
+                extractedText: updated.extracted_text,
+                errorMessage: updated.error_message
               });
             }
           });
