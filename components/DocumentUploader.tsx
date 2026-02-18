@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loader2, RefreshCw } from 'lucide-react';
+import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loader2, RefreshCw, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import * as pdfjs from 'pdfjs-dist';
 
@@ -46,10 +46,23 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           } else if (data.status === 'failed') {
             clearInterval(poller);
             isPolling.current = false;
-            setError(data.summary || data.error || 'Extraction Node Fault.');
+            
+            // Clean extraction of human readable error from messy responses
+            let rawErr = data.summary || data.error || 'Extraction Node Fault.';
+            let cleanErr = rawErr;
+            if (rawErr.includes('{"error"')) {
+               try {
+                 const match = rawErr.match(/\{.*\}/);
+                 if (match) {
+                   const json = JSON.parse(match[0]);
+                   cleanErr = json.error?.message || cleanErr;
+                 }
+               } catch(e) {}
+            }
+            
+            setError(cleanErr);
             setIsUploading(false);
           } else {
-            // Keep status moving to prevent 'stuck' feel during long AI processing
             setProgress(prev => Math.min(98, prev + (data.progress > prev ? (data.progress - prev) : 0.5)));
             setStatus(data.summary || 'Unrolling Curriculum Domains...');
           }
@@ -83,7 +96,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Identity node unreachable.");
 
-      // Phase 1: Upload Gateway Handshake
       const handshake = await handshakeWithGateway(file.name, file.type || 'application/pdf', "", session.access_token);
       const { uploadUrl, documentId } = handshake;
       setDocId(documentId);
@@ -91,7 +103,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(20);
       setStatus('Streaming Binary Payload...');
       
-      // Phase 2: Secure R2 Storage Commit
       const uploadRes = await fetch(uploadUrl, { 
         method: 'PUT', 
         body: file, 
@@ -103,8 +114,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setProgress(40);
       setStatus('Initializing Neural Orchestrator...');
       
-      // Phase 3: Trigger Background Processing
-      // We don't await the result, but we await the start of the request
       fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session.access_token}` }
@@ -134,6 +143,8 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     return await res.json();
   }
 
+  const isQuotaError = error?.toLowerCase().includes('quota') || error?.toLowerCase().includes('429');
+
   return (
     <div className="bg-white dark:bg-[#080808] rounded-[3rem] p-6 md:p-12 w-full max-w-xl shadow-2xl border border-slate-100 dark:border-white/5 relative overflow-hidden text-left">
       <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-600 via-purple-500 to-emerald-500" />
@@ -156,17 +167,17 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         {error ? (
           <div className="p-8 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-[2rem] space-y-6 animate-in slide-in-from-top-2">
             <div className="flex items-start gap-4 text-rose-600">
-               <AlertCircle size={24} className="shrink-0 mt-1" />
+               {isQuotaError ? <Clock size={24} className="shrink-0 mt-1" /> : <AlertCircle size={24} className="shrink-0 mt-1" />}
                <div className="space-y-1">
-                 <p className="text-sm font-black uppercase tracking-tight">Sync Handshake Fault</p>
+                 <p className="text-sm font-black uppercase tracking-tight">{isQuotaError ? 'Grid Saturated' : 'Sync Handshake Fault'}</p>
                  <p className="text-xs font-medium leading-relaxed opacity-90">{error}</p>
                </div>
             </div>
             <button 
               onClick={() => {setError(null); setIsUploading(false); setProgress(0); setDocId(null);}} 
-              className="w-full py-4 bg-rose-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-rose-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+              className={`w-full py-4 ${isQuotaError ? 'bg-indigo-600' : 'bg-rose-600'} text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2`}
             >
-              <RefreshCw size={14}/> Re-Initialize Node
+              <RefreshCw size={14}/> {isQuotaError ? 'Wait and Retry' : 'Re-Initialize Node'}
             </button>
           </div>
         ) : isUploading ? (
