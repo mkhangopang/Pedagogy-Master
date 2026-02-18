@@ -32,15 +32,41 @@ export const ROLE_LIMITS = {
   },
 };
 
-/**
- * PROTECTED FALLBACK
- * The actual v4.0 Super Prompt is managed via the Brain Control Admin View.
- * This public file contains only a generic initialization protocol.
- */
 export const DEFAULT_MASTER_PROMPT = `
 # IDENTITY: PEDAGOGICAL OPERATING SYSTEM
 STATUS: AWAITING_LOGIC_INJECTION_FROM_FOUNDER_CONSOLE
 Please log in to the Admin Dashboard to commit the Master Recipe (IP).
+`;
+
+/**
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v7.0
+ * This constant allows the app to self-heal by providing the latest SQL to the admin UI.
+ */
+export const LATEST_SQL_BLUEPRINT = `-- ==========================================
+-- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v7.0
+-- ==========================================
+create extension if not exists vector;
+
+-- Add semantic_fingerprint if missing
+DO $$ BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='semantic_fingerprint') THEN
+    ALTER TABLE public.document_chunks ADD COLUMN semantic_fingerprint text;
+  END IF;
+END $$;
+
+-- Fix reload_schema_cache with proper grants
+create or replace function reload_schema_cache()
+returns void language plpgsql security definer as $$
+begin
+  notify pgrst, 'reload schema';
+end;
+$$;
+
+grant execute on function reload_schema_cache to authenticated;
+grant execute on function reload_schema_cache to anon;
+grant execute on function reload_schema_cache to service_role;
+
+-- Full table and search logic provided in supabase_schema.sql file.
 `;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;

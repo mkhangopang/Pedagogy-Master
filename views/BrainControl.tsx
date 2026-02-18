@@ -3,11 +3,11 @@ import {
   RefreshCw, Zap, Check, ShieldCheck, Cpu, Activity, Layers, 
   Rocket, TrendingUp, Copy, Lock, FileCode, Search, Database, 
   AlertTriangle, CheckCircle2, X, Loader2, DatabaseZap, Terminal,
-  ShieldAlert, Settings2, Save, Wrench
+  ShieldAlert, Settings2, Save, Wrench, RotateCcw
 } from 'lucide-react';
 import { NeuralBrain, JobStatus, IngestionStep } from '../types';
 import { supabase } from '../lib/supabase';
-import { DEFAULT_MASTER_PROMPT } from '../constants';
+import { DEFAULT_MASTER_PROMPT, LATEST_SQL_BLUEPRINT } from '../constants';
 
 interface BrainControlProps {
   brain: NeuralBrain;
@@ -26,7 +26,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [healthReport, setHealthReport] = useState<any>(null);
   const [isTelemetryLoading, setIsTelemetryLoading] = useState(false);
 
-  // Sync internal state if the prop changes (e.g., initial fetch in App finishes)
   useEffect(() => {
     if (brain) {
       setFormData(prev => ({
@@ -118,26 +117,27 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   };
 
+  const handleResetBlueprint = () => {
+    if (window.confirm("SYNC WITH SYSTEM: Load the latest hardcoded infrastructure schema? Your current local changes in the editor will be overwritten.")) {
+      setFormData(prev => ({ ...prev, blueprintSql: LATEST_SQL_BLUEPRINT }));
+    }
+  };
+
   const handleReloadSchema = async () => {
     setIsResyncing(true);
     setSyncError(null);
     try {
-      // Direct call to PostgREST notify via RPC
       const { error } = await supabase.rpc('reload_schema_cache');
-      
       if (error) {
-        // More specific diagnostic for common Supabase setup issues
         if (error.message?.includes('does not exist')) {
-          throw new Error("RPC 'reload_schema_cache' is not installed in the database. Please run the SQL Blueprint in your Supabase SQL Editor first.");
+          throw new Error("RPC 'reload_schema_cache' is not installed. Please run the SQL Blueprint in Supabase first.");
         }
         throw error;
       }
-      
       alert("Neural Grid Re-aligned: Schema cache successfully purged and reloaded.");
     } catch (e: any) {
       console.error(e);
       setSyncError(e.message);
-      // Removed generic browser alert to use a cleaner UI warning if possible, but kept alert for visibility
       alert("Infrastructure Fault: " + e.message);
     } finally {
       setIsResyncing(false);
@@ -205,7 +205,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                   onClick={handleReloadSchema} 
                   disabled={isResyncing}
                   className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
-                  title="Fix stale schema errors (e.g. Missing column in cache)"
                  >
                    {isResyncing ? <RefreshCw className="animate-spin" size={14}/> : <Wrench size={14}/>} Re-Sync Grid
                  </button>
@@ -225,7 +224,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
              <div className="bg-slate-950 text-white p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden flex flex-col gap-6 border border-white/5">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><ShieldAlert size={150} /></div>
                 <h3 className="text-xl font-black uppercase tracking-tight text-emerald-400">Intellectual Property Protection</h3>
-                <p className="text-xs text-slate-400 font-medium leading-relaxed italic">By storing the Master Recipe in the database, your proprietary pedagogical logic is shielded from Git repositories and build-time exposures.</p>
+                <p className="text-xs text-slate-400 font-medium leading-relaxed italic">By storing the Master Recipe in the database, your proprietary pedagogical logic is shielded from build-time exposures.</p>
                 <div className="space-y-3 relative z-10 pt-4">
                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                       <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Status</span>
@@ -249,6 +248,9 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Centralized SQL Provisioning for v7.0 Standards</p>
               </div>
               <div className="flex gap-3">
+                <button onClick={handleResetBlueprint} className="flex items-center gap-3 px-6 py-3 bg-amber-50 dark:bg-amber-950/20 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
+                   <RotateCcw size={14}/> Sync with System
+                </button>
                 <button onClick={handleCopyBlueprint} className="flex items-center gap-3 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">
                    {copiedBlueprint ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>} {copiedBlueprint ? 'Blueprint Copied' : 'Copy SQL'}
                 </button>
@@ -257,7 +259,9 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                 </button>
               </div>
            </div>
-           <p className="text-xs text-slate-500 font-medium leading-relaxed">Modify the standard v7.0 SQL below to update your backend architecture. Copy and provide this manually to Supabase SQL Editor if needed.</p>
+           <p className="text-xs text-slate-500 font-medium leading-relaxed italic">
+             <b>HOW TO REPAIR:</b> Click "Sync with System" to pull the latest schema fixes from the app code, then "Copy SQL" and run it in your Supabase SQL Editor.
+           </p>
            <textarea 
               value={formData.blueprintSql || ''}
               onChange={(e) => setFormData({...formData, blueprintSql: e.target.value})}

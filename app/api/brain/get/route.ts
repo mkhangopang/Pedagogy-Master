@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../lib/supabase';
-import { DEFAULT_MASTER_PROMPT } from '../../../../constants';
+import { DEFAULT_MASTER_PROMPT, LATEST_SQL_BLUEPRINT } from '../../../../constants';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * NEURAL BRAIN RETRIEVAL (v11.0)
+ * Logic: Fetches the stored system IP. 
+ * If database blueprint is empty, fallbacks to the LATEST_SQL_BLUEPRINT from constants.
+ */
 export async function GET(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -12,7 +17,6 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     
-    // Fetch the single system-brain record
     const { data: brain, error } = await supabase
       .from('neural_brain')
       .select('id, master_prompt, blueprint_sql, version, is_active, updated_at')
@@ -23,11 +27,14 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      brain: brain || {
-        id: 'system-brain',
-        master_prompt: DEFAULT_MASTER_PROMPT,
-        blueprint_sql: "-- Standard v7.0 Infrastructure SQL placeholder",
-        version: 0
+      brain: {
+        id: brain?.id || 'system-brain',
+        master_prompt: brain?.master_prompt || DEFAULT_MASTER_PROMPT,
+        // UI Logic: If DB has no SQL, serve the system constant
+        blueprint_sql: brain?.blueprint_sql || LATEST_SQL_BLUEPRINT,
+        version: brain?.version || 0,
+        is_active: brain?.is_active ?? true,
+        updated_at: brain?.updated_at
       }
     });
   } catch (error: any) {
