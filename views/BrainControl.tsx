@@ -16,17 +16,27 @@ interface BrainControlProps {
 
 const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [activeTab, setActiveTab] = useState<'prompt' | 'blueprint' | 'ingestion' | 'telemetry'>('prompt');
-  const [formData, setFormData] = useState(brain);
+  const [formData, setFormData] = useState<NeuralBrain>(brain);
   const [isSaving, setIsSaving] = useState(false);
   const [isResyncing, setIsResyncing] = useState(false);
   const [copiedBlueprint, setCopiedBlueprint] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
   
   const [jobs, setJobs] = useState<any[]>([]);
   const [healthReport, setHealthReport] = useState<any>(null);
   const [isTelemetryLoading, setIsTelemetryLoading] = useState(false);
 
+  // Sync internal state if the prop changes (e.g., initial fetch in App finishes)
   useEffect(() => {
-    setFormData(brain);
+    if (brain) {
+      setFormData(prev => ({
+        ...prev,
+        masterPrompt: brain.masterPrompt || prev.masterPrompt,
+        blueprintSql: brain.blueprintSql || prev.blueprintSql,
+        version: brain.version || prev.version,
+        updatedAt: brain.updatedAt || prev.updatedAt
+      }));
+    }
   }, [brain]);
 
   const fetchStatus = useCallback(async (isInitial = false) => {
@@ -69,39 +79,66 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSyncError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Authentication node disconnected.");
+
       const res = await fetch('/api/brain/update', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
         body: JSON.stringify({ 
           master_prompt: formData.masterPrompt,
           blueprint_sql: formData.blueprintSql
         })
       });
-      if (res.ok) {
-        const data = await res.json();
-        onUpdate({
-          ...formData, 
-          version: data.brain.version, 
-          updatedAt: data.brain.updated_at
-        });
-        alert("Institutional IP (Recipe & SQL) Synchronized to Vault.");
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Persistence gateway refusal.");
       }
+
+      const data = await res.json();
+      const updatedBrain: NeuralBrain = {
+        ...formData,
+        masterPrompt: data.brain.master_prompt,
+        blueprintSql: data.brain.blueprint_sql,
+        version: data.brain.version,
+        updatedAt: data.brain.updated_at
+      };
+
+      setFormData(updatedBrain);
+      onUpdate(updatedBrain);
+      alert("Institutional IP (Recipe & SQL) Synchronized to Vault.");
     } catch (e: any) {
+      setSyncError(e.message);
       alert("Grid Commitment Failed: " + e.message);
-    } finally { setIsSaving(false); }
+    } finally { 
+      setIsSaving(false); 
+    }
   };
 
   const handleReloadSchema = async () => {
     setIsResyncing(true);
+    setSyncError(null);
     try {
+      // Direct call to PostgREST notify via RPC
       const { error } = await supabase.rpc('reload_schema_cache');
-      if (error) throw error;
+      
+      if (error) {
+        // More specific diagnostic for common Supabase setup issues
+        if (error.message?.includes('does not exist')) {
+          throw new Error("RPC 'reload_schema_cache' is not installed in the database. Please run the SQL Blueprint in your Supabase SQL Editor first.");
+        }
+        throw error;
+      }
+      
       alert("Neural Grid Re-aligned: Schema cache successfully purged and reloaded.");
     } catch (e: any) {
       console.error(e);
-      alert("Infrastructure Fault: Unable to notify PostgREST. Ensure the 'reload_schema_cache' RPC exists in the database.");
+      setSyncError(e.message);
+      // Removed generic browser alert to use a cleaner UI warning if possible, but kept alert for visibility
+      alert("Infrastructure Fault: " + e.message);
     } finally {
       setIsResyncing(false);
     }
@@ -142,6 +179,19 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         </div>
       </header>
 
+      {syncError && (
+        <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl flex items-start gap-3 text-rose-600 animate-in slide-in-from-top-2">
+          <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-[10px] font-black uppercase tracking-widest">Protocol Fault</p>
+            <p className="text-xs font-medium leading-relaxed">{syncError}</p>
+          </div>
+          <button onClick={() => setSyncError(null)} className="ml-auto p-1 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {activeTab === 'prompt' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-200 dark:border-white/5 shadow-sm space-y-8">
@@ -154,12 +204,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                  <button 
                   onClick={handleReloadSchema} 
                   disabled={isResyncing}
-                  className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm"
+                  className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
                   title="Fix stale schema errors (e.g. Missing column in cache)"
                  >
                    {isResyncing ? <RefreshCw className="animate-spin" size={14}/> : <Wrench size={14}/>} Re-Sync Grid
                  </button>
-                 <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                 <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
                    {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16}/>} Commit IP
                  </button>
                </div>
@@ -202,7 +252,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                 <button onClick={handleCopyBlueprint} className="flex items-center gap-3 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">
                    {copiedBlueprint ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>} {copiedBlueprint ? 'Blueprint Copied' : 'Copy SQL'}
                 </button>
-                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-3 px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg">
+                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-3 px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg disabled:opacity-50">
                    {isSaving ? <RefreshCw className="animate-spin" size={14}/> : <DatabaseZap size={14}/>} Save Changes
                 </button>
               </div>
