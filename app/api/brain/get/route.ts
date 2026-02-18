@@ -11,17 +11,23 @@ export async function GET(req: NextRequest) {
 
     const supabase = getSupabaseServerClient(token);
     
-    const { data, error } = await supabase
+    // Fetch the single system-brain record
+    const { data: brain, error } = await supabase
       .from('neural_brain')
       .select('id, master_prompt, blueprint_sql, version, is_active, updated_at')
-      .eq('is_active', true)
+      .eq('id', 'system-brain')
       .maybeSingle();
 
     if (error && error.code !== 'PGRST116') throw error;
 
     return NextResponse.json({
       success: true,
-      brain: data
+      brain: brain || {
+        id: 'system-brain',
+        master_prompt: "",
+        blueprint_sql: "",
+        version: 0
+      }
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

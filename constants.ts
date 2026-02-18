@@ -33,13 +33,14 @@ export const ROLE_LIMITS = {
 };
 
 /**
- * GENERIC FALLBACK (PROTECTED)
- * The real IP is managed via the Brain Control Dashboard in the Admin View.
+ * PROTECTED FALLBACK
+ * The actual v4.0 Super Prompt is managed via the Brain Control Admin View.
+ * This public file contains only a generic initialization protocol.
  */
 export const DEFAULT_MASTER_PROMPT = `
-# IDENTITY: PEDAGOGICAL ASSISTANT
-You are a specialized curriculum assistant. Please synchronize with the latest Institutional Grid configuration.
-[AWAITING_COMMIT_FROM_ADMIN_CONSOLE]
+# IDENTITY: PEDAGOGICAL OPERATING SYSTEM
+STATUS: AWAITING_LOGIC_INJECTION_FROM_FOUNDER_CONSOLE
+Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;
