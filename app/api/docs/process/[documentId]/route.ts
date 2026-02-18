@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR v9.6 (RESILIENT)
+ * NEURAL INGESTION ORCHESTRATOR v9.7 (RESILIENT)
  * Logic: Implements a recursive retry-with-fallback for high-token synthesis tasks.
  */
 async function callSurgicalLinearizer(content: string, recipe: string, model: string = 'gemini-3-pro-preview'): Promise<string> {
@@ -168,6 +168,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     let cleanMsg = error.message;
     if (cleanMsg.includes('429') || cleanMsg.includes('quota')) {
       cleanMsg = "AI Grid Saturated (Quota Reached). Please wait 60 seconds and try again.";
+    } else if (cleanMsg.includes('schema cache')) {
+      cleanMsg = "Infrastructure Desync: Schema cache is stale. Go to 'Brain Control' and click 'Re-Sync Grid' to repair.";
     } else if (cleanMsg.includes('{"error"')) {
       try {
         const jsonError = JSON.parse(cleanMsg.substring(cleanMsg.indexOf('{')));

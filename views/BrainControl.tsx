@@ -3,7 +3,7 @@ import {
   RefreshCw, Zap, Check, ShieldCheck, Cpu, Activity, Layers, 
   Rocket, TrendingUp, Copy, Lock, FileCode, Search, Database, 
   AlertTriangle, CheckCircle2, X, Loader2, DatabaseZap, Terminal,
-  ShieldAlert, Settings2, Save
+  ShieldAlert, Settings2, Save, Wrench
 } from 'lucide-react';
 import { NeuralBrain, JobStatus, IngestionStep } from '../types';
 import { supabase } from '../lib/supabase';
@@ -18,6 +18,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [activeTab, setActiveTab] = useState<'prompt' | 'blueprint' | 'ingestion' | 'telemetry'>('prompt');
   const [formData, setFormData] = useState(brain);
   const [isSaving, setIsSaving] = useState(false);
+  const [isResyncing, setIsResyncing] = useState(false);
   const [copiedBlueprint, setCopiedBlueprint] = useState(false);
   
   const [jobs, setJobs] = useState<any[]>([]);
@@ -92,6 +93,20 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     } finally { setIsSaving(false); }
   };
 
+  const handleReloadSchema = async () => {
+    setIsResyncing(true);
+    try {
+      const { error } = await supabase.rpc('reload_schema_cache');
+      if (error) throw error;
+      alert("Neural Grid Re-aligned: Schema cache successfully purged and reloaded.");
+    } catch (e: any) {
+      console.error(e);
+      alert("Infrastructure Fault: Unable to notify PostgREST. Ensure the 'reload_schema_cache' RPC exists in the database.");
+    } finally {
+      setIsResyncing(false);
+    }
+  };
+
   const handleCopyBlueprint = () => {
     if (!formData.blueprintSql) return;
     navigator.clipboard.writeText(formData.blueprintSql);
@@ -135,9 +150,19 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                  <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Institutional Master Prompt</h3>
                  <p className="text-[10px] text-indigo-600 font-bold mt-1 uppercase tracking-widest">Version {formData.version}.0 Active</p>
                </div>
-               <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
-                 {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16}/>} Commit IP
-               </button>
+               <div className="flex gap-2">
+                 <button 
+                  onClick={handleReloadSchema} 
+                  disabled={isResyncing}
+                  className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm"
+                  title="Fix stale schema errors (e.g. Missing column in cache)"
+                 >
+                   {isResyncing ? <RefreshCw className="animate-spin" size={14}/> : <Wrench size={14}/>} Re-Sync Grid
+                 </button>
+                 <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
+                   {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16}/>} Commit IP
+                 </button>
+               </div>
             </div>
             <textarea 
               value={formData.masterPrompt}
@@ -155,6 +180,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                       <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Status</span>
                       <span className="text-[10px] font-black text-emerald-400">REMOTE_VAULT_ONLY</span>
+                   </div>
+                   <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl space-y-2">
+                      <p className="text-[10px] font-bold text-rose-400 flex items-center gap-2"><AlertTriangle size={12}/> Critical Alert</p>
+                      <p className="text-[9px] text-rose-300/80 leading-relaxed italic">If you encounter "Column not found in cache", use the 'Re-Sync Grid' tool to purge stale neural mappings.</p>
                    </div>
                 </div>
              </div>
