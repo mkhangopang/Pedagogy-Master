@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { MODEL_PERSONA_WRAPPERS } from "../../config/model-personas";
 
 export type ComplexityLevel = 'lookup' | 'strategy' | 'creation';
 
@@ -6,57 +7,78 @@ export interface TaskResult {
   text: string;
   modelUsed: string;
   timestamp: string;
+  latencyMs: number;
 }
 
 /**
- * WORLD-CLASS MODEL ORCHESTRATOR (v1.1)
- * Logic: Routes tasks based on complexity and enforces Pedagogy Persona.
- * Fixed: Explicit return types to resolve recursive 'implicitly has return type any' build error.
+ * ADVANCED MODEL ORCHESTRATOR (v2.0 - RALPH EDITION)
+ * Logic: Routes tasks based on complexity, tracks latency, and enforces unified personas.
  */
 export class ModelOrchestrator {
   private ai: GoogleGenAI;
+  private cache = new Map<string, { result: TaskResult; expiry: number }>();
+  private latencyHistory: Record<string, number[]> = {};
 
   constructor() {
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
   }
 
   /**
-   * Identifies the optimal engine for a specific pedagogical task.
+   * Smart routing based on task complexity.
    */
   public getModelForTask(complexity: ComplexityLevel): string {
     switch (complexity) {
       case 'creation':
-        return 'gemini-3-pro-preview'; // Deep reasoning for lesson plans
+        return 'gemini-3-pro-preview'; // High reasoning budget
       case 'strategy':
         return 'gemini-3-flash-preview'; // Balanced performance
       case 'lookup':
       default:
-        return 'gemini-3-flash-preview'; // High speed for SLO lookup
+        return 'gemini-3-flash-preview'; // Low latency
     }
   }
 
   /**
-   * Applies the 'Master Pedagogy Persona' wrapper to ensure tonal consistency.
+   * Applies the unified persona wrapper based on the target provider.
    */
-  public applyPersona(prompt: string): string {
-    return `
-[SYSTEM_OVERLAY: MASTER_PEDAGOGY_EXPERT]
-- Tone: Professional, approachabe, culturally aligned to South Asian educational contexts.
-- Bloom Enforcement: Active.
-- Rules: Never hallucinate SLOs. Cite document vault sources verbatim.
-
-USER_TASK:
-${prompt}
-`;
+  public applyPedagogyPersona(prompt: string, provider: keyof typeof MODEL_PERSONA_WRAPPERS = 'gemini'): string {
+    return MODEL_PERSONA_WRAPPERS[provider](prompt);
   }
 
   /**
-   * Executes a task with automatic routing and error recovery.
-   * Explicit return type TaskResult is required for recursive fallback compatibility.
+   * Simple internal caching for repeated queries.
+   */
+  private getCached(key: string): TaskResult | null {
+    const entry = this.cache.get(key);
+    if (entry && entry.expiry > Date.now()) return entry.result;
+    if (entry) this.cache.delete(key);
+    return null;
+  }
+
+  private setCache(key: string, result: TaskResult, ttlMs: number = 600000): void {
+    this.cache.set(key, { result, expiry: Date.now() + ttlMs });
+  }
+
+  /**
+   * Performance monitoring.
+   */
+  private trackLatency(model: string, ms: number) {
+    if (!this.latencyHistory[model]) this.latencyHistory[model] = [];
+    this.latencyHistory[model].push(ms);
+    if (this.latencyHistory[model].length > 50) this.latencyHistory[model].shift();
+  }
+
+  /**
+   * Executes a pedagogical task with automatic fallback and persona enforcement.
    */
   public async executeTask(prompt: string, complexity: ComplexityLevel = 'strategy'): Promise<TaskResult> {
+    const cacheKey = `${complexity}:${prompt.substring(0, 100)}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) return cached;
+
     const modelName = this.getModelForTask(complexity);
-    const finalPrompt = this.applyPersona(prompt);
+    const finalPrompt = this.applyPedagogyPersona(prompt, 'gemini');
+    const start = Date.now();
 
     try {
       const response = await this.ai.models.generateContent({
@@ -68,19 +90,35 @@ ${prompt}
         }
       });
 
-      return {
-        text: response.text || "Synthesis engine timed out.",
+      const latency = Date.now() - start;
+      this.trackLatency(modelName, latency);
+
+      const result: TaskResult = {
+        text: response.text || "Synthesis timed out.",
         modelUsed: modelName,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        latencyMs: latency
       };
+
+      this.setCache(cacheKey, result);
+      return result;
+
     } catch (err: any) {
-      // Fallback logic: If the advanced Pro node fails, downgrade to Flash to maintain service availability
+      console.warn(`[Orchestrator] Failure on ${modelName}:`, err.message);
+      
+      // FALLBACK LOGIC: Pro -> Flash
       if (modelName === 'gemini-3-pro-preview') {
-        console.warn(`[Orchestrator] Pro node failure detected. Initiating downgrade recovery for query...`);
-        return this.executeTask(prompt, 'lookup');
+        console.log(`[Orchestrator] Engaging Flash fallback...`);
+        return this.executeTask(prompt, 'lookup'); 
       }
       throw err;
     }
+  }
+
+  public getAverageLatency(model: string): number {
+    const history = this.latencyHistory[model] || [];
+    if (history.length === 0) return 0;
+    return history.reduce((a, b) => a + b, 0) / history.length;
   }
 }
 

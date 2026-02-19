@@ -5,13 +5,14 @@ import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { IngestionStep, JobStatus } from '../../../../../types';
 import { GoogleGenAI } from "@google/genai";
 import { DEFAULT_MASTER_PROMPT } from '../../../../../constants';
+import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 import pdf from 'pdf-parse';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * ATOMIC INGESTION ORCHESTRATOR v12.0 (RALPH FIX)
+ * ATOMIC INGESTION ORCHESTRATOR v13.0 (RALPH EDITION)
  * Resumes work from internal state markers to prevent timeouts and desync.
  */
 async function callLinearizer(content: string, recipe: string): Promise<string> {
@@ -36,16 +37,14 @@ async function callLinearizer(content: string, recipe: string): Promise<string> 
 export async function POST(req: NextRequest, props: { params: Promise<{ documentId: string }> }) {
   const { documentId } = await props.params;
   const adminSupabase = getSupabaseAdminClient();
+  const queue = new IngestionQueue(adminSupabase);
 
   // Load or Create persistent job state
-  let { data: job } = await adminSupabase.from('ingestion_jobs')
-    .select('*').eq('document_id', documentId).neq('status', JobStatus.COMPLETED).maybeSingle();
+  let job = await queue.getJobStatus(documentId);
 
   if (!job) {
-    const { data: newJob } = await adminSupabase.from('ingestion_jobs').insert({
-      document_id: documentId, step: IngestionStep.EXTRACT, status: JobStatus.PROCESSING
-    }).select().single();
-    job = newJob;
+    const jobId = await queue.enqueue(documentId);
+    job = { id: jobId, step: IngestionStep.EXTRACT };
   }
 
   try {
@@ -57,12 +56,12 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
 
     // STEP 1: PARSE
     if (job.step === IngestionStep.EXTRACT) {
-      await adminSupabase.from('documents').update({ document_summary: 'Bit-level extraction...' }).eq('id', documentId);
+      await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 10, message: 'Binary extraction...' });
       const buffer = await getObjectBuffer(doc.file_path);
       if (!buffer) throw new Error("R2_FAULT: Object unreachable.");
       const raw = await pdf(buffer);
-      await adminSupabase.from('documents').update({ extracted_text: raw.text.trim(), document_summary: 'Mapping domains...' }).eq('id', documentId);
-      await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.LINEARIZE }).eq('id', job.id);
+      await adminSupabase.from('documents').update({ extracted_text: raw.text.trim() }).eq('id', documentId);
+      await queue.updateProgress(job.id, { step: IngestionStep.LINEARIZE, progress: 25, message: 'Linearization starting...' });
       job.step = IngestionStep.LINEARIZE;
     }
 
@@ -89,15 +88,40 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       }
 
       await adminSupabase.from('documents').update({ extracted_text: markdown }).eq('id', documentId);
-      await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.EMBED }).eq('id', job.id);
+      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 60, message: 'Neural embedding...' });
       job.step = IngestionStep.EMBED;
     }
 
-    // STEP 3: VECTOR INDEX
+    // STEP 3: VECTOR INDEX & JUNCTION MAPPING (FP-03)
     if (job.step === IngestionStep.EMBED) {
       const { data: finalDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
+      
+      // Indexing logic now handles creating chunks
       await indexDocumentForRAG(documentId, finalDoc?.extracted_text || "", adminSupabase, job.id);
-      await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.FINALIZE, status: JobStatus.COMPLETED }).eq('id', job.id);
+      
+      // AUTO-MAPPING: Create links between chunks and SLO database (FP-03 FIX)
+      // Logic: Scan chunks for SLO codes and insert into junction table
+      const { data: chunks } = await adminSupabase.from('document_chunks').select('id, slo_codes').eq('document_id', documentId);
+      const { data: slos } = await adminSupabase.from('slo_database').select('id, slo_code').eq('document_id', documentId);
+      
+      if (chunks && slos) {
+        const mappings: any[] = [];
+        const sloCodeToId = Object.fromEntries(slos.map(s => [s.slo_code, s.id]));
+        
+        chunks.forEach(chunk => {
+          (chunk.slo_codes || []).forEach((code: string) => {
+            if (sloCodeToId[code]) {
+              mappings.push({ chunk_id: chunk.id, slo_id: sloCodeToId[code], slo_code: code });
+            }
+          });
+        });
+        
+        if (mappings.length > 0) {
+          await adminSupabase.from('chunk_slo_mapping').insert(mappings);
+        }
+      }
+
+      await queue.markComplete(job.id);
       await adminSupabase.from('documents').update({ status: 'ready', rag_indexed: true, document_summary: 'Neural grid verified.' }).eq('id', documentId);
       await adminSupabase.rpc('reload_schema_cache');
     }
@@ -105,7 +129,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     return NextResponse.json({ success: true });
   } catch (err: any) {
     const msg = err.message || "Unknown Orchestration Fault";
-    await adminSupabase.from('ingestion_jobs').update({ status: JobStatus.FAILED, error_message: msg }).eq('id', job?.id);
+    await queue.markFailed(job.id, msg);
     await adminSupabase.from('documents').update({ status: 'failed', document_summary: msg }).eq('id', documentId);
     return NextResponse.json({ error: msg }, { status: 500 });
   }

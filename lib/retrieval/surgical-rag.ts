@@ -2,8 +2,8 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { generateEmbedding } from '../rag/embeddings';
 
 /**
- * SURGICAL RAG ENGINE (v1.0)
- * Implementation of RALPH Requirement FP-03: Disconnected SLO-Chunk relationship.
+ * SURGICAL RAG ENGINE (v2.0 - RALPH EDITION)
+ * Mission: Zero-hallucination standards grounding via bi-directional junction mapping.
  */
 export class SurgicalRAG {
   constructor(private supabase: SupabaseClient) {}
@@ -17,13 +17,13 @@ export class SurgicalRAG {
     const sloCode = sloMatch ? sloMatch[0].toUpperCase().replace(/-/g, '') : null;
 
     if (sloCode) {
-      // Direct lookup in our new SLO mapping junction
-      const { data: mappedChunks } = await this.supabase
+      // Direct lookup in our new SLO mapping junction (FP-03)
+      const { data: mappedResults, error } = await this.supabase
         .from('slo_database')
         .select(`
           slo_full_text,
           chunk_slo_mapping (
-            chunk_id,
+            relevance_score,
             document_chunks (chunk_text, metadata)
           )
         `)
@@ -31,12 +31,24 @@ export class SurgicalRAG {
         .eq('document_id', documentId)
         .limit(1);
 
-      if (mappedChunks?.[0]) {
+      if (mappedResults?.[0]) {
         console.log(`🎯 [Surgical RAG] Atomic SLO Hit: ${sloCode}`);
-        const mc = mappedChunks[0] as any;
+        const m = mappedResults[0] as any;
+        const chunks = m.chunk_slo_mapping || [];
+        
+        if (chunks.length > 0) {
+          return {
+            context: chunks.map((c: any) => c.document_chunks.chunk_text).join('\n---\n'),
+            method: 'atomic_junction_map',
+            sloText: m.slo_full_text
+          };
+        }
+        
+        // Fallback to the SLO definition itself if no chunks are mapped yet
         return {
-          context: mc.chunk_slo_mapping?.document_chunks?.chunk_text || mc.slo_full_text,
-          method: 'atomic_slo_map'
+          context: `STANDARD DEFINITION: ${m.slo_full_text}`,
+          method: 'atomic_slo_registry',
+          sloText: m.slo_full_text
         };
       }
     }
@@ -53,7 +65,7 @@ export class SurgicalRAG {
     if (hybridResults && hybridResults.length > 0) {
       return {
         context: hybridResults.map((r: any) => r.chunk_text).join('\n---\n'),
-        method: 'hybrid_semantic'
+        method: 'hybrid_semantic_v6'
       };
     }
 
