@@ -39,11 +39,11 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v7.6
- * Includes mandatory 'slo_database' and 'ingestion_jobs' with explicit permissions.
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v7.7
+ * Includes mandatory column migrations for RAG performance and surgical indexing.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.6
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.7
 -- ==========================================
 
 -- 1. Ensure Vector Extension
@@ -57,10 +57,21 @@ BEGIN
     END IF;
 END $$;
 
--- 3. Add semantic_fingerprint if missing
+-- 3. CHUNK TABLE MIGRATIONS (CRITICAL FIX)
 DO $$ BEGIN 
+  -- Ensure semantic_fingerprint exists
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='semantic_fingerprint') THEN
     ALTER TABLE public.document_chunks ADD COLUMN semantic_fingerprint text;
+  END IF;
+  
+  -- Ensure token_count exists (Fixes the reported error)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='token_count') THEN
+    ALTER TABLE public.document_chunks ADD COLUMN token_count int;
+  END IF;
+
+  -- Ensure chunk_index exists
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='chunk_index') THEN
+    ALTER TABLE public.document_chunks ADD COLUMN chunk_index int;
   END IF;
 END $$;
 
@@ -118,6 +129,7 @@ grant execute on function reload_schema_cache to authenticated, anon, service_ro
 grant all on public.slo_database to authenticated, service_role;
 grant all on public.ingestion_jobs to authenticated, service_role;
 grant all on public.retrieval_logs to authenticated, service_role;
+grant all on public.document_chunks to authenticated, service_role;
 `;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;
