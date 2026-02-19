@@ -39,11 +39,11 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v7.7
- * Includes mandatory column migrations for RAG performance and surgical indexing.
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v8.0
+ * MANDATORY: RUN THIS IN SUPABASE SQL EDITOR TO FIX 'SCHEMA CACHE' ERRORS.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.7
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v8.0
 -- ==========================================
 
 -- 1. Ensure Vector Extension
@@ -57,14 +57,14 @@ BEGIN
     END IF;
 END $$;
 
--- 3. CHUNK TABLE MIGRATIONS (CRITICAL FIX)
+-- 3. CHUNK TABLE MIGRATIONS (FIX FOR TOKEN_COUNT ERROR)
 DO $$ BEGIN 
   -- Ensure semantic_fingerprint exists
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='semantic_fingerprint') THEN
     ALTER TABLE public.document_chunks ADD COLUMN semantic_fingerprint text;
   END IF;
   
-  -- Ensure token_count exists (Fixes the reported error)
+  -- Ensure token_count exists (This resolves the reported error)
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='token_count') THEN
     ALTER TABLE public.document_chunks ADD COLUMN token_count int;
   END IF;
@@ -104,7 +104,7 @@ create table if not exists public.retrieval_logs (
   created_at timestamp with time zone default now()
 );
 
--- 7. Fix reload_schema_cache
+-- 7. Fix reload_schema_cache function
 create or replace function reload_schema_cache()
 returns void language plpgsql security definer as $$
 begin
@@ -124,12 +124,15 @@ create table if not exists public.ingestion_jobs (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 9. Permissions Refresh
+-- 9. Permissions & Forced Cache Reload
 grant execute on function reload_schema_cache to authenticated, anon, service_role;
 grant all on public.slo_database to authenticated, service_role;
 grant all on public.ingestion_jobs to authenticated, service_role;
 grant all on public.retrieval_logs to authenticated, service_role;
 grant all on public.document_chunks to authenticated, service_role;
+
+-- FINAL STEP: Trigger API Schema Refresh
+SELECT reload_schema_cache();
 `;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;

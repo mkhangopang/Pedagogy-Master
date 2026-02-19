@@ -11,8 +11,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR v10.0 (GRANULAR)
- * Advanced parsing with step-specific diagnostic output.
+ * NEURAL INGESTION ORCHESTRATOR v10.5 (RECOVERY ENABLED)
+ * Precise error mapping for infrastructure synchronization issues.
  */
 async function callSurgicalLinearizer(content: string, recipe: string, model: string = 'gemini-3-pro-preview'): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -113,13 +113,13 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
             }));
             
             const { error: delErr } = await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-            if (delErr) throw new Error(`TABLE_ERROR: slo_database cleanup failed - ${delErr.message}`);
+            if (delErr) throw new Error(`DB_ERROR: slo_database cleanup failed - ${delErr.message}`);
             
             const { error: insErr } = await adminSupabase.from('slo_database').insert(sloRecords);
-            if (insErr) throw new Error(`TABLE_ERROR: slo_database insertion failed - ${insErr.message}`);
+            if (insErr) throw new Error(`DB_ERROR: slo_database insertion failed - ${insErr.message}`);
           }
         } catch (e: any) {
-          if (e.message.includes('TABLE_ERROR')) throw e;
+          if (e.message.includes('DB_ERROR')) throw e;
           console.error("❌ JSON Extraction Failure:", e.message);
         }
       }
@@ -131,7 +131,16 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
 
     if (job.step === IngestionStep.EMBED) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
-      await indexDocumentForRAG(documentId, currentDoc?.extracted_text || "", adminSupabase, job.id);
+      
+      try {
+        await indexDocumentForRAG(documentId, currentDoc?.extracted_text || "", adminSupabase, job.id);
+      } catch (ragErr: any) {
+        if (ragErr.message?.includes('token_count') || ragErr.message?.includes('column')) {
+           throw new Error(`SCHEMA_FAULT: Column 'token_count' missing in database. Please run the SQL v8.0 script in the Brain Control panel.`);
+        }
+        throw ragErr;
+      }
+
       await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.FINALIZE, status: JobStatus.COMPLETED }).eq('id', job.id);
       await adminSupabase.from('documents').update({ status: 'ready', rag_indexed: true, document_summary: 'Neural alignment verified.' }).eq('id', documentId);
     }
@@ -142,8 +151,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     
     let detailedMsg = error.message || "Unknown Neural Bottleneck";
     
-    if (detailedMsg.includes('slo_database') || detailedMsg.includes('relation') || detailedMsg.includes('TABLE_ERROR')) {
-      detailedMsg = `Grid Fault: ${detailedMsg}. Ensure you ran SQL v7.6 in Supabase.`;
+    if (detailedMsg.includes('token_count') || detailedMsg.includes('schema cache') || detailedMsg.includes('slo_database') || detailedMsg.includes('relation') || detailedMsg.includes('SCHEMA_FAULT')) {
+      detailedMsg = `Grid Fault: ${detailedMsg}. IMPORTANT: Go to 'Brain Control' > 'Blueprint', Copy the SQL v8.0 and Run it in Supabase to fix this.`;
     }
 
     await adminSupabase.from('ingestion_jobs').update({ status: JobStatus.FAILED, error_message: detailedMsg }).eq('id', job?.id);

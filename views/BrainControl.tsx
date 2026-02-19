@@ -120,24 +120,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       const { error } = await supabase.rpc('reload_schema_cache');
       if (error) throw error;
       
-      // Re-fetch brain data to see if columns are now visible
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        const checkRes = await fetch('/api/brain/get', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        const checkData = await checkRes.json();
-        if (checkData.brain?.blueprint_sql) {
-           alert("Neural Grid Re-aligned: Columns detected and cache purged.");
-           setSyncError(null);
-        } else {
-           alert("Grid Refreshed: Still no 'blueprint_sql' column. Ensure you ran the script in Supabase.");
-        }
-      }
+      alert("Neural Grid Re-aligned: API schema cache purged. Columns like 'token_count' should now be visible to the system.");
+      setSyncError(null);
     } catch (e: any) {
       console.error(e);
-      setSyncError("RPC 'reload_schema_cache' missing or permission denied. Please run the SQL Blueprint in Supabase first.");
-      alert("Fault: " + e.message);
+      setSyncError("RPC 'reload_schema_cache' failure. Ensure you have run the SQL script in Supabase first.");
+      alert("Grid Refusal: " + e.message);
     } finally { setIsResyncing(false); }
   };
 
@@ -148,7 +136,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     setTimeout(() => setCopiedBlueprint(false), 2000);
   };
 
-  const isSchemaError = syncError?.toLowerCase().includes('blueprint_sql') || syncError?.toLowerCase().includes('column');
+  const isSchemaError = syncError?.toLowerCase().includes('token_count') || syncError?.toLowerCase().includes('column') || syncError?.toLowerCase().includes('cache');
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 px-2 text-left">
@@ -184,13 +172,13 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
             <AlertTriangle size={24} className={isSchemaError ? 'text-amber-600' : 'text-rose-500'} />
             <div className="space-y-0.5">
               <p className="text-[10px] font-black uppercase tracking-widest">System Alert</p>
-              <p className="text-sm font-bold leading-tight">{isSchemaError ? 'Database Migration Required' : 'Protocol Fault'}</p>
+              <p className="text-sm font-bold leading-tight">{isSchemaError ? 'Schema Desync Detected' : 'Protocol Fault'}</p>
             </div>
           </div>
           
           <div className="flex-1 text-xs font-medium opacity-80 leading-relaxed">
             {isSchemaError 
-              ? "Your database is missing the 'blueprint_sql' column. Copy the script from the Blueprint tab and run it in your Supabase SQL Editor." 
+              ? "Your database is missing the 'token_count' column or the API cache is stale. Go to the 'Blueprint' tab, copy the script, run it in Supabase, then click 'Re-Sync Grid'." 
               : syncError}
           </div>
 
@@ -214,7 +202,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                  <p className="text-[10px] text-indigo-600 font-bold mt-1 uppercase tracking-widest">Version {formData.version}.0 Active</p>
                </div>
                <div className="flex gap-2">
-                 <button onClick={handleReloadSchema} disabled={isResyncing} className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm">
+                 <button onClick={handleReloadSchema} disabled={isResyncing} title="Reload Supabase API Schema Cache" className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm">
                    {isResyncing ? <RefreshCw className="animate-spin" size={14}/> : <Wrench size={14}/>} Re-Sync Grid
                  </button>
                  <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
@@ -250,7 +238,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            <div className="flex items-center justify-between">
               <div>
                  <h3 className="text-xl font-black uppercase tracking-tight dark:text-white">Infrastructure Blueprint SQL</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Infrastructure Standards v7.3</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Infrastructure Standards v8.0</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={handleResetBlueprint} className="flex items-center gap-3 px-6 py-3 bg-amber-50 dark:bg-amber-950/20 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
@@ -266,12 +254,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            </div>
            
            <div className="p-8 bg-indigo-50 dark:bg-indigo-950/20 border-l-4 border-indigo-500 rounded-r-[2rem] space-y-2">
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-600">How to Fix "Column Not Found"</h4>
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-600">Resolving "token_count" or "schema cache" Errors</h4>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed italic font-medium">
                 1. Click <b>"Copy Repair SQL"</b> above.<br />
                 2. Go to your <b>Supabase Dashboard</b> &gt; SQL Editor.<br />
                 3. Paste and <b>Run</b> the script.<br />
-                4. Return here and click <b>"Re-Sync Grid"</b> on the Prompt tab.
+                4. Return here and click <b>"Re-Sync Grid"</b> on the Prompt tab to refresh the API cache.
               </p>
            </div>
 
@@ -279,7 +267,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
               value={formData.blueprintSql || LATEST_SQL_BLUEPRINT}
               onChange={(e) => setFormData({...formData, blueprintSql: e.target.value})}
               className="w-full h-[600px] p-8 bg-slate-900 dark:bg-black text-emerald-400 border border-slate-700 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
-              placeholder="-- Master Infrastructure SQL v7.3 --"
+              placeholder="-- Master Infrastructure SQL v8.0 --"
             />
         </div>
       )}
