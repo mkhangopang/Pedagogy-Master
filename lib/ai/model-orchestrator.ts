@@ -2,9 +2,16 @@ import { GoogleGenAI } from "@google/genai";
 
 export type ComplexityLevel = 'lookup' | 'strategy' | 'creation';
 
+export interface TaskResult {
+  text: string;
+  modelUsed: string;
+  timestamp: string;
+}
+
 /**
- * WORLD-CLASS MODEL ORCHESTRATOR (v1.0)
+ * WORLD-CLASS MODEL ORCHESTRATOR (v1.1)
  * Logic: Routes tasks based on complexity and enforces Pedagogy Persona.
+ * Fixed: Explicit return types to resolve recursive 'implicitly has return type any' build error.
  */
 export class ModelOrchestrator {
   private ai: GoogleGenAI;
@@ -45,8 +52,9 @@ ${prompt}
 
   /**
    * Executes a task with automatic routing and error recovery.
+   * Explicit return type TaskResult is required for recursive fallback compatibility.
    */
-  public async executeTask(prompt: string, complexity: ComplexityLevel = 'strategy') {
+  public async executeTask(prompt: string, complexity: ComplexityLevel = 'strategy'): Promise<TaskResult> {
     const modelName = this.getModelForTask(complexity);
     const finalPrompt = this.applyPersona(prompt);
 
@@ -66,9 +74,10 @@ ${prompt}
         timestamp: new Date().toISOString()
       };
     } catch (err: any) {
-      // Fallback logic
+      // Fallback logic: If the advanced Pro node fails, downgrade to Flash to maintain service availability
       if (modelName === 'gemini-3-pro-preview') {
-        return this.executeTask(prompt, 'lookup'); // Downgrade to Flash on failure
+        console.warn(`[Orchestrator] Pro node failure detected. Initiating downgrade recovery for query...`);
+        return this.executeTask(prompt, 'lookup');
       }
       throw err;
     }
