@@ -4,9 +4,9 @@ import { getSupabaseAdminClient, getSupabaseServerClient } from '../../../../lib
 export const runtime = 'nodejs';
 
 /**
- * NEURAL BRAIN UPDATE GATEWAY (v11.0)
- * Logic: Atomic upsert using Admin Client with strict role verification.
- * This fixes "Persistence Refused" errors caused by RLS restrictions on system tables.
+ * NEURAL BRAIN UPDATE GATEWAY (v11.1 - RESILIENT)
+ * Logic: Atomic upsert with automatic schema-fallback.
+ * If the DB is missing the 'blueprint_sql' column, it will still save the prompt.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Access Denied: Founder privileges required for grid commitment.' }, { status: 403 });
     }
 
-    // 3. Perform Update via Admin Client
+    // 3. Fetch Version
     const { data: currentBrain } = await adminSupabase
       .from('neural_brain')
       .select('version')
@@ -42,7 +42,9 @@ export async function POST(req: NextRequest) {
 
     const nextVersion = (currentBrain?.version || 0) + 1;
 
-    const { data, error } = await adminSupabase
+    // 4. Attempt Upsert
+    // We try to save everything first
+    let result = await adminSupabase
       .from('neural_brain')
       .upsert({
         id: 'system-brain',
@@ -53,14 +55,39 @@ export async function POST(req: NextRequest) {
         version: nextVersion
       }, { onConflict: 'id' })
       .select()
-      .single();
+      .maybeSingle();
 
-    if (error) throw error;
+    // 5. Fallback for Schema Desync
+    if (result.error && result.error.message.includes('blueprint_sql')) {
+       console.warn("⚠️ Grid Update Fallback: blueprint_sql column missing in DB.");
+       result = await adminSupabase
+         .from('neural_brain')
+         .upsert({
+            id: 'system-brain',
+            master_prompt: master_prompt || "",
+            is_active: true,
+            updated_at: new Date().toISOString(),
+            version: nextVersion
+         }, { onConflict: 'id' })
+         .select()
+         .maybeSingle();
+       
+       if (!result.error) {
+         return NextResponse.json({
+           success: true,
+           partial: true,
+           message: "Prompt persisted, but blueprint ignored due to missing DB column.",
+           brain: result.data
+         });
+       }
+    }
+
+    if (result.error) throw result.error;
 
     return NextResponse.json({
       success: true,
       message: "Neural Brain re-aligned and persisted to vault.",
-      brain: data
+      brain: result.data
     });
   } catch (error: any) {
     console.error("❌ [Brain Update Fault]:", error);

@@ -80,17 +80,24 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         throw new Error(data.error || "Persistence Refused by Grid Gateway.");
       }
 
+      if (data.partial) {
+        alert("PARTIAL SYNC: Master Prompt saved, but Blueprint was ignored. Your database schema still needs migration.");
+        setSyncError("blueprint_sql column missing");
+      } else {
+        alert("System persistent state synchronized.");
+        setSyncError(null);
+      }
+
       const updatedBrain: NeuralBrain = {
         ...formData,
         masterPrompt: data.brain.master_prompt,
-        blueprintSql: data.brain.blueprint_sql,
+        blueprintSql: data.brain.blueprint_sql || formData.blueprintSql,
         version: data.brain.version,
         updatedAt: data.brain.updated_at
       };
 
       setFormData(updatedBrain);
       onUpdate(updatedBrain);
-      alert("System persistent state synchronized.");
     } catch (e: any) {
       setSyncError(e.message);
       if (e.message.includes('blueprint_sql')) {
@@ -112,7 +119,21 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     try {
       const { error } = await supabase.rpc('reload_schema_cache');
       if (error) throw error;
-      alert("Neural Grid Re-aligned: Cache purged.");
+      
+      // Re-fetch brain data to see if columns are now visible
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const checkRes = await fetch('/api/brain/get', {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+        const checkData = await checkRes.json();
+        if (checkData.brain?.blueprint_sql) {
+           alert("Neural Grid Re-aligned: Columns detected and cache purged.");
+           setSyncError(null);
+        } else {
+           alert("Grid Refreshed: Still no 'blueprint_sql' column. Ensure you ran the script in Supabase.");
+        }
+      }
     } catch (e: any) {
       console.error(e);
       setSyncError("RPC 'reload_schema_cache' missing or permission denied. Please run the SQL Blueprint in Supabase first.");
@@ -127,7 +148,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     setTimeout(() => setCopiedBlueprint(false), 2000);
   };
 
-  const isSchemaError = syncError?.includes('blueprint_sql') || syncError?.includes('column');
+  const isSchemaError = syncError?.toLowerCase().includes('blueprint_sql') || syncError?.toLowerCase().includes('column');
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 px-2 text-left">
@@ -229,7 +250,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            <div className="flex items-center justify-between">
               <div>
                  <h3 className="text-xl font-black uppercase tracking-tight dark:text-white">Infrastructure Blueprint SQL</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Infrastructure Standards v7.2</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Infrastructure Standards v7.3</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={handleResetBlueprint} className="flex items-center gap-3 px-6 py-3 bg-amber-50 dark:bg-amber-950/20 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
@@ -258,7 +279,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
               value={formData.blueprintSql || LATEST_SQL_BLUEPRINT}
               onChange={(e) => setFormData({...formData, blueprintSql: e.target.value})}
               className="w-full h-[600px] p-8 bg-slate-900 dark:bg-black text-emerald-400 border border-slate-700 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
-              placeholder="-- Master Infrastructure SQL v7.2 --"
+              placeholder="-- Master Infrastructure SQL v7.3 --"
             />
         </div>
       )}

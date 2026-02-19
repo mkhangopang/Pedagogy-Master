@@ -39,24 +39,31 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v7.1
- * This constant allows the app to self-heal by providing the latest SQL to the admin UI.
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v7.3
+ * Includes critical column migration for 'neural_brain'.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.1
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.3
 -- ==========================================
 
 -- 1. Ensure Vector Extension
 create extension if not exists vector;
 
--- 2. Add semantic_fingerprint if missing (Fixes "Missing column" error)
+-- 2. Add semantic_fingerprint if missing
 DO $$ BEGIN 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='semantic_fingerprint') THEN
     ALTER TABLE public.document_chunks ADD COLUMN semantic_fingerprint text;
   END IF;
 END $$;
 
--- 3. Fix reload_schema_cache with proper security and grants
+-- 3. Add blueprint_sql to neural_brain if missing (CRITICAL FIX)
+DO $$ BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='neural_brain' AND column_name='blueprint_sql') THEN
+    ALTER TABLE public.neural_brain ADD COLUMN blueprint_sql text;
+  END IF;
+END $$;
+
+-- 4. Fix reload_schema_cache
 create or replace function reload_schema_cache()
 returns void language plpgsql security definer as $$
 begin
@@ -68,7 +75,7 @@ grant execute on function reload_schema_cache to authenticated;
 grant execute on function reload_schema_cache to anon;
 grant execute on function reload_schema_cache to service_role;
 
--- 4. Re-Initialize Ingestion Jobs table
+-- 5. Re-Initialize Ingestion Jobs table
 create table if not exists public.ingestion_jobs (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
