@@ -39,22 +39,24 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v7.0
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v7.1
  * This constant allows the app to self-heal by providing the latest SQL to the admin UI.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE SCHEMA v7.0
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.1
 -- ==========================================
+
+-- 1. Ensure Vector Extension
 create extension if not exists vector;
 
--- Add semantic_fingerprint if missing
+-- 2. Add semantic_fingerprint if missing (Fixes "Missing column" error)
 DO $$ BEGIN 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='semantic_fingerprint') THEN
     ALTER TABLE public.document_chunks ADD COLUMN semantic_fingerprint text;
   END IF;
 END $$;
 
--- Fix reload_schema_cache with proper grants
+-- 3. Fix reload_schema_cache with proper security and grants
 create or replace function reload_schema_cache()
 returns void language plpgsql security definer as $$
 begin
@@ -66,7 +68,17 @@ grant execute on function reload_schema_cache to authenticated;
 grant execute on function reload_schema_cache to anon;
 grant execute on function reload_schema_cache to service_role;
 
--- Full table and search logic provided in supabase_schema.sql file.
+-- 4. Re-Initialize Ingestion Jobs table
+create table if not exists public.ingestion_jobs (
+  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
+  step text NOT NULL,
+  status text NOT NULL DEFAULT 'queued',
+  retry_count int DEFAULT 0,
+  error_message text,
+  payload jsonb, 
+  updated_at timestamp with time zone DEFAULT now()
+);
 `;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;

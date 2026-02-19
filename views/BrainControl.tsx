@@ -24,7 +24,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   
   const [jobs, setJobs] = useState<any[]>([]);
   const [healthReport, setHealthReport] = useState<any>(null);
-  const [isTelemetryLoading, setIsTelemetryLoading] = useState(false);
 
   useEffect(() => {
     if (brain) {
@@ -38,9 +37,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     }
   }, [brain]);
 
-  const fetchStatus = useCallback(async (isInitial = false) => {
-    if (activeTab === 'telemetry' && isInitial) setIsTelemetryLoading(true);
-    
+  const fetchStatus = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
@@ -53,26 +50,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
           .limit(20);
         if (!error) setJobs(data || []);
       }
-
-      if (activeTab === 'telemetry') {
-        const res = await fetch('/api/admin/rag-health', {
-          headers: { 'Authorization': `Bearer ${session.access_token}` }
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setHealthReport(data);
-        }
-      }
-    } catch (e) {
-      console.warn("Telemetry Node Offline.");
-    } finally {
-      if (isInitial) setIsTelemetryLoading(false);
-    }
+    } catch (e) {}
   }, [activeTab]);
 
   useEffect(() => {
-    fetchStatus(true);
-    const interval = setInterval(() => fetchStatus(false), 10000);
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 10000);
     return () => clearInterval(interval);
   }, [fetchStatus]);
 
@@ -81,7 +64,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     setSyncError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error("Authentication node disconnected.");
+      if (!session) throw new Error("Session Invalid.");
 
       const res = await fetch('/api/brain/update', {
         method: 'POST',
@@ -92,10 +75,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         })
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Persistence gateway refusal.");
-      }
+      if (!res.ok) throw new Error("Persistence Refused.");
 
       const data = await res.json();
       const updatedBrain: NeuralBrain = {
@@ -108,17 +88,15 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
       setFormData(updatedBrain);
       onUpdate(updatedBrain);
-      alert("Institutional IP (Recipe & SQL) Synchronized to Vault.");
+      alert("System persistent state synchronized.");
     } catch (e: any) {
       setSyncError(e.message);
-      alert("Grid Commitment Failed: " + e.message);
-    } finally { 
-      setIsSaving(false); 
-    }
+      alert("Sync Failed: " + e.message);
+    } finally { setIsSaving(false); }
   };
 
   const handleResetBlueprint = () => {
-    if (window.confirm("SYNC WITH SYSTEM: Load the latest hardcoded infrastructure schema? Your current local changes in the editor will be overwritten.")) {
+    if (window.confirm("RESET BLUEPRINT: Load latest system repair script?")) {
       setFormData(prev => ({ ...prev, blueprintSql: LATEST_SQL_BLUEPRINT }));
     }
   };
@@ -127,21 +105,15 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     setIsResyncing(true);
     setSyncError(null);
     try {
+      // Direct call to PostgREST notify
       const { error } = await supabase.rpc('reload_schema_cache');
-      if (error) {
-        if (error.message?.includes('does not exist')) {
-          throw new Error("RPC 'reload_schema_cache' is not installed. Please run the SQL Blueprint in Supabase first.");
-        }
-        throw error;
-      }
-      alert("Neural Grid Re-aligned: Schema cache successfully purged and reloaded.");
+      if (error) throw error;
+      alert("Neural Grid Re-aligned: Cache purged.");
     } catch (e: any) {
       console.error(e);
-      setSyncError(e.message);
-      alert("Infrastructure Fault: " + e.message);
-    } finally {
-      setIsResyncing(false);
-    }
+      setSyncError("RPC 'reload_schema_cache' missing. Run the SQL Blueprint in Supabase first.");
+      alert("Fault: " + e.message);
+    } finally { setIsResyncing(false); }
   };
 
   const handleCopyBlueprint = () => {
@@ -163,17 +135,13 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         </div>
         
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 shadow-inner overflow-x-auto no-scrollbar">
-          {[
-            { id: 'prompt', icon: <Cpu size={14}/>, label: 'Master Recipe' },
-            { id: 'blueprint', icon: <Terminal size={14}/>, label: 'SQL Blueprint' },
-            { id: 'ingestion', icon: <Layers size={14}/>, label: 'Telemetry' },
-          ].map(tab => (
+          {['prompt', 'blueprint', 'ingestion'].map(tab => (
             <button 
-              key={tab.id} 
-              onClick={() => setActiveTab(tab.id as any)} 
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600'}`}
+              key={tab} 
+              onClick={() => setActiveTab(tab as any)} 
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-indigo-600'}`}
             >
-              {tab.icon} {tab.label}
+              {tab}
             </button>
           ))}
         </div>
@@ -186,7 +154,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
             <p className="text-[10px] font-black uppercase tracking-widest">Protocol Fault</p>
             <p className="text-xs font-medium leading-relaxed">{syncError}</p>
           </div>
-          <button onClick={() => setSyncError(null)} className="ml-auto p-1 hover:bg-rose-100 dark:hover:bg-rose-900/40 rounded-lg">
+          <button onClick={() => setSyncError(null)} className="ml-auto p-1 hover:bg-rose-100 rounded-lg">
             <X size={14} />
           </button>
         </div>
@@ -201,14 +169,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                  <p className="text-[10px] text-indigo-600 font-bold mt-1 uppercase tracking-widest">Version {formData.version}.0 Active</p>
                </div>
                <div className="flex gap-2">
-                 <button 
-                  onClick={handleReloadSchema} 
-                  disabled={isResyncing}
-                  className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm disabled:opacity-50"
-                 >
+                 <button onClick={handleReloadSchema} disabled={isResyncing} className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm">
                    {isResyncing ? <RefreshCw className="animate-spin" size={14}/> : <Wrench size={14}/>} Re-Sync Grid
                  </button>
-                 <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50">
+                 <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
                    {isSaving ? <RefreshCw className="animate-spin" size={16}/> : <Save size={16}/>} Commit IP
                  </button>
                </div>
@@ -223,16 +187,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
           <div className="space-y-6">
              <div className="bg-slate-950 text-white p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden flex flex-col gap-6 border border-white/5">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><ShieldAlert size={150} /></div>
-                <h3 className="text-xl font-black uppercase tracking-tight text-emerald-400">Intellectual Property Protection</h3>
-                <p className="text-xs text-slate-400 font-medium leading-relaxed italic">By storing the Master Recipe in the database, your proprietary pedagogical logic is shielded from build-time exposures.</p>
+                <h3 className="text-xl font-black uppercase tracking-tight text-emerald-400">System Integrity</h3>
+                <p className="text-xs text-slate-400 font-medium leading-relaxed italic">Changes to the Master Prompt affect all current curriculum synthesizers. Use "Re-Sync Grid" if you see schema mismatch errors.</p>
                 <div className="space-y-3 relative z-10 pt-4">
                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
-                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Status</span>
-                      <span className="text-[10px] font-black text-emerald-400">REMOTE_VAULT_ONLY</span>
-                   </div>
-                   <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl space-y-2">
-                      <p className="text-[10px] font-bold text-rose-400 flex items-center gap-2"><AlertTriangle size={12}/> Critical Alert</p>
-                      <p className="text-[9px] text-rose-300/80 leading-relaxed italic">If you encounter "Column not found in cache", use the 'Re-Sync Grid' tool to purge stale neural mappings.</p>
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Database Sync</span>
+                      <span className="text-[10px] font-black text-emerald-400">ACTIVE</span>
                    </div>
                 </div>
              </div>
@@ -245,7 +205,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            <div className="flex items-center justify-between">
               <div>
                  <h3 className="text-xl font-black uppercase tracking-tight dark:text-white">Infrastructure Blueprint SQL</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Centralized SQL Provisioning for v7.0 Standards</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Infrastructure Standards v7.1</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={handleResetBlueprint} className="flex items-center gap-3 px-6 py-3 bg-amber-50 dark:bg-amber-950/20 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
@@ -254,19 +214,19 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                 <button onClick={handleCopyBlueprint} className="flex items-center gap-3 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">
                    {copiedBlueprint ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>} {copiedBlueprint ? 'Blueprint Copied' : 'Copy SQL'}
                 </button>
-                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-3 px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg disabled:opacity-50">
+                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-3 px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg">
                    {isSaving ? <RefreshCw className="animate-spin" size={14}/> : <DatabaseZap size={14}/>} Save Changes
                 </button>
               </div>
            </div>
            <p className="text-xs text-slate-500 font-medium leading-relaxed italic">
-             <b>HOW TO REPAIR:</b> Click "Sync with System" to pull the latest schema fixes from the app code, then "Copy SQL" and run it in your Supabase SQL Editor.
+             Copy and run this in your <b>Supabase SQL Editor</b> to resolve "Column not found" errors.
            </p>
            <textarea 
               value={formData.blueprintSql || ''}
               onChange={(e) => setFormData({...formData, blueprintSql: e.target.value})}
               className="w-full h-[600px] p-8 bg-slate-900 dark:bg-black text-emerald-400 border border-slate-700 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
-              placeholder="-- Paste Master Infrastructure SQL v7.0 here..."
+              placeholder="-- Paste Master Infrastructure SQL v7.1 here..."
             />
         </div>
       )}
@@ -274,17 +234,17 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       {activeTab === 'ingestion' && (
         <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden animate-in fade-in">
            <div className="p-10 border-b dark:border-white/5 flex justify-between items-center">
-              <h3 className="text-xl font-black uppercase tracking-tight dark:text-white flex items-center gap-3"><Layers size={24}/> Process Telemetry</h3>
-              <button onClick={() => fetchStatus(true)} className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 rounded-full transition-all"><RefreshCw size={16} /></button>
+              <h3 className="text-xl font-black uppercase tracking-tight dark:text-white flex items-center gap-3"><Layers size={24}/> Telemetry</h3>
+              <button onClick={fetchStatus} className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 rounded-full transition-all"><RefreshCw size={16} /></button>
            </div>
            <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full text-left text-[10px]">
-                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-black uppercase tracking-widest text-[9px]">
+                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-black uppercase tracking-widest text-[8px]">
                     <tr>
-                       <th className="p-6">Curriculum Asset</th>
-                       <th className="p-6">Neural Step</th>
+                       <th className="p-6">Curriculum</th>
+                       <th className="p-6">Step</th>
                        <th className="p-6">Status</th>
-                       <th className="p-6">Trace Log</th>
+                       <th className="p-6">Diagnostic</th>
                     </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-50 dark:divide-white/5">
@@ -298,12 +258,9 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                                 {job.status}
                              </span>
                           </td>
-                          <td className="p-6 text-slate-400 font-mono italic max-w-xs truncate">{job.error_message || "Handshake complete."}</td>
+                          <td className="p-6 text-slate-400 font-mono italic max-w-xs truncate">{job.error_message || "Grid Clear."}</td>
                        </tr>
                     ))}
-                    {jobs.length === 0 && (
-                      <tr><td colSpan={4} className="p-24 text-center text-slate-400 font-black uppercase tracking-[0.3em] opacity-30 text-[10px]">Pipeline currently silent.</td></tr>
-                    )}
                  </tbody>
               </table>
            </div>
