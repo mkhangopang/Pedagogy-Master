@@ -39,29 +39,24 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v9.0 (ULTIMATE REPAIR)
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v10.0 (RALPH AUDIT FIX)
  * MANDATORY: RUN THIS IN SUPABASE SQL EDITOR TO FIX ALL SCHEMA ERRORS.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v9.0
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v10.0
 -- ==========================================
 
--- 1. Ensure Vector Extension
+-- 1. EXTENSIONS
 create extension if not exists vector;
 
--- 2. Repair neural_brain (Fixing id type)
-DO $$ 
-BEGIN 
-    IF (SELECT data_type FROM information_schema.columns WHERE table_name = 'neural_brain' AND column_name = 'id') = 'uuid' THEN
-        ALTER TABLE public.neural_brain ALTER COLUMN id TYPE text USING id::text;
-    END IF;
-END $$;
-
--- 3. CHUNK TABLE REPAIR (Adding all missing performance columns)
+-- 2. TABLE REPAIRS
 DO $$ BEGIN 
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='semantic_fingerprint') THEN
-    ALTER TABLE public.document_chunks ADD COLUMN semantic_fingerprint text;
+  -- Ensure documents has token_count
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='token_count') THEN
+    ALTER TABLE public.documents ADD COLUMN token_count int DEFAULT 0;
   END IF;
+
+  -- Ensure document_chunks is performance-aligned
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='token_count') THEN
     ALTER TABLE public.document_chunks ADD COLUMN token_count int DEFAULT 0;
   END IF;
@@ -70,37 +65,36 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 4. BRAIN TABLE REPAIR
-DO $$ BEGIN 
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='neural_brain' AND column_name='blueprint_sql') THEN
-    ALTER TABLE public.neural_brain ADD COLUMN blueprint_sql text;
-  END IF;
-END $$;
-
--- 5. Create SLO Database (Crucial for "Sync Interrupted" fix)
+-- 3. SLO DATABASE (CLEAN SLATE)
 create table if not exists public.slo_database (
   id uuid primary key default uuid_generate_v4(),
   document_id uuid references public.documents(id) on delete cascade,
   slo_code text not null,
   slo_full_text text not null,
   bloom_level text,
-  metadata jsonb default '{}'::jsonb,
+  domain_tag text,
   created_at timestamp with time zone default now()
 );
 
--- 6. Ingestion Tracking
-create table if not exists public.ingestion_jobs (
-  id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
-  step text NOT NULL,
-  status text NOT NULL DEFAULT 'queued',
-  retry_count int DEFAULT 0,
-  error_message text,
-  payload jsonb, 
-  updated_at timestamp with time zone DEFAULT now()
+-- 4. JUNCTION TABLE (FP-03 FIX: Atomic SLO-Chunk Linking)
+create table if not exists public.chunk_slo_mapping (
+  id uuid primary key default uuid_generate_v4(),
+  chunk_id uuid references public.document_chunks(id) on delete cascade,
+  slo_id uuid references public.slo_database(id) on delete cascade,
+  relevance_score float default 1.0,
+  unique(chunk_id, slo_id)
 );
 
--- 7. RAG Health View (For Audit Dashboard)
+-- 5. VERTICAL ALIGNMENT (RALPH IMPROVEMENT: Prerequisite Mapping)
+create table if not exists public.vertical_alignment (
+  id uuid primary key default uuid_generate_v4(),
+  target_slo_id uuid references public.slo_database(id) on delete cascade,
+  prerequisite_slo_id uuid references public.slo_database(id) on delete cascade,
+  alignment_type text default 'direct',
+  unique(target_slo_id, prerequisite_slo_id)
+);
+
+-- 6. HEALTH VIEWS
 create or replace view public.rag_health_report as
 select 
   d.id, d.name, d.status,
@@ -108,12 +102,11 @@ select
   (select count(*) from slo_database where document_id = d.id) as slo_count,
   case 
     when d.status = 'ready' and (select count(*) from document_chunks where document_id = d.id) > 0 then 'HEALTHY'
-    when d.status = 'ready' then 'BROKEN_EMPTY'
-    else 'IN_PROGRESS'
+    else 'INCOMPLETE'
   end as health_status
 from documents d;
 
--- 8. Core Cache Function
+-- 7. RE-SYNC GRID RPC
 create or replace function reload_schema_cache()
 returns void language plpgsql security definer as $$
 begin
@@ -121,13 +114,13 @@ begin
 end;
 $$;
 
--- 9. Ultimate Permission Refresh
+-- 8. PERMISSIONS
 grant execute on function reload_schema_cache to authenticated, anon, service_role;
 grant all on public.slo_database to authenticated, service_role;
-grant all on public.ingestion_jobs to authenticated, service_role;
-grant all on public.document_chunks to authenticated, service_role;
+grant all on public.chunk_slo_mapping to authenticated, service_role;
+grant all on public.vertical_alignment to authenticated, service_role;
 
--- 10. Execute Cache Clear
+-- 9. FORCE RELOAD
 SELECT reload_schema_cache();
 `;
 
