@@ -248,7 +248,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
               <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-600">How to Fix "Column Not Found"</h4>
               <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed italic font-medium">
                 1. Click <b>"Copy Repair SQL"</b> above.<br />
-                2. Go to your <b>Supabase Dashboard</b> > SQL Editor.<br />
+                2. Go to your <b>Supabase Dashboard</b> &gt; SQL Editor.<br />
                 3. Paste and <b>Run</b> the script.<br />
                 4. Return here and click <b>"Re-Sync Grid"</b> on the Prompt tab.
               </p>
