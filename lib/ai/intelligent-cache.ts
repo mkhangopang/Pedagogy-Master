@@ -1,4 +1,3 @@
-
 import { supabase } from '../supabase';
 import { synthesize } from './synthesizer-core';
 
@@ -40,12 +39,15 @@ export async function getCachedOrGenerate(
     };
 
     // We use a high-reliability model for artifact synthesis (Gemini)
+    // Add comment above each fix
+    // Fix: Wrapped positional arguments into an options object to resolve the "Expected 1-2 arguments, but got 5" error
     const { text, provider } = await synthesize(
       taskPrompts[contentType],
-      [], 
-      true, // Assume docs exist if we found the SLO in the DB
-      undefined,
-      'gemini'
+      {
+        history: [], 
+        isGrounded: true, // Assume docs exist if we found the SLO in the DB
+        suggestedProvider: 'gemini'
+      }
     );
     
     // 3. Persist to Global Cache

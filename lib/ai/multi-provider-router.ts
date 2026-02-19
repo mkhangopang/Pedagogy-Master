@@ -91,14 +91,18 @@ ${vaultContent || '[VAULT_EMPTY: Use General Pedagogical Knowledge]'}
 
 USER_QUERY: "${userPrompt}"`;
 
+  // Add comment above each fix
+  // Fix: Wrapped positional arguments into an options object to resolve the "Expected 1-2 arguments, but got 7" error
   const result = await synthesize(
     finalPrompt, 
-    history.slice(-4), 
-    isGrounded, 
-    [], 
-    intentData.suggestedProvider, 
-    systemInstruction,
-    intentData.complexity
+    {
+      history: history.slice(-4), 
+      isGrounded, 
+      docParts: [], 
+      suggestedProvider: intentData.suggestedProvider, 
+      systemPrompt: systemInstruction,
+      complexity: intentData.complexity
+    }
   );
 
   // 5. OBSERVABILITY & CACHING

@@ -27,7 +27,7 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // TIER 1: THE REASONERS (Lesson Planning, Curriculum Mapping)
+    // TIER 1: THE REASONERS (Curriculum Ingestion, Deep Strategy)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
       name: 'Gemini 3 Pro',
@@ -42,57 +42,57 @@ export class SynthesizerCore {
       enabled: isGeminiEnabled()
     });
 
-    providers.set('deepseek', {
-      id: 'deepseek',
+    providers.set('deepseek-r1', {
+      id: 'deepseek-r1',
       name: 'DeepSeek R1',
       endpoint: 'https://api.deepseek.com/v1/chat/completions',
       model: 'deepseek-reasoner',
       apiKeyEnv: 'DEEPSEEK_API_KEY',
-      maxTokens: 8192,
-      rpm: 5,
-      rpd: 500,
+      maxTokens: 16384,
+      rpm: 10,
+      rpd: 1000,
       tier: 1,
       enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
-    // TIER 2: THE ENGINES (Chat, MCQ Generation, Short Lookup)
+    providers.set('grok-reasoner', {
+      id: 'grok-reasoner',
+      name: 'Grok 2',
+      endpoint: 'https://api.x.ai/v1/chat/completions',
+      model: 'grok-2-1212',
+      apiKeyEnv: 'GROK_API_KEY',
+      maxTokens: 32768,
+      rpm: 20,
+      rpd: 5000,
+      tier: 1,
+      enabled: !!process.env.GROK_API_KEY
+    });
+
+    // TIER 2: THE ENGINES (Chat, MCQs, Rapid Refinement)
     providers.set('gemini-flash', {
       id: 'gemini-flash',
       name: 'Gemini 3 Flash',
       endpoint: 'native',
       model: 'gemini-3-flash-preview',
       apiKeyEnv: 'API_KEY',
-      maxTokens: 4096,
-      rpm: 15,
-      rpd: 5000,
+      maxTokens: 8192,
+      rpm: 30,
+      rpd: 10000,
       tier: 2,
       enabled: isGeminiEnabled()
     });
 
-    providers.set('groq', {
-      id: 'groq',
+    providers.set('groq-llama', {
+      id: 'groq-llama',
       name: 'Groq Llama 3.3',
       endpoint: 'https://api.groq.com/openai/v1/chat/completions',
       model: 'llama-3.3-70b-versatile',
       apiKeyEnv: 'GROQ_API_KEY',
       maxTokens: 4096,
-      rpm: 30,
-      rpd: 10000,
+      rpm: 60,
+      rpd: 15000,
       tier: 2,
       enabled: !!process.env.GROQ_API_KEY
-    });
-
-    providers.set('cerebras', {
-      id: 'cerebras',
-      name: 'Cerebras Ultra-Fast',
-      endpoint: 'https://api.cerebras.ai/v1/chat/completions',
-      model: 'llama3.1-70b',
-      apiKeyEnv: 'CEREBRAS_API_KEY',
-      maxTokens: 2048,
-      rpm: 60,
-      rpd: 20000,
-      tier: 2,
-      enabled: !!process.env.CEREBRAS_API_KEY
     });
 
     return providers;
@@ -100,30 +100,30 @@ export class SynthesizerCore {
 
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
     const now = Date.now();
+    
+    // Purge expired failures
     for (const [id, expiry] of this.failedProviders.entries()) {
       if (now > expiry) this.failedProviders.delete(id);
     }
 
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
-    const preferredId = options.preferredId;
-    const taskComplexity = options.complexity || 2; // Default to Tier 2
+    const taskComplexity = options.complexity || 2; 
 
+    // Filter available candidates
     let candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && !this.failedProviders.has(p.id));
 
-    // COMPLEXITY-BASED FILTERING
-    if (taskComplexity >= 3) {
-      candidates = candidates.filter(p => p.tier === 1);
-    }
-
-    // Strategic priority for preferred provider if healthy
-    if (preferredId && this.providers.has(preferredId) && !this.failedProviders.has(preferredId)) {
-      candidates = [this.providers.get(preferredId)!, ...candidates.filter(p => p.id !== preferredId)];
-    }
+    // Sort by tier alignment (Complexity 3 wants Tier 1, etc.)
+    candidates.sort((a, b) => {
+      const distA = Math.abs(a.tier - (taskComplexity >= 3 ? 1 : 2));
+      const distB = Math.abs(b.tier - (taskComplexity >= 3 ? 1 : 2));
+      return distA - distB;
+    });
 
     if (candidates.length === 0) {
-      this.failedProviders.clear(); // Emergency grid reset
+      console.warn("⚠️ GRID DEPLETION: All nodes failed or disabled. Attempting emergency reset.");
+      this.failedProviders.clear();
       candidates = Array.from(this.providers.values()).filter(p => p.enabled);
     }
 
@@ -133,6 +133,7 @@ export class SynthesizerCore {
         if (!apiKey) continue;
 
         let content = "";
+        
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
           const contents = [
@@ -155,6 +156,7 @@ export class SynthesizerCore {
           });
           content = res.text || "";
         } else {
+          // OPENAI COMPATIBLE FETCH (DeepSeek, Groq, Grok)
           const res = await fetch(provider.endpoint, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -169,23 +171,26 @@ export class SynthesizerCore {
               max_tokens: provider.maxTokens
             })
           });
-          if (!res.ok) throw new Error(`Node Refusal: ${res.status}`);
+
+          if (res.status === 429) throw new Error("RATELIMIT_EXCEEDED");
+          if (!res.ok) throw new Error(`NODE_ERROR_${res.status}`);
+          
           const data = await res.json();
           content = data.choices[0].message.content;
         }
 
         if (content) return { text: content, provider: provider.name };
       } catch (e: any) {
-        this.failedProviders.set(provider.id, Date.now() + 30000); // 30s Cooldown
-        console.warn(`[Failover] Node ${provider.name} failed:`, e.message);
+        // Blacklist node for 5 minutes if quota reached, 1 minute for others
+        const cooldown = e.message.includes('429') || e.message.includes('RATELIMIT') ? 300000 : 60000;
+        this.failedProviders.set(provider.id, Date.now() + cooldown);
+        console.error(`🔴 Node Failure [${provider.name}]:`, e.message);
       }
     }
 
-    throw new Error("AI Alert: Critical grid failure. No healthy nodes available.");
+    throw new Error("AI Alert: Global Synthesis Failure. All engines on the grid are currently unreachable or saturated.");
   }
 
-  // Add comment above each fix
-  // Fix: Added missing realignGrid method to support manual grid reset from admin routes
   public realignGrid() {
     this.failedProviders.clear();
   }
@@ -194,7 +199,7 @@ export class SynthesizerCore {
     return Array.from(this.providers.values()).map(p => ({
       id: p.id,
       name: p.name,
-      status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'failed' : 'active',
+      status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'saturated' : 'active',
       tier: p.tier
     }));
   }
@@ -206,6 +211,6 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-export const synthesize = (prompt: string, history: any[], hasDocs: boolean, docParts?: any[], preferred?: string, system?: string, complexity?: number) => {
-  return getSynthesizer().synthesize(prompt, { history, systemPrompt: system, preferredId: preferred, complexity });
+export const synthesize = (prompt: string, options: any = {}) => {
+  return getSynthesizer().synthesize(prompt, options);
 };
