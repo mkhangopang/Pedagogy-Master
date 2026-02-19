@@ -5,8 +5,8 @@ import { DEFAULT_MASTER_PROMPT, LATEST_SQL_BLUEPRINT } from '../../../../constan
 export const dynamic = 'force-dynamic';
 
 /**
- * NEURAL BRAIN RETRIEVAL (v11.2 - RESILIENT)
- * Logic: Fetches system IP. Fallbacks to default constants if columns are missing in DB.
+ * NEURAL BRAIN RETRIEVAL (v11.3 - RESILIENT)
+ * Logic: Fetches system IP. Fallbacks to default constants if columns are missing or types mismatch.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -27,22 +27,21 @@ export async function GET(req: NextRequest) {
       .eq('id', 'system-brain')
       .maybeSingle();
 
-    // TIER 2: Fallback if 'blueprint_sql' column is missing (Schema Cache Outdated)
-    if (error && (error.message.includes('blueprint_sql') || error.code === 'PGRST204')) {
-      console.warn("⚠️ Database schema outdated: 'blueprint_sql' missing. Serving default.");
-      const { data: legacyBrain } = await adminSupabase
-        .from('neural_brain')
-        .select('id, master_prompt, version')
-        .eq('id', 'system-brain')
-        .maybeSingle();
-      
+    // TIER 2: Fallback for Schema Desync (Missing columns or UUID mismatch)
+    if (error && (
+      error.message.includes('blueprint_sql') || 
+      error.message.includes('uuid') || 
+      error.code === 'PGRST204' ||
+      error.code === '22P02'
+    )) {
+      console.warn("⚠️ Database schema conflict detected. Serving default config for recovery.");
       return NextResponse.json({
         success: true,
         brain: {
-          id: legacyBrain?.id || 'system-brain',
-          master_prompt: legacyBrain?.master_prompt || DEFAULT_MASTER_PROMPT,
-          blueprint_sql: LATEST_SQL_BLUEPRINT, // Provide hardcoded repair script
-          version: legacyBrain?.version || 0,
+          id: 'system-brain',
+          master_prompt: DEFAULT_MASTER_PROMPT,
+          blueprint_sql: LATEST_SQL_BLUEPRINT,
+          version: 0,
           is_active: true,
           updated_at: new Date().toISOString()
         }

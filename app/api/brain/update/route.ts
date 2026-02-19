@@ -4,9 +4,8 @@ import { getSupabaseAdminClient, getSupabaseServerClient } from '../../../../lib
 export const runtime = 'nodejs';
 
 /**
- * NEURAL BRAIN UPDATE GATEWAY (v11.1 - RESILIENT)
+ * NEURAL BRAIN UPDATE GATEWAY (v11.2 - RESILIENT)
  * Logic: Atomic upsert with automatic schema-fallback.
- * If the DB is missing the 'blueprint_sql' column, it will still save the prompt.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -16,12 +15,10 @@ export async function POST(req: NextRequest) {
 
     const { master_prompt, blueprint_sql } = await req.json();
     
-    // 1. Verify User Session
     const userClient = getSupabaseServerClient(token);
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return NextResponse.json({ error: 'Session Invalid.' }, { status: 401 });
 
-    // 2. Verify Admin Role
     const adminSupabase = getSupabaseAdminClient();
     const { data: profile } = await adminSupabase
       .from('profiles')
@@ -30,20 +27,10 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (profile?.role !== 'app_admin') {
-      return NextResponse.json({ error: 'Access Denied: Founder privileges required for grid commitment.' }, { status: 403 });
+      return NextResponse.json({ error: 'Access Denied: Founder privileges required.' }, { status: 403 });
     }
 
-    // 3. Fetch Version
-    const { data: currentBrain } = await adminSupabase
-      .from('neural_brain')
-      .select('version')
-      .eq('id', 'system-brain')
-      .maybeSingle();
-
-    const nextVersion = (currentBrain?.version || 0) + 1;
-
-    // 4. Attempt Upsert
-    // We try to save everything first
+    // 1. Attempt standard update
     let result = await adminSupabase
       .from('neural_brain')
       .upsert({
@@ -51,48 +38,36 @@ export async function POST(req: NextRequest) {
         master_prompt: master_prompt || "",
         blueprint_sql: blueprint_sql || "",
         is_active: true,
-        updated_at: new Date().toISOString(),
-        version: nextVersion
+        updated_at: new Date().toISOString()
       }, { onConflict: 'id' })
       .select()
       .maybeSingle();
 
-    // 5. Fallback for Schema Desync
-    if (result.error && result.error.message.includes('blueprint_sql')) {
-       console.warn("⚠️ Grid Update Fallback: blueprint_sql column missing in DB.");
-       result = await adminSupabase
-         .from('neural_brain')
-         .upsert({
-            id: 'system-brain',
-            master_prompt: master_prompt || "",
-            is_active: true,
-            updated_at: new Date().toISOString(),
-            version: nextVersion
-         }, { onConflict: 'id' })
-         .select()
-         .maybeSingle();
+    // 2. Handle type or column mismatch
+    if (result.error) {
+       const isTypeMismatch = result.error.message.includes('uuid');
+       const isMissingCol = result.error.message.includes('blueprint_sql');
        
-       if (!result.error) {
-         return NextResponse.json({
-           success: true,
-           partial: true,
-           message: "Prompt persisted, but blueprint ignored due to missing DB column.",
-           brain: result.data
-         });
+       if (isTypeMismatch || isMissingCol) {
+          console.error("❌ Schema Conflict:", result.error.message);
+          return NextResponse.json({ 
+            error: isTypeMismatch 
+              ? "SCHEMA CONFLICT: The 'id' column is UUID but should be TEXT. Copy the script from Blueprint tab and run it in Supabase." 
+              : "SCHEMA CONFLICT: Column 'blueprint_sql' missing. Use repair script."
+          }, { status: 400 });
        }
+       throw result.error;
     }
-
-    if (result.error) throw result.error;
 
     return NextResponse.json({
       success: true,
-      message: "Neural Brain re-aligned and persisted to vault.",
+      message: "Neural Brain re-aligned.",
       brain: result.data
     });
   } catch (error: any) {
     console.error("❌ [Brain Update Fault]:", error);
     return NextResponse.json({ 
-      error: error.message || "Synthesis grid exception during persistence." 
+      error: error.message || "Synthesis grid exception." 
     }, { status: 500 });
   }
 }
