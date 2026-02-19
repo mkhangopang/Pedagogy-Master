@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '../../../../lib/supabase';
+import { getSupabaseAdminClient, getSupabaseServerClient } from '../../../../lib/supabase';
 
 export const runtime = 'nodejs';
 
 /**
- * NEURAL BRAIN UPDATE GATEWAY (v10.5)
- * Logic: Atomic upsert of the system's foundational pedagogical logic.
+ * NEURAL BRAIN UPDATE GATEWAY (v11.0)
+ * Logic: Atomic upsert using Admin Client with strict role verification.
+ * This fixes "Persistence Refused" errors caused by RLS restrictions on system tables.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -14,14 +15,26 @@ export async function POST(req: NextRequest) {
     if (!token) return NextResponse.json({ error: 'Unauthorized: Gateway closed.' }, { status: 401 });
 
     const { master_prompt, blueprint_sql } = await req.json();
-    const supabase = getSupabaseServerClient(token);
+    
+    // 1. Verify User Session
+    const userClient = getSupabaseServerClient(token);
+    const { data: { user }, error: authError } = await userClient.auth.getUser();
+    if (authError || !user) return NextResponse.json({ error: 'Session Invalid.' }, { status: 401 });
 
-    // Verify identity has app_admin rights (Admin check is performed inside Supabase via RLS or explicit check)
-    const { data: { user } } = await supabase.auth.getUser(token);
-    if (!user) return NextResponse.json({ error: 'Session Invalid.' }, { status: 401 });
+    // 2. Verify Admin Role
+    const adminSupabase = getSupabaseAdminClient();
+    const { data: profile } = await adminSupabase
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
 
-    // Fetch current version to increment
-    const { data: currentBrain } = await supabase
+    if (profile?.role !== 'app_admin') {
+      return NextResponse.json({ error: 'Access Denied: Founder privileges required for grid commitment.' }, { status: 403 });
+    }
+
+    // 3. Perform Update via Admin Client
+    const { data: currentBrain } = await adminSupabase
       .from('neural_brain')
       .select('version')
       .eq('id', 'system-brain')
@@ -29,8 +42,7 @@ export async function POST(req: NextRequest) {
 
     const nextVersion = (currentBrain?.version || 0) + 1;
 
-    // Upsert the master prompt and blueprint into the brain table
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from('neural_brain')
       .upsert({
         id: 'system-brain',
@@ -52,6 +64,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error("❌ [Brain Update Fault]:", error);
-    return NextResponse.json({ error: error.message || "Synthesis grid exception during persistence." }, { status: 500 });
+    return NextResponse.json({ 
+      error: error.message || "Synthesis grid exception during persistence." 
+    }, { status: 500 });
   }
 }

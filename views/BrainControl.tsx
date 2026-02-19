@@ -23,7 +23,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
   const [syncError, setSyncError] = useState<string | null>(null);
   
   const [jobs, setJobs] = useState<any[]>([]);
-  const [healthReport, setHealthReport] = useState<any>(null);
 
   useEffect(() => {
     if (brain) {
@@ -75,9 +74,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         })
       });
 
-      if (!res.ok) throw new Error("Persistence Refused.");
-
       const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Persistence Refused by Grid Gateway.");
+      }
+
       const updatedBrain: NeuralBrain = {
         ...formData,
         masterPrompt: data.brain.master_prompt,
@@ -91,7 +93,6 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       alert("System persistent state synchronized.");
     } catch (e: any) {
       setSyncError(e.message);
-      alert("Sync Failed: " + e.message);
     } finally { setIsSaving(false); }
   };
 
@@ -105,13 +106,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     setIsResyncing(true);
     setSyncError(null);
     try {
-      // Direct call to PostgREST notify
       const { error } = await supabase.rpc('reload_schema_cache');
       if (error) throw error;
       alert("Neural Grid Re-aligned: Cache purged.");
     } catch (e: any) {
       console.error(e);
-      setSyncError("RPC 'reload_schema_cache' missing. Run the SQL Blueprint in Supabase first.");
+      setSyncError("RPC 'reload_schema_cache' missing or permission denied. Ensure you are an Admin and have run the SQL Blueprint.");
       alert("Fault: " + e.message);
     } finally { setIsResyncing(false); }
   };
@@ -192,7 +192,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
                 <div className="space-y-3 relative z-10 pt-4">
                    <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                       <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Database Sync</span>
-                      <span className="text-[10px] font-black text-emerald-400">ACTIVE</span>
+                      <span className="text-[10px] font-black text-emerald-400">ADMIN_OVERRIDE</span>
                    </div>
                 </div>
              </div>
