@@ -11,8 +11,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR v9.8 (RESILIENT)
- * Enhanced with Surgical Diagnostics to catch stale schema caches.
+ * NEURAL INGESTION ORCHESTRATOR v9.9 (RE-ALIGNED)
+ * Enhanced with robust JSON extraction and error recovery.
  */
 async function callSurgicalLinearizer(content: string, recipe: string, model: string = 'gemini-3-pro-preview'): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -102,7 +102,11 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       const indexMatch = processedMarkdown.match(/<STRUCTURED_INDEX>([\s\S]+?)<\/STRUCTURED_INDEX>/);
       if (indexMatch) {
         try {
-          const sloIndex = JSON.parse(indexMatch[1].trim());
+          let jsonStr = indexMatch[1].trim();
+          // Remove potential markdown code fences inside the tags
+          jsonStr = jsonStr.replace(/```json|```/g, '').trim();
+          
+          const sloIndex = JSON.parse(jsonStr);
           if (Array.isArray(sloIndex)) {
             const sloRecords = sloIndex.map((s: any) => ({
               document_id: documentId,
@@ -110,10 +114,15 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
               slo_full_text: s.text || s.slo_full_text,
               bloom_level: s.bloomLevel || 'Understand'
             }));
+            
+            // Delete old entries and insert new ones
             await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-            await adminSupabase.from('slo_database').insert(sloRecords);
+            const { error: sloError } = await adminSupabase.from('slo_database').insert(sloRecords);
+            if (sloError) console.error("❌ SLO DB Insert Fault:", sloError.message);
           }
-        } catch (e) {}
+        } catch (e: any) {
+          console.error("❌ JSON Extraction Failure:", e.message);
+        }
       }
 
       await adminSupabase.from('documents').update({ extracted_text: processedMarkdown }).eq('id', documentId);
@@ -124,7 +133,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     if (job.step === IngestionStep.EMBED) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       
-      // THIS STEP OFTEN FAILS IF 'semantic_fingerprint' IS MISSING IN DB CACHE
+      // Perform Vector Indexing
       await indexDocumentForRAG(documentId, currentDoc?.extracted_text || "", adminSupabase, job.id);
       
       await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.FINALIZE, status: JobStatus.COMPLETED }).eq('id', job.id);
@@ -137,9 +146,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     
     let detailedMsg = error.message || "Unknown Neural Bottleneck";
     
-    // Detect the specific "Column not found" error that requires a cache reload
-    if (detailedMsg.includes('semantic_fingerprint') || detailedMsg.includes('cache')) {
-      detailedMsg = "Infrastructure Desync: Schema cache is stale. Go to 'Brain Control' and click 'Re-Sync Grid' to repair.";
+    if (detailedMsg.includes('semantic_fingerprint') || detailedMsg.includes('cache') || detailedMsg.includes('slo_database')) {
+      detailedMsg = "Infrastructure Desync: Database tables missing. Go to 'Brain Control' and click 'Re-Sync Grid' to repair.";
     }
 
     await adminSupabase.from('ingestion_jobs').update({ status: JobStatus.FAILED, error_message: detailedMsg }).eq('id', job?.id);

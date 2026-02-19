@@ -5,7 +5,7 @@ import {
   X, Copy, Check, Search, LayoutList, 
   BrainCircuit, History, RefreshCw, Layers, 
   BookOpen, Hash, ArrowRight, ShieldCheck,
-  FileCode, Terminal
+  FileCode, Terminal, AlertTriangle, Zap
 } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
@@ -32,6 +32,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   const [viewMode, setViewMode] = useState<'ledger' | 'raw'>('ledger');
   const [slos, setSlos] = useState<SloRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isReindexing, setIsReindexing] = useState(false);
 
   const fetchSlos = async () => {
     setLoading(true);
@@ -51,6 +52,31 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       console.error("Ledger Fetch Error:", e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReindex = async () => {
+    setIsReindexing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const res = await fetch(`/api/docs/process/${activeDoc.id}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+
+      if (res.ok) {
+        alert("Re-indexing started. This view will refresh once the neural grid completes the extraction.");
+        onClose(); // Close to allow background processing
+      } else {
+        const err = await res.json();
+        alert("Grid Fault: " + (err.error || "Extraction refused."));
+      }
+    } catch (e) {
+      alert("Connectivity error.");
+    } finally {
+      setIsReindexing(false);
     }
   };
 
@@ -191,19 +217,29 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-40 text-center animate-in zoom-in-95 duration-700">
-               <div className="w-24 h-24 bg-slate-100 dark:bg-white/5 rounded-[2.5rem] flex items-center justify-center mb-10 text-slate-300">
-                 <BrainCircuit size={48} />
+               <div className="w-24 h-24 bg-amber-50 dark:bg-amber-950/20 rounded-[2.5rem] flex items-center justify-center mb-10 text-amber-600">
+                 <AlertTriangle size={48} />
                </div>
-               <h3 className="text-2xl font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">Ledger Fragmented</h3>
+               <h3 className="text-2xl font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">Sync Protocol Interrupted</h3>
                <p className="text-sm font-medium text-slate-500 max-w-sm mt-4 leading-relaxed italic">
-                 No surgical SLOs detected in the neural grid. Attempt a re-index if this persists.
+                 The curriculum ledger for this document is currently empty. This happens if the document was uploaded before the database migration.
                </p>
-               <button 
-                 onClick={fetchSlos}
-                 className="mt-12 flex items-center gap-3 px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 active:scale-95 transition-all"
-               >
-                 <RefreshCw size={16} /> Force Handshake
-               </button>
+               <div className="flex gap-4 mt-12">
+                 <button 
+                   onClick={fetchSlos}
+                   className="flex items-center gap-3 px-8 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-sm hover:bg-slate-200 transition-all"
+                 >
+                   <RefreshCw size={16} /> Refresh Grid
+                 </button>
+                 <button 
+                   onClick={handleReindex}
+                   disabled={isReindexing}
+                   className="flex items-center gap-3 px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                 >
+                   {isReindexing ? <RefreshCw className="animate-spin" size={16}/> : <Zap size={16} />} 
+                   {isReindexing ? 'Analyzing...' : 'Repair & Re-Index'}
+                 </button>
+               </div>
             </div>
           )}
         </div>

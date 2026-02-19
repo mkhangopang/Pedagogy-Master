@@ -39,21 +39,20 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v7.4
- * Includes critical UUID to TEXT conversion for 'neural_brain'.
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v7.5
+ * Includes mandatory 'slo_database' and 'retrieval_logs' for surgical grounding.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.4
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.5
 -- ==========================================
 
 -- 1. Ensure Vector Extension
 create extension if not exists vector;
 
--- 2. FIX: Convert id from UUID to TEXT if necessary
+-- 2. FIX: Convert id from UUID to TEXT if necessary for neural_brain
 DO $$ 
 BEGIN 
     IF (SELECT data_type FROM information_schema.columns WHERE table_name = 'neural_brain' AND column_name = 'id') = 'uuid' THEN
-        -- We temporarily drop the constraint, change type, and recreate
         ALTER TABLE public.neural_brain ALTER COLUMN id TYPE text USING id::text;
     END IF;
 END $$;
@@ -72,7 +71,29 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 5. Fix reload_schema_cache
+-- 5. Create SLO Database (CRITICAL FIX)
+create table if not exists public.slo_database (
+  id uuid primary key default uuid_generate_v4(),
+  document_id uuid references public.documents(id) on delete cascade,
+  slo_code text not null,
+  slo_full_text text not null,
+  bloom_level text,
+  created_at timestamp with time zone default now()
+);
+
+-- 6. Create Retrieval Logs for diagnostics
+create table if not exists public.retrieval_logs (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references auth.users(id) on delete cascade,
+  query_text text,
+  top_chunk_ids uuid[],
+  confidence_score float,
+  latency_ms int,
+  provider_used text,
+  created_at timestamp with time zone default now()
+);
+
+-- 7. Fix reload_schema_cache
 create or replace function reload_schema_cache()
 returns void language plpgsql security definer as $$
 begin
@@ -84,7 +105,7 @@ grant execute on function reload_schema_cache to authenticated;
 grant execute on function reload_schema_cache to anon;
 grant execute on function reload_schema_cache to service_role;
 
--- 6. Ensure Ingestion Jobs table exists
+-- 8. Ensure Ingestion Jobs table exists
 create table if not exists public.ingestion_jobs (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
