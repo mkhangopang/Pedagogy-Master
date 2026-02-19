@@ -11,7 +11,7 @@ export interface AIProvider {
   thinkingBudget?: number;
   rpm: number;
   rpd: number;
-  tier: 1 | 2 | 3; // 1: Reasoning/Complex, 2: High-Speed, 3: Fallback
+  tier: 1 | 2 | 3; 
   enabled: boolean;
 }
 
@@ -27,7 +27,7 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // TIER 1: THE REASONERS (Curriculum Ingestion, Deep Strategy)
+    // TIER 1: THE REASONERS
     providers.set('gemini-pro', {
       id: 'gemini-pro',
       name: 'Gemini 3 Pro',
@@ -42,22 +42,9 @@ export class SynthesizerCore {
       enabled: isGeminiEnabled()
     });
 
-    providers.set('deepseek-r1', {
-      id: 'deepseek-r1',
-      name: 'DeepSeek R1',
-      endpoint: 'https://api.deepseek.com/v1/chat/completions',
-      model: 'deepseek-reasoner',
-      apiKeyEnv: 'DEEPSEEK_API_KEY',
-      maxTokens: 16384,
-      rpm: 10,
-      rpd: 1000,
-      tier: 1,
-      enabled: !!process.env.DEEPSEEK_API_KEY
-    });
-
-    providers.set('grok-reasoner', {
-      id: 'grok-reasoner',
-      name: 'Grok 2',
+    providers.set('grok-2', {
+      id: 'grok-2',
+      name: 'Grok 2 (xAI)',
       endpoint: 'https://api.x.ai/v1/chat/completions',
       model: 'grok-2-1212',
       apiKeyEnv: 'GROK_API_KEY',
@@ -68,7 +55,7 @@ export class SynthesizerCore {
       enabled: !!process.env.GROK_API_KEY
     });
 
-    // TIER 2: THE ENGINES (Chat, MCQs, Rapid Refinement)
+    // TIER 2: THE ENGINES (Flash Fallback)
     providers.set('gemini-flash', {
       id: 'gemini-flash',
       name: 'Gemini 3 Flash',
@@ -76,54 +63,40 @@ export class SynthesizerCore {
       model: 'gemini-3-flash-preview',
       apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
-      rpm: 30,
+      rpm: 100,
       rpd: 10000,
       tier: 2,
       enabled: isGeminiEnabled()
     });
 
-    providers.set('groq-llama', {
-      id: 'groq-llama',
-      name: 'Groq Llama 3.3',
-      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-      model: 'llama-3.3-70b-versatile',
-      apiKeyEnv: 'GROQ_API_KEY',
-      maxTokens: 4096,
-      rpm: 60,
-      rpd: 15000,
-      tier: 2,
-      enabled: !!process.env.GROQ_API_KEY
-    });
-
     return providers;
+  }
+
+  /**
+   * RECOVERY PROTOCOL: Clears all blacklisted nodes.
+   */
+  public realignGrid() {
+    this.failedProviders.clear();
+    console.log("⚡ [Grid] All nodes re-initialized for synthesis.");
   }
 
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
     const now = Date.now();
-    
-    // Purge expired failures
-    for (const [id, expiry] of this.failedProviders.entries()) {
-      if (now > expiry) this.failedProviders.delete(id);
-    }
-
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
-    const taskComplexity = options.complexity || 2; 
+    const complexity = options.complexity || 2; 
 
-    // Filter available candidates
+    // filter and sort candidates by tier
     let candidates = Array.from(this.providers.values())
-      .filter(p => p.enabled && !this.failedProviders.has(p.id));
+      .filter(p => p.enabled && (!this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id) || 0)));
 
-    // Sort by tier alignment (Complexity 3 wants Tier 1, etc.)
     candidates.sort((a, b) => {
-      const distA = Math.abs(a.tier - (taskComplexity >= 3 ? 1 : 2));
-      const distB = Math.abs(b.tier - (taskComplexity >= 3 ? 1 : 2));
-      return distA - distB;
+      const targetTier = complexity >= 3 ? 1 : 2;
+      return Math.abs(a.tier - targetTier) - Math.abs(b.tier - targetTier);
     });
 
     if (candidates.length === 0) {
-      console.warn("⚠️ GRID DEPLETION: All nodes failed or disabled. Attempting emergency reset.");
-      this.failedProviders.clear();
+      this.realignGrid();
       candidates = Array.from(this.providers.values()).filter(p => p.enabled);
     }
 
@@ -132,74 +105,52 @@ export class SynthesizerCore {
         const apiKey = process.env[provider.apiKeyEnv];
         if (!apiKey) continue;
 
-        let content = "";
-        
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
-          const contents = [
-            ...history.map((h: any) => ({ 
-              role: h.role === 'user' ? 'user' : 'model', 
-              parts: [{ text: h.content }] 
-            })),
-            { role: 'user', parts: [{ text: prompt }] }
-          ];
-
           const res = await ai.models.generateContent({
             model: provider.model,
-            contents,
+            contents: [
+              ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
+              { role: 'user', parts: [{ text: prompt }] }
+            ],
             config: { 
               systemInstruction: systemPrompt,
-              maxOutputTokens: provider.maxTokens,
               temperature: 0.1,
               thinkingConfig: provider.thinkingBudget ? { thinkingBudget: provider.thinkingBudget } : undefined
             }
           });
-          content = res.text || "";
+          return { text: res.text, provider: provider.name };
         } else {
-          // OPENAI COMPATIBLE FETCH (DeepSeek, Groq, Grok)
+          // REST Fallback (OpenAI compatible)
           const res = await fetch(provider.endpoint, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model: provider.model,
-              messages: [
-                { role: 'system', content: systemPrompt },
-                ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
-                { role: 'user', content: prompt }
-              ],
-              temperature: 0.1,
-              max_tokens: provider.maxTokens
+              messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
+              temperature: 0.1
             })
           });
-
-          if (res.status === 429) throw new Error("RATELIMIT_EXCEEDED");
-          if (!res.ok) throw new Error(`NODE_ERROR_${res.status}`);
-          
+          if (!res.ok) throw new Error(`Node_Error_${res.status}`);
           const data = await res.json();
-          content = data.choices[0].message.content;
+          return { text: data.choices[0].message.content, provider: provider.name };
         }
-
-        if (content) return { text: content, provider: provider.name };
       } catch (e: any) {
-        // Blacklist node for 5 minutes if quota reached, 1 minute for others
-        const cooldown = e.message.includes('429') || e.message.includes('RATELIMIT') ? 300000 : 60000;
+        // Blacklist node for 10 mins if it's a 429
+        const cooldown = e.message.includes('429') ? 600000 : 60000;
         this.failedProviders.set(provider.id, Date.now() + cooldown);
-        console.error(`🔴 Node Failure [${provider.name}]:`, e.message);
+        console.warn(`🔴 [Grid] Node ${provider.name} saturated. Failover initiated.`);
       }
     }
-
-    throw new Error("AI Alert: Global Synthesis Failure. All engines on the grid are currently unreachable or saturated.");
-  }
-
-  public realignGrid() {
-    this.failedProviders.clear();
+    throw new Error("AI Alert: Global Synthesis Failure. All engines saturated.");
   }
 
   public getProviderStatus() {
+    const now = Date.now();
     return Array.from(this.providers.values()).map(p => ({
       id: p.id,
       name: p.name,
-      status: !p.enabled ? 'disabled' : this.failedProviders.has(p.id) ? 'saturated' : 'active',
+      status: !p.enabled ? 'disabled' : (this.failedProviders.has(p.id) && now < (this.failedProviders.get(p.id) || 0)) ? 'saturated' : 'active',
       tier: p.tier
     }));
   }
@@ -211,6 +162,4 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-export const synthesize = (prompt: string, options: any = {}) => {
-  return getSynthesizer().synthesize(prompt, options);
-};
+export const synthesize = (prompt: string, options: any = {}) => getSynthesizer().synthesize(prompt, options);
