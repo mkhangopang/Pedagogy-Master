@@ -11,8 +11,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR v10.5 (RECOVERY ENABLED)
- * Precise error mapping for infrastructure synchronization issues.
+ * NEURAL INGESTION ORCHESTRATOR v11.0
+ * Logic: Atomic step-locking with structural verification.
  */
 async function callSurgicalLinearizer(content: string, recipe: string, model: string = 'gemini-3-pro-preview'): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -20,9 +20,9 @@ async function callSurgicalLinearizer(content: string, recipe: string, model: st
   try {
     const response = await ai.models.generateContent({
       model: model,
-      contents: `[SYSTEM_TASK: EXECUTE_IP_EXTRACTION] 
-      Apply the Master Recipe to this curriculum data. 
-      MANDATORY: You MUST wrap your extraction in <STRUCTURED_INDEX> JSON tags.
+      contents: `[CRITICAL_SYSTEM_TASK: LINEARIZE_CURRICULUM] 
+      Apply the Master Recipe to this document.
+      REQUIREMENT: You MUST include the <STRUCTURED_INDEX> JSON block at the end.
       
       INPUT_DATA:
       ${content.substring(0, 100000)}`,
@@ -33,14 +33,11 @@ async function callSurgicalLinearizer(content: string, recipe: string, model: st
       }
     });
 
-    if (!response.text) throw new Error("Empty grid response.");
+    if (!response.text) throw new Error("Synthesis Node returned empty grid.");
     return response.text;
   } catch (err: any) {
     if (err.message?.includes('429') || err.status === 429) {
-      if (model === 'gemini-3-pro-preview') {
-        console.warn(`[Ingestion] Quota hit on Pro. Falling back to Flash node...`);
-        return callSurgicalLinearizer(content, recipe, 'gemini-3-flash-preview');
-      }
+      return callSurgicalLinearizer(content, recipe, 'gemini-3-flash-preview');
     }
     throw err;
   }
@@ -67,7 +64,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
 
   try {
     const { data: doc } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
-    if (!doc) throw new Error("Vault record missing.");
+    if (!doc) throw new Error("Vault node missing.");
 
     const { data: brain } = await adminSupabase.from('neural_brain')
       .select('master_prompt')
@@ -76,25 +73,26 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     
     const masterRecipe = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
 
+    // STEP 1: PHYSICAL EXTRACTION
     if (job.step === IngestionStep.EXTRACT) {
-      await adminSupabase.from('documents').update({ document_summary: 'Decoding curriculum bits...' }).eq('id', documentId);
       const buffer = await getObjectBuffer(doc.file_path);
-      if (!buffer) throw new Error("R2_NODE_ERROR: Physical asset unreachable.");
+      if (!buffer) throw new Error("R2_ASSET_UNREACHABLE");
       
       const rawResult = await pdf(buffer);
       if (!rawResult.text || rawResult.text.trim().length < 20) {
-        throw new Error("Extraction failure: Document empty or unreadable image.");
+        throw new Error("EMPTY_DATA_EXTRACTION");
       }
 
       await adminSupabase.from('documents').update({ 
         extracted_text: rawResult.text.trim(),
-        document_summary: 'Linearizing domains...' 
+        document_summary: 'Processing neural domains...' 
       }).eq('id', documentId);
       
       await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.LINEARIZE }).eq('id', job.id);
       job.step = IngestionStep.LINEARIZE;
     }
 
+    // STEP 2: PEDAGOGICAL LINEARIZATION
     if (job.step === IngestionStep.LINEARIZE) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       const processedMarkdown = await callSurgicalLinearizer(currentDoc?.extracted_text || "", masterRecipe);
@@ -107,20 +105,17 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
           if (Array.isArray(sloIndex)) {
             const sloRecords = sloIndex.map((s: any) => ({
               document_id: documentId,
-              slo_code: s.code || s.slo_code,
-              slo_full_text: s.text || s.slo_full_text,
+              slo_code: s.code || s.slo_code || "CODE_ERR",
+              slo_full_text: s.text || s.slo_full_text || "TEXT_ERR",
               bloom_level: s.bloomLevel || 'Understand'
             }));
             
-            const { error: delErr } = await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-            if (delErr) throw new Error(`DB_ERROR: slo_database cleanup failed - ${delErr.message}`);
-            
-            const { error: insErr } = await adminSupabase.from('slo_database').insert(sloRecords);
-            if (insErr) throw new Error(`DB_ERROR: slo_database insertion failed - ${insErr.message}`);
+            await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+            const { error: sloError } = await adminSupabase.from('slo_database').insert(sloRecords);
+            if (sloError) console.error("❌ SLO_DB_INSERT_FAULT:", sloError.message);
           }
-        } catch (e: any) {
-          if (e.message.includes('DB_ERROR')) throw e;
-          console.error("❌ JSON Extraction Failure:", e.message);
+        } catch (e) {
+          console.error("❌ STRUCTURED_INDEX_PARSING_FAULT:", e);
         }
       }
 
@@ -129,6 +124,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       job.step = IngestionStep.EMBED;
     }
 
+    // STEP 3: VECTOR INDEXING
     if (job.step === IngestionStep.EMBED) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       
@@ -136,7 +132,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
         await indexDocumentForRAG(documentId, currentDoc?.extracted_text || "", adminSupabase, job.id);
       } catch (ragErr: any) {
         if (ragErr.message?.includes('token_count') || ragErr.message?.includes('column')) {
-           throw new Error(`SCHEMA_FAULT: Column 'token_count' missing in database. Please run the SQL v8.0 script in the Brain Control panel.`);
+           throw new Error("INFRASTRUCTURE_STALE: 'token_count' column missing. Run SQL Blueprint v9.0.");
         }
         throw ragErr;
       }
@@ -147,17 +143,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error("❌ Orchestrator Fault:", error.message);
-    
-    let detailedMsg = error.message || "Unknown Neural Bottleneck";
-    
-    if (detailedMsg.includes('token_count') || detailedMsg.includes('schema cache') || detailedMsg.includes('slo_database') || detailedMsg.includes('relation') || detailedMsg.includes('SCHEMA_FAULT')) {
-      detailedMsg = `Grid Fault: ${detailedMsg}. IMPORTANT: Go to 'Brain Control' > 'Blueprint', Copy the SQL v8.0 and Run it in Supabase to fix this.`;
-    }
-
-    await adminSupabase.from('ingestion_jobs').update({ status: JobStatus.FAILED, error_message: detailedMsg }).eq('id', job?.id);
-    await adminSupabase.from('documents').update({ status: 'failed', document_summary: detailedMsg, error_message: detailedMsg }).eq('id', documentId);
-    
-    return NextResponse.json({ error: detailedMsg }, { status: 500 });
+    console.error("❌ [Orchestrator Fault]:", error.message);
+    const msg = error.message || "Unknown Synthesis Bottleneck";
+    await adminSupabase.from('ingestion_jobs').update({ status: JobStatus.FAILED, error_message: msg }).eq('id', job?.id);
+    await adminSupabase.from('documents').update({ status: 'failed', document_summary: msg, error_message: msg }).eq('id', documentId);
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

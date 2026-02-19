@@ -39,17 +39,17 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v8.0
- * MANDATORY: RUN THIS IN SUPABASE SQL EDITOR TO FIX 'SCHEMA CACHE' ERRORS.
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v9.0 (ULTIMATE REPAIR)
+ * MANDATORY: RUN THIS IN SUPABASE SQL EDITOR TO FIX ALL SCHEMA ERRORS.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v8.0
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v9.0
 -- ==========================================
 
 -- 1. Ensure Vector Extension
 create extension if not exists vector;
 
--- 2. FIX: Convert id from UUID to TEXT if necessary for neural_brain
+-- 2. Repair neural_brain (Fixing id type)
 DO $$ 
 BEGIN 
     IF (SELECT data_type FROM information_schema.columns WHERE table_name = 'neural_brain' AND column_name = 'id') = 'uuid' THEN
@@ -57,62 +57,38 @@ BEGIN
     END IF;
 END $$;
 
--- 3. CHUNK TABLE MIGRATIONS (FIX FOR TOKEN_COUNT ERROR)
+-- 3. CHUNK TABLE REPAIR (Adding all missing performance columns)
 DO $$ BEGIN 
-  -- Ensure semantic_fingerprint exists
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='semantic_fingerprint') THEN
     ALTER TABLE public.document_chunks ADD COLUMN semantic_fingerprint text;
   END IF;
-  
-  -- Ensure token_count exists (This resolves the reported error)
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='token_count') THEN
-    ALTER TABLE public.document_chunks ADD COLUMN token_count int;
+    ALTER TABLE public.document_chunks ADD COLUMN token_count int DEFAULT 0;
   END IF;
-
-  -- Ensure chunk_index exists
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='chunk_index') THEN
     ALTER TABLE public.document_chunks ADD COLUMN chunk_index int;
   END IF;
 END $$;
 
--- 4. Add blueprint_sql to neural_brain if missing
+-- 4. BRAIN TABLE REPAIR
 DO $$ BEGIN 
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='neural_brain' AND column_name='blueprint_sql') THEN
     ALTER TABLE public.neural_brain ADD COLUMN blueprint_sql text;
   END IF;
 END $$;
 
--- 5. Create SLO Database
+-- 5. Create SLO Database (Crucial for "Sync Interrupted" fix)
 create table if not exists public.slo_database (
   id uuid primary key default uuid_generate_v4(),
   document_id uuid references public.documents(id) on delete cascade,
   slo_code text not null,
   slo_full_text text not null,
   bloom_level text,
+  metadata jsonb default '{}'::jsonb,
   created_at timestamp with time zone default now()
 );
 
--- 6. Create Retrieval Logs
-create table if not exists public.retrieval_logs (
-  id uuid primary key default uuid_generate_v4(),
-  user_id uuid references auth.users(id) on delete cascade,
-  query_text text,
-  top_chunk_ids uuid[],
-  confidence_score float,
-  latency_ms int,
-  provider_used text,
-  created_at timestamp with time zone default now()
-);
-
--- 7. Fix reload_schema_cache function
-create or replace function reload_schema_cache()
-returns void language plpgsql security definer as $$
-begin
-  notify pgrst, 'reload schema';
-end;
-$$;
-
--- 8. Ensure Ingestion Jobs table exists
+-- 6. Ingestion Tracking
 create table if not exists public.ingestion_jobs (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
   document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
@@ -124,14 +100,34 @@ create table if not exists public.ingestion_jobs (
   updated_at timestamp with time zone DEFAULT now()
 );
 
--- 9. Permissions & Forced Cache Reload
+-- 7. RAG Health View (For Audit Dashboard)
+create or replace view public.rag_health_report as
+select 
+  d.id, d.name, d.status,
+  (select count(*) from document_chunks where document_id = d.id) as chunk_count,
+  (select count(*) from slo_database where document_id = d.id) as slo_count,
+  case 
+    when d.status = 'ready' and (select count(*) from document_chunks where document_id = d.id) > 0 then 'HEALTHY'
+    when d.status = 'ready' then 'BROKEN_EMPTY'
+    else 'IN_PROGRESS'
+  end as health_status
+from documents d;
+
+-- 8. Core Cache Function
+create or replace function reload_schema_cache()
+returns void language plpgsql security definer as $$
+begin
+  notify pgrst, 'reload schema';
+end;
+$$;
+
+-- 9. Ultimate Permission Refresh
 grant execute on function reload_schema_cache to authenticated, anon, service_role;
 grant all on public.slo_database to authenticated, service_role;
 grant all on public.ingestion_jobs to authenticated, service_role;
-grant all on public.retrieval_logs to authenticated, service_role;
 grant all on public.document_chunks to authenticated, service_role;
 
--- FINAL STEP: Trigger API Schema Refresh
+-- 10. Execute Cache Clear
 SELECT reload_schema_cache();
 `;
 

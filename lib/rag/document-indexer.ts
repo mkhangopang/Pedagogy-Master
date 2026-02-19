@@ -4,8 +4,8 @@ import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 import { Buffer } from 'buffer';
 
 /**
- * ADVANCED STRUCTURE-AWARE INDEXER (v6.0)
- * Logic: Tree-based chunk graph with "Universal Document Hierarchy" context injection.
+ * ADVANCED STRUCTURE-AWARE INDEXER (v7.0)
+ * Logic: Tree-based chunk graph with Explicit Performance Metrics.
  */
 export async function indexDocumentForRAG(
   documentId: string,
@@ -25,7 +25,6 @@ export async function indexDocumentForRAG(
     let buffer = "";
     let codesInChunk = new Set<string>();
 
-    // 1. Structural Decomposition with Hierarchy Carry-Forward
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
@@ -46,13 +45,10 @@ export async function indexDocumentForRAG(
 
       buffer += (buffer ? '\n' : '') + line;
 
-      // Adaptive Chunking with Contextual Headers
       if (buffer.length >= 1000 || i === lines.length - 1) {
         const fingerprint = Buffer.from(buffer.trim()).toString('base64').substring(0, 50);
-        
-        // SURGICAL CONTEXT: Every chunk knows its parent hierarchy
-        const contextHeader = `[NODE_PATH: ${currentSubject} > ${currentGrade} > ${currentDomain}]\n`;
-        const enrichedText = contextHeader + buffer.trim();
+        const contextPath = `[NODE_PATH: ${currentSubject} > ${currentGrade} > ${currentDomain}]`;
+        const enrichedText = `${contextPath}\n${buffer.trim()}`;
 
         nodes.push({
           text: enrichedText,
@@ -63,7 +59,7 @@ export async function indexDocumentForRAG(
             domain: currentDomain,
             slo_codes: Array.from(codesInChunk),
             dialect,
-            tokens: Math.ceil(enrichedText.length / 4)
+            tokens: Math.max(1, Math.ceil(enrichedText.length / 4))
           }
         });
 
@@ -72,47 +68,36 @@ export async function indexDocumentForRAG(
       }
     }
 
-    // 2. Batch Processing with Deduplication
-    const BATCH_SIZE = 10; 
+    const BATCH_SIZE = 5; 
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
       
       if (jobId) {
         await supabase.from('ingestion_jobs').update({ 
-          payload: { processed: i, total: nodes.length, status: 'embedding_vectors' } 
+          payload: { processed: i, total: nodes.length, status: 'generating_vectors' } 
         }).eq('id', jobId);
       }
 
-      const fingerprints = batch.map(n => n.fingerprint);
-      const { data: existing } = await supabase.from('document_chunks')
-        .select('semantic_fingerprint')
-        .in('semantic_fingerprint', fingerprints);
+      const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
       
-      const existingFp = new Set(existing?.map(e => e.semantic_fingerprint) || []);
-      const toProcess = batch.filter(n => !existingFp.has(n.fingerprint));
-      
-      if (toProcess.length > 0) {
-        const embeddings = await generateEmbeddingsBatch(toProcess.map(n => n.text));
-        
-        const records = toProcess.map((node, j) => ({
-          document_id: documentId,
-          chunk_text: node.text,
-          embedding: embeddings[j],
-          slo_codes: node.metadata.slo_codes,
-          semantic_fingerprint: node.fingerprint,
-          token_count: node.metadata.tokens,
-          metadata: node.metadata,
-          chunk_index: i + j
-        }));
+      const records = batch.map((node, j) => ({
+        document_id: documentId,
+        chunk_text: node.text,
+        embedding: embeddings[j],
+        slo_codes: node.metadata.slo_codes,
+        semantic_fingerprint: node.fingerprint,
+        token_count: node.metadata.tokens,
+        chunk_index: i + j,
+        metadata: node.metadata
+      }));
 
-        const { error: insertError } = await supabase.from('document_chunks').insert(records);
-        if (insertError) throw insertError;
-      }
+      const { error: insertError } = await supabase.from('document_chunks').insert(records);
+      if (insertError) throw insertError;
     }
 
     return { success: true, count: nodes.length };
   } catch (error: any) {
-    console.error("❌ [Indexer Fatal]:", error.message);
+    console.error("❌ [Indexer Fault]:", error.message);
     throw error;
   }
 }
