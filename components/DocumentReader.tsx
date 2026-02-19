@@ -5,7 +5,7 @@ import {
   X, Copy, Check, Search, LayoutList, 
   BrainCircuit, History, RefreshCw, Layers, 
   BookOpen, Hash, ArrowRight, ShieldCheck,
-  FileCode, Terminal, AlertTriangle, Zap
+  FileCode, Terminal, AlertTriangle, Zap, Loader2
 } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
@@ -33,6 +33,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   const [slos, setSlos] = useState<SloRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isReindexing, setIsReindexing] = useState(false);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
 
   const fetchSlos = async () => {
     setLoading(true);
@@ -48,6 +49,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       
       const data = await res.json();
       setSlos(data.slos || []);
+      setJobStatus(data.status);
     } catch (e) {
       console.error("Ledger Fetch Error:", e);
     } finally {
@@ -56,6 +58,11 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   };
 
   const handleReindex = async () => {
+    if (jobStatus === 'processing' || jobStatus === 'indexing') {
+      alert("A background task is already active for this document.");
+      return;
+    }
+
     setIsReindexing(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -67,11 +74,12 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       });
 
       if (res.ok) {
-        alert("Re-indexing started. This view will refresh once the neural grid completes the extraction.");
-        onClose(); // Close to allow background processing
+        alert("Re-indexing started. The neural grid is extracting surgical artifacts.");
+        setJobStatus('processing');
+        // Initial wait then start polling implicitly by keeping UI in loading state if desired
       } else {
         const err = await res.json();
-        alert("Grid Fault: " + (err.error || "Extraction refused."));
+        alert(err.error || "Extraction refused.");
       }
     } catch (e) {
       alert("Connectivity error.");
@@ -107,6 +115,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     return groups;
   }, [slos, searchTerm]);
 
+  const isWorking = jobStatus === 'processing' || jobStatus === 'indexing' || jobStatus === 'draft';
+
   return (
     <div className="fixed inset-0 z-[500] bg-white dark:bg-[#020202] flex flex-col animate-in fade-in duration-300 overflow-hidden text-left">
       <header className="h-20 border-b dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-8 shrink-0 z-50 shadow-sm">
@@ -118,7 +128,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             <h2 className="text-xs font-black uppercase tracking-[0.2em] dark:text-white truncate max-w-sm">{activeDoc.name}</h2>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded">Surgical Ledger Node</span>
-              <span className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest px-2 py-0.5 bg-emerald-50 dark:bg-emerald-950/20 rounded">Verified Grid</span>
+              <span className={`text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${isWorking ? 'bg-amber-50 text-amber-500 animate-pulse' : 'bg-emerald-50 text-emerald-500'}`}>
+                {isWorking ? 'Grid Processing' : 'Verified Grid'}
+              </span>
             </div>
           </div>
         </div>
@@ -218,27 +230,33 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           ) : (
             <div className="flex flex-col items-center justify-center py-40 text-center animate-in zoom-in-95 duration-700">
                <div className="w-24 h-24 bg-amber-50 dark:bg-amber-950/20 rounded-[2.5rem] flex items-center justify-center mb-10 text-amber-600">
-                 <AlertTriangle size={48} />
+                 {isWorking ? <Loader2 size={48} className="animate-spin" /> : <AlertTriangle size={48} />}
                </div>
-               <h3 className="text-2xl font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">Sync Protocol Interrupted</h3>
+               <h3 className="text-2xl font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">
+                 {isWorking ? 'Extraction in Progress' : 'Sync Protocol Interrupted'}
+               </h3>
                <p className="text-sm font-medium text-slate-500 max-w-sm mt-4 leading-relaxed italic">
-                 The curriculum ledger for this document is currently empty. This happens if the document was uploaded before the database migration.
+                 {isWorking 
+                   ? 'The neural grid is currently linearizing your document. Click refresh below to check for completion.' 
+                   : 'The curriculum ledger for this document is currently empty. This happens if the document was uploaded before the database migration.'}
                </p>
                <div className="flex gap-4 mt-12">
                  <button 
                    onClick={fetchSlos}
                    className="flex items-center gap-3 px-8 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-sm hover:bg-slate-200 transition-all"
                  >
-                   <RefreshCw size={16} /> Refresh Grid
+                   <RefreshCw size={16} /> {isWorking ? 'Poll Node' : 'Refresh Grid'}
                  </button>
-                 <button 
-                   onClick={handleReindex}
-                   disabled={isReindexing}
-                   className="flex items-center gap-3 px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
-                 >
-                   {isReindexing ? <RefreshCw className="animate-spin" size={16}/> : <Zap size={16} />} 
-                   {isReindexing ? 'Analyzing...' : 'Repair & Re-Index'}
-                 </button>
+                 {!isWorking && (
+                   <button 
+                     onClick={handleReindex}
+                     disabled={isReindexing}
+                     className="flex items-center gap-3 px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                   >
+                     {isReindexing ? <RefreshCw className="animate-spin" size={16}/> : <Zap size={16} />} 
+                     {isReindexing ? 'Analyzing...' : 'Repair & Re-Index'}
+                   </button>
+                 )}
                </div>
             </div>
           )}
@@ -247,8 +265,10 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
       <footer className="h-12 border-t dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-10 shrink-0 z-50">
          <div className="flex items-center gap-3">
-           <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-           <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em]">Master Protocol Active</span>
+           <div className={`w-2 h-2 rounded-full ${isWorking ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
+           <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em]">
+             {isWorking ? 'Grid Orchestration Active' : 'Master Protocol Active'}
+           </span>
          </div>
          <span className="text-[8px] font-black text-slate-300 uppercase tracking-[0.2em]">Institutional Alignment Verified</span>
       </footer>

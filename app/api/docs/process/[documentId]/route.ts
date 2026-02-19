@@ -11,8 +11,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 /**
- * NEURAL INGESTION ORCHESTRATOR v9.9 (RE-ALIGNED)
- * Enhanced with robust JSON extraction and error recovery.
+ * NEURAL INGESTION ORCHESTRATOR v10.0 (GRANULAR)
+ * Advanced parsing with step-specific diagnostic output.
  */
 async function callSurgicalLinearizer(content: string, recipe: string, model: string = 'gemini-3-pro-preview'): Promise<string> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -22,7 +22,7 @@ async function callSurgicalLinearizer(content: string, recipe: string, model: st
       model: model,
       contents: `[SYSTEM_TASK: EXECUTE_IP_EXTRACTION] 
       Apply the Master Recipe to this curriculum data. 
-      MANDATORY: Output valid Markdown AND the <STRUCTURED_INDEX> JSON block.
+      MANDATORY: You MUST wrap your extraction in <STRUCTURED_INDEX> JSON tags.
       
       INPUT_DATA:
       ${content.substring(0, 100000)}`,
@@ -102,10 +102,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       const indexMatch = processedMarkdown.match(/<STRUCTURED_INDEX>([\s\S]+?)<\/STRUCTURED_INDEX>/);
       if (indexMatch) {
         try {
-          let jsonStr = indexMatch[1].trim();
-          // Remove potential markdown code fences inside the tags
-          jsonStr = jsonStr.replace(/```json|```/g, '').trim();
-          
+          let jsonStr = indexMatch[1].trim().replace(/```json|```/g, '').trim();
           const sloIndex = JSON.parse(jsonStr);
           if (Array.isArray(sloIndex)) {
             const sloRecords = sloIndex.map((s: any) => ({
@@ -115,12 +112,14 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
               bloom_level: s.bloomLevel || 'Understand'
             }));
             
-            // Delete old entries and insert new ones
-            await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-            const { error: sloError } = await adminSupabase.from('slo_database').insert(sloRecords);
-            if (sloError) console.error("❌ SLO DB Insert Fault:", sloError.message);
+            const { error: delErr } = await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+            if (delErr) throw new Error(`TABLE_ERROR: slo_database cleanup failed - ${delErr.message}`);
+            
+            const { error: insErr } = await adminSupabase.from('slo_database').insert(sloRecords);
+            if (insErr) throw new Error(`TABLE_ERROR: slo_database insertion failed - ${insErr.message}`);
           }
         } catch (e: any) {
+          if (e.message.includes('TABLE_ERROR')) throw e;
           console.error("❌ JSON Extraction Failure:", e.message);
         }
       }
@@ -132,10 +131,7 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
 
     if (job.step === IngestionStep.EMBED) {
       const { data: currentDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
-      
-      // Perform Vector Indexing
       await indexDocumentForRAG(documentId, currentDoc?.extracted_text || "", adminSupabase, job.id);
-      
       await adminSupabase.from('ingestion_jobs').update({ step: IngestionStep.FINALIZE, status: JobStatus.COMPLETED }).eq('id', job.id);
       await adminSupabase.from('documents').update({ status: 'ready', rag_indexed: true, document_summary: 'Neural alignment verified.' }).eq('id', documentId);
     }
@@ -146,8 +142,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
     
     let detailedMsg = error.message || "Unknown Neural Bottleneck";
     
-    if (detailedMsg.includes('semantic_fingerprint') || detailedMsg.includes('cache') || detailedMsg.includes('slo_database')) {
-      detailedMsg = "Infrastructure Desync: Database tables missing. Go to 'Brain Control' and click 'Re-Sync Grid' to repair.";
+    if (detailedMsg.includes('slo_database') || detailedMsg.includes('relation') || detailedMsg.includes('TABLE_ERROR')) {
+      detailedMsg = `Grid Fault: ${detailedMsg}. Ensure you ran SQL v7.6 in Supabase.`;
     }
 
     await adminSupabase.from('ingestion_jobs').update({ status: JobStatus.FAILED, error_message: detailedMsg }).eq('id', job?.id);

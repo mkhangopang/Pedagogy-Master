@@ -39,11 +39,11 @@ Please log in to the Admin Dashboard to commit the Master Recipe (IP).
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v7.5
- * Includes mandatory 'slo_database' and 'retrieval_logs' for surgical grounding.
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v7.6
+ * Includes mandatory 'slo_database' and 'ingestion_jobs' with explicit permissions.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.5
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v7.6
 -- ==========================================
 
 -- 1. Ensure Vector Extension
@@ -71,7 +71,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 5. Create SLO Database (CRITICAL FIX)
+-- 5. Create SLO Database
 create table if not exists public.slo_database (
   id uuid primary key default uuid_generate_v4(),
   document_id uuid references public.documents(id) on delete cascade,
@@ -81,7 +81,7 @@ create table if not exists public.slo_database (
   created_at timestamp with time zone default now()
 );
 
--- 6. Create Retrieval Logs for diagnostics
+-- 6. Create Retrieval Logs
 create table if not exists public.retrieval_logs (
   id uuid primary key default uuid_generate_v4(),
   user_id uuid references auth.users(id) on delete cascade,
@@ -101,10 +101,6 @@ begin
 end;
 $$;
 
-grant execute on function reload_schema_cache to authenticated;
-grant execute on function reload_schema_cache to anon;
-grant execute on function reload_schema_cache to service_role;
-
 -- 8. Ensure Ingestion Jobs table exists
 create table if not exists public.ingestion_jobs (
   id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -116,6 +112,12 @@ create table if not exists public.ingestion_jobs (
   payload jsonb, 
   updated_at timestamp with time zone DEFAULT now()
 );
+
+-- 9. Permissions Refresh
+grant execute on function reload_schema_cache to authenticated, anon, service_role;
+grant all on public.slo_database to authenticated, service_role;
+grant all on public.ingestion_jobs to authenticated, service_role;
+grant all on public.retrieval_logs to authenticated, service_role;
 `;
 
 export const NUCLEAR_GROUNDING_DIRECTIVE = `🚨 CONTEXT LOCK: ACTIVE 🚨`;
