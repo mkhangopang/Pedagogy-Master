@@ -3,7 +3,7 @@ import {
   RefreshCw, Zap, Check, ShieldCheck, Cpu, Activity, Layers, 
   Rocket, TrendingUp, Copy, Lock, FileCode, Search, Database, 
   AlertTriangle, CheckCircle2, X, Loader2, DatabaseZap, Terminal,
-  ShieldAlert, Settings2, Save, Wrench, RotateCcw
+  ShieldAlert, Settings2, Save, Wrench, RotateCcw, WrenchIcon
 } from 'lucide-react';
 import { NeuralBrain, JobStatus, IngestionStep } from '../types';
 import { supabase } from '../lib/supabase';
@@ -28,8 +28,8 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     if (brain) {
       setFormData(prev => ({
         ...prev,
-        masterPrompt: brain.masterPrompt || prev.masterPrompt,
-        blueprintSql: brain.blueprintSql || prev.blueprintSql,
+        masterPrompt: brain.masterPrompt || prev.masterPrompt || DEFAULT_MASTER_PROMPT,
+        blueprintSql: brain.blueprintSql || prev.blueprintSql || LATEST_SQL_BLUEPRINT,
         version: brain.version || prev.version,
         updatedAt: brain.updatedAt || prev.updatedAt
       }));
@@ -93,6 +93,10 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       alert("System persistent state synchronized.");
     } catch (e: any) {
       setSyncError(e.message);
+      if (e.message.includes('blueprint_sql')) {
+        setActiveTab('blueprint');
+        alert("SCHEMA ERROR: Missing database columns. Switched to Blueprint tab for repair.");
+      }
     } finally { setIsSaving(false); }
   };
 
@@ -111,17 +115,19 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       alert("Neural Grid Re-aligned: Cache purged.");
     } catch (e: any) {
       console.error(e);
-      setSyncError("RPC 'reload_schema_cache' missing or permission denied. Ensure you are an Admin and have run the SQL Blueprint.");
+      setSyncError("RPC 'reload_schema_cache' missing or permission denied. Please run the SQL Blueprint in Supabase first.");
       alert("Fault: " + e.message);
     } finally { setIsResyncing(false); }
   };
 
   const handleCopyBlueprint = () => {
-    if (!formData.blueprintSql) return;
-    navigator.clipboard.writeText(formData.blueprintSql);
+    const sql = formData.blueprintSql || LATEST_SQL_BLUEPRINT;
+    navigator.clipboard.writeText(sql);
     setCopiedBlueprint(true);
     setTimeout(() => setCopiedBlueprint(false), 2000);
   };
+
+  const isSchemaError = syncError?.includes('blueprint_sql') || syncError?.includes('column');
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20 px-2 text-left">
@@ -135,28 +141,46 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         </div>
         
         <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 shadow-inner overflow-x-auto no-scrollbar">
-          {['prompt', 'blueprint', 'ingestion'].map(tab => (
+          {[
+            { id: 'prompt', label: 'Prompt' },
+            { id: 'blueprint', label: 'Blueprint' },
+            { id: 'ingestion', label: 'Telemetry' }
+          ].map(tab => (
             <button 
-              key={tab} 
-              onClick={() => setActiveTab(tab as any)} 
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-indigo-600'}`}
+              key={tab.id} 
+              onClick={() => setActiveTab(tab.id as any)} 
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all whitespace-nowrap ${activeTab === tab.id ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-indigo-600'}`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
       </header>
 
       {syncError && (
-        <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-2xl flex items-start gap-3 text-rose-600 animate-in slide-in-from-top-2">
-          <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="text-[10px] font-black uppercase tracking-widest">Protocol Fault</p>
-            <p className="text-xs font-medium leading-relaxed">{syncError}</p>
+        <div className={`p-6 rounded-[2rem] border flex flex-col md:flex-row items-start md:items-center gap-6 animate-in slide-in-from-top-2 ${isSchemaError ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-rose-50 border-rose-100 text-rose-600'}`}>
+          <div className="flex items-center gap-3 shrink-0">
+            <AlertTriangle size={24} className={isSchemaError ? 'text-amber-600' : 'text-rose-500'} />
+            <div className="space-y-0.5">
+              <p className="text-[10px] font-black uppercase tracking-widest">System Alert</p>
+              <p className="text-sm font-bold leading-tight">{isSchemaError ? 'Database Migration Required' : 'Protocol Fault'}</p>
+            </div>
           </div>
-          <button onClick={() => setSyncError(null)} className="ml-auto p-1 hover:bg-rose-100 rounded-lg">
-            <X size={14} />
-          </button>
+          
+          <div className="flex-1 text-xs font-medium opacity-80 leading-relaxed">
+            {isSchemaError 
+              ? "Your database is missing the 'blueprint_sql' column. Copy the script from the Blueprint tab and run it in your Supabase SQL Editor." 
+              : syncError}
+          </div>
+
+          <div className="flex gap-2 ml-auto shrink-0">
+             {isSchemaError && (
+               <button onClick={() => setActiveTab('blueprint')} className="px-5 py-2.5 bg-amber-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-md">Fix Schema</button>
+             )}
+             <button onClick={() => setSyncError(null)} className="p-2 hover:bg-black/5 rounded-lg transition-colors">
+               <X size={16} />
+             </button>
+          </div>
         </div>
       )}
 
@@ -205,28 +229,36 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            <div className="flex items-center justify-between">
               <div>
                  <h3 className="text-xl font-black uppercase tracking-tight dark:text-white">Infrastructure Blueprint SQL</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Infrastructure Standards v7.1</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Infrastructure Standards v7.2</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={handleResetBlueprint} className="flex items-center gap-3 px-6 py-3 bg-amber-50 dark:bg-amber-950/20 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-100 transition-all">
-                   <RotateCcw size={14}/> Sync with System
+                   <RotateCcw size={14}/> Reset to Master
                 </button>
                 <button onClick={handleCopyBlueprint} className="flex items-center gap-3 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">
-                   {copiedBlueprint ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>} {copiedBlueprint ? 'Blueprint Copied' : 'Copy SQL'}
+                   {copiedBlueprint ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>} {copiedBlueprint ? 'Script Copied' : 'Copy Repair SQL'}
                 </button>
                 <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-3 px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg">
                    {isSaving ? <RefreshCw className="animate-spin" size={14}/> : <DatabaseZap size={14}/>} Save Changes
                 </button>
               </div>
            </div>
-           <p className="text-xs text-slate-500 font-medium leading-relaxed italic">
-             Copy and run this in your <b>Supabase SQL Editor</b> to resolve "Column not found" errors.
-           </p>
+           
+           <div className="p-8 bg-indigo-50 dark:bg-indigo-950/20 border-l-4 border-indigo-500 rounded-r-[2rem] space-y-2">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-indigo-600">How to Fix "Column Not Found"</h4>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed italic font-medium">
+                1. Click <b>"Copy Repair SQL"</b> above.<br />
+                2. Go to your <b>Supabase Dashboard</b> > SQL Editor.<br />
+                3. Paste and <b>Run</b> the script.<br />
+                4. Return here and click <b>"Re-Sync Grid"</b> on the Prompt tab.
+              </p>
+           </div>
+
            <textarea 
-              value={formData.blueprintSql || ''}
+              value={formData.blueprintSql || LATEST_SQL_BLUEPRINT}
               onChange={(e) => setFormData({...formData, blueprintSql: e.target.value})}
               className="w-full h-[600px] p-8 bg-slate-900 dark:bg-black text-emerald-400 border border-slate-700 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
-              placeholder="-- Paste Master Infrastructure SQL v7.1 here..."
+              placeholder="-- Master Infrastructure SQL v7.2 --"
             />
         </div>
       )}

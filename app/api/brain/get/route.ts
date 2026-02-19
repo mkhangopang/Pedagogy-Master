@@ -5,8 +5,8 @@ import { DEFAULT_MASTER_PROMPT, LATEST_SQL_BLUEPRINT } from '../../../../constan
 export const dynamic = 'force-dynamic';
 
 /**
- * NEURAL BRAIN RETRIEVAL (v11.1)
- * Logic: Fetches the stored system IP using Admin Client to bypass RLS.
+ * NEURAL BRAIN RETRIEVAL (v11.2 - RESILIENT)
+ * Logic: Fetches system IP. Fallbacks to default constants if columns are missing in DB.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -14,18 +14,40 @@ export async function GET(req: NextRequest) {
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-    // We verify the token is valid first
     const userClient = getSupabaseServerClient(token);
     const { data: { user }, error: authError } = await userClient.auth.getUser();
     if (authError || !user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
     const adminSupabase = getSupabaseAdminClient();
     
-    const { data: brain, error } = await adminSupabase
+    // TIER 1: Full attempt
+    let { data: brain, error } = await adminSupabase
       .from('neural_brain')
       .select('id, master_prompt, blueprint_sql, version, is_active, updated_at')
       .eq('id', 'system-brain')
       .maybeSingle();
+
+    // TIER 2: Fallback if 'blueprint_sql' column is missing (Schema Cache Outdated)
+    if (error && (error.message.includes('blueprint_sql') || error.code === 'PGRST204')) {
+      console.warn("⚠️ Database schema outdated: 'blueprint_sql' missing. Serving default.");
+      const { data: legacyBrain } = await adminSupabase
+        .from('neural_brain')
+        .select('id, master_prompt, version')
+        .eq('id', 'system-brain')
+        .maybeSingle();
+      
+      return NextResponse.json({
+        success: true,
+        brain: {
+          id: legacyBrain?.id || 'system-brain',
+          master_prompt: legacyBrain?.master_prompt || DEFAULT_MASTER_PROMPT,
+          blueprint_sql: LATEST_SQL_BLUEPRINT, // Provide hardcoded repair script
+          version: legacyBrain?.version || 0,
+          is_active: true,
+          updated_at: new Date().toISOString()
+        }
+      });
+    }
 
     if (error && error.code !== 'PGRST116') throw error;
 
