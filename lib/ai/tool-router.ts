@@ -17,55 +17,52 @@ export function detectToolIntent(userQuery: string): ToolRoute {
   const toolSignatures = {
     master_plan: {
       score: 0,
-      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy', 'curriculum map', 'scaffold', 'modeling', 'anticipatory', 'hook'],
-      phrases: ['how to teach', 'create a plan', 'lesson for', 'instructional sequence', 'design a class']
+      keywords: ['lesson', 'plan', 'teach', 'activity', 'instruction', '5e', 'madeline hunter', 'ubd', 'class', 'pedagogy', 'architecture', 'curriculum map'],
+      phrases: ['how to teach', 'create a plan', 'instructional architecture', 'design a lesson']
     },
     neural_quiz: {
       score: 0,
-      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'formative', 'summative', 'check for understanding', 'distractor', 'answer key', 'items'],
-      phrases: ['generate questions', 'make a quiz', 'test items', 'evaluate mastery', 'summative evaluation']
+      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'crq', 'formative', 'summative', 'check for understanding', 'answer key'],
+      phrases: ['generate questions', 'make a quiz', 'test items', 'standards-aligned quiz']
     },
     fidelity_rubric: {
       score: 0,
-      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'evaluate', 'scale', 'descriptor', 'performance task', 'success criteria', 'marking', 'competency'],
-      phrases: ['create a rubric', 'grade this', 'how to score', 'marking guide', 'analytical rubric']
+      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'descriptor', 'performance task', 'success criteria', 'marking', 'criterion'],
+      phrases: ['create a rubric', 'grade this', 'analytical rubric', 'fidelity rubric']
     },
     audit_tagger: {
       score: 0,
-      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'standard', 'alignment', 'mapping', 'audit', 'vertical alignment', 'gap analysis'],
-      phrases: ['tag this', 'align to standards', 'check slo', 'mapping standards', 'identify gaps']
+      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'audit', 'mapping', 'gap analysis', 'tagger', 'logic mapping'],
+      phrases: ['tag this', 'align to standards', 'audit report', 'curriculum analysis']
     }
   };
 
-  // 1. Calculate weighted scores (Keywords = 2, Multi-word Phrases = 5)
   Object.entries(toolSignatures).forEach(([tool, sig]) => {
     sig.keywords.forEach(kw => { if (query.includes(kw)) sig.score += 2; });
     sig.phrases.forEach(ph => { if (query.includes(ph)) sig.score += 5; });
   });
 
-  // 2. Resolve highest signal
   const sorted = Object.entries(toolSignatures).sort((a, b) => b[1].score - a[1].score);
   const bestTool = (sorted[0][1].score > 0 ? sorted[0][0] : 'master_plan') as ToolType;
   const bestScore = sorted[0][1].score;
   
-  // 3. Confidence Calculation
   const totalScore = Object.values(toolSignatures).reduce((acc, s) => acc + s.score, 0);
   const confidence = totalScore > 0 ? bestScore / totalScore : 0.5;
 
   return {
     tool: bestTool,
     confidence: bestScore > 0 ? confidence : 0.5,
-    reasoning: `Detected "${bestTool}" via ${bestScore} pedagogical weight signals.`
+    reasoning: `Routed to ${bestTool} via Brain v4.0 Signal Logic.`
   };
 }
 
 export function getToolDisplayName(toolId: ToolType | string | null): string {
   if (!toolId) return 'Synthesis Engine';
   const names: Record<string, string> = {
-    master_plan: 'Instructional Architect',
-    neural_quiz: 'Assessment Scientist',
-    fidelity_rubric: 'Evaluation Engineer',
-    audit_tagger: 'Curriculum Auditor'
+    master_plan: 'Master Plan',
+    neural_quiz: 'Neural Quiz',
+    fidelity_rubric: 'Fidelity Rubric',
+    audit_tagger: 'Audit Tagger'
   };
   return names[toolId as string] || 'Expert Node';
 }

@@ -3,12 +3,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, Loader2, 
-  FileText, Copy, ArrowRight, Printer, Share2, 
-  MessageSquare, FileEdit, Zap, GraduationCap,
-  ShieldCheck, Library,
-  ChevronLeft, Crown, Mail, Check, X,
-  PenTool, Compass, SearchCode, BookMarked, Globe2, Globe,
-  Play, Rocket, ArrowRightCircle
+  FileText, Copy, ArrowRight, PenTool, Compass, SearchCode, 
+  Zap, ChevronLeft, Library, Crown, Globe2, Globe, Check, X,
+  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -43,7 +40,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [localDocs, setLocalDocs] = useState<Document[]>(documents);
   const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
-  const [shareSuccess, setShareSuccess] = useState(false);
   
   const [workflowRecommendation, setWorkflowRecommendation] = useState<{tool: ToolType, reason: string} | null>(null);
   
@@ -61,7 +57,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     }
   }, [messages, isGenerating]);
 
-  // Parse Workflow tags from the synthesis
   useEffect(() => {
     if (!canvasContent || isGenerating) return;
     const match = canvasContent.match(/--- Workflow Recommendation:\s*(\w+)\s*\|\s*([^---]+)\s*---/i);
@@ -147,10 +142,8 @@ USER_QUERY: ${userInput}`;
 
   const handleWorkflowTransition = () => {
     if (!workflowRecommendation || isGenerating) return;
-    
     const previousArtifact = canvasContent.split('--- Workflow Recommendation')[0].trim();
     const toolName = getToolDisplayName(workflowRecommendation.tool);
-    
     setActiveTool(workflowRecommendation.tool);
     handleGenerate(`Based on the previous ${getToolDisplayName(activeTool)}, synthesize a ${toolName}.`, previousArtifact);
   };
@@ -158,37 +151,17 @@ USER_QUERY: ${userInput}`;
   const handleRichCopy = async () => {
     if (!canvasContent) return;
     const cleanText = canvasContent.split('--- Workflow Recommendation')[0].trim();
-    const renderedHtml = renderSTEM(cleanText);
-    
-    const styledHtml = `<div style="font-family: 'Segoe UI', sans-serif; line-height: 1.6; color: #1a1a1a; padding: 20px;">${renderedHtml}</div>`;
-
-    try {
-      const cleanPlainText = cleanText.replace(/[*#]/g, '').trim();
-      const textBlob = new Blob([cleanPlainText], { type: 'text/plain' });
-      const htmlBlob = new Blob([styledHtml], { type: 'text/html' });
-      const clipboardItem = new ClipboardItem({ 'text/plain': textBlob, 'text/html': htmlBlob });
-      await navigator.clipboard.write([clipboardItem]);
-      setCopySuccess(true);
-      setTimeout(() => setCopySuccess(false), 2000);
-    } catch (err) {
-      await navigator.clipboard.writeText(cleanText);
-      setCopySuccess(true);
-      setTimeout(() => setCopySuccess(false), 2000);
-    }
+    await navigator.clipboard.writeText(cleanText);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
   };
 
-  const toolDefinitions: { id: ToolType, name: string, icon: any, desc: string, color: string }[] = [
-    { id: 'master_plan', name: 'Master Plan', icon: BookOpen, desc: 'Instructional Architecture (5E/Madeline Hunter)', color: 'bg-indigo-600' },
-    { id: 'neural_quiz', name: 'Neural Quiz', icon: ClipboardCheck, desc: 'Bloom-Aligned Assessment Science', color: 'bg-emerald-600' },
-    { id: 'fidelity_rubric', name: 'Fidelity Rubric', icon: Layers, desc: 'Evaluation Engineering & Criteria', color: 'bg-amber-600' },
-    { id: 'audit_tagger', name: 'Audit Tagger', icon: SearchCode, desc: 'Standards Auditing & Gap Analysis', color: 'bg-cyan-600' },
+  const toolDefinitions: { id: ToolType, name: string, icon: any, desc: string, color: string, iconColor: string }[] = [
+    { id: 'master_plan', name: 'Master Plan', icon: BookOpen, desc: 'Architecture of Instruction (5E, Madeline Hunter, UbD)', color: 'bg-indigo-600', iconColor: 'text-white' },
+    { id: 'neural_quiz', name: 'Neural Quiz', icon: ClipboardCheck, desc: 'Standards-Aligned Assessment (MCQ, CRQ, Bloom Scaling)', color: 'bg-emerald-600', iconColor: 'text-white' },
+    { id: 'fidelity_rubric', name: 'Fidelity Rubric', icon: Layers, desc: 'Criterion-Based Assessment (Observable, Measurable Descriptors)', color: 'bg-amber-600', iconColor: 'text-white' },
+    { id: 'audit_tagger', name: 'Audit Tagger', icon: SearchCode, desc: 'SLO Logic Mapping (Curriculum Analysis, DOK, Gap ID)', color: 'bg-cyan-600', iconColor: 'text-white' },
   ];
-
-  const getRenderedContent = () => {
-    if (!canvasContent) return '';
-    const contentToParse = canvasContent.split('--- Workflow Recommendation')[0].trim();
-    return renderSTEM(contentToParse);
-  };
 
   if (!activeTool) {
     return (
@@ -198,14 +171,14 @@ USER_QUERY: ${userInput}`;
               <div className="flex items-center justify-between mb-8">
                  <div className="flex items-center gap-3">
                     <Library size={20} className="text-indigo-600" />
-                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Curriculum Vault</h3>
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Vault Selection</h3>
                  </div>
                  <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
               </div>
               <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
                  {localDocs.map(doc => (
                    <button key={doc.id} onClick={() => toggleDocContext(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}>
-                     <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Node ID: {doc.id.slice(0,8)}</span>
+                     <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Standard Node</span>
                      <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
                      <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} • {doc.subject}</p>
                    </button>
@@ -213,33 +186,36 @@ USER_QUERY: ${userInput}`;
               </div>
            </div>
         </div>
-        {isSliderOpen && <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[190]" onClick={() => setIsSliderOpen(false)} />}
-
+        
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
-          <div className="flex items-center gap-4 md:gap-6">
-            <div className="p-3 md:p-4 bg-indigo-600 rounded-2xl md:rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={24} className="md:size-8" /></div>
-            <div className="min-w-0">
-              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase truncate">Synthesis Hub</h1>
-              <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2 overflow-hidden">
-                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500 shrink-0" /><span className="truncate">Vault Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} className="shrink-0" /><span className="truncate">Autonomous Creative Synthesis Mode.</span></>}
+          <div className="flex items-center gap-6">
+            <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={32} /></div>
+            <div>
+              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
+              <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
+                {/* Add comment above each fix */}
+                {/* Fix: Added ShieldCheck to imports and using it here correctly to display brain sync status */}
+                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500" /><span className="truncate">Brain v4.0 Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} /><span className="truncate">Autonomous Creative Intelligence Mode.</span></>}
               </div>
             </div>
           </div>
           
-          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex flex-col sm:flex-row items-center gap-2 no-print">
-            <button onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)} className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}><BookMarked size={16} /><div className="text-left"><p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Curriculum</p><p className="text-[10px] font-bold">Local Vault</p></div></button>
-            <button onClick={() => isPro ? setIsGlobalEnabled(!isGlobalEnabled) : alert("PRO LICENSE REQUIRED")} className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border relative ${isGlobalEnabled ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}>{!isPro && <Crown size={10} className="absolute -top-1 -right-1 text-amber-500 bg-white rounded-full p-0.5 shadow-sm" />}<Globe2 size={16} /><div className="text-left"><p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Global</p><p className="text-[10px] font-bold">Creative Library</p></div></button>
+          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex items-center gap-2 no-print">
+            <button onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)} className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}><BookMarked size={16} /><div className="text-left"><p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Vault</p><p className="text-[10px] font-bold">Curriculum</p></div></button>
             <button onClick={() => setIsSliderOpen(true)} className={`p-3 rounded-full transition-all ml-1 shadow-inner ${isSliderOpen ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}><Library size={20} /></button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4 md:gap-8 no-print">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 no-print">
           {toolDefinitions.map((tool) => (
-            <button key={tool.id} onClick={() => setActiveTool(tool.id)} className={`p-8 md:p-10 rounded-[2.5rem] md:rounded-[3.5rem] border transition-all text-left flex flex-col gap-4 md:gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl`}>
-              <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center text-white shadow-lg`}><tool.icon size={28} /></div>
-              <div><h3 className="font-black text-xl md:text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3><p className="text-slate-500 dark:text-slate-400 text-sm md:text-base mt-2 font-medium leading-relaxed">{tool.desc}</p></div>
+            <button key={tool.id} onClick={() => setActiveTool(tool.id)} className={`p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl`}>
+              <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center ${tool.iconColor} shadow-lg`}><tool.icon size={28} /></div>
+              <div>
+                <h3 className="font-black text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-base mt-2 font-medium leading-relaxed">{tool.desc}</p>
+              </div>
               <div className="flex items-center justify-between mt-auto">
-                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1"><Sparkles size={10} /> Expert Node v4.0</span>
+                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1"><Sparkles size={10} /> Specialized Neural Tool</span>
                  <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
               </div>
             </button>
@@ -259,9 +235,9 @@ USER_QUERY: ${userInput}`;
                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{getToolDisplayName(activeTool)}</span>
              </div>
              <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
-                <button onClick={() => setPersona('architect')} className={`p-1.5 rounded-lg ${persona === 'architect' ? 'bg-white dark:bg-white/10 text-indigo-600 shadow-sm' : 'text-slate-400'}`}><PenTool size={14}/></button>
-                <button onClick={() => setPersona('creative')} className={`p-1.5 rounded-lg ${persona === 'creative' ? 'bg-white dark:bg-white/10 text-rose-600 shadow-sm' : 'text-slate-400'}`}><Compass size={14}/></button>
-                <button onClick={() => setPersona('auditor')} className={`p-1.5 rounded-lg ${persona === 'auditor' ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`}><SearchCode size={14}/></button>
+                <button onClick={() => setPersona('architect')} title="Instructional Architect" className={`p-1.5 rounded-lg ${persona === 'architect' ? 'bg-white dark:bg-white/10 text-indigo-600 shadow-sm' : 'text-slate-400'}`}><PenTool size={14}/></button>
+                <button onClick={() => setPersona('creative')} title="Creative Designer" className={`p-1.5 rounded-lg ${persona === 'creative' ? 'bg-white dark:bg-white/10 text-rose-600 shadow-sm' : 'text-slate-400'}`}><Compass size={14}/></button>
+                <button onClick={() => setPersona('auditor')} title="Curriculum Auditor" className={`p-1.5 rounded-lg ${persona === 'auditor' ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`}><SearchCode size={14}/></button>
              </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar py-6 space-y-2">
@@ -269,13 +245,13 @@ USER_QUERY: ${userInput}`;
             {isGenerating && <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-indigo-500" /></div>}
           </div>
           <div className="p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d]">
-            <ChatInput onSend={handleGenerate} isLoading={isGenerating} placeholder={`Refine this artifact...`} />
+            <ChatInput onSend={handleGenerate} isLoading={isGenerating} placeholder={`Refine ${getToolDisplayName(activeTool)}...`} />
           </div>
         </div>
 
         <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
            <div className="px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
-              <div className="flex items-center gap-3"><FileEdit size={18} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Expert Artifact</span></div>
+              <div className="flex items-center gap-3"><FileEdit size={18} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Neural Artifact Node</span></div>
               <div className="flex items-center gap-2">
                 {workflowRecommendation && !isGenerating && (
                   <button onClick={handleWorkflowTransition} className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg animate-in slide-in-from-right-2">
@@ -292,11 +268,11 @@ USER_QUERY: ${userInput}`;
               <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none">
                 {canvasContent ? (
                   <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500" 
-                       dangerouslySetInnerHTML={{ __html: getRenderedContent() }} />
+                       dangerouslySetInnerHTML={{ __html: renderSTEM(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-40 text-center opacity-30 no-print">
                     <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-8"><FileText size={48} className="text-slate-300" /></div>
-                    <h2 className="text-lg font-black text-slate-300 uppercase tracking-widest">Awaiting Expert Synthesis</h2>
+                    <h2 className="text-lg font-black text-slate-300 uppercase tracking-widest">Select a specialized tool to begin</h2>
                   </div>
                 )}
               </div>
