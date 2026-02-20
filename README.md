@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-View your app in AI Studio: https://ai.studio/apps/1a1c2b9f-c811-49f7-82ec-6d602319b1e2
+View your app in AI Studio:   https://pedagogy-master.vercel.app
 
 ## Run Locally
 
