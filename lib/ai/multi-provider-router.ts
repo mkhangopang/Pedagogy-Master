@@ -123,28 +123,6 @@ async function callFallbackProviders(prompt: string): Promise<{ text: string; pr
 
   throw new Error('All AI providers exhausted. Please try again in a few minutes.');
 }
-```
-
----
-
-## Summary of Changes
-```
-lib/ai/multi-provider-router.ts
-  ├── ADD: callFallbackProviders() function at top
-  └── WRAP: neuralGrid.execute() in try/catch → calls fallbackProviders on failure
-
-No other files need to change ✅
-chat/route.ts         → untouched ✅
-model-orchestrator.ts → untouched ✅
-```
-
-## Failover Flow
-```
-neuralGrid (Gemini) ──❌ rate limit/error
-        ↓
-Cerebras → Groq → DeepSeek → SambaNova → Mistral → OpenRouter
-        ↓
-First one that works returns the response ✅
 
 /**
  * MULTI-STAGE RETRIEVAL CASCADE (v126.1)
