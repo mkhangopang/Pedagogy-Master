@@ -1,4 +1,4 @@
-// lib/ai/orchestrator.ts
+// lib/ai/model-orchestrator.ts
 // 7-ENGINE NEURAL GRID — Task-specialized routing with full fallback chain
 
 import {
