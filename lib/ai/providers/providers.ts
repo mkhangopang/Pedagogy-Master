@@ -257,7 +257,7 @@ export async function callSambanova(
 // ─────────────────────────────────────────────
 export async function callOpenRouter(
   prompt: string,
-  model: string = 'google/gemini-flash-1.5',
+  model: string = 'google/gemini-2.0-flash-001',
   config: AIRequestConfig = {}
 ): Promise<AIResponse> {
   const start = Date.now();
