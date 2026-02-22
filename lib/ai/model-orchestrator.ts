@@ -7,27 +7,17 @@ import {
   AIResponse, AIRequestConfig
 } from './providers/providers';
 
-// ─── TASK TYPES (maps to your Neural Tools) ───────────────────────
+// ─── TASK TYPES ───────────────────────────────────────────────────
 export type TaskType =
-  | 'INGEST_LINEARIZE'    // PDF → Master MD (longest, most complex)
-  | 'LESSON_PLAN'         // Master Plan tool — 5E/UbD/Hunter
-  | 'QUIZ_GENERATE'       // Neural Quiz tool — MCQ/CRQ
-  | 'RUBRIC_GENERATE'     // Fidelity Rubric tool
-  | 'BLOOM_TAG'           // SLO Bloom classification
-  | 'AUDIT_TAG'           // Audit Tagger tool
-  | 'CHAT_LOOKUP'         // Real-time SLO lookup/chat
-  | 'SLO_PARSE'           // Extract SLOs from text → JSON
-  | 'VERTICAL_ALIGN';     // Grade-to-grade alignment analysis
-
-// ─── ROUTING TABLE ────────────────────────────────────────────────
-// Each task has a PRIMARY engine + ordered FALLBACK chain
-// Based on: context needs, speed requirements, JSON reliability
-
-interface RouteConfig {
-  description: string;
-  primary: () => Promise<AIResponse>;
-  fallbacks: Array<() => Promise<AIResponse>>;
-}
+  | 'INGEST_LINEARIZE'
+  | 'LESSON_PLAN'
+  | 'QUIZ_GENERATE'
+  | 'RUBRIC_GENERATE'
+  | 'BLOOM_TAG'
+  | 'AUDIT_TAG'
+  | 'CHAT_LOOKUP'
+  | 'SLO_PARSE'
+  | 'VERTICAL_ALIGN';
 
 export class NeuralOrchestrator {
 
@@ -47,16 +37,11 @@ export class NeuralOrchestrator {
       } catch (err: any) {
         lastError = err;
         const isRateLimit = err.message?.includes('429') || err.message?.includes('rate');
-        const isModel = err.message?.includes('404') || err.message?.includes('model');
-
-        console.warn(`[Grid] ${taskType} attempt ${i + 1} failed on route ${i}: ${err.message?.substring(0, 80)}`);
-
-        if (!isRateLimit && !isModel && i < routes.length - 1) {
-          // Non-rate-limit error: still try next fallback but add small delay
-          await new Promise(r => setTimeout(r, 500));
-        } else if (isRateLimit) {
-          // Rate limit: longer backoff before trying fallback
+        console.warn(`[Grid] ${taskType} attempt ${i + 1} failed: ${err.message?.substring(0, 80)}`);
+        if (isRateLimit) {
           await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+        } else if (i < routes.length - 1) {
+          await new Promise(r => setTimeout(r, 500));
         }
       }
     }
@@ -66,13 +51,11 @@ export class NeuralOrchestrator {
     );
   }
 
-  // ─── MASTER ROUTING FUNCTION ────────────────────────────────────
   async execute(
     prompt: string,
     taskType: TaskType,
     config: AIRequestConfig = {}
   ): Promise<AIResponse> {
-
     const routes = this.buildRoutes(prompt, taskType, config);
     return this.executeWithFallback(routes, taskType);
   }
@@ -86,8 +69,6 @@ export class NeuralOrchestrator {
     switch (taskType) {
 
       // ── INGEST_LINEARIZE: PDF → Structured Master MD
-      // Needs: 100k+ context window, best instruction following
-      // Primary: Gemini 2.5 Pro → Flash → OpenRouter (Gemini Flash)
       case 'INGEST_LINEARIZE':
         return [
           () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', {
@@ -97,12 +78,11 @@ export class NeuralOrchestrator {
             ...config, temperature: 0.1, maxTokens: 8192
           }),
           () => callOpenRouter(prompt, 'google/gemini-2.0-flash-001', {
-  ...config, temperature: 0.1, maxTokens: 3000  // ← was 8192
-}),
+            ...config, temperature: 0.1, maxTokens: 3000
+          }),
+        ];                                          // ← THIS WAS MISSING
 
-      // ── LESSON_PLAN: 5E / UbD / Madeline Hunter generation
-      // Needs: Creative depth, pedagogical knowledge, structured output
-      // Primary: Gemini 2.5 Pro → DeepSeek Reasoner → Groq 70B
+      // ── LESSON_PLAN: 5E / UbD / Madeline Hunter
       case 'LESSON_PLAN':
         return [
           () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', {
@@ -115,13 +95,11 @@ export class NeuralOrchestrator {
             ...config, temperature: 0.3, maxTokens: 4096
           }),
           () => callOpenRouter(prompt, 'anthropic/claude-3-haiku-20240307', {
-  ...config, temperature: 0.3, maxTokens: 3000  // ← was 4096
-}),
+            ...config, temperature: 0.3, maxTokens: 3000
+          }),
         ];
 
       // ── QUIZ_GENERATE: MCQ, CRQ, Bloom-scaled assessments
-      // Needs: Fast, reliable, structured JSON output for question banks
-      // Primary: Sambanova 70B → Groq → Gemini Flash
       case 'QUIZ_GENERATE':
         return [
           () => callSambanova(prompt, 'Meta-Llama-3.3-70B-Instruct', {
@@ -133,12 +111,12 @@ export class NeuralOrchestrator {
           () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', {
             ...config, temperature: 0.2
           }),
-          () => callOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct', config),
+          () => callOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct', {
+            ...config, maxTokens: 3000
+          }),
         ];
 
-      // ── RUBRIC_GENERATE: Fidelity rubrics, assessment criteria
-      // Needs: Fast, structured, South Asian curriculum aligned
-      // Primary: Groq 70B → Sambanova → Gemini Flash
+      // ── RUBRIC_GENERATE: Fidelity rubrics
       case 'RUBRIC_GENERATE':
         return [
           () => callGroq(prompt, 'llama-3.3-70b-versatile', {
@@ -153,8 +131,6 @@ export class NeuralOrchestrator {
         ];
 
       // ── BLOOM_TAG: Classify SLOs against Bloom's taxonomy
-      // Needs: Precise reasoning, JSON output, taxonomy expertise
-      // Primary: DeepSeek Chat (V3, fast) → DeepSeek Reasoner → Groq
       case 'BLOOM_TAG':
         return [
           () => callDeepSeek(prompt, 'deepseek-chat', {
@@ -169,8 +145,6 @@ export class NeuralOrchestrator {
         ];
 
       // ── AUDIT_TAG: Curriculum audit, gap analysis
-      // Needs: Analytical reasoning, comparison, structured report
-      // Primary: DeepSeek Reasoner → Gemini 2.5 Flash → Groq
       case 'AUDIT_TAG':
         return [
           () => callDeepSeek(prompt, 'deepseek-reasoner', {
@@ -184,9 +158,7 @@ export class NeuralOrchestrator {
           }),
         ];
 
-      // ── SLO_PARSE: Extract and structure SLOs into JSON
-      // Needs: Precise JSON output, structured extraction
-      // Primary: DeepSeek Chat → Groq → Gemini Flash
+      // ── SLO_PARSE: Extract SLOs into JSON
       case 'SLO_PARSE':
         return [
           () => callDeepSeek(prompt, 'deepseek-chat', {
@@ -200,9 +172,7 @@ export class NeuralOrchestrator {
           }),
         ];
 
-      // ── CHAT_LOOKUP: Real-time SLO lookup, instant Q&A
-      // Needs: FASTEST possible response, simple queries
-      // Primary: Cerebras (wafer-scale) → Groq 8B → Groq 70B
+      // ── CHAT_LOOKUP: Real-time SLO lookup — FASTEST
       case 'CHAT_LOOKUP':
         return [
           () => callCerebras(prompt, 'llama3.1-70b', {
@@ -217,8 +187,6 @@ export class NeuralOrchestrator {
         ];
 
       // ── VERTICAL_ALIGN: Grade-to-grade prerequisite mapping
-      // Needs: Deep reasoning across multiple grade contexts
-      // Primary: DeepSeek Reasoner → Gemini 2.5 Pro → OpenRouter
       case 'VERTICAL_ALIGN':
         return [
           () => callDeepSeek(prompt, 'deepseek-reasoner', {
@@ -227,21 +195,22 @@ export class NeuralOrchestrator {
           () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', {
             ...config, temperature: 0.1
           }),
-          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku-20240307-20240307', config),
+          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku-20240307', {
+            ...config, maxTokens: 3000
+          }),
         ];
 
       default:
-        // Generic fallback
         return [
           () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', config),
           () => callGroq(prompt, 'llama-3.3-70b-versatile', config),
-          () => callOpenRouter(prompt, 'google/gemini-2.0-flash-001', config),
+          () => callOpenRouter(prompt, 'google/gemini-2.0-flash-001', {
+            ...config, maxTokens: 3000
+          }),
         ];
     }
   }
 
-  // ─── UI GRID STATUS ────────────────────────────────────────────
-  // Called by your status bar component to show real engine names
   getGridStatus() {
     return [
       {
@@ -264,7 +233,7 @@ export class NeuralOrchestrator {
       },
       {
         id: 'groq',
-        displayName: 'GROQ 3 (LLAMA)',
+        displayName: 'GROQ (LLAMA 3.3)',
         provider: 'Groq',
         model: 'llama-3.3-70b-versatile',
         tasks: ['RUBRIC_GENERATE', 'CHAT_LOOKUP'],
@@ -305,7 +274,7 @@ export class NeuralOrchestrator {
 // Singleton export
 export const neuralGrid = new NeuralOrchestrator();
 
-// Legacy compatibility — old code using 'orchestrator' still works
+// Legacy compatibility
 export const orchestrator = {
   executeTask: async (prompt: string, complexity: 'lookup' | 'strategy' | 'creation' = 'strategy') => {
     const taskMap = {
