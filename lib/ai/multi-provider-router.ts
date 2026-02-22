@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { synthesize } from './synthesizer-core';
+import { neuralGrid } from './model-orchestrator';
+import type { TaskType } from './model-orchestrator';
 import { retrieveRelevantChunks } from '../rag/retriever';
 import { extractSLOCodes, normalizeSLO } from '../rag/slo-extractor';
 import { classifyIntent } from './intent-classifier';
@@ -93,17 +94,29 @@ USER_QUERY: "${userPrompt}"`;
 
   // Add comment above each fix
   // Fix: Wrapped positional arguments into an options object to resolve the "Expected 1-2 arguments, but got 7" error
-  const result = await synthesize(
-    finalPrompt, 
-    {
-      history: history.slice(-4), 
-      isGrounded, 
-      docParts: [], 
-      suggestedProvider: intentData.suggestedProvider, 
-      systemPrompt: systemInstruction,
-      complexity: intentData.complexity
-    }
-  );
+  // REPLACE WITH:
+const taskMap: Record<string, TaskType> = {
+  'master_plan':     'LESSON_PLAN',
+  'neural_quiz':     'QUIZ_GENERATE',
+  'fidelity_rubric': 'RUBRIC_GENERATE',
+  'audit_tagger':    'AUDIT_TAG',
+  'chat_tutor':      'CHAT_LOOKUP',
+  'bloom_tag':       'BLOOM_TAG',
+};
+
+const gridTask: TaskType = taskMap[toolType || ''] ||
+  (intentData.complexity >= 3 ? 'LESSON_PLAN' : 'CHAT_LOOKUP');
+
+const gridResult = await neuralGrid.execute(finalPrompt, gridTask, {
+  systemPrompt: systemInstruction,
+  temperature: intentData.complexity >= 3 ? 0.3 : 0.1,
+  maxTokens: intentData.complexity >= 3 ? 6144 : 2048,
+});
+
+const result = {
+  text: gridResult.text,
+  provider: `${gridResult.provider}/${gridResult.modelUsed}`,
+};
 
   // 5. OBSERVABILITY & CACHING
   const latency = Date.now() - start;
