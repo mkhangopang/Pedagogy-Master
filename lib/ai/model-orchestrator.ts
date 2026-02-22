@@ -97,9 +97,8 @@ export class NeuralOrchestrator {
             ...config, temperature: 0.1, maxTokens: 8192
           }),
           () => callOpenRouter(prompt, 'google/gemini-2.0-flash-001', {
-            ...config, temperature: 0.1
-          }),
-        ];
+  ...config, temperature: 0.1, maxTokens: 3000  // ← was 8192
+}),
 
       // ── LESSON_PLAN: 5E / UbD / Madeline Hunter generation
       // Needs: Creative depth, pedagogical knowledge, structured output
@@ -115,9 +114,9 @@ export class NeuralOrchestrator {
           () => callGroq(prompt, 'llama-3.3-70b-versatile', {
             ...config, temperature: 0.3, maxTokens: 4096
           }),
-          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku-20240307-20240307', {
-            ...config, temperature: 0.3
-          }),
+          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku-20240307', {
+  ...config, temperature: 0.3, maxTokens: 3000  // ← was 4096
+}),
         ];
 
       // ── QUIZ_GENERATE: MCQ, CRQ, Bloom-scaled assessments
