@@ -300,3 +300,55 @@ export async function callOpenRouter(
     tokensUsed: data.usage?.total_tokens,
   };
 }
+// ─────────────────────────────────────────────
+// PROVIDER 7: AI Gateway (Cloudflare/Custom)
+// Used for: Enterprise fallback with your own gateway
+// ─────────────────────────────────────────────
+export async function callAIGateway(
+  prompt: string,
+  config: AIRequestConfig = {}
+): Promise<AIResponse> {
+  const start = Date.now();
+  const apiKey = process.env.AI_GATEWAY_API_KEY;
+  if (!apiKey) throw new Error('AI_GATEWAY_API_KEY not set');
+
+  const messages: AIMessage[] = [];
+  if (config.systemPrompt) {
+    messages.push({ role: 'system', content: config.systemPrompt });
+  }
+  messages.push({ role: 'user', content: prompt });
+
+  // AI Gateway proxies to Gemini — use your Cloudflare gateway URL
+  const gatewayUrl = process.env.AI_GATEWAY_URL || 
+    'https://gateway.ai.cloudflare.com/v1/YOUR_ACCOUNT/YOUR_GATEWAY/google-ai-studio/v1/chat/completions';
+
+  const response = await fetch(gatewayUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gemini-2.0-flash',
+      messages,
+      temperature: config.temperature ?? 0.1,
+      max_tokens: config.maxTokens ?? 4096,
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`AI Gateway error ${response.status}: ${err}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content || '';
+
+  return {
+    text,
+    modelUsed: 'gemini-2.0-flash-gateway',
+    provider: 'ai-gateway',
+    latencyMs: Date.now() - start,
+    tokensUsed: data.usage?.total_tokens,
+  };
+}
