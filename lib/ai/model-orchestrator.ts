@@ -4,6 +4,7 @@
 import {
   callGemini, callDeepSeek, callGroq,
   callCerebras, callSambanova, callOpenRouter,
+  callAIGateway,   // ← ADD THIS
   AIResponse, AIRequestConfig
 } from './providers/providers';
 
@@ -68,26 +69,24 @@ export class NeuralOrchestrator {
 
     switch (taskType) {
 
-      // ── INGEST_LINEARIZE: PDF → Structured Master MD
-      case 'INGEST_LINEARIZE':
+      // Updated INGEST_LINEARIZE with AI Gateway:
+case 'INGEST_LINEARIZE':
   return [
-    // Tier 1: Gemini Pro — full content, best quality
     () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', {
       ...config, temperature: 0.1, maxTokens: 8192
     }),
-    // Tier 2: Gemini Flash — full content, faster
     () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', {
       ...config, temperature: 0.1, maxTokens: 8192
     }),
-    // Tier 3: Groq — large context, free, fast
+    () => callAIGateway(prompt, {           // ← Tier 3: Your gateway
+      ...config, temperature: 0.1, maxTokens: 4096
+    }),
     () => callGroq(prompt.substring(0, 24000), 'llama-3.3-70b-versatile', {
       ...config, temperature: 0.1, maxTokens: 4096
     }),
-    // Tier 4: DeepSeek — good reasoning, free tier
     () => callDeepSeek(prompt.substring(0, 24000), 'deepseek-chat', {
       ...config, temperature: 0.1, maxTokens: 4096
     }),
-    // Tier 5: OpenRouter LAST RESORT — aggressively truncated
     () => callOpenRouter(prompt.substring(0, 12000), 'google/gemini-2.0-flash-001', {
       ...config, temperature: 0.1, maxTokens: 2000
     }),
