@@ -96,7 +96,7 @@ export class NeuralOrchestrator {
           () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', {
             ...config, temperature: 0.1, maxTokens: 8192
           }),
-          () => callOpenRouter(prompt, 'google/gemini-flash-1.5-8b', {
+          () => callOpenRouter(prompt, 'google/gemini-2.0-flash-001', {
             ...config, temperature: 0.1
           }),
         ];
@@ -115,7 +115,7 @@ export class NeuralOrchestrator {
           () => callGroq(prompt, 'llama-3.3-70b-versatile', {
             ...config, temperature: 0.3, maxTokens: 4096
           }),
-          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku', {
+          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku-20240307-20240307', {
             ...config, temperature: 0.3
           }),
         ];
@@ -134,7 +134,7 @@ export class NeuralOrchestrator {
           () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', {
             ...config, temperature: 0.2
           }),
-          () => callOpenRouter(prompt, 'meta-llama/llama-3.1-70b-instruct', config),
+          () => callOpenRouter(prompt, 'meta-llama/llama-3.3-70b-instruct', config),
         ];
 
       // ── RUBRIC_GENERATE: Fidelity rubrics, assessment criteria
@@ -228,7 +228,7 @@ export class NeuralOrchestrator {
           () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', {
             ...config, temperature: 0.1
           }),
-          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku', config),
+          () => callOpenRouter(prompt, 'anthropic/claude-3-haiku-20240307-20240307', config),
         ];
 
       default:
@@ -236,7 +236,7 @@ export class NeuralOrchestrator {
         return [
           () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', config),
           () => callGroq(prompt, 'llama-3.3-70b-versatile', config),
-          () => callOpenRouter(prompt, 'google/gemini-flash-1.5', config),
+          () => callOpenRouter(prompt, 'google/gemini-2.0-flash-001', config),
         ];
     }
   }
