@@ -70,17 +70,28 @@ export class NeuralOrchestrator {
 
       // ── INGEST_LINEARIZE: PDF → Structured Master MD
       case 'INGEST_LINEARIZE':
-        return [
-          () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', {
-            ...config, temperature: 0.1, maxTokens: 8192
-          }),
-          () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', {
-            ...config, temperature: 0.1, maxTokens: 8192
-          }),
-          () => callOpenRouter(prompt, 'google/gemini-2.0-flash-001', {
-            ...config, temperature: 0.1, maxTokens: 3000
-          }),
-        ];                                          // ← THIS WAS MISSING
+  return [
+    // Tier 1: Gemini Pro — full content, best quality
+    () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', {
+      ...config, temperature: 0.1, maxTokens: 8192
+    }),
+    // Tier 2: Gemini Flash — full content, faster
+    () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', {
+      ...config, temperature: 0.1, maxTokens: 8192
+    }),
+    // Tier 3: Groq — large context, free, fast
+    () => callGroq(prompt.substring(0, 24000), 'llama-3.3-70b-versatile', {
+      ...config, temperature: 0.1, maxTokens: 4096
+    }),
+    // Tier 4: DeepSeek — good reasoning, free tier
+    () => callDeepSeek(prompt.substring(0, 24000), 'deepseek-chat', {
+      ...config, temperature: 0.1, maxTokens: 4096
+    }),
+    // Tier 5: OpenRouter LAST RESORT — aggressively truncated
+    () => callOpenRouter(prompt.substring(0, 12000), 'google/gemini-2.0-flash-001', {
+      ...config, temperature: 0.1, maxTokens: 2000
+    }),
+  ];                                          // ← THIS WAS MISSING
 
       // ── LESSON_PLAN: 5E / UbD / Madeline Hunter
       case 'LESSON_PLAN':
