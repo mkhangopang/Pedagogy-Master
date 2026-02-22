@@ -105,6 +105,8 @@ export interface Document {
   geminiProcessed?: boolean;
   isSelected?: boolean;
   base64Data?: string;
+  rag_indexed?: boolean;        // ← ADD THIS
+  token_count?: number;         // ← ADD THIS
 }
 
 export interface ChatMessage {
