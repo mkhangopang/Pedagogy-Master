@@ -5,7 +5,7 @@ import {
   callGemini, callDeepSeek, callGroq,
   callCerebras, callSambanova, callOpenRouter,
   AIResponse, AIRequestConfig
-} from './providers';
+} from './providers/providers';
 
 // ─── TASK TYPES (maps to your Neural Tools) ───────────────────────
 export type TaskType =
