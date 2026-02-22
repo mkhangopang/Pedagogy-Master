@@ -3,7 +3,7 @@ import { getSupabaseAdminClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { IngestionStep, JobStatus } from '../../../../../types';
-import { getSynthesizer } from '../../../../../lib/ai/synthesizer-core';
+import { neuralGrid } from '../../../../../lib/ai/model-orchestrator';
 import { DEFAULT_MASTER_PROMPT } from '../../../../../constants';
 import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 import pdf from 'pdf-parse';
