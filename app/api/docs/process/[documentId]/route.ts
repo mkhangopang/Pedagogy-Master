@@ -16,21 +16,32 @@ export const maxDuration = 300;
  * Uses multi-provider failover to prevent "Sync Protocol Interrupted" errors.
  */
 async function callLinearizer(content: string, recipe: string): Promise<string> {
-  const synth = getSynthesizer();
-  
-  const result = await synth.synthesize(`[TASK: LINEARIZE_CURRICULUM] 
-    Apply the Master Recipe to this curriculum data. 
-    MANDATORY: Wrap extracted SLOs in <STRUCTURED_INDEX> JSON tags.
-    
-    DATA:
-    ${content.substring(0, 100000)}`, {
-    systemPrompt: recipe,
-    complexity: 3 // Forces Tier-1 Reasoning (Gemini Pro, DeepSeek R1, or Grok 2)
-  });
+  const result = await neuralGrid.execute(
+    `[CURRICULUM_LINEARIZATION_TASK]
+Apply the Master Recipe instructions precisely.
+MANDATORY: Include <STRUCTURED_INDEX> JSON block at the very end.
 
-  return result.text || "";
+SLO CODE FORMAT: SUBJECTCODE+GRADE(2digits)+DOMAIN(letter)+NUMBER(2digits)
+Example: BIO09A01, MAT11B03, ENG07C12
+
+=== MASTER RECIPE ===
+${recipe}
+
+=== RAW CURRICULUM TEXT ===
+${content.substring(0, 90000)}
+=== END TEXT ===`,
+    'INGEST_LINEARIZE',
+    { temperature: 0.1, maxTokens: 8192 }
+  );
+
+  console.log(`[Linearizer] ${result.provider}/${result.modelUsed} — ${result.latencyMs}ms`);
+
+  if (!result.text || result.text.length < 100) {
+    throw new Error(`AI returned insufficient content (${result.text?.length || 0} chars)`);
+  }
+
+  return result.text;
 }
-
 export async function POST(req: NextRequest, props: { params: Promise<{ documentId: string }> }) {
   const { documentId } = await props.params;
   const adminSupabase = getSupabaseAdminClient();
@@ -56,7 +67,10 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       const buffer = await getObjectBuffer(doc.file_path);
       if (!buffer) throw new Error("R2_FAULT: Object unreachable.");
       const raw = await pdf(buffer);
-      await adminSupabase.from('documents').update({ extracted_text: raw.text.trim() }).eq('id', documentId);
+      await adminSupabase.from('documents').update({ 
+  raw_text: raw.text.trim(),      // ← preserved forever
+  extracted_text: raw.text.trim() // ← will be overwritten by Master MD in Step 2
+}).eq('id', documentId);
       await queue.updateProgress(job.id, { step: IngestionStep.LINEARIZE, progress: 25, message: 'Linearization...' });
       job.step = IngestionStep.LINEARIZE;
     }
@@ -71,12 +85,21 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
         try {
           const sloIndex = JSON.parse(indexMatch[1].trim().replace(/```json|```/g, '').trim());
           if (Array.isArray(sloIndex)) {
-            const records = sloIndex.map((s: any) => ({
-              document_id: documentId,
-              slo_code: s.code || s.slo_code,
-              slo_full_text: s.text || s.slo_full_text,
-              bloom_level: s.bloomLevel || 'Understand'
-            }));
+            const records = sloIndex
+  .filter((s: any) => s.slo_code || s.code)
+  .map((s: any) => ({
+    document_id: documentId,
+    slo_code: (s.slo_code || s.code || '').toUpperCase().trim(),
+    slo_full_text: s.slo_full_text || s.text || '',
+    bloom_level: s.bloomLevel || 'Understand',
+    domain: s.domain || '',
+    domain_name: s.domain_name || '',
+    grade: s.grade || '',
+    subject: s.subject || '',
+    code_valid: /^[A-Z]{2,3}\d{2}[A-Z]\d{2}$/.test(
+      (s.slo_code || s.code || '').toUpperCase().trim()
+    )
+  }));
             await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
             await adminSupabase.from('slo_database').insert(records);
           }
