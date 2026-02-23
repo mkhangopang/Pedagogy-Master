@@ -59,7 +59,8 @@ export async function indexDocumentForRAG(
       // ── SLO extraction ─────────────────────────────────────────────────────
       const foundCodes = extractSLOCodes(line);
       foundCodes.forEach(c => {
-        const normalized = normalizeSLO(c.code || c);
+        const raw = typeof c === 'string' ? c : c.code;
+        const normalized = normalizeSLO(raw);
         if (normalized) codesInChunk.add(normalized);
       });
 
