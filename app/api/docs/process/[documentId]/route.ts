@@ -9,24 +9,21 @@ import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 import pdf from 'pdf-parse';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60; // Vercel Hobby hard cap — each STEP must finish in <60s
+export const maxDuration = 60;
 
 /**
- * ORCHESTRATED INGESTION ENGINE v15.0
+ * ORCHESTRATED INGESTION ENGINE v16.0
  * 
- * KEY CHANGE FROM v14: Each HTTP call now runs ONE step and returns.
- * The frontend calls this endpoint 3 times (once per step).
- * This beats the 60s Vercel Hobby timeout by splitting work across requests.
- * 
- * Flow:
- *   POST /api/docs/process/[id] → runs EXTRACT step → returns { nextStep: 'LINEARIZE' }
- *   POST /api/docs/process/[id] → runs LINEARIZE step → returns { nextStep: 'EMBED' }
- *   POST /api/docs/process/[id] → runs EMBED step → returns { success: true, done: true }
+ * FIX from v15: 
+ *   - Removed adminSupabase.rpc('reload_schema_cache') — this RPC does not exist
+ *     in Supabase and was throwing AFTER status='ready' was written, causing
+ *     the catch block to overwrite it with status='failed'.
+ *   - chunk_slo_mapping insert wrapped in try/catch — table may not exist yet.
+ *   - Status update is now the LAST operation before return in EMBED step.
  */
 
 async function callLinearizer(content: string, recipe: string): Promise<string> {
-  // Trim input to keep AI call under ~40s, leaving buffer for Vercel
-  const safeContent = content.substring(0, 60000); // reduced from 90000 for safety
+  const safeContent = content.substring(0, 60000);
 
   const result = await neuralGrid.execute(
     `[CURRICULUM_LINEARIZATION_TASK]
@@ -63,14 +60,12 @@ export async function POST(
   const adminSupabase = getSupabaseAdminClient();
   const queue = new IngestionQueue(adminSupabase);
 
-  // Get or create job
   let job = await queue.getJobStatus(documentId);
   if (!job) {
     const jobId = await queue.enqueue(documentId);
     job = { id: jobId, step: IngestionStep.EXTRACT };
   }
 
-  // If already complete, return immediately
   if (job.step === IngestionStep.COMPLETE) {
     return NextResponse.json({ success: true, done: true, step: 'COMPLETE' });
   }
@@ -84,9 +79,9 @@ export async function POST(
 
     if (!doc) throw new Error('VAULT_ERROR: Node missing.');
 
-    // ─────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
     // STEP 1: EXTRACT — PDF → raw text (~5–15s)
-    // ─────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
     if (job.step === IngestionStep.EXTRACT) {
       await queue.updateProgress(job.id, {
         step: IngestionStep.EXTRACT,
@@ -103,7 +98,6 @@ export async function POST(
         extracted_text: raw.text.trim(),
       }).eq('id', documentId);
 
-      // Advance step in queue then RETURN — frontend will call again
       await queue.updateProgress(job.id, {
         step: IngestionStep.LINEARIZE,
         progress: 25,
@@ -120,9 +114,9 @@ export async function POST(
       });
     }
 
-    // ─────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
     // STEP 2: LINEARIZE — AI pedagogical processing (~30–55s)
-    // ─────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
     if (job.step === IngestionStep.LINEARIZE) {
       await queue.updateProgress(job.id, {
         step: IngestionStep.LINEARIZE,
@@ -174,7 +168,8 @@ export async function POST(
             await adminSupabase.from('slo_database').insert(records);
           }
         } catch (e) {
-          console.error('Structured Index parse failure', e);
+          console.error('Structured Index parse failure — continuing anyway:', e);
+          // Non-fatal: continue processing even if SLO index fails
         }
       }
 
@@ -183,7 +178,6 @@ export async function POST(
         .update({ extracted_text: markdown })
         .eq('id', documentId);
 
-      // Advance step then RETURN
       await queue.updateProgress(job.id, {
         step: IngestionStep.EMBED,
         progress: 60,
@@ -200,9 +194,9 @@ export async function POST(
       });
     }
 
-    // ─────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
     // STEP 3: EMBED — Vector indexing + chunk mapping (~10–30s)
-    // ─────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────
     if (job.step === IngestionStep.EMBED) {
       await queue.updateProgress(job.id, {
         step: IngestionStep.EMBED,
@@ -224,41 +218,49 @@ export async function POST(
       );
 
       // Build chunk ↔ SLO mappings
-      const { data: chunks } = await adminSupabase
-        .from('document_chunks')
-        .select('id, slo_codes')
-        .eq('document_id', documentId);
+      // Wrapped in try/catch — chunk_slo_mapping table may not exist yet
+      // This is NON-FATAL: document is still fully usable without mappings
+      try {
+        const { data: chunks } = await adminSupabase
+          .from('document_chunks')
+          .select('id, slo_codes')
+          .eq('document_id', documentId);
 
-      const { data: slos } = await adminSupabase
-        .from('slo_database')
-        .select('id, slo_code')
-        .eq('document_id', documentId);
+        const { data: slos } = await adminSupabase
+          .from('slo_database')
+          .select('id, slo_code')
+          .eq('document_id', documentId);
 
-      if (chunks && slos) {
-        const sloCodeToId = Object.fromEntries(slos.map((s) => [s.slo_code, s.id]));
-        const mappings: any[] = [];
+        if (chunks && slos && chunks.length > 0 && slos.length > 0) {
+          const sloCodeToId = Object.fromEntries(slos.map((s) => [s.slo_code, s.id]));
+          const mappings: any[] = [];
 
-        chunks.forEach((chunk) => {
-          (chunk.slo_codes || []).forEach((code: string) => {
-            if (sloCodeToId[code]) {
-              mappings.push({ chunk_id: chunk.id, slo_id: sloCodeToId[code], slo_code: code });
-            }
+          chunks.forEach((chunk) => {
+            (chunk.slo_codes || []).forEach((code: string) => {
+              if (sloCodeToId[code]) {
+                mappings.push({ chunk_id: chunk.id, slo_id: sloCodeToId[code], slo_code: code });
+              }
+            });
           });
-        });
 
-        if (mappings.length > 0) {
-          await adminSupabase.from('chunk_slo_mapping').insert(mappings);
+          if (mappings.length > 0) {
+            await adminSupabase.from('chunk_slo_mapping').insert(mappings);
+          }
         }
+      } catch (mappingErr) {
+        // Non-fatal — log and continue to status update
+        console.warn('[EMBED] chunk_slo_mapping insert skipped:', mappingErr);
       }
 
+      // ── CRITICAL: Mark job complete and document ready ──
+      // This MUST be last. Nothing after this line should throw.
       await queue.markComplete(job.id);
+
       await adminSupabase.from('documents').update({
         status: 'ready',
         rag_indexed: true,
         document_summary: 'Neural grid verified.',
       }).eq('id', documentId);
-
-      await adminSupabase.rpc('reload_schema_cache');
 
       return NextResponse.json({
         success: true,
@@ -269,12 +271,14 @@ export async function POST(
       });
     }
 
-    // Fallback — unknown step
     return NextResponse.json({ error: 'Unknown step state', step: job.step }, { status: 400 });
 
   } catch (err: any) {
     const msg = err.message || 'Synthesis grid exception.';
-    await queue.markFailed(job.id, msg);
+    console.error('[ProcessRoute] Fatal error:', msg);
+
+    try { await queue.markFailed(job.id, msg); } catch (_) {}
+
     await adminSupabase.from('documents').update({
       status: 'failed',
       document_summary: msg,
