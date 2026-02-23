@@ -54,10 +54,8 @@ export interface NeuralBrain {
 export enum IngestionStep {
   EXTRACT = 'extract',
   LINEARIZE = 'linearize',
-  TAG = 'tag',
-  CHUNK = 'chunk',
   EMBED = 'embed',
-  FINALIZE = 'finalize'
+  COMPLETE = 'complete'
 }
 
 export enum JobStatus {
