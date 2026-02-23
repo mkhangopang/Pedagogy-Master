@@ -7,6 +7,7 @@ import Dashboard from '../views/Dashboard';
 import Login from '../views/Login';
 import Landing from '../views/Landing';
 import Policy from '../views/Policy';
+import Onboarding from '../views/Onboarding';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
@@ -27,6 +28,7 @@ export default function App() {
   const [infraError, setInfraError] = useState<string | null>(null);
   const [showRuntimeDebug, setShowRuntimeDebug] = useState(false);
   const [bypassHandshake, setBypassHandshake] = useState(false);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const initStarted = useRef(false);
   
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -92,6 +94,10 @@ export default function App() {
           queriesUsed: profile.queries_used || 0, queriesLimit: profile.queries_limit || 30,
           generationCount: profile.generation_count || 0, successRate: profile.success_rate || 0
         });
+        // Show onboarding if not completed yet
+        if (!profile.onboarding_completed) {
+          setNeedsOnboarding(true);
+        }
       }
     });
 
@@ -132,6 +138,7 @@ export default function App() {
             setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
           } else {
             setSession(null);
+            setNeedsOnboarding(false);
             setCurrentView(prev => (prev !== 'landing' && prev !== 'login') ? 'landing' : prev);
           }
         });
@@ -184,6 +191,23 @@ export default function App() {
 
   return (
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
+
+      {/* ── ONBOARDING OVERLAY — shows for new teachers ── */}
+      {needsOnboarding && session && (
+        <Onboarding
+          userId={session.user.id}
+          userEmail={session.user.email || ''}
+          onComplete={(updatedProfile) => {
+            setNeedsOnboarding(false);
+            setUserProfile(prev => prev ? {
+              ...prev,
+              name: updatedProfile.name,
+            } : prev);
+            setCurrentView('documents');
+          }}
+        />
+      )}
+
       {isSidebarOpen && <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
       <div className={`fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'} ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
         <Sidebar currentView={currentView} onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
