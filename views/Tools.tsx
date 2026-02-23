@@ -5,7 +5,8 @@ import {
   Sparkles, ClipboardCheck, BookOpen, Layers, Loader2, 
   FileText, Copy, ArrowRight, PenTool, Compass, SearchCode, 
   Zap, ChevronLeft, Library, Crown, Globe2, Globe, Check, X,
-  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck
+  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck,
+  Download, Share2, Printer, Link2, Twitter, Mail, QrCode
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -26,6 +27,22 @@ interface ToolsProps {
 
 type PersonaMode = 'architect' | 'creative' | 'auditor';
 
+// ── Print styles injected once into <head> ──────────────────────────────────
+const PRINT_STYLES = `
+@media print {
+  body * { visibility: hidden !important; }
+  #pm-print-zone, #pm-print-zone * { visibility: visible !important; }
+  #pm-print-zone {
+    position: fixed !important; inset: 0 !important;
+    background: white !important; z-index: 99999 !important;
+    padding: 48px 64px !important; overflow: visible !important;
+  }
+  .no-print { display: none !important; }
+  .pm-print-header { display: flex !important; }
+}
+@media screen { .pm-print-header { display: none !important; } }
+`;
+
 const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user }) => {
   const [activeTool, setActiveTool] = useState<ToolType | null>(null);
   const [persona, setPersona] = useState<PersonaMode>('architect');
@@ -40,16 +57,24 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [localDocs, setLocalDocs] = useState<Document[]>(documents);
   const [isSwitchingContext, setIsSwitchingContext] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
-  
+  const [showShareMenu, setShowShareMenu] = useState(false);
+  const [shareSuccess, setShareSuccess] = useState('');
   const [workflowRecommendation, setWorkflowRecommendation] = useState<{tool: ToolType, reason: string} | null>(null);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
   const isPro = user.plan !== SubscriptionPlan.FREE;
 
+  // Inject print styles once
   useEffect(() => {
-    setLocalDocs(documents);
-  }, [documents]);
+    if (document.getElementById('pm-print-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'pm-print-styles';
+    style.innerHTML = PRINT_STYLES;
+    document.head.appendChild(style);
+  }, []);
+
+  useEffect(() => { setLocalDocs(documents); }, [documents]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -61,10 +86,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     if (!canvasContent || isGenerating) return;
     const match = canvasContent.match(/--- Workflow Recommendation:\s*(\w+)\s*\|\s*([^---]+)\s*---/i);
     if (match) {
-      setWorkflowRecommendation({
-        tool: match[1].toLowerCase() as ToolType,
-        reason: match[2].trim()
-      });
+      setWorkflowRecommendation({ tool: match[1].toLowerCase() as ToolType, reason: match[2].trim() });
     } else {
       setWorkflowRecommendation(null);
     }
@@ -80,58 +102,44 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
       }
       setTimeout(() => setIsSliderOpen(false), 300);
-    } catch (e) { 
-      console.error(e); 
-    } finally { 
-      setIsSwitchingContext(false); 
-    }
+    } catch (e) { console.error(e); }
+    finally { setIsSwitchingContext(false); }
   };
 
   const handleGenerate = async (userInput: string, handoffContext?: string) => {
     if (!userInput.trim() || isGenerating || !canQuery) return;
-    
     const effectiveTool = activeTool || 'master_plan';
     setIsGenerating(true);
     setWorkflowRecommendation(null);
     const aiMsgId = crypto.randomUUID();
-    
-    setMessages(prev => [...prev, 
+    setMessages(prev => [...prev,
       { id: crypto.randomUUID(), role: 'user', content: userInput, timestamp: new Date().toISOString() },
       { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date().toISOString() }
     ]);
-
     try {
       onQuery();
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
-
       const personaPrompt = `
 [CONTEXT_MODES]
 CURRICULUM_MODE: ${isCurriculumEnabled ? 'ACTIVE' : 'INACTIVE'}
 GLOBAL_RESOURCES_MODE: ${isGlobalEnabled ? 'ACTIVE' : 'INACTIVE'}
 EXPERT_MODULE: ${getToolDisplayName(effectiveTool)}
-
 [PERSONA_OVERLAY]
 ${persona === 'creative' ? '[CREATIVE_MODE: ON] Use highly engaging, active learning strategies.' : persona === 'auditor' ? '[AUDIT_MODE: ON] Focus on standards rigor.' : ''}
-
 ${handoffContext ? `[WORKFLOW_CONTEXT: Use the following previous synthesis as a base]:\n${handoffContext}` : ''}
-
 USER_QUERY: ${userInput}`;
 
       const stream = geminiService.generatePedagogicalToolStream(
-        effectiveTool, 
-        personaPrompt, 
-        { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, 
-        brain, 
-        user, 
-        isCurriculumEnabled ? activeDoc?.id : undefined 
+        effectiveTool, personaPrompt,
+        { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id },
+        brain, user, isCurriculumEnabled ? activeDoc?.id : undefined
       );
-      
       let fullContent = '';
       for await (const chunk of stream) {
         if (chunk) {
           fullContent += chunk;
           setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
-          setCanvasContent(fullContent); 
+          setCanvasContent(fullContent);
         }
       }
       await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled });
@@ -143,9 +151,8 @@ USER_QUERY: ${userInput}`;
   const handleWorkflowTransition = () => {
     if (!workflowRecommendation || isGenerating) return;
     const previousArtifact = canvasContent.split('--- Workflow Recommendation')[0].trim();
-    const toolName = getToolDisplayName(workflowRecommendation.tool);
     setActiveTool(workflowRecommendation.tool);
-    handleGenerate(`Based on the previous ${getToolDisplayName(activeTool)}, synthesize a ${toolName}.`, previousArtifact);
+    handleGenerate(`Based on the previous ${getToolDisplayName(activeTool)}, synthesize a ${getToolDisplayName(workflowRecommendation.tool)}.`, previousArtifact);
   };
 
   const handleRichCopy = async () => {
@@ -154,6 +161,51 @@ USER_QUERY: ${userInput}`;
     await navigator.clipboard.writeText(cleanText);
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
+  };
+
+  // ── PDF Export via browser print ────────────────────────────────────────
+  const handlePrintPDF = () => {
+    window.print();
+  };
+
+  // ── Share handlers ───────────────────────────────────────────────────────
+  const getCleanContent = () => canvasContent.split('--- Workflow Recommendation')[0].trim();
+
+  const handleCopyLink = async () => {
+    await navigator.clipboard.writeText(window.location.href);
+    setShareSuccess('Link copied!');
+    setTimeout(() => { setShareSuccess(''); setShowShareMenu(false); }, 2000);
+  };
+
+  const handleShareEmail = () => {
+    const subject = encodeURIComponent(`${getToolDisplayName(activeTool || 'master_plan')} — Pedagogy Master AI`);
+    const body = encodeURIComponent(
+      `I created this using Pedagogy Master AI 🎓\n\n` +
+      `${getCleanContent().substring(0, 1500)}...\n\n` +
+      `── Created with Pedagogy Master AI ──\n` +
+      `World-class AI curriculum tools for educators\n` +
+      `https://pedagogy-master.vercel.app`
+    );
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+    setShowShareMenu(false);
+  };
+
+  const handleShareTwitter = () => {
+    const text = encodeURIComponent(
+      `Just created a ${getToolDisplayName(activeTool || 'master_plan')} with AI in seconds! 🎓\n\nPedagogy Master AI is changing how I teach.\n\nhttps://pedagogy-master.vercel.app\n\n#EdTech #TeacherTools #AIinEducation`
+    );
+    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+    setShowShareMenu(false);
+  };
+
+  const handleShareWhatsApp = () => {
+    const text = encodeURIComponent(
+      `🎓 Check out this ${getToolDisplayName(activeTool || 'master_plan')} I created using Pedagogy Master AI!\n\n` +
+      `It took less than 30 seconds and is fully aligned to curriculum standards.\n\n` +
+      `Try it free: https://pedagogy-master.vercel.app`
+    );
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+    setShowShareMenu(false);
   };
 
   const toolDefinitions: { id: ToolType, name: string, icon: any, desc: string, color: string, iconColor: string }[] = [
@@ -167,39 +219,36 @@ USER_QUERY: ${userInput}`;
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
         <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-           <div className="p-8 flex flex-col h-full">
-              <div className="flex items-center justify-between mb-8">
-                 <div className="flex items-center gap-3">
-                    <Library size={20} className="text-indigo-600" />
-                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Vault Selection</h3>
-                 </div>
-                 <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
+          <div className="p-8 flex flex-col h-full">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <Library size={20} className="text-indigo-600" />
+                <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Vault Selection</h3>
               </div>
-              <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
-                 {localDocs.map(doc => (
-                   <button key={doc.id} onClick={() => toggleDocContext(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}>
-                     <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Standard Node</span>
-                     <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
-                     <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} • {doc.subject}</p>
-                   </button>
-                 ))}
-              </div>
-           </div>
+              <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
+              {localDocs.map(doc => (
+                <button key={doc.id} onClick={() => toggleDocContext(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}>
+                  <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Standard Node</span>
+                  <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
+                  <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} • {doc.subject}</p>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
-        
+
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
           <div className="flex items-center gap-6">
             <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={32} /></div>
             <div>
               <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
               <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
-                {/* Add comment above each fix */}
-                {/* Fix: Added ShieldCheck to imports and using it here correctly to display brain sync status */}
                 {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500" /><span className="truncate">Brain v4.0 Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} /><span className="truncate">Autonomous Creative Intelligence Mode.</span></>}
               </div>
             </div>
           </div>
-          
           <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex items-center gap-2 no-print">
             <button onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)} className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}><BookMarked size={16} /><div className="text-left"><p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Vault</p><p className="text-[10px] font-bold">Curriculum</p></div></button>
             <button onClick={() => setIsSliderOpen(true)} className={`p-3 rounded-full transition-all ml-1 shadow-inner ${isSliderOpen ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}><Library size={20} /></button>
@@ -208,15 +257,15 @@ USER_QUERY: ${userInput}`;
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 no-print">
           {toolDefinitions.map((tool) => (
-            <button key={tool.id} onClick={() => setActiveTool(tool.id)} className={`p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl`}>
+            <button key={tool.id} onClick={() => setActiveTool(tool.id)} className="p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl">
               <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center ${tool.iconColor} shadow-lg`}><tool.icon size={28} /></div>
               <div>
                 <h3 className="font-black text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>
                 <p className="text-slate-500 dark:text-slate-400 text-base mt-2 font-medium leading-relaxed">{tool.desc}</p>
               </div>
               <div className="flex items-center justify-between mt-auto">
-                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1"><Sparkles size={10} /> Specialized Neural Tool</span>
-                 <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1"><Sparkles size={10} /> Specialized Neural Tool</span>
+                <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
               </div>
             </button>
           ))}
@@ -225,20 +274,56 @@ USER_QUERY: ${userInput}`;
     );
   }
 
+  const cleanContent = getCleanContent();
+
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden print:h-auto print:overflow-visible">
+
+      {/* ── HIDDEN PRINT ZONE — only visible when printing ── */}
+      <div id="pm-print-zone" className="hidden">
+        {/* Print Header */}
+        <div className="pm-print-header flex items-center justify-between mb-8 pb-6 border-b-2 border-indigo-600">
+          <div>
+            <div className="text-2xl font-black text-indigo-900 uppercase tracking-tight">
+              🎓 Pedagogy Master AI
+            </div>
+            <div className="text-sm text-slate-500 mt-1">
+              {getToolDisplayName(activeTool)} • {activeDoc ? activeDoc.name : 'General Mode'} • {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+            </div>
+          </div>
+          <div className="text-right text-xs text-slate-400">
+            <div className="font-bold text-slate-600">{user.name}</div>
+            <div>pedagogy-master.vercel.app</div>
+            <div className="text-indigo-600 font-bold">AI-Powered Curriculum Tool</div>
+          </div>
+        </div>
+
+        {/* Print Content */}
+        <div
+          className="prose max-w-full text-sm leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: renderSTEM(cleanContent) }}
+        />
+
+        {/* Print Footer */}
+        <div className="mt-12 pt-6 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400">
+          <span>Generated by Pedagogy Master AI — World-class curriculum tools for educators</span>
+          <span className="text-indigo-600 font-bold">pedagogy-master.vercel.app</span>
+        </div>
+      </div>
+
       <div className="flex-1 flex overflow-hidden print:block print:overflow-visible">
+        {/* ── LEFT PANEL — Chat logs ── */}
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 no-print ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] shrink-0`}>
           <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
-             <div className="flex items-center gap-3">
-               <button onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent('');}} className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 transition-all"><ChevronLeft size={22}/></button>
-               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{getToolDisplayName(activeTool)}</span>
-             </div>
-             <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
-                <button onClick={() => setPersona('architect')} title="Instructional Architect" className={`p-1.5 rounded-lg ${persona === 'architect' ? 'bg-white dark:bg-white/10 text-indigo-600 shadow-sm' : 'text-slate-400'}`}><PenTool size={14}/></button>
-                <button onClick={() => setPersona('creative')} title="Creative Designer" className={`p-1.5 rounded-lg ${persona === 'creative' ? 'bg-white dark:bg-white/10 text-rose-600 shadow-sm' : 'text-slate-400'}`}><Compass size={14}/></button>
-                <button onClick={() => setPersona('auditor')} title="Curriculum Auditor" className={`p-1.5 rounded-lg ${persona === 'auditor' ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`}><SearchCode size={14}/></button>
-             </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => { setActiveTool(null); setMessages([]); setCanvasContent(''); }} className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 transition-all"><ChevronLeft size={22}/></button>
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{getToolDisplayName(activeTool)}</span>
+            </div>
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
+              <button onClick={() => setPersona('architect')} title="Instructional Architect" className={`p-1.5 rounded-lg ${persona === 'architect' ? 'bg-white dark:bg-white/10 text-indigo-600 shadow-sm' : 'text-slate-400'}`}><PenTool size={14}/></button>
+              <button onClick={() => setPersona('creative')} title="Creative Designer" className={`p-1.5 rounded-lg ${persona === 'creative' ? 'bg-white dark:bg-white/10 text-rose-600 shadow-sm' : 'text-slate-400'}`}><Compass size={14}/></button>
+              <button onClick={() => setPersona('auditor')} title="Curriculum Auditor" className={`p-1.5 rounded-lg ${persona === 'auditor' ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`}><SearchCode size={14}/></button>
+            </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar py-6 space-y-2">
             {messages.map((m) => (<MessageItem key={m.id} id={m.id} role={m.role} content={m.content} timestamp={m.timestamp} metadata={m.metadata} />))}
@@ -249,34 +334,181 @@ USER_QUERY: ${userInput}`;
           </div>
         </div>
 
+        {/* ── RIGHT PANEL — Artifact canvas ── */}
         <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
-           <div className="px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
-              <div className="flex items-center gap-3"><FileEdit size={18} className="text-indigo-600" /><span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Neural Artifact Node</span></div>
-              <div className="flex items-center gap-2">
-                {workflowRecommendation && !isGenerating && (
-                  <button onClick={handleWorkflowTransition} className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg animate-in slide-in-from-right-2">
-                    <ArrowRightCircle size={14}/> Next: {getToolDisplayName(workflowRecommendation.tool)}
-                  </button>
-                )}
-                <button onClick={handleRichCopy} className={`px-4 py-2 ${copySuccess ? 'bg-emerald-50 text-emerald-600' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600'} rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0`}>
-                  {copySuccess ? <Check size={14}/> : <Copy size={14}/>} {copySuccess ? 'Copied' : 'Rich Copy'}
+          
+          {/* Toolbar */}
+          <div className="px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
+            <div className="flex items-center gap-3">
+              <FileEdit size={18} className="text-indigo-600" />
+              <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Neural Artifact Node</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {workflowRecommendation && !isGenerating && (
+                <button onClick={handleWorkflowTransition} className="px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shadow-lg animate-in slide-in-from-right-2">
+                  <ArrowRightCircle size={14}/> Next: {getToolDisplayName(workflowRecommendation.tool)}
                 </button>
-              </div>
-           </div>
-           
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none">
-                {canvasContent ? (
-                  <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500" 
-                       dangerouslySetInnerHTML={{ __html: renderSTEM(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} />
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full py-40 text-center opacity-30 no-print">
-                    <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-8"><FileText size={48} className="text-slate-300" /></div>
-                    <h2 className="text-lg font-black text-slate-300 uppercase tracking-widest">Select a specialized tool to begin</h2>
-                  </div>
+              )}
+
+              {/* Copy button */}
+              <button
+                onClick={handleRichCopy}
+                disabled={!canvasContent}
+                className={`px-3 py-2 ${copySuccess ? 'bg-emerald-50 text-emerald-600' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300'} rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0 disabled:opacity-30`}
+              >
+                {copySuccess ? <Check size={14}/> : <Copy size={14}/>}
+                <span className="hidden sm:inline">{copySuccess ? 'Copied' : 'Copy'}</span>
+              </button>
+
+              {/* Print / PDF button */}
+              <button
+                onClick={handlePrintPDF}
+                disabled={!canvasContent}
+                title="Download as PDF"
+                className="px-3 py-2 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0 disabled:opacity-30"
+              >
+                <Download size={14}/>
+                <span className="hidden sm:inline">PDF</span>
+              </button>
+
+              {/* Share button + dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  disabled={!canvasContent}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0 disabled:opacity-30 shadow-lg"
+                >
+                  <Share2 size={14}/>
+                  <span className="hidden sm:inline">Share</span>
+                </button>
+
+                {showShareMenu && (
+                  <>
+                    {/* Backdrop */}
+                    <div className="fixed inset-0 z-[300]" onClick={() => setShowShareMenu(false)} />
+                    
+                    {/* Share menu */}
+                    <div className="absolute right-0 top-12 z-[400] w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-white/10 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                      
+                      {/* Menu header */}
+                      <div className="px-4 py-3 bg-indigo-600 text-white">
+                        <p className="text-[10px] font-black uppercase tracking-widest opacity-80">Share This</p>
+                        <p className="text-sm font-bold truncate">{getToolDisplayName(activeTool)}</p>
+                      </div>
+
+                      {shareSuccess && (
+                        <div className="px-4 py-2 bg-green-50 text-green-700 text-xs font-bold flex items-center gap-2">
+                          <Check size={12}/> {shareSuccess}
+                        </div>
+                      )}
+
+                      <div className="p-2">
+                        {/* Copy link */}
+                        <button
+                          onClick={handleCopyLink}
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-left"
+                        >
+                          <div className="w-8 h-8 bg-slate-100 dark:bg-white/10 rounded-lg flex items-center justify-center shrink-0">
+                            <Link2 size={14} className="text-slate-600 dark:text-slate-300"/>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-white">Copy App Link</p>
+                            <p className="text-[10px] text-slate-400">Share Pedagogy Master</p>
+                          </div>
+                        </button>
+
+                        {/* WhatsApp */}
+                        <button
+                          onClick={handleShareWhatsApp}
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-green-50 dark:hover:bg-white/5 transition-all text-left"
+                        >
+                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center shrink-0">
+                            <span className="text-sm">📱</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-white">WhatsApp</p>
+                            <p className="text-[10px] text-slate-400">Share with teacher groups</p>
+                          </div>
+                        </button>
+
+                        {/* Twitter/X */}
+                        <button
+                          onClick={handleShareTwitter}
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-left"
+                        >
+                          <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center shrink-0">
+                            <span className="text-sm text-white font-black text-xs">𝕏</span>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-white">Post on X / Twitter</p>
+                            <p className="text-[10px] text-slate-400">Spread the word #EdTech</p>
+                          </div>
+                        </button>
+
+                        {/* Email */}
+                        <button
+                          onClick={handleShareEmail}
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-blue-50 dark:hover:bg-white/5 transition-all text-left"
+                        >
+                          <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                            <Mail size={14} className="text-blue-600"/>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-white">Email to Colleague</p>
+                            <p className="text-[10px] text-slate-400">Send full content + link</p>
+                          </div>
+                        </button>
+
+                        {/* Print PDF */}
+                        <button
+                          onClick={() => { handlePrintPDF(); setShowShareMenu(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-orange-50 dark:hover:bg-white/5 transition-all text-left"
+                        >
+                          <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center shrink-0">
+                            <Printer size={14} className="text-orange-600"/>
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-800 dark:text-white">Print / Save PDF</p>
+                            <p className="text-[10px] text-slate-400">Professional print layout</p>
+                          </div>
+                        </button>
+                      </div>
+
+                      {/* Branding footer */}
+                      <div className="px-4 py-3 bg-slate-50 dark:bg-white/5 border-t border-slate-100 dark:border-white/5">
+                        <p className="text-[9px] text-slate-400 text-center font-medium">
+                          🎓 <span className="font-black text-indigo-600">Pedagogy Master AI</span> — Free for every educator worldwide
+                        </p>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
-           </div>
+            </div>
+          </div>
+
+          {/* Mobile tab switcher */}
+          <div className="flex md:hidden border-b border-slate-100 dark:border-white/5 no-print">
+            <button onClick={() => setMobileActiveTab('logs')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${mobileActiveTab === 'logs' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Chat Logs</button>
+            <button onClick={() => setMobileActiveTab('artifact')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest ${mobileActiveTab === 'artifact' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400'}`}>Artifact</button>
+          </div>
+
+          {/* Canvas content */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0">
+            <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none print:rounded-none print:p-0">
+              {canvasContent ? (
+                <div
+                  className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500"
+                  dangerouslySetInnerHTML={{ __html: renderSTEM(cleanContent) }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full py-40 text-center opacity-30 no-print">
+                  <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-8"><FileText size={48} className="text-slate-300" /></div>
+                  <h2 className="text-lg font-black text-slate-300 uppercase tracking-widest">Select a specialized tool to begin</h2>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
