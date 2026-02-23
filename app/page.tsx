@@ -20,6 +20,7 @@ const PricingView = lazy(() => import('../views/Pricing'));
 const TrackerView = lazy(() => import('../views/Tracker'));
 const AuditView = lazy(() => import('../views/AuditDashboard'));
 const MissionView = lazy(() => import('../views/MissionControl'));
+const StandardsBrowser = lazy(() => import('../views/StandardsBrowser'));
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -62,7 +63,6 @@ export default function App() {
   const fetchAppData = useCallback(async (userId: string, email?: string) => {
     getSupabaseHealth().then(setHealthStatus);
     
-    // 1. Fetch Brain / System Prompt from DB
     const { data: { session: currentSession } } = await supabase.auth.getSession();
     if (currentSession) {
       fetch('/api/brain/get', {
@@ -84,7 +84,6 @@ export default function App() {
       .catch(e => console.error("Neural Brain Fetch Error:", e));
     }
 
-    // 2. Fetch Profile
     getOrCreateProfile(userId, email).then(profile => {
       if (profile) {
         setUserProfile({
@@ -94,14 +93,12 @@ export default function App() {
           queriesUsed: profile.queries_used || 0, queriesLimit: profile.queries_limit || 30,
           generationCount: profile.generation_count || 0, successRate: profile.success_rate || 0
         });
-        // Show onboarding if not completed yet
         if (!profile.onboarding_completed) {
           setNeedsOnboarding(true);
         }
       }
     });
 
-    // 3. Fetch Documents
     supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => {
         if (data) {
@@ -192,17 +189,14 @@ export default function App() {
   return (
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
 
-      {/* ── ONBOARDING OVERLAY — shows for new teachers ── */}
+      {/* ── ONBOARDING OVERLAY ── */}
       {needsOnboarding && session && (
         <Onboarding
           userId={session.user.id}
           userEmail={session.user.email || ''}
           onComplete={(updatedProfile) => {
             setNeedsOnboarding(false);
-            setUserProfile(prev => prev ? {
-              ...prev,
-              name: updatedProfile.name,
-            } : prev);
+            setUserProfile(prev => prev ? { ...prev, name: updatedProfile.name } : prev);
             setCurrentView('documents');
           }}
         />
@@ -210,8 +204,17 @@ export default function App() {
 
       {isSidebarOpen && <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
       <div className={`fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'} ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
+        <Sidebar
+          currentView={currentView}
+          onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }}
+          userProfile={safeProfile}
+          isCollapsed={isCollapsed}
+          setIsCollapsed={setIsCollapsed}
+          theme={theme}
+          toggleTheme={toggleTheme}
+        />
       </div>
+
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {safeProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         <header className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm z-40">
@@ -229,16 +232,17 @@ export default function App() {
                   onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true), onViewChange: setCurrentView 
                 };
                 switch (currentView) {
-                  case 'dashboard': return <Dashboard {...props} />;
-                  case 'documents': return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => fetchAppData(safeProfile.id, safeProfile.email)} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={healthStatus.status === 'connected'} />;
-                  case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={() => setUserProfile(p => p ? {...p, queriesUsed: p.queriesUsed + 1} : null)} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} />;
-                  case 'tracker': return <TrackerView user={safeProfile} documents={documents} />;
-                  case 'brain': return safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
-                  case 'audit': return safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} />;
-                  case 'mission': return safeProfile.role === UserRole.APP_ADMIN ? <MissionView /> : <Dashboard {...props} />;
-                  case 'pricing': return <PricingView currentPlan={safeProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
-                  case 'policy': return <Policy onBack={() => setCurrentView('pricing')} />;
-                  default: return <Dashboard {...props} />;
+                  case 'dashboard':  return <Dashboard {...props} />;
+                  case 'documents':  return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => fetchAppData(safeProfile.id, safeProfile.email)} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={healthStatus.status === 'connected'} />;
+                  case 'tools':      return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={() => setUserProfile(p => p ? {...p, queriesUsed: p.queriesUsed + 1} : null)} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} />;
+                  case 'standards':  return <StandardsBrowser user={safeProfile} documents={documents} onViewChange={setCurrentView} />;
+                  case 'tracker':    return <TrackerView user={safeProfile} documents={documents} />;
+                  case 'brain':      return safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
+                  case 'audit':      return safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} />;
+                  case 'mission':    return safeProfile.role === UserRole.APP_ADMIN ? <MissionView /> : <Dashboard {...props} />;
+                  case 'pricing':    return <PricingView currentPlan={safeProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
+                  case 'policy':     return <Policy onBack={() => setCurrentView('pricing')} />;
+                  default:           return <Dashboard {...props} />;
                 }
               })()}
             </Suspense>
