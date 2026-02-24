@@ -1,11 +1,9 @@
 /**
- * VISION EXTRACTOR — lib/rag/vision-extractor.ts
+ * VISION EXTRACTOR v2.0 — lib/rag/vision-extractor.ts
  * 
- * Uses Gemini 2.5 Pro's native PDF vision to extract text from scanned PDFs.
- * This bypasses pdf-parse entirely — the AI reads the document visually,
- * exactly like a human would, regardless of whether there is a text layer.
- * 
- * Falls back through multiple Gemini models if primary is rate-limited.
+ * FIX from v1: Removed SLO format examples from extraction prompt.
+ * Examples were causing Gemini to output the example AS the data.
+ * Now: pure extraction only, no format hints that confuse the model.
  */
 
 const GEMINI_VISION_MODELS = [
@@ -16,69 +14,36 @@ const GEMINI_VISION_MODELS = [
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-const EXTRACTION_PROMPT = `You are a specialist in Pakistani and international school curriculum documents.
+// CRITICAL: No examples in this prompt — examples caused AI to echo them back as data
+const EXTRACTION_PROMPT = `You are reading a school curriculum document. Your job is to extract ALL text faithfully.
 
-Your task: Extract ALL content from this curriculum document with perfect accuracy.
+INSTRUCTIONS:
+- Copy every learning objective, standard, and code exactly as written in the document
+- Preserve all section headings, grade levels, domain letters, unit names
+- Use markdown: # for grade headings, ## for domains, ### for units
+- Write each learning objective on its own line, preceded by its code
+- Extract from ALL pages — do not stop early or summarize
+- Do NOT add any explanation, commentary, or formatting that is not in the original
 
-CRITICAL RULES:
-1. Extract every SLO (Student Learning Outcome) code exactly as written
-   Format: SUBJECTCODE+GRADE(2digits)+DOMAIN(letter)+NUMBER(2digits)
-   Examples: BIO09A01, MAT11B03, PHY10C05, CHE12D02
-2. Preserve ALL headings — Grade levels, Domains, Units, Topics
-3. Keep the full text of every learning objective word-for-word
-4. Use markdown structure:
-   # GRADE [X]
-   ## DOMAIN [Letter]: [Name]  
-   ### UNIT: [Name]
-   **[SLO_CODE]** [Full text of learning objective]
-5. Do NOT summarize, paraphrase, or skip any content
-6. Include ALL pages — do not stop early
-7. At the very end, output a structured index:
+Start extracting now, beginning from page 1:`;
 
-<STRUCTURED_INDEX>
-[
-  {
-    "slo_code": "BIO09A01",
-    "slo_full_text": "Full text of the learning objective",
-    "bloom_level": "Remember|Understand|Apply|Analyze|Evaluate|Create",
-    "domain": "A",
-    "domain_name": "Cell Biology",
-    "grade": "Grade 9",
-    "subject": "Biology"
-  }
-]
-</STRUCTURED_INDEX>
-
-Extract now — be thorough and complete:`;
-
-interface VisionResult {
+export interface VisionResult {
   text: string;
   method: 'vision' | 'text';
   model: string;
-  pageCount?: number;
+  charCount: number;
 }
 
-/**
- * Extract text from a PDF buffer using Gemini Vision.
- * Sends the entire PDF as base64 inline data — Gemini reads it visually.
- */
 export async function extractPDFWithVision(
   buffer: Buffer,
   fileName: string
 ): Promise<VisionResult> {
   const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
+  if (!apiKey) throw new Error('No Gemini API key. Set API_KEY or GEMINI_API_KEY.');
 
   const base64Data = buffer.toString('base64');
   const fileSizeMB = buffer.length / (1024 * 1024);
-  
-  console.log(`[Vision] Processing ${fileName} (${fileSizeMB.toFixed(1)}MB) via Gemini Vision`);
-
-  // Gemini inline data limit is 20MB — for larger files we chunk by uploading
-  // For files under 20MB we use inline data (most curriculum PDFs are 5-15MB)
-  if (fileSizeMB > 18) {
-    console.warn(`[Vision] File too large for inline (${fileSizeMB.toFixed(1)}MB) — will process first 18MB`);
-  }
+  console.log(`[Vision] ${fileName} (${fileSizeMB.toFixed(1)}MB) — starting vision extraction`);
 
   let lastError: Error | null = null;
 
@@ -92,25 +57,18 @@ export async function extractPDFWithVision(
           body: JSON.stringify({
             contents: [{
               parts: [
-                {
-                  inline_data: {
-                    mime_type: 'application/pdf',
-                    data: base64Data,
-                  }
-                },
-                {
-                  text: EXTRACTION_PROMPT
-                }
+                { inline_data: { mime_type: 'application/pdf', data: base64Data } },
+                { text: EXTRACTION_PROMPT }
               ]
             }],
             generationConfig: {
-              temperature: 0.1,
+              temperature: 0.05,
               maxOutputTokens: 8192,
-              topP: 0.8,
+              topP: 0.95,
             },
             safetySettings: [
-              { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
-              { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
+              { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
               { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
               { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
             ]
@@ -120,66 +78,61 @@ export async function extractPDFWithVision(
 
       if (!response.ok) {
         const errText = await response.text();
-        // Rate limit — try next model
-        if (response.status === 429) {
-          console.warn(`[Vision] ${model} rate limited, trying next...`);
-          lastError = new Error(`Rate limited: ${errText.substring(0, 100)}`);
-          await new Promise(r => setTimeout(r, 2000));
+        if (response.status === 429 || response.status === 503) {
+          console.warn(`[Vision] ${model} ${response.status} — trying next`);
+          lastError = new Error(`${response.status}: ${errText.substring(0, 100)}`);
+          await new Promise(r => setTimeout(r, 3000));
           continue;
         }
-        throw new Error(`Gemini Vision API error ${response.status}: ${errText.substring(0, 200)}`);
+        throw new Error(`Gemini ${response.status}: ${errText.substring(0, 200)}`);
       }
 
       const data = await response.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!text || text.length < 200) {
-        console.warn(`[Vision] ${model} returned insufficient content (${text?.length || 0} chars)`);
-        lastError = new Error('Insufficient content returned');
+      if (data?.candidates?.[0]?.finishReason === 'SAFETY') {
+        lastError = new Error('Safety filter');
         continue;
       }
 
-      console.log(`[Vision] ✅ ${model} extracted ${text.length} chars from ${fileName}`);
-      return { text, method: 'vision', model };
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (text.length < 200) {
+        console.warn(`[Vision] ${model} only ${text.length} chars — trying next`);
+        lastError = new Error(`Only ${text.length} chars returned`);
+        continue;
+      }
+
+      console.log(`[Vision] ✅ ${model} — ${text.length} chars extracted from ${fileName}`);
+      return { text, method: 'vision', model, charCount: text.length };
 
     } catch (err: any) {
       lastError = err;
-      console.warn(`[Vision] ${model} failed: ${err.message?.substring(0, 100)}`);
-      await new Promise(r => setTimeout(r, 1000));
+      console.warn(`[Vision] ${model} failed: ${err.message?.substring(0, 80)}`);
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 
-  throw new Error(`Vision extraction failed for ${fileName}: ${lastError?.message}`);
+  throw new Error(`All vision models failed for "${fileName}". Last error: ${lastError?.message}`);
 }
 
-/**
- * Smart extraction — tries text layer first, falls back to vision.
- * This way digital PDFs (fast) don't pay the vision cost.
- */
 export async function smartExtractPDF(
   buffer: Buffer,
   fileName: string
 ): Promise<VisionResult> {
-  // Try text extraction first
+  // Try text layer first — fast and free for digital PDFs
   try {
     const pdf = (await import('pdf-parse')).default;
     const raw = await pdf(buffer);
     const text = raw.text?.trim() || '';
-
-    // Quality check — scanned PDFs return almost nothing
-    const meaningfulLines = text.split('\n').filter((l: string) => l.trim().length > 10).length;
-    const hasRealContent = text.length > 800 && meaningfulLines > 20;
+    const meaningfulLines = text.split('\n').filter((l: string) => l.trim().length > 15).length;
+    const hasRealContent = text.length > 1000 && meaningfulLines > 30;
 
     if (hasRealContent) {
-      console.log(`[Extract] Digital PDF detected — using text layer (${text.length} chars, ${meaningfulLines} lines)`);
-      return { text, method: 'text', model: 'pdf-parse', pageCount: raw.numpages };
+      console.log(`[Extract] Digital PDF — ${text.length} chars, ${meaningfulLines} lines`);
+      return { text, method: 'text', model: 'pdf-parse', charCount: text.length };
     }
-
-    console.log(`[Extract] Scanned PDF detected (${text.length} chars, ${meaningfulLines} lines) — switching to Vision`);
+    console.log(`[Extract] Scanned PDF (${text.length} chars, ${meaningfulLines} lines) — using Vision`);
   } catch (e: any) {
-    console.warn(`[Extract] pdf-parse failed: ${e.message} — falling back to Vision`);
+    console.warn(`[Extract] pdf-parse failed: ${e.message} — using Vision`);
   }
 
-  // Fall back to Gemini Vision
   return extractPDFWithVision(buffer, fileName);
 }
