@@ -167,7 +167,7 @@ export async function smartExtractPDF(
     const text = raw.text?.trim() || '';
 
     // Quality check — scanned PDFs return almost nothing
-    const meaningfulLines = text.split('\n').filter(l => l.trim().length > 10).length;
+    const meaningfulLines = text.split('\n').filter((l: string) => l.trim().length > 10).length;
     const hasRealContent = text.length > 800 && meaningfulLines > 20;
 
     if (hasRealContent) {
