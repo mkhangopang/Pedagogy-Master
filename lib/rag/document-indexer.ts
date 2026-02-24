@@ -25,11 +25,11 @@ export async function indexDocumentForRAG(
     const lines = content.split('\n');
     const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
-    // Context trackers
-    let currentSubject = 'N/A';
-    let currentGrade   = 'N/A';
-    let currentDomain  = 'N/A';
-    let currentUnit    = 'N/A';
+    // Context trackers — use empty string NOT 'N/A' to avoid integer column crashes
+    let currentSubject = '';
+    let currentGrade   = '';
+    let currentDomain  = '';
+    let currentUnit    = '';
 
     const nodes: any[] = [];
     let buffer = '';
@@ -79,7 +79,10 @@ export async function indexDocumentForRAG(
           .toString('base64')
           .substring(0, 50);
 
-        const contextPath  = `[NODE_PATH: ${currentSubject} > ${currentGrade} > ${currentDomain}]`;
+        const subjectLabel = currentSubject || 'General';
+        const gradeLabel   = currentGrade   || 'All Grades';
+        const domainLabel  = currentDomain  || 'Core';
+        const contextPath  = `[NODE_PATH: ${subjectLabel} > ${gradeLabel} > ${domainLabel}]`;
         const enrichedText = `${contextPath}\n${buffer.trim()}`;
         const tokenCount   = Math.max(1, Math.ceil(enrichedText.length / 4));
 
@@ -87,13 +90,13 @@ export async function indexDocumentForRAG(
           text: enrichedText,
           fingerprint,
           metadata: {
-            subject:    currentSubject,
-            grade:      currentGrade,
-            domain:     currentDomain,
-            unit:       currentUnit,
-            slo_codes:  Array.from(codesInChunk),
+            subject:      currentSubject || null,
+            grade:        currentGrade   || null,
+            domain:       currentDomain  || null,
+            unit:         currentUnit    || null,
+            slo_codes:    Array.from(codesInChunk),
             dialect,
-            tokens:     tokenCount,
+            tokens:       tokenCount,
             is_atomic_slo: codesInChunk.size > 0,
           }
         });
@@ -129,7 +132,24 @@ export async function indexDocumentForRAG(
           .eq('id', jobId);
       }
 
-      const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
+      // Retry up to 2 times on 503/rate-limit before throwing
+      let embeddings: number[][] = [];
+      let embedAttempt = 0;
+      while (embedAttempt < 3) {
+        try {
+          embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
+          break;
+        } catch (embedErr: any) {
+          embedAttempt++;
+          const is503 = embedErr.message?.includes('503') || embedErr.message?.includes('unavailable') || embedErr.message?.includes('demand');
+          if (is503 && embedAttempt < 3) {
+            console.warn(`[Indexer] Embedding 503 — retry ${embedAttempt}/3 in ${embedAttempt * 3}s`);
+            await new Promise(r => setTimeout(r, embedAttempt * 3000));
+          } else {
+            throw embedErr;
+          }
+        }
+      }
 
       const records = batch.map((node, j) => {
         const embedding = embeddings[j];
@@ -144,15 +164,15 @@ export async function indexDocumentForRAG(
           document_id:          documentId,
           chunk_text:           node.text,
           embedding:            embedding,
-          slo_codes:            node.metadata.slo_codes,
+          slo_codes:            node.metadata.slo_codes || [],
           semantic_fingerprint: node.fingerprint,
-          token_count:          node.metadata.tokens,
-          chunk_index:          i + j,        // satisfies NOT NULL constraint
+          token_count:          Number(node.metadata.tokens) || 1,  // always integer
+          chunk_index:          Number(i + j),                       // always integer
           metadata:             node.metadata,
-          unit_name:            node.metadata.unit,
-          bloom_levels:         [],            // populated later by SLO mapping
-          grade_levels:         node.metadata.grade ? [node.metadata.grade] : [],
-          topics:               node.metadata.slo_codes,
+          unit_name:            node.metadata.unit    || null,
+          bloom_levels:         [],
+          grade_levels:         node.metadata.grade   ? [String(node.metadata.grade)] : [],
+          topics:               node.metadata.slo_codes || [],
         };
       }).filter(Boolean);
 
