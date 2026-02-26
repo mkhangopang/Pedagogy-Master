@@ -4,12 +4,13 @@ import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-export const runtime = 'nodejs'; 
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * PRODUCTION UPLOAD GATEWAY (v136.5)
- * Fix: Lean header generation to ensure R2 PutObject stability across all regions.
+ * UPLOAD GATEWAY v137.0
+ * FIX: Now saves r2_key column — was always NULL causing getObjectBuffer to fail.
+ * FIX: status set to 'pending' not 'processing' — uploader drives processing steps.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -22,59 +23,57 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { name, contentType, extractedText } = body;
-
     if (!name || !contentType) {
       return NextResponse.json({ error: 'Metadata missing' }, { status: 400 });
     }
 
-    if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Node Offline.");
+    if (!isR2Configured() || !r2Client) throw new Error('Cloud Storage Node Offline.');
 
     const documentId = crypto.randomUUID();
     const cleanFileName = name.replace(/[^a-zA-Z0-9.-]/g, '_');
     const r2Key = `raw/${user.id}/${documentId}/${cleanFileName}`;
 
-    // PRE-SIGNED URL GENERATION (Lean Mode)
     const command = new PutObjectCommand({
       Bucket: R2_BUCKET,
       Key: r2Key,
       ContentType: contentType,
     });
 
-    // 15-minute validity
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
-
     const supabase = getSupabaseServerClient(token);
-    // De-select old context
+
+    // De-select old documents
     await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
 
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
-      id: documentId,
-      user_id: user.id,
-      name: name,
-      file_path: r2Key,
-      status: 'processing',
-      mime_type: contentType,
-      subject: 'Detecting...',
-      grade_level: 'Auto',
-      is_selected: true,
-      document_summary: 'Binary payload streaming...',
-      rag_indexed: false,
-      extracted_text: extractedText || "",
-      is_approved: false,
-      version: 1
+      id:               documentId,
+      user_id:          user.id,
+      name:             name,
+      file_path:        r2Key,   // ← used by getObjectBuffer
+      r2_key:           r2Key,   // ← FIX: was never saved, caused all extraction failures
+      status:           'pending', // ← pending until uploader drives 3-step process
+      mime_type:        contentType,
+      subject:          'Detecting...',
+      grade_level:      'Auto',
+      is_selected:      true,
+      document_summary: 'Awaiting processing...',
+      rag_indexed:      false,
+      extracted_text:   extractedText || '',
+      is_approved:      false,
+      version:          1,
     }).select().single();
 
     if (dbError) throw new Error(dbError.message);
 
-    return NextResponse.json({ 
-      success: true, 
+    return NextResponse.json({
+      success:    true,
       documentId: docData.id,
-      uploadUrl: uploadUrl,
-      r2Key: r2Key
+      uploadUrl:  uploadUrl,
+      r2Key:      r2Key,
     });
 
   } catch (error: any) {
-    console.error("❌ [Upload Handshake Fault]:", error);
-    return NextResponse.json({ error: error.message || 'Synthesis grid exception.' }, { status: 500 });
+    console.error('❌ [Upload Gateway Fault]:', error);
+    return NextResponse.json({ error: error.message || 'Gateway exception.' }, { status: 500 });
   }
 }
