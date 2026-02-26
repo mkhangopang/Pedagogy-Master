@@ -6,7 +6,7 @@ import {
   callCerebras, callSambanova, callOpenRouter,
   callAIGateway, callMistral,
   AIResponse, AIRequestConfig
-} from './providers';
+} from './providers/providers';
 
 export type TaskType =
   | 'INGEST_LINEARIZE'
