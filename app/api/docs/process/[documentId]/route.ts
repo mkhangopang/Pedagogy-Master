@@ -128,9 +128,9 @@ export async function POST(
 
     // ── STEP 2: LINEARIZE ─────────────────────────────────────
     // HOBBY PLAN FIX: One chunk per call, client loops until isDone
-    if (job.step === IngestionStep.LINEARIZE) {
-      const body = await req.json().catch(() => ({}));
-      const chunkIndex: number = body.chunkIndex ?? 0;
+    // CRITICAL: Read chunkIndex from body — do NOT rely on job.step for routing
+    if (job.step === IngestionStep.LINEARIZE || requestBody.chunkIndex !== undefined) {
+      const chunkIndex: number = requestBody.chunkIndex ?? 0;
 
       const { data: current, error: fetchErr } = await adminSupabase
         .from('documents').select('extracted_text').eq('id', documentId).single();
@@ -141,13 +141,16 @@ export async function POST(
         throw new Error(`LINEARIZE_FAULT: No extracted text (${rawText.length} chars). Step 1 may have failed.`);
       }
 
+      const totalChunks = Math.ceil((rawText.length) / 17500);
+
+      // Only update progress — do NOT advance step yet
       await queue.updateProgress(job.id, {
         step: IngestionStep.LINEARIZE,
-        progress: 35 + Math.round((chunkIndex / Math.ceil(rawText.length / 17500)) * 25),
-        message: `Processing chunk ${chunkIndex + 1}...`,
+        progress: 35 + Math.round(((chunkIndex + 1) / totalChunks) * 25),
+        message: `Processing chunk ${chunkIndex + 1}/${totalChunks}...`,
       });
 
-      const { slos, totalChunks, isDone } = await processOneChunk(rawText, chunkIndex);
+      const { slos, isDone } = await processOneChunk(rawText, chunkIndex);
 
       // Upsert SLOs from this chunk into slo_database
       if (slos.length > 0) {
@@ -168,19 +171,17 @@ export async function POST(
             keywords: [],
           }));
 
-        // First chunk clears old SLOs, subsequent chunks append
         if (chunkIndex === 0) {
           await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
         }
-        if (records.length > 0) {
-          await adminSupabase.from('slo_database').insert(records);
-        }
+        await adminSupabase.from('slo_database').insert(records);
       }
 
       const progressPct = 35 + Math.round(((chunkIndex + 1) / totalChunks) * 25);
 
       if (!isDone) {
-        // Tell client to call again with next chunk index
+        // More chunks remain — tell client to call again with next chunkIndex
+        // DO NOT advance job step here
         return NextResponse.json({
           success: true,
           done: false,
@@ -190,17 +191,16 @@ export async function POST(
           totalChunks,
           progress: progressPct,
           slosThisChunk: slos.length,
-          message: `Chunk ${chunkIndex + 1}/${totalChunks} processed — ${slos.length} SLOs found`,
+          message: `Chunk ${chunkIndex + 1}/${totalChunks} done — ${slos.length} SLOs`,
         });
       }
 
-      // All chunks done — count total SLOs
+      // ── ALL CHUNKS DONE ── now advance to EMBED
       const { count: sloCount } = await adminSupabase
         .from('slo_database')
         .select('*', { count: 'exact', head: true })
         .eq('document_id', documentId);
 
-      // Save linearized markdown for EMBED step
       const { data: allSlos } = await adminSupabase
         .from('slo_database').select('*').eq('document_id', documentId);
       const markdown = `### Curriculum SLOs\n\n<STRUCTURED_INDEX>\n${JSON.stringify(allSlos, null, 2)}\n</STRUCTURED_INDEX>`;
@@ -210,6 +210,7 @@ export async function POST(
         document_summary: `Linearized — ${sloCount || 0} SLOs`,
       }).eq('id', documentId);
 
+      // NOW advance job step to EMBED
       await queue.updateProgress(job.id, {
         step: IngestionStep.EMBED,
         progress: 63,
@@ -219,7 +220,7 @@ export async function POST(
       return NextResponse.json({
         success: true, done: false, step: 'LINEARIZE', nextStep: 'EMBED',
         progress: 63, sloCount,
-        message: `Step 2/3 complete. ${sloCount} SLOs extracted.`,
+        message: `Step 2/3 complete — ${sloCount} SLOs extracted.`,
       });
     }
 
