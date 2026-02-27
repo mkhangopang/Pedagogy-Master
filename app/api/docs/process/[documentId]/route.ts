@@ -24,24 +24,41 @@ async function callLinearizer(content: string, recipe: string): Promise<string> 
     console.log('[Linearizer] Vision already structured — skipping AI linearization');
     return content;
   }
-  const safeContent = content.substring(0, 60000);
+
+  // CRITICAL: Keep under 20,000 chars to avoid Vercel 60s timeout
+  // Biology PDF is 269k chars — we take the most content-dense section
+  const safeContent = content.substring(0, 20000);
+
   const result = await neuralGrid.execute(
     `[CURRICULUM_LINEARIZATION_TASK]
-Apply the Master Recipe instructions precisely.
-MANDATORY: Include <STRUCTURED_INDEX> JSON block at the very end.
-SLO CODE FORMAT: SUBJECTCODE+GRADE(2digits)+DOMAIN(letter)+NUMBER(2digits)
-Example: BIO09A01, MAT11B03, ENG07C12
-=== MASTER RECIPE ===
-${recipe}
-=== RAW CURRICULUM TEXT ===
-${safeContent}
-=== END TEXT ===`,
-    'INGEST_LINEARIZE',
-    { temperature: 0.1, maxTokens: 8192 }
-  );
-  if (!result.text || result.text.length < 100) {
-    throw new Error(`AI linearizer returned insufficient content (${result.text?.length || 0} chars)`);
+Extract ALL SLO codes and learning objectives from this curriculum text.
+Return ONLY a JSON array inside <STRUCTURED_INDEX> tags — nothing else.
+
+FORMAT (strict):
+<STRUCTURED_INDEX>
+[
+  {
+    "slo_code": "BIO09A01",
+    "slo_full_text": "Full text of learning objective",
+    "bloom_level": "Remember|Understand|Apply|Analyze|Evaluate|Create",
+    "domain": "A",
+    "domain_name": "Cell Biology",
+    "grade": "Grade 9",
+    "subject": "Biology"
   }
+]
+</STRUCTURED_INDEX>
+
+CURRICULUM TEXT:
+${safeContent}`,
+    'INGEST_LINEARIZE',
+    { temperature: 0.0, maxTokens: 4096 }
+  );
+
+  if (!result.text || result.text.length < 50) {
+    throw new Error(`AI linearizer returned insufficient content (${result.text?.length || 0} chars) via ${result.provider}`);
+  }
+
   return result.text;
 }
 
