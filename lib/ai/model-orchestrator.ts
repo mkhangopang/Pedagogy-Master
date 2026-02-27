@@ -59,16 +59,15 @@ export class NeuralOrchestrator {
 
     switch (taskType) {
 
-      // ── INGEST_LINEARIZE: Heavy curriculum processing
+      // ── INGEST_LINEARIZE: Fast models first to beat Vercel 60s timeout
       case 'INGEST_LINEARIZE':
         return [
-          () => callGemini(prompt, 'gemini-2.5-pro-preview-06-05', { ...config, temperature: 0.1, maxTokens: 8192 }),
-          () => callGemini(prompt, 'gemini-2.5-flash-preview-05-20', { ...config, temperature: 0.1, maxTokens: 8192 }),
-          () => callMistral(prompt.substring(0, 32000), 'mistral-large-latest', { ...config, temperature: 0.1, maxTokens: 4096 }),
-          () => callAIGateway(prompt, { ...config, temperature: 0.1, maxTokens: 4096 }),
-          () => callGroq(prompt.substring(0, 24000), 'llama-3.3-70b-versatile', { ...config, temperature: 0.1, maxTokens: 4096 }),
-          () => callDeepSeek(prompt.substring(0, 24000), 'deepseek-chat', { ...config, temperature: 0.1, maxTokens: 4096 }),
-          () => callOpenRouter(prompt.substring(0, 12000), 'google/gemini-2.0-flash-001', { ...config, temperature: 0.1, maxTokens: 2000 }),
+          () => callGroq(prompt.substring(0, 20000), 'llama-3.3-70b-versatile', { ...config, temperature: 0.0, maxTokens: 4096 }),
+          () => callMistral(prompt.substring(0, 20000), 'mistral-small-latest', { ...config, temperature: 0.0, maxTokens: 4096 }),
+          () => callCerebras(prompt.substring(0, 20000), 'llama3.1-70b', { ...config, temperature: 0.0, maxTokens: 4096 }),
+          () => callGemini(prompt.substring(0, 20000), 'gemini-2.5-flash-preview-05-20', { ...config, temperature: 0.0, maxTokens: 4096 }),
+          () => callDeepSeek(prompt.substring(0, 20000), 'deepseek-chat', { ...config, temperature: 0.0, maxTokens: 4096 }),
+          () => callOpenRouter(prompt.substring(0, 12000), 'google/gemini-2.0-flash-001', { ...config, temperature: 0.0, maxTokens: 2000 }),
         ];
 
       // ── LESSON_PLAN: 5E / UbD / Madeline Hunter
