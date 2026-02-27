@@ -11,47 +11,64 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 // ═══════════════════════════════════════════════════════════════════════
-// UNIVERSAL CURRICULUM INGESTION ENGINE v3.0
-// Enterprise-grade | State-machine-driven | Fault-tolerant
-// Pakistan Phase 1: Sindh Textbook Board (Biology reference)
-// Extensible: Punjab, FBISE, KPK, Balochistan → IB, CBSE, UK NC
+// UNIVERSAL CURRICULUM INGESTION ENGINE v4.0
+// ─────────────────────────────────────────────────────────────────────
+// ARCHITECTURE (5-Stage Pipeline):
+//
+//  Stage 1 — EXTRACT    : pdf-parse (deterministic) → Vision fallback (OCR)
+//  Stage 2 — PARSE      : Regex state-machine (zero AI tokens)
+//  Stage 3 — VALIDATE   : Domain registry + boundary detection (zero AI)
+//  Stage 4 — ENRICH     : AI batch Bloom classification (lightweight model)
+//  Stage 5 — EMBED      : Vector indexing
+//
+// KEY PRINCIPLE: AI is NEVER the primary extractor.
+//               Regex finds SLOs. AI only classifies them.
 // ═══════════════════════════════════════════════════════════════════════
 
-// ── LAYER 1: PAKISTAN BOARD REGISTRY ────────────────────────────────────
+// ── BOARD REGISTRY ──────────────────────────────────────────────────────
 const PAKISTAN_BOARDS: Record<string, {
   name: string;
   subjectCodes: Record<string, string>;
-  sloPattern: RegExp;
-  gradePattern: RegExp;
-  domainPattern: RegExp;
-  patternType: 'hierarchical_code' | 'decimal' | 'lo_textual' | 'competency';
-  normalization: (code: string) => string;
+  // Deterministic regex patterns — no AI needed for extraction
+  sloRegex: RegExp;
+  gradeRegex: RegExp;
+  domainRegex: RegExp;
+  benchmarkRegex: RegExp;
+  patternType: 'hierarchical_code' | 'decimal' | 'lo_textual';
+  normalizeFn: (code: string) => string;
 }> = {
   SINDH: {
     name: 'Sindh Textbook Board',
     subjectCodes: {
-      'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry',
-      'M': 'Mathematics', 'E': 'English', 'U': 'Urdu',
-      'CS': 'Computer Science', 'GEO': 'Geography',
+      'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
+      'E': 'English', 'U': 'Urdu', 'CS': 'Computer Science', 'GEO': 'Geography',
     },
-    sloPattern: /(?:SLO\s*[:\-]?\s*)?([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{2})/g,
-    gradePattern: /(?:grade|class)\s*:?\s*(IX|X{0,3}I{0,3}|V?I{0,3}|\d{1,2})/gi,
-    domainPattern: /DOMAIN\s+([A-Z])\s*[:\-]\s*([^\n]+)/gi,
+    // Catches: B-09-A-01, SLO:B-09-A-01, SLO B-09-A-01, SLO- B-09-A-01
+    // Also catches OCR variants: SL0 (zero), B-9-A-1 (no padding)
+    sloRegex: /(?:SL[O0]\s*[:\-]?\s*)?([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})/g,
+    gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
+    domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
+    benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*([^\n\r]{10,120})/gi,
     patternType: 'hierarchical_code',
-    normalization: (code: string) => code
-      .replace(/SL0/g, 'SLO')
-      .replace(/\s+/g, '')
-      .toUpperCase()
-      .trim(),
+    normalizeFn: (code: string) => {
+      return code
+        .toUpperCase()
+        .replace(/SL0/g, 'SLO')      // OCR: zero → O
+        .replace(/\s+/g, '')          // remove spaces
+        .replace(/-(\d)-/g, (_, n) => `-${n.padStart(2, '0')}-`)  // B-9-A → B-09-A
+        .replace(/-(\d)$/, (_, n) => `-${n.padStart(2, '0')}`)    // trailing -1 → -01
+        .trim();
+    },
   },
   PUNJAB: {
     name: 'Punjab Curriculum & Textbook Board',
     subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
-    sloPattern: /(?:SLO|LO|Outcome)\s*[:\-]?\s*(\d+)\.(\d+)\.(\d+)/g,
-    gradePattern: /(?:grade|class)\s*:?\s*(IX|X|XI|XII|\d{1,2})/gi,
-    domainPattern: /(?:UNIT|CHAPTER|TOPIC)\s+(\d+)\s*[:\-]\s*([^\n]+)/gi,
+    sloRegex: /(?:SLO|LO|Outcome)\s*[:\-]?\s*(\d+)\.(\d+)\.(\d+)/g,
+    gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
+    domainRegex: /(?:UNIT|CHAPTER|TOPIC)\s+(\d+)\s*[:\-]\s*([^\n\r]+)/gi,
+    benchmarkRegex: /(?:OBJECTIVE|OBJ)\s*[:\-]?\s*([^\n\r]{10,120})/gi,
     patternType: 'decimal',
-    normalization: (code: string) => code.trim().toUpperCase(),
+    normalizeFn: (code: string) => code.trim().toUpperCase(),
   },
 };
 
@@ -61,393 +78,301 @@ const ROMAN_TO_GRADE: Record<string, string> = {
   'XI': '11', 'XII': '12',
 };
 
-// ── LAYER 2: HIERARCHICAL STATE MACHINE ─────────────────────────────────
-interface CurriculumState {
-  // Hierarchy
-  board: string;
-  subject: string;
-  detectedSubjectCode: string;
-  currentGrade: string;
-  currentDomain: string;
-  currentDomainName: string;
-  currentBenchmark: string;
-  // Domain Registry — only accept declared domains
-  declaredDomains: Record<string, string>; // { 'A': 'Nature of Science', 'B': 'Cell Biology' }
-  // Page tracking
-  currentPageEstimate: number;
-  charsProcessed: number;
-  // Audit
-  orphanCodes: string[];
-  flaggedTruncations: string[];
-  ingestionWarnings: string[];
-}
-
-// ── LAYER 3: BOARD & SUBJECT DETECTION ──────────────────────────────────
+// ── HELPERS ───────────────────────────────────────────────────────────────
 function detectBoard(text: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('sindh') || lower.includes('stbb')) return 'SINDH';
-  if (lower.includes('punjab') || lower.includes('pctb')) return 'PUNJAB';
-  if (lower.includes('federal') || lower.includes('fbise')) return 'FBISE';
-  if (lower.includes('kpk') || lower.includes('khyber')) return 'KPK';
+  const t = text.toLowerCase();
+  if (t.includes('sindh') || t.includes('stbb')) return 'SINDH';
+  if (t.includes('punjab') || t.includes('pctb')) return 'PUNJAB';
+  if (t.includes('federal') || t.includes('fbise')) return 'FBISE';
+  if (t.includes('kpk') || t.includes('khyber')) return 'KPK';
   return 'SINDH';
 }
 
-function detectSubjectCode(text: string, boardKey: string): string {
-  const lower = text.toLowerCase();
-  if (lower.includes('biology')) return 'B';
-  if (lower.includes('physics')) return 'P';
-  if (lower.includes('chemistry')) return 'C';
-  if (lower.includes('mathematics') || lower.includes('maths')) return 'M';
-  if (lower.includes('english')) return 'E';
-  if (lower.includes('computer')) return 'CS';
+function detectSubject(text: string): string {
+  const t = text.toLowerCase();
+  if (t.includes('biology')) return 'B';
+  if (t.includes('physics')) return 'P';
+  if (t.includes('chemistry')) return 'C';
+  if (t.includes('mathematics') || t.includes(' math')) return 'M';
+  if (t.includes('english')) return 'E';
+  if (t.includes('computer')) return 'CS';
   return 'B';
 }
 
 function normalizeGrade(raw: string): string {
-  const trimmed = raw.trim().toUpperCase();
-  if (ROMAN_TO_GRADE[trimmed]) return ROMAN_TO_GRADE[trimmed];
-  const num = parseInt(trimmed);
-  if (!isNaN(num)) return num.toString().padStart(2, '0');
-  return trimmed;
+  const t = raw.trim().toUpperCase();
+  if (ROMAN_TO_GRADE[t]) return ROMAN_TO_GRADE[t];
+  const n = parseInt(t);
+  return isNaN(n) ? t : n.toString().padStart(2, '0');
 }
 
-// ── LAYER 4: DOMAIN REGISTRY — pre-scan declared domains ────────────────
-function scanDeclaredDomains(fullText: string): Record<string, string> {
-  const domains: Record<string, string> = {};
-  const pattern = /DOMAIN\s+([A-Z])\s*[:\-]\s*([^\n]+)/gi;
-  let match;
-  while ((match = pattern.exec(fullText)) !== null) {
-    const letter = match[1].toUpperCase();
-    const title = match[2].trim().replace(/\s+/g, ' ');
-    if (!domains[letter]) {
-      domains[letter] = title;
+// ── STAGE 2: DETERMINISTIC SLO EXTRACTOR ─────────────────────────────────
+// Zero AI tokens. Pure regex + state machine.
+// Extracts every SLO code, attaches surrounding context.
+interface RawSLO {
+  slo_code: string;
+  raw_code_as_found: string;
+  slo_full_text: string;
+  grade: string;
+  domain: string;
+  domain_name: string;
+  benchmark: string;
+  subject: string;
+  subject_code: string;
+  board: string;
+  char_offset: number;
+  page_number_estimate: number;
+  is_truncated: boolean;
+  is_orphan_domain: boolean;
+  regex_confidence: number;
+}
+
+function deterministicExtract(
+  text: string,
+  boardKey: string,
+  declaredDomains: Record<string, string>,
+  subjectCode: string,
+  estimatedPages: number,
+  chunkCharOffset: number,
+): RawSLO[] {
+  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
+  const subjectName = board.subjectCodes[subjectCode] || 'Unknown';
+  const results: RawSLO[] = [];
+
+  // ── State machine — tracks context as we scan line by line ──
+  let currentGrade = '';
+  let currentDomain = '';
+  let currentDomainName = '';
+  let currentBenchmark = '';
+
+  // Split into lines for state machine processing
+  const lines = text.split(/\r?\n/);
+  let charPos = 0;
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+    const trimmed = line.trim();
+    charPos += line.length + 1;
+
+    // ── State transition: Grade heading ──
+    const gradeMatch = trimmed.match(/(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/i);
+    if (gradeMatch) {
+      currentGrade = normalizeGrade(gradeMatch[1]);
+      continue;
     }
+
+    // ── State transition: Domain heading ──
+    const domainMatch = trimmed.match(/(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*(.+)/i);
+    if (domainMatch) {
+      currentDomain = domainMatch[1].toUpperCase();
+      currentDomainName = domainMatch[2].trim();
+      if (!declaredDomains[currentDomain]) {
+        declaredDomains[currentDomain] = currentDomainName;
+      }
+      continue;
+    }
+
+    // ── State transition: Benchmark ──
+    const bmMatch = trimmed.match(/(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/i);
+    if (bmMatch) {
+      currentBenchmark = bmMatch[1].trim();
+      continue;
+    }
+
+    // ── SLO code detection ──
+    const sloRegex = new RegExp(board.sloRegex.source, 'g');
+    let sloMatch;
+    while ((sloMatch = sloRegex.exec(trimmed)) !== null) {
+      const rawCode = sloMatch[0];
+      const normalizedCode = board.normalizeFn(rawCode);
+
+      // Extract SLO text: everything on this line after the code
+      let sloText = trimmed.substring(sloMatch.index + rawCode.length).trim();
+
+      // ── Boundary detection: merge following continuation lines ──
+      // A continuation line: doesn't start with a new SLO code, grade, domain,
+      // is not a page number, and is not empty
+      let nextLineIdx = lineIdx + 1;
+      const maxMerge = 6;
+      let mergeCount = 0;
+
+      while (nextLineIdx < lines.length && mergeCount < maxMerge) {
+        const nextLine = lines[nextLineIdx].trim();
+        if (!nextLine) break;
+
+        const isNewSLO = new RegExp(board.sloRegex.source).test(nextLine);
+        const isNewGrade = /^(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/i.test(nextLine);
+        const isNewDomain = /^(?:DOMAIN|STRAND|UNIT)\s+[A-Z]\s*[:\-]/i.test(nextLine);
+        const isPageNumber = /^\d{1,3}$/.test(nextLine);
+        const isHeader = nextLine.length < 5;
+
+        if (isNewSLO || isNewGrade || isNewDomain || isPageNumber || isHeader) break;
+
+        sloText = sloText ? `${sloText} ${nextLine}` : nextLine;
+        nextLineIdx++;
+        mergeCount++;
+      }
+
+      // ── Extract domain from SLO code itself (ground truth) ──
+      const codePartsMatch = normalizedCode.match(/^([A-Z]{1,3})-(\d{2})-([A-Z])-(\d{2})$/);
+      let codeDomain = currentDomain;
+      let codeGrade = currentGrade;
+      let codeSubject = subjectCode;
+
+      if (codePartsMatch) {
+        codeSubject = codePartsMatch[1];
+        codeGrade = normalizeGrade(codePartsMatch[2]);
+        codeDomain = codePartsMatch[3];
+      }
+
+      // ── Domain orphan check ──
+      const hasDeclaredDomains = Object.keys(declaredDomains).length > 0;
+      const isOrphan = hasDeclaredDomains && codeDomain && !declaredDomains[codeDomain];
+
+      // ── Truncation detection ──
+      const wordCount = sloText.split(/\s+/).filter(Boolean).length;
+      const endsWithPunctuation = /[.!?;]$/.test(sloText.trim());
+      const isTruncated = wordCount < 4 || (!endsWithPunctuation && wordCount < 8);
+
+      // ── Regex confidence: strict pattern match = 1.0, partial = 0.6 ──
+      const regexConfidence = codePartsMatch ? 1.0 : 0.6;
+
+      // ── Page estimate ──
+      const absoluteOffset = chunkCharOffset + charPos;
+      const pageEstimate = estimatedPages > 0
+        ? Math.ceil((absoluteOffset / (text.length + chunkCharOffset)) * estimatedPages)
+        : null;
+
+      results.push({
+        slo_code: normalizedCode,
+        raw_code_as_found: rawCode,
+        slo_full_text: sloText || `[Code found: ${normalizedCode} — text not captured]`,
+        grade: codeGrade || currentGrade || '',
+        domain: codeDomain || currentDomain || '',
+        domain_name: declaredDomains[codeDomain] || currentDomainName || `Domain ${codeDomain}`,
+        benchmark: currentBenchmark,
+        subject: board.subjectCodes[codeSubject] || subjectName,
+        subject_code: codeSubject || subjectCode,
+        board: boardKey,
+        char_offset: absoluteOffset,
+        page_number_estimate: pageEstimate || 0,
+        is_truncated: isTruncated,
+        is_orphan_domain: isOrphan,
+        regex_confidence: regexConfidence,
+      });
+    }
+  }
+
+  return results;
+}
+
+// ── STAGE 3: CONFIDENCE SCORING ───────────────────────────────────────────
+function computeConfidence(slo: RawSLO, isOcrReliable: boolean): number {
+  const weights = {
+    regex:   0.35,
+    domain:  0.25,
+    boundary: 0.20,
+    ocr:     0.20,
+  };
+  const domainScore = !slo.is_orphan_domain ? 1.0 : 0.2;
+  const boundaryScore = slo.is_truncated ? 0.3 : 1.0;
+  const ocrScore = isOcrReliable ? 1.0 : 0.6;
+
+  return Math.round((
+    (slo.regex_confidence * weights.regex) +
+    (domainScore * weights.domain) +
+    (boundaryScore * weights.boundary) +
+    (ocrScore * weights.ocr)
+  ) * 100) / 100;
+}
+
+// ── STAGE 4: AI BLOOM ENRICHMENT (lightweight, batch, not primary) ────────
+// Sends 15 SLOs at a time for Bloom classification only
+// Never extracts — only classifies already-found SLOs
+async function enrichWithBloom(
+  slos: RawSLO[],
+  boardKey: string,
+): Promise<Map<string, string>> {
+  const bloomMap = new Map<string, string>();
+  if (slos.length === 0) return bloomMap;
+
+  const BATCH_SIZE = 15;
+
+  for (let i = 0; i < slos.length; i += BATCH_SIZE) {
+    const batch = slos.slice(i, i + BATCH_SIZE);
+    const batchList = batch.map((s, idx) =>
+      `${idx + 1}. [${s.slo_code}] ${s.slo_full_text}`
+    ).join('\n');
+
+    try {
+      const result = await neuralGrid.execute(
+        `Classify each SLO by Bloom's Taxonomy level.
+Return ONLY a JSON object mapping code to level. No explanation.
+
+Levels: Remember | Understand | Apply | Analyze | Evaluate | Create
+
+SLOs:
+${batchList}
+
+Return format:
+{"B-09-A-01": "Remember", "B-09-A-02": "Apply", ...}`,
+        'BLOOM_TAG',
+        { temperature: 0.0, maxTokens: 512 }
+      );
+
+      const text = result.text.trim().replace(/```json|```/g, '').trim();
+      const objMatch = text.match(/\{[\s\S]*\}/);
+      if (objMatch) {
+        const parsed = JSON.parse(objMatch[0]);
+        for (const [code, level] of Object.entries(parsed)) {
+          bloomMap.set(code.toUpperCase(), String(level));
+        }
+      }
+    } catch (err) {
+      // Bloom failure is non-fatal — default to 'Understand'
+      console.warn(`[Bloom] Batch ${Math.floor(i / BATCH_SIZE) + 1} failed (non-fatal):`, err);
+    }
+
+    // Throttle between Bloom batches — avoid rate limits
+    if (i + BATCH_SIZE < slos.length) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  return bloomMap;
+}
+
+// ── DOMAIN PRE-SCANNER ────────────────────────────────────────────────────
+function scanDeclaredDomains(text: string): Record<string, string> {
+  const domains: Record<string, string> = {};
+  const pattern = /(?:DOMAIN|STRAND)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi;
+  let m;
+  while ((m = pattern.exec(text)) !== null) {
+    const letter = m[1].toUpperCase();
+    if (!domains[letter]) domains[letter] = m[2].trim().replace(/\s+/g, ' ');
   }
   return domains;
 }
 
-// ── LAYER 5: CONFIDENCE SCORING ─────────────────────────────────────────
-// Score = weighted average of 5 signals. NOT hardcoded 0.85.
-function computeConfidence(params: {
-  regexStrength: number;     // 0-1: did code match strict pattern?
-  domainValidated: boolean;  // domain exists in declared registry
-  boundaryClarity: number;   // 0-1: did SLO text end cleanly?
-  aiValidated: boolean;      // AI confirmed this SLO
-  ocrReliable: boolean;      // text layer existed (not OCR'd)
-  textLength: number;        // SLO text length signal
-}): number {
-  const weights = {
-    regexStrength: 0.30,
-    domainValidated: 0.25,
-    boundaryClarity: 0.20,
-    aiValidated: 0.15,
-    ocrReliable: 0.10,
-  };
-  const score =
-    (params.regexStrength * weights.regexStrength) +
-    ((params.domainValidated ? 1 : 0) * weights.domainValidated) +
-    (params.boundaryClarity * weights.boundaryClarity) +
-    ((params.aiValidated ? 1 : 0) * weights.aiValidated) +
-    ((params.ocrReliable ? 1 : 0) * weights.ocrReliable);
-  return Math.round(score * 100) / 100;
-}
-
-// ── LAYER 6: BOUNDARY DETECTION ─────────────────────────────────────────
-function detectTruncation(text: string): boolean {
-  if (!text || text.length < 10) return true;
-  const trimmed = text.trimEnd();
-  // Truncated if ends mid-word, no punctuation, or very short
-  const endsCleanly = /[.!?:;\-]$/.test(trimmed) || trimmed.split(' ').length > 5;
-  const tooShort = trimmed.split(' ').length < 4;
-  return !endsCleanly || tooShort;
-}
-
-function estimatePageNumber(charOffset: number, totalChars: number, estimatedPages: number): number {
-  if (!estimatedPages || !totalChars) return 0;
-  return Math.ceil((charOffset / totalChars) * estimatedPages);
-}
-
-// ── LAYER 7: VALIDATION ──────────────────────────────────────────────────
-interface ValidationReport {
-  duplicates: string[];
-  orphanDomains: string[];  // domain letter not in declared registry
-  malformed: string[];
-  truncated: string[];
-  totalExtracted: number;
-  totalValid: number;
-  warnings: string[];
-}
-
-function validateAndEnrichSLOs(
-  slos: any[],
-  boardKey: string,
-  state: CurriculumState,
-  isOcrReliable: boolean,
-): { valid: any[], report: ValidationReport } {
-  const seen = new Set<string>();
-  const valid: any[] = [];
-  const report: ValidationReport = {
-    duplicates: [], orphanDomains: [], malformed: [],
-    truncated: [], totalExtracted: slos.length, totalValid: 0, warnings: [],
-  };
-
-  const hasDeclaredDomains = Object.keys(state.declaredDomains).length > 0;
+// ── DEDUPLICATION ──────────────────────────────────────────────────────────
+function deduplicateSLOs(slos: RawSLO[]): { unique: RawSLO[], duplicates: string[] } {
+  const seen = new Map<string, RawSLO>();
+  const duplicates: string[] = [];
 
   for (const slo of slos) {
-    const rawCode = slo.slo_code || '';
-    if (!rawCode) { report.malformed.push('empty_code'); continue; }
-
-    // Normalize code
-    const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
-    const code = board.normalization(rawCode);
-
-    // Duplicate check
-    if (seen.has(code)) { report.duplicates.push(code); continue; }
-
-    // Pattern validation (Sindh: SUBJ-GRADE-DOMAIN-SEQ)
-    const sindhPattern = /^([A-Z]{1,3})-(\d{2})-([A-Z])-(\d{2})$/;
-    const altPattern = /^SLO:([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})$/;
-    const match = code.match(sindhPattern) || code.match(altPattern);
-
-    let regexStrength = 0.5;
-    let extractedDomain = slo.domain || '';
-
-    if (match) {
-      regexStrength = 1.0;
-      // Extract domain letter from code itself as ground truth
-      extractedDomain = match[3] || match[4] || extractedDomain;
-    } else {
-      report.malformed.push(code);
-      regexStrength = 0.2;
-      // Don't discard — flag but include with low confidence
-    }
-
-    // ── DOMAIN REGISTRY VALIDATION (Fix #2) ──
-    // STRICT MODE: Only accept domains declared in document
-    let domainValidated = false;
-    let domainTitle = slo.domain_name || '';
-    let isOrphan = false;
-
-    if (hasDeclaredDomains) {
-      if (extractedDomain && state.declaredDomains[extractedDomain]) {
-        domainValidated = true;
-        domainTitle = state.declaredDomains[extractedDomain]; // use canonical title
-      } else if (extractedDomain) {
-        // Domain letter not in declared registry → flag as orphan
-        isOrphan = true;
-        report.orphanDomains.push(code);
-        report.warnings.push(`Orphan domain "${extractedDomain}" in ${code} — not declared in document`);
-        // Include but flag — do NOT silently discard
+    if (seen.has(slo.slo_code)) {
+      duplicates.push(slo.slo_code);
+      // Keep the one with longer text (more complete)
+      const existing = seen.get(slo.slo_code)!;
+      if (slo.slo_full_text.length > existing.slo_full_text.length) {
+        seen.set(slo.slo_code, slo);
       }
     } else {
-      // No declared domains found yet — trust AI extraction
-      domainValidated = true;
-      domainTitle = slo.domain_name || `Domain ${extractedDomain}`;
-    }
-
-    // ── TRUNCATION DETECTION (Fix #6) ──
-    const sloText = slo.slo_full_text || '';
-    const isTruncated = detectTruncation(sloText);
-    if (isTruncated) {
-      report.truncated.push(code);
-      report.warnings.push(`Possible truncation in ${code}: "${sloText.substring(0, 60)}..."`);
-    }
-
-    // ── CONFIDENCE SCORE (Fix #4 — not static 0.85) ──
-    const boundaryClarity = isTruncated ? 0.3 : 0.9;
-    const confidence = computeConfidence({
-      regexStrength,
-      domainValidated,
-      boundaryClarity,
-      aiValidated: true, // AI extracted it — counts as validated
-      ocrReliable: isOcrReliable,
-      textLength: sloText.length,
-    });
-
-    seen.add(code);
-    valid.push({
-      ...slo,
-      slo_code: code,
-      // ── Fix #1: Store domain title separately ──
-      domain: extractedDomain,
-      domain_name: domainTitle,
-      // ── Fix #4: Real confidence score ──
-      extraction_confidence: confidence,
-      // ── Fix #6: Truncation flag ──
-      is_truncated: isTruncated,
-      // ── Fix #2: Orphan domain flag ──
-      is_orphan_domain: isOrphan,
-    });
-  }
-
-  report.totalValid = valid.length;
-  return { valid, report };
-}
-
-// ── LAYER 8: CHUNK PROCESSOR ─────────────────────────────────────────────
-// One chunk per Vercel call — Hobby plan safe (each call < 10s)
-async function processOneChunk(
-  content: string,
-  chunkIndex: number,
-  state: CurriculumState,
-  isOcrReliable: boolean,
-): Promise<{
-  slos: any[];
-  totalChunks: number;
-  isDone: boolean;
-  nextState: CurriculumState;
-  report: ValidationReport;
-}> {
-  const CHUNK_SIZE = 18000;
-  const OVERLAP    = 1500; // Larger overlap catches multi-line SLOs at boundaries
-
-  const chunks: Array<{ start: number; end: number }> = [];
-  for (let i = 0; i < content.length; i += CHUNK_SIZE - OVERLAP) {
-    chunks.push({ start: i, end: Math.min(i + CHUNK_SIZE, content.length) });
-    if (i + CHUNK_SIZE >= content.length) break;
-  }
-
-  const totalChunks = chunks.length;
-  if (chunkIndex >= totalChunks) {
-    return {
-      slos: [], totalChunks, isDone: true, nextState: state,
-      report: { duplicates: [], orphanDomains: [], malformed: [], truncated: [], totalExtracted: 0, totalValid: 0, warnings: [] },
-    };
-  }
-
-  const { start, end } = chunks[chunkIndex];
-  const chunk = content.substring(start, end);
-
-  // ── State Machine Transitions ────────────────────────────────
-  const nextState: CurriculumState = { ...state };
-
-  // Grade transitions
-  const gradeMatches = [...chunk.matchAll(/(?:grade|class)\s*:?\s*(IX|X{0,3}I{0,3}|V?I{0,3}|\d{1,2})/gi)];
-  if (gradeMatches.length > 0) {
-    nextState.currentGrade = normalizeGrade(gradeMatches[gradeMatches.length - 1][1]);
-  }
-
-  // Domain transitions — update registry from this chunk too
-  const domainMatches = [...chunk.matchAll(/DOMAIN\s+([A-Z])\s*[:\-]\s*([^\n]+)/gi)];
-  for (const dm of domainMatches) {
-    const letter = dm[1].toUpperCase();
-    const title = dm[2].trim();
-    if (!nextState.declaredDomains[letter]) {
-      nextState.declaredDomains[letter] = title;
+      seen.set(slo.slo_code, slo);
     }
   }
-  if (domainMatches.length > 0) {
-    const last = domainMatches[domainMatches.length - 1];
-    nextState.currentDomain = last[1].toUpperCase();
-    nextState.currentDomainName = last[2].trim();
-  }
 
-  // Page estimate
-  nextState.charsProcessed = state.charsProcessed + chunk.length;
-  nextState.currentPageEstimate = Math.ceil((nextState.charsProcessed / content.length) * 200); // rough estimate
-
-  const declaredDomainsList = Object.entries(nextState.declaredDomains)
-    .map(([k, v]) => `DOMAIN ${k}: ${v}`)
-    .join('\n') || 'No domains declared yet — infer from context';
-
-  // ── Extraction Prompt (context-first, pattern-validated) ────
-  const prompt = `You are a Pakistan curriculum SLO extraction engine.
-Board: ${state.board} (${PAKISTAN_BOARDS[state.board]?.name || 'Sindh Textbook Board'})
-Subject: ${state.subject}
-
-STRICT RULES — NEVER VIOLATE:
-1. Extract ONLY explicitly written SLO codes. NEVER invent or continue sequences.
-2. Sindh SLO format: SUBJECT-GRADE-DOMAIN-SEQ (e.g., B-09-A-01 or SLO:B-09-A-01)
-3. Normalize: Roman numerals IX→09 X→10 XI→11 XII→12. OCR typo SL0→SLO.
-4. Multi-line SLOs: merge continuation lines into ONE slo_full_text field.
-5. Ignore page headers, footers, page numbers, chapter titles without SLO codes.
-6. DOMAIN VALIDATION: Only use domain letters declared below. Flag unknown domains.
-7. Return [] if no SLO codes found in this chunk.
-8. Bloom classification: ONLY assign after confirming SLO text is complete.
-
-DECLARED DOMAINS IN THIS DOCUMENT:
-${declaredDomainsList}
-
-CURRENT STATE (from previous chunks):
-- Grade: ${nextState.currentGrade || 'unknown — detect from chunk'}
-- Domain: ${nextState.currentDomain || 'unknown'} — ${nextState.currentDomainName || ''}
-- Estimated page: ~${nextState.currentPageEstimate}
-
-RETURN — raw JSON array ONLY, no markdown, no explanation:
-[
-  {
-    "slo_code": "B-09-A-01",
-    "raw_code_as_found": "SLO:B-09-A-01",
-    "slo_full_text": "Complete merged multi-line objective",
-    "bloom_level": "Remember|Understand|Apply|Analyze|Evaluate|Create",
-    "subject": "${state.subject}",
-    "subject_code": "${state.detectedSubjectCode}",
-    "grade": "09",
-    "domain": "A",
-    "domain_name": "Nature of Science in Biology",
-    "board": "${state.board}",
-    "page_number_estimate": ${nextState.currentPageEstimate},
-    "is_truncated_suspect": false
-  }
-]
-
-CHUNK ${chunkIndex + 1}/${totalChunks}:
-${chunk}`;
-
-  // ── AI Call with Fault Isolation (Fix #8) ──────────────────
-  let slos: any[] = [];
-  let aiSucceeded = false;
-
-  try {
-    const result = await neuralGrid.execute(prompt, 'INGEST_LINEARIZE', { temperature: 0.0, maxTokens: 4096 });
-    aiSucceeded = true;
-
-    const text = result.text.trim().replace(/```json|```/g, '').trim();
-    const arrayMatch = text.match(/\[[\s\S]*\]/);
-    if (arrayMatch) {
-      const parsed = JSON.parse(arrayMatch[0]);
-      if (Array.isArray(parsed)) slos = parsed;
-    }
-  } catch (err: any) {
-    // ── FAULT ISOLATION: AI failure does NOT crash the job (Fix #8) ──
-    const warning = `Chunk ${chunkIndex + 1} AI failed: ${err.message?.substring(0, 80)} — skipping, continuing`;
-    console.warn(`[Pakistan Engine] ${warning}`);
-    nextState.ingestionWarnings.push(warning);
-    // Return empty SLOs for this chunk — job continues
-    slos = [];
-  }
-
-  // ── Post-process: normalize + validate (Bloom runs AFTER validation) ──
-  const board = PAKISTAN_BOARDS[state.board] || PAKISTAN_BOARDS['SINDH'];
-  const normalizedSlos = slos.map(s => ({
-    ...s,
-    slo_code: board.normalization(s.slo_code || ''),
-    grade: normalizeGrade(s.grade || nextState.currentGrade || ''),
-  })).filter(s => s.slo_code.length > 0);
-
-  // ── Validation layer runs BEFORE Bloom enrichment (Fix #5) ──
-  const { valid, report } = validateAndEnrichSLOs(
-    normalizedSlos,
-    state.board,
-    nextState,
-    isOcrReliable,
-  );
-
-  console.log(
-    `[Pakistan Engine v3] Chunk ${chunkIndex + 1}/${totalChunks} | ` +
-    `grade:${nextState.currentGrade} domain:${nextState.currentDomain} | ` +
-    `${valid.length}/${slos.length} SLOs valid | ` +
-    `orphans:${report.orphanDomains.length} truncated:${report.truncated.length} | ` +
-    `AI:${aiSucceeded ? 'ok' : 'FAILED-isolated'}`
-  );
-
-  return {
-    slos: valid,
-    totalChunks,
-    isDone: chunkIndex >= totalChunks - 1,
-    nextState,
-    report,
-  };
+  return { unique: Array.from(seen.values()), duplicates };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -461,7 +386,6 @@ export async function POST(
   const adminSupabase = getSupabaseAdminClient();
   const queue = new IngestionQueue(adminSupabase);
 
-  // Parse body ONCE — carries chunkIndex + state between client calls
   const requestBody = await req.json().catch(() => ({}));
 
   let job = await queue.getJobStatus(documentId);
@@ -479,7 +403,11 @@ export async function POST(
       .from('documents').select('*').eq('id', documentId).single();
     if (!doc) throw new Error('VAULT_ERROR: Document not found.');
 
-    // ── STEP 1: EXTRACT ────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════
+    // STAGE 1 — EXTRACT
+    // pdf-parse first (free, deterministic)
+    // Vision/OCR only if text layer absent or thin
+    // ══════════════════════════════════════════════════════════
     if (job.step === IngestionStep.EXTRACT) {
       await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 10, message: 'Fetching from storage...' });
       await adminSupabase.from('documents').update({ status: 'processing', document_summary: 'Extracting...' }).eq('id', documentId);
@@ -492,115 +420,132 @@ export async function POST(
       const extraction = await smartExtractPDF(buffer, doc.name || 'document.pdf');
 
       if (!extraction.text || extraction.text.length < 300) {
-        throw new Error(`Low quality extraction (${extraction.text?.length || 0} chars via ${extraction.method}).`);
+        throw new Error(`Extraction failed (${extraction.text?.length || 0} chars via ${extraction.method}).`);
       }
 
-      // Detect board + subject from doc name + first 2000 chars
-      const sampleText = (doc.name || '') + ' ' + extraction.text.substring(0, 2000);
-      const detectedBoard = detectBoard(sampleText);
-      const detectedSubjectCode = detectSubjectCode(sampleText, detectedBoard);
-      const boardInfo = PAKISTAN_BOARDS[detectedBoard];
-      const isOcrReliable = extraction.method === 'text'; // pdf-parse = reliable, vision = OCR
+      // Board + subject detection
+      const sample = (doc.name || '') + ' ' + extraction.text.substring(0, 2000);
+      const detectedBoard = detectBoard(sample);
+      const detectedSubject = detectSubject(sample);
+      const boardInfo = PAKISTAN_BOARDS[detectedBoard] || PAKISTAN_BOARDS['SINDH'];
+      const isOcrReliable = extraction.method === 'text';
 
-      // ── Pre-scan FULL document for declared domains ──
+      // Pre-scan ALL declared domains from full text (done once here, not per chunk)
       const declaredDomains = scanDeclaredDomains(extraction.text);
       const domainCount = Object.keys(declaredDomains).length;
 
+      // Estimate page count from text density (~2000 chars per page)
+      const estimatedPages = Math.ceil(extraction.text.length / 2000);
+
       await adminSupabase.from('documents').update({
-        // Store FULL text — no truncation
-        extracted_text: extraction.text,
-        document_summary: `Extracted via ${extraction.method} — ${extraction.text.length} chars | Board:${detectedBoard} | Subject:${detectedSubjectCode} | Domains:${domainCount}`,
+        extracted_text: extraction.text, // full text, no truncation
+        document_summary: `Extracted|board:${detectedBoard}|subject:${detectedSubject}|method:${extraction.method}|chars:${extraction.text.length}|domains:${domainCount}|pages:~${estimatedPages}`,
       }).eq('id', documentId);
 
       await queue.updateProgress(job.id, {
         step: IngestionStep.LINEARIZE,
         progress: 30,
-        message: `${extraction.method === 'vision' ? 'Vision' : 'Text'} extraction complete. ${boardInfo?.name || detectedBoard} detected. ${domainCount} domains found.`,
+        message: `${boardInfo.name} detected. ${extraction.text.length.toLocaleString()} chars. ${domainCount} domains. ~${estimatedPages} pages.`,
       });
 
       return NextResponse.json({
         success: true, done: false, step: 'EXTRACT', nextStep: 'LINEARIZE',
-        progress: 30, method: extraction.method, charCount: extraction.text.length,
-        board: detectedBoard,
-        subject: boardInfo?.subjectCodes[detectedSubjectCode] || detectedSubjectCode,
-        declaredDomains,
-        isOcrReliable,
-        message: `Step 1/3 complete. ${boardInfo?.name || 'Pakistan curriculum'} detected. ${domainCount} domains pre-scanned.`,
+        progress: 30,
+        board: detectedBoard, boardName: boardInfo.name,
+        subject: boardInfo.subjectCodes[detectedSubject] || detectedSubject,
+        charCount: extraction.text.length,
+        estimatedPages, domainCount, declaredDomains,
+        isOcrReliable, method: extraction.method,
+        message: `Step 1/3: ${boardInfo.name} | ${extraction.text.length.toLocaleString()} chars | ${domainCount} domains pre-scanned`,
       });
     }
 
-    // ── STEP 2: LINEARIZE — chunked, state-machine-driven ─────────────
+    // ══════════════════════════════════════════════════════════
+    // STAGE 2+3 — PARSE + VALIDATE (deterministic, zero AI)
+    // One chunk per call — Hobby plan safe (~3s per call)
+    // chunkIndex passed in body, state carried forward
+    // ══════════════════════════════════════════════════════════
     if (job.step === IngestionStep.LINEARIZE || requestBody.chunkIndex !== undefined) {
       const chunkIndex: number = requestBody.chunkIndex ?? 0;
 
       const { data: current, error: fetchErr } = await adminSupabase
         .from('documents').select('extracted_text, document_summary').eq('id', documentId).single();
-      if (fetchErr) throw new Error(`LINEARIZE_FAULT: DB read failed — ${fetchErr.message}`);
+      if (fetchErr) throw new Error(`PARSE_FAULT: DB read failed — ${fetchErr.message}`);
 
       const rawText = current?.extracted_text || '';
-      if (rawText.length < 100) {
-        throw new Error(`LINEARIZE_FAULT: No extracted text (${rawText.length} chars). Run Step 1 first.`);
+      if (rawText.length < 100) throw new Error(`PARSE_FAULT: No text to parse (${rawText.length} chars).`);
+
+      // Parse metadata from summary string
+      const summaryMeta = current?.document_summary || '';
+      const boardKey = summaryMeta.match(/board:(\w+)/)?.[1] || detectBoard((doc.name || '') + rawText.substring(0, 1000));
+      const subjectCode = summaryMeta.match(/subject:(\w+)/)?.[1] || detectSubject(rawText.substring(0, 1000));
+      const estimatedPages = parseInt(summaryMeta.match(/pages:~?(\d+)/)?.[1] || '100');
+      const isOcrReliable = summaryMeta.includes('method:text');
+      const boardInfo = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
+
+      // Restore or build declared domains
+      const declaredDomains: Record<string, string> = requestBody.declaredDomains || scanDeclaredDomains(rawText);
+
+      // ── Chunk boundaries ──
+      const CHUNK_SIZE = 20000;
+      const OVERLAP    = 1500;
+      const chunks: Array<{ start: number; end: number }> = [];
+      for (let i = 0; i < rawText.length; i += CHUNK_SIZE - OVERLAP) {
+        chunks.push({ start: i, end: Math.min(i + CHUNK_SIZE, rawText.length) });
+        if (i + CHUNK_SIZE >= rawText.length) break;
+      }
+      const totalChunks = chunks.length;
+
+      if (chunkIndex >= totalChunks) {
+        // All chunks done — proceed to ENRICH
+        return NextResponse.json({
+          success: true, done: false, step: 'LINEARIZE', nextStep: 'ENRICH',
+          progress: 60, totalChunks,
+          message: 'All chunks parsed. Starting AI enrichment...',
+        });
       }
 
-      // Re-detect board/subject from document name + text
-      const boardKey = detectBoard((doc.name || '') + rawText.substring(0, 2000));
-      const subjectCode = detectSubjectCode((doc.name || '') + rawText.substring(0, 2000), boardKey);
-      const boardInfo = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
-      const subjectName = boardInfo.subjectCodes[subjectCode] || 'Unknown';
-
-      // Determine OCR reliability from summary
-      const isOcrReliable = (current?.document_summary || '').includes('text —');
-
-      // Restore or initialize state machine
-      const state: CurriculumState = requestBody.state || {
-        board: boardKey,
-        subject: subjectName,
-        detectedSubjectCode: subjectCode,
-        currentGrade: '',
-        currentDomain: '',
-        currentDomainName: '',
-        currentBenchmark: '',
-        declaredDomains: scanDeclaredDomains(rawText), // full pre-scan
-        currentPageEstimate: 0,
-        charsProcessed: 0,
-        orphanCodes: [],
-        flaggedTruncations: [],
-        ingestionWarnings: [],
-      };
-
-      const totalChunks = Math.ceil(rawText.length / 16500);
+      const { start, end } = chunks[chunkIndex];
+      const chunk = rawText.substring(start, end);
 
       await queue.updateProgress(job.id, {
         step: IngestionStep.LINEARIZE,
-        progress: 35 + Math.round(((chunkIndex + 1) / totalChunks) * 25),
-        message: `[${boardKey}] Chunk ${chunkIndex + 1}/${totalChunks}...`,
+        progress: 32 + Math.round(((chunkIndex + 1) / totalChunks) * 25),
+        message: `[${boardKey}] Parsing chunk ${chunkIndex + 1}/${totalChunks}...`,
       });
 
-      const { slos, isDone, nextState, report } = await processOneChunk(
-        rawText, chunkIndex, state, isOcrReliable,
+      // ── STAGE 2: DETERMINISTIC EXTRACTION — zero AI tokens ──
+      const rawSLOs = deterministicExtract(
+        chunk,
+        boardKey,
+        declaredDomains,
+        subjectCode,
+        estimatedPages,
+        start, // char offset for page estimation
       );
 
-      // Upsert validated SLOs with full enrichment
-      if (slos.length > 0) {
-        const records = slos.map((s: any) => ({
+      // ── STAGE 3: CONFIDENCE SCORING ──
+      const scoredSLOs = rawSLOs.map(slo => ({
+        ...slo,
+        extraction_confidence: computeConfidence(slo, isOcrReliable),
+      }));
+
+      // Upsert this chunk's SLOs (no Bloom yet — that's Stage 4)
+      if (scoredSLOs.length > 0) {
+        const records = scoredSLOs.map(s => ({
           document_id: documentId,
           slo_code: s.slo_code,
-          slo_full_text: s.slo_full_text || '',
-          // Fix #1: domain title stored explicitly
-          domain: s.domain || nextState.currentDomain || '',
-          domain_name: s.domain_name || nextState.currentDomainName || '',
-          bloom_level: s.bloom_level || 'Understand',
-          subject: s.subject || subjectName,
-          grade_level: s.grade || nextState.currentGrade || '',
-          // Fix #4: real confidence score
-          extraction_confidence: s.extraction_confidence ?? 0.5,
-          // Fix #3: page number
-          page_number: s.page_number_estimate || nextState.currentPageEstimate || null,
-          // Fix #6: truncation flag
-          is_truncated: s.is_truncated ?? false,
-          // Fix #2: orphan domain flag
-          is_orphan_domain: s.is_orphan_domain ?? false,
-          cognitive_complexity: s.bloom_level || 'Understand',
+          slo_full_text: s.slo_full_text,
+          domain: s.domain,
+          domain_name: s.domain_name,
+          bloom_level: 'Understand', // placeholder — AI enriches in Stage 4
+          subject: s.subject,
+          grade_level: s.grade,
+          extraction_confidence: s.extraction_confidence,
+          page_number: s.page_number_estimate || null,
+          is_truncated: s.is_truncated,
+          is_orphan_domain: s.is_orphan_domain,
+          cognitive_complexity: 'Understand',
           teaching_strategies: [],
           assessment_ideas: [],
           prerequisite_concepts: [],
@@ -611,13 +556,12 @@ export async function POST(
         if (chunkIndex === 0) {
           await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
         }
-        await adminSupabase.from('slo_database').insert(records);
+        // Upsert on slo_code to handle overlap deduplication
+        await adminSupabase.from('slo_database')
+          .upsert(records, { onConflict: 'document_id,slo_code', ignoreDuplicates: true });
       }
 
-      // Accumulate ingestion warnings in state
-      nextState.ingestionWarnings.push(...report.warnings);
-
-      const progressPct = 35 + Math.round(((chunkIndex + 1) / totalChunks) * 25);
+      const isDone = chunkIndex >= totalChunks - 1;
 
       if (!isDone) {
         return NextResponse.json({
@@ -625,57 +569,124 @@ export async function POST(
           step: 'LINEARIZE', nextStep: 'LINEARIZE',
           chunkIndex: chunkIndex + 1,
           totalChunks,
-          progress: progressPct,
-          slosThisChunk: slos.length,
-          orphansThisChunk: report.orphanDomains.length,
-          truncatedThisChunk: report.truncated.length,
-          state: nextState,
-          message: `[${boardKey}] Chunk ${chunkIndex + 1}/${totalChunks} — ${slos.length} SLOs | orphans:${report.orphanDomains.length} truncated:${report.truncated.length}`,
+          progress: 32 + Math.round(((chunkIndex + 1) / totalChunks) * 25),
+          slosThisChunk: scoredSLOs.length,
+          declaredDomains,
+          message: `[${boardKey}] Chunk ${chunkIndex + 1}/${totalChunks} — ${scoredSLOs.length} SLOs (deterministic)`,
         });
       }
 
-      // ── ALL CHUNKS DONE ──────────────────────────────────────
-      const { count: sloCount } = await adminSupabase
+      // All chunks parsed — count total before enrichment
+      const { count: parsedCount } = await adminSupabase
         .from('slo_database').select('*', { count: 'exact', head: true }).eq('document_id', documentId);
 
+      await queue.updateProgress(job.id, {
+        step: IngestionStep.LINEARIZE,
+        progress: 60,
+        message: `${parsedCount} SLOs parsed deterministically. Starting AI Bloom enrichment...`,
+      });
+
+      return NextResponse.json({
+        success: true, done: false,
+        step: 'LINEARIZE', nextStep: 'ENRICH',
+        progress: 60, parsedCount,
+        message: `All ${totalChunks} chunks parsed — ${parsedCount} SLOs. Proceeding to Bloom enrichment.`,
+      });
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // STAGE 4 — ENRICH (AI Bloom classification)
+    // Called once after all parsing complete
+    // Sends SLOs in small batches — rate-limit safe
+    // ══════════════════════════════════════════════════════════
+    if ((job.step as string) === 'ENRICH' || requestBody.enrichBatch !== undefined) {
+      const enrichBatch: number = requestBody.enrichBatch ?? 0;
+      const ENRICH_BATCH_SIZE = 15;
+
       const { data: allSlos } = await adminSupabase
+        .from('slo_database')
+        .select('id, slo_code, slo_full_text, bloom_level')
+        .eq('document_id', documentId)
+        .eq('bloom_level', 'Understand') // only unclassified ones
+        .range(enrichBatch * ENRICH_BATCH_SIZE, (enrichBatch + 1) * ENRICH_BATCH_SIZE - 1);
+
+      const { count: totalUnclassified } = await adminSupabase
+        .from('slo_database').select('*', { count: 'exact', head: true })
+        .eq('document_id', documentId).eq('bloom_level', 'Understand');
+
+      const totalBatches = Math.ceil((totalUnclassified || 0) / ENRICH_BATCH_SIZE);
+
+      if (allSlos && allSlos.length > 0) {
+        const slosToClassify = allSlos.map(s => ({
+          slo_code: s.slo_code,
+          slo_full_text: s.slo_full_text,
+          regex_confidence: 1,
+          // cast to RawSLO-compatible
+        } as RawSLO));
+
+        const boardKey = detectBoard((doc.name || '') + '');
+        const bloomMap = await enrichWithBloom(slosToClassify, boardKey);
+
+        // Update classified SLOs
+        for (const slo of allSlos) {
+          const bloom = bloomMap.get(slo.slo_code?.toUpperCase()) || 'Understand';
+          if (bloom !== 'Understand') {
+            await adminSupabase.from('slo_database')
+              .update({ bloom_level: bloom, cognitive_complexity: bloom })
+              .eq('id', slo.id);
+          }
+        }
+      }
+
+      const isEnrichDone = !allSlos || allSlos.length === 0 || enrichBatch >= totalBatches - 1;
+
+      if (!isEnrichDone) {
+        const progress = 60 + Math.round(((enrichBatch + 1) / Math.max(totalBatches, 1)) * 5);
+        return NextResponse.json({
+          success: true, done: false,
+          step: 'ENRICH', nextStep: 'ENRICH',
+          enrichBatch: enrichBatch + 1,
+          totalBatches,
+          progress,
+          message: `Bloom batch ${enrichBatch + 1}/${totalBatches}`,
+        });
+      }
+
+      // Enrichment complete — get final SLO count
+      const { count: finalSloCount } = await adminSupabase
+        .from('slo_database').select('*', { count: 'exact', head: true }).eq('document_id', documentId);
+
+      const { data: allSlosForMd } = await adminSupabase
         .from('slo_database').select('*').eq('document_id', documentId);
 
-      // Build ingestion report
-      const ingestionReport = {
-        board: boardKey,
-        boardName: boardInfo.name,
-        subject: subjectName,
-        totalSLOs: sloCount || 0,
-        declaredDomains: nextState.declaredDomains,
-        warnings: nextState.ingestionWarnings,
-        orphanCodes: nextState.orphanCodes,
-        flaggedTruncations: nextState.flaggedTruncations,
-        completedAt: new Date().toISOString(),
-      };
+      const boardKey = detectBoard((doc.name || ''));
+      const boardInfo = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
+      const subjectCode = detectSubject(doc.name || '');
 
-      const markdown = `### ${boardInfo.name} — ${subjectName} Curriculum\n\nIngestion Report:\n${JSON.stringify(ingestionReport, null, 2)}\n\n<STRUCTURED_INDEX>\n${JSON.stringify(allSlos, null, 2)}\n</STRUCTURED_INDEX>`;
+      const markdown = `### ${boardInfo.name} — ${boardInfo.subjectCodes[subjectCode] || 'Curriculum'}\n\n<STRUCTURED_INDEX>\n${JSON.stringify(allSlosForMd, null, 2)}\n</STRUCTURED_INDEX>`;
 
       await adminSupabase.from('documents').update({
         extracted_text: markdown,
-        document_summary: `Linearized — ${sloCount || 0} SLOs | ${Object.keys(nextState.declaredDomains).length} domains | ${nextState.ingestionWarnings.length} warnings`,
+        document_summary: `Linearized — ${finalSloCount} SLOs`,
       }).eq('id', documentId);
 
       await queue.updateProgress(job.id, {
         step: IngestionStep.EMBED,
-        progress: 63,
-        message: `${sloCount} SLOs from ${boardInfo.name}. Building vectors...`,
+        progress: 65,
+        message: `${finalSloCount} SLOs classified. Building vectors...`,
       });
 
       return NextResponse.json({
-        success: true, done: false, step: 'LINEARIZE', nextStep: 'EMBED',
-        progress: 63, sloCount,
-        ingestionReport,
-        message: `Step 2/3 complete — ${sloCount} SLOs | ${nextState.ingestionWarnings.length} warnings`,
+        success: true, done: false,
+        step: 'ENRICH', nextStep: 'EMBED',
+        progress: 65, finalSloCount,
+        message: `Step 3/4 complete — ${finalSloCount} SLOs with Bloom tags.`,
       });
     }
 
-    // ── STEP 3: EMBED ──────────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════
+    // STAGE 5 — EMBED
+    // ══════════════════════════════════════════════════════════
     if (job.step === IngestionStep.EMBED) {
       await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 70, message: 'Building vector index...' });
 
@@ -687,7 +698,6 @@ export async function POST(
       const result = await indexDocumentForRAG(documentId, textToEmbed, adminSupabase, job.id);
       const chunkCount = result?.count || 0;
 
-      // Chunk–SLO mapping (non-fatal)
       try {
         const { data: chunks } = await adminSupabase
           .from('document_chunks').select('id, slo_codes').eq('document_id', documentId);
@@ -703,7 +713,7 @@ export async function POST(
           });
           if (mappings.length > 0) await adminSupabase.from('chunk_slo_mapping').insert(mappings);
         }
-      } catch (e) { console.warn('[EMBED] Mapping skipped (non-fatal):', e); }
+      } catch (e) { console.warn('[EMBED] Mapping skipped:', e); }
 
       await queue.markComplete(job.id);
       await adminSupabase.from('documents').update({
@@ -722,13 +732,12 @@ export async function POST(
 
   } catch (err: any) {
     const msg = err.message || 'Processing failed.';
-    console.error(`[Pakistan Engine v3] Fatal:`, msg);
+    console.error(`[Engine v4] Fatal:`, msg);
     try { await queue.markFailed(job.id, msg); } catch (_) {}
     const { data: cur } = await adminSupabase.from('documents').select('status').eq('id', documentId).single();
     if (cur?.status !== 'ready') {
       await adminSupabase.from('documents').update({
-        status: 'failed',
-        document_summary: msg.substring(0, 500),
+        status: 'failed', document_summary: msg.substring(0, 500),
       }).eq('id', documentId);
     }
     return NextResponse.json({ error: msg }, { status: 500 });
