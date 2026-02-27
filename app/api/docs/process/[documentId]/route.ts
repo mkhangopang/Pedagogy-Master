@@ -85,7 +85,6 @@ export async function POST(
       }
 
       await adminSupabase.from('documents').update({
-        raw_text: extraction.text.substring(0, 100000),
         extracted_text: extraction.text.substring(0, 100000),
         document_summary: `Extracted via ${extraction.method} — ${extraction.text.length} chars`,
       }).eq('id', documentId);
