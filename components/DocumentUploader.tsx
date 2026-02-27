@@ -52,34 +52,37 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     const extractData = await callRoute();
     if (extractData.progress) setProgress(extractData.progress);
 
-    // ── STEP 2: LINEARIZE (chunk loop) ───────────────────────
+    // ── STEP 2: LINEARIZE (chunk loop with state machine) ────────
     setCurrentStep(1);
-    setStatus('AI extracting SLO codes...');
+    setStatus('Pakistan Curriculum Engine — extracting SLOs...');
     setProgress(38);
 
     let chunkIndex = 0;
-    let totalChunks = 1;
+    let chunkState: any = null; // State machine context passed between chunks
 
     while (true) {
-      const data = await callRoute({ chunkIndex });
+      const body: any = { chunkIndex };
+      if (chunkState) body.state = chunkState; // Pass state machine forward
 
-      totalChunks = data.totalChunks || totalChunks;
+      const data = await callRoute(body);
+
       if (data.progress) setProgress(data.progress);
 
-      // Update status with chunk progress
       if (data.totalChunks) {
-        setStatus(`Processing chunk ${chunkIndex + 1}/${data.totalChunks} — ${data.slosThisChunk || 0} SLOs found`);
+        setStatus(`[${data.state?.board || 'PKR'}] Chunk ${chunkIndex + 1}/${data.totalChunks} — ${data.slosThisChunk || 0} SLOs`);
       }
 
-      if (data.nextStep === 'EMBED' || data.done) {
-        // Linearize fully complete
+      // Carry state to next chunk
+      if (data.state) chunkState = data.state;
+
+      if (data.nextStep === 'EMBED' || (data.done && data.step === 'LINEARIZE')) {
         if (data.sloCount) setStatus(`✅ ${data.sloCount} SLOs extracted. Building vectors...`);
         break;
       }
 
       if (data.nextStep === 'LINEARIZE' && data.chunkIndex !== undefined) {
         chunkIndex = data.chunkIndex;
-        await new Promise(r => setTimeout(r, 400)); // small pause between chunks
+        await new Promise(r => setTimeout(r, 300));
         continue;
       }
 
