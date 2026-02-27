@@ -27,7 +27,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   // This is the KEY fix — old code fired once and never called steps 2 & 3.
   const driveProcessing = async (documentId: string, token: string) => {
     const MAX_STEPS = 3;
-    let stepsDone = 0;
 
     for (let attempt = 0; attempt < MAX_STEPS; attempt++) {
       const stepCfg = STEPS[attempt];
@@ -44,20 +43,26 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           },
         });
 
-        const data = await res.json();
-
-        if (!res.ok || data.error) {
-          throw new Error(data.error || `Step ${attempt + 1} failed`);
+        // Safely parse response — server may return plain text on crash
+        let data: any = {};
+        const contentType = res.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+          data = await res.json();
+        } else {
+          const rawText = await res.text();
+          // Try to extract a useful message from plain text / HTML error pages
+          const match = rawText.match(/Error:\s*(.+?)(?:\n|<|$)/);
+          throw new Error(match?.[1] || rawText.substring(0, 200) || `Server error ${res.status}`);
         }
 
-        // Update progress from server response
+        if (!res.ok || data.error) {
+          throw new Error(data.error || `Step ${attempt + 1} returned status ${res.status}`);
+        }
+
         if (data.progress) setProgress(data.progress);
         if (data.message)  setStatus(data.message);
 
-        stepsDone++;
-
         if (data.done) {
-          // All steps complete
           setProgress(100);
           setCurrentStep(3);
           setStatus('✅ Document ready! Loading...');
@@ -66,7 +71,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           return;
         }
 
-        // Pause between steps — lets Vercel function release cleanly
         await new Promise(r => setTimeout(r, 1200));
 
       } catch (err: any) {
@@ -74,7 +78,6 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       }
     }
 
-    // If we exhausted steps without done=true, something is wrong
     throw new Error('Processing incomplete after 3 steps. Check server logs.');
   };
 
