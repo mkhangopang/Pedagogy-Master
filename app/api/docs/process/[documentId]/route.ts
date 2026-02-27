@@ -320,9 +320,7 @@ export async function POST(
       const boardInfo = PAKISTAN_BOARDS[detectedBoard];
 
       await adminSupabase.from('documents').update({
-        extracted_text: extraction.text, // full text — Supabase handles millions of chars
-        document_summary: `Extracted via ${extraction.method} — ${extraction.text.length} chars`,
-        // Store detected board/subject for LINEARIZE step
+        extracted_text: extraction.text,
         document_summary: `Extracted via ${extraction.method} — ${extraction.text.length} chars | Board:${detectedBoard} | Subject:${detectedSubjectCode}`,
       }).eq('id', documentId);
 
