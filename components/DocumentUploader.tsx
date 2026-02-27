@@ -82,7 +82,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
       if (data.nextStep === 'LINEARIZE' && data.chunkIndex !== undefined) {
         chunkIndex = data.chunkIndex;
-        await new Promise(r => setTimeout(r, 300));
+        await new Promise(r => setTimeout(r, 1500));
         continue;
       }
 
