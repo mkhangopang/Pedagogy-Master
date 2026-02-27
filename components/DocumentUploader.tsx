@@ -116,7 +116,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     setStatus('Stage 4 — Building vector index...');
     setProgress(70);
 
-    const embedData = await callRoute();
+    const embedData = await callRoute({ embedStep: true });
     if (embedData.progress) setProgress(embedData.progress);
 
     if (embedData.done) {
