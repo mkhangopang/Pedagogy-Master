@@ -257,7 +257,7 @@ function deterministicExtract(
         char_offset: absoluteOffset,
         page_number_estimate: pageEstimate || 0,
         is_truncated: isTruncated,
-        is_orphan_domain: isOrphan,
+        is_orphan_domain: isOrphan === true,
         regex_confidence: regexConfidence,
       });
     }
