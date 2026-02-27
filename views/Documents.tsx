@@ -206,7 +206,7 @@ const Documents: React.FC<DocumentsProps> = ({
                     {(isProcessing || isIndexing) ? <BrainCircuit size={32} className="animate-spin" /> : isFailed ? <AlertTriangle size={32}/> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
-                    {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform shadow-lg"><BookOpen size={16} /></button>}
+                    <button    onClick={() => setReadingDoc(doc)}    className={`p-2.5 rounded-full hover:scale-110 transition-transform shadow-lg ${     isReady        ? 'bg-indigo-600 text-white'        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:bg-indigo-600 hover:text-white'   }`}   title={isReady ? 'Open Document' : 'Repair & Re-Index'} >   <BookOpen size={16} /> </button>
                     
                     {showDelete && (
                       <button 
