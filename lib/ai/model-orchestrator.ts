@@ -61,14 +61,16 @@ export class NeuralOrchestrator {
 
       // ── INGEST_LINEARIZE: Fast models first to beat Vercel 60s timeout
       case 'INGEST_LINEARIZE':
-        return [
-          () => callGroq(prompt.substring(0, 20000), 'llama-3.3-70b-versatile', { ...config, temperature: 0.0, maxTokens: 4096 }),
-          () => callMistral(prompt.substring(0, 20000), 'mistral-small-latest', { ...config, temperature: 0.0, maxTokens: 4096 }),
-          () => callCerebras(prompt.substring(0, 20000), 'llama3.1-70b', { ...config, temperature: 0.0, maxTokens: 4096 }),
-          () => callGemini(prompt.substring(0, 20000), 'gemini-2.5-flash-preview-05-20', { ...config, temperature: 0.0, maxTokens: 4096 }),
-          () => callDeepSeek(prompt.substring(0, 20000), 'deepseek-chat', { ...config, temperature: 0.0, maxTokens: 4096 }),
-          () => callOpenRouter(prompt.substring(0, 12000), 'google/gemini-2.0-flash-001', { ...config, temperature: 0.0, maxTokens: 2000 }),
-        ];
+  return [
+    () => callGroq(prompt.substring(0, 20000), 'llama-3.3-70b-versatile', { ...config, temperature: 0.0, maxTokens: 4096 }),
+    () => callCerebras(prompt.substring(0, 20000), 'llama3.1-70b', { ...config, temperature: 0.0, maxTokens: 4096 }),
+    () => callMistral(prompt.substring(0, 20000), 'mistral-small-latest', { ...config, temperature: 0.0, maxTokens: 4096 }),
+    () => callSambanova(prompt.substring(0, 20000), 'Meta-Llama-3.3-70B-Instruct', { ...config, temperature: 0.0, maxTokens: 4096 }),
+    () => callDeepSeek(prompt.substring(0, 20000), 'deepseek-chat', { ...config, temperature: 0.0, maxTokens: 4096 }),
+    () => callGemini(prompt.substring(0, 20000), 'gemini-2.5-flash-preview-05-20', { ...config, temperature: 0.0, maxTokens: 4096 }),
+    () => callAIGateway(prompt.substring(0, 20000), { ...config, temperature: 0.0, maxTokens: 4096 }),
+    () => callOpenRouter(prompt.substring(0, 12000), 'google/gemini-2.0-flash-001', { ...config, temperature: 0.0, maxTokens: 2000 }),
+  ];
 
       // ── LESSON_PLAN: 5E / UbD / Madeline Hunter
       case 'LESSON_PLAN':
