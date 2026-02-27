@@ -465,7 +465,7 @@ export async function POST(
     // One chunk per call — Hobby plan safe (~3s per call)
     // chunkIndex passed in body, state carried forward
     // ══════════════════════════════════════════════════════════
-    if (job.step === IngestionStep.LINEARIZE || requestBody.chunkIndex !== undefined) {
+    if ((job.step === IngestionStep.LINEARIZE || requestBody.chunkIndex !== undefined) && requestBody.enrichBatch === undefined) {
       const chunkIndex: number = requestBody.chunkIndex ?? 0;
 
       const { data: current, error: fetchErr } = await adminSupabase
