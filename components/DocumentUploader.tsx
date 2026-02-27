@@ -23,8 +23,11 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const [error, setError]               = useState<string | null>(null);
   const [isDone, setIsDone]             = useState(false);
 
-  // ── Drive all 3 processing steps sequentially ────────────────────────────
-  // This is the KEY fix — old code fired once and never called steps 2 & 3.
+  // ── 5-Stage Pipeline Driver ──────────────────────────────────────────────
+  // Stage 1: EXTRACT   — deterministic pdf-parse / OCR fallback
+  // Stage 2: PARSE     — deterministic regex loop (zero AI tokens)
+  // Stage 3: ENRICH    — AI Bloom batch (rate-limit safe, non-fatal)
+  // Stage 4: EMBED     — vector indexing
   const driveProcessing = async (documentId: string, token: string) => {
     const callRoute = async (body: any = {}) => {
       const res = await fetch(`/api/docs/process/${documentId}`, {
@@ -32,81 +35,100 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(body),
       });
-
       const contentType = res.headers.get('content-type') || '';
       if (!contentType.includes('application/json')) {
-        const rawText = await res.text();
-        const match = rawText.match(/Error:\s*(.+?)(?:\n|<|$)/);
-        throw new Error(match?.[1] || rawText.substring(0, 200) || `Server error ${res.status}`);
+        const raw = await res.text();
+        const match = raw.match(/Error:\s*(.+?)(?:\n|<|$)/);
+        throw new Error(match?.[1] || raw.substring(0, 200) || `Server error ${res.status}`);
       }
-
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || `Server error ${res.status}`);
       return data;
     };
 
-    // ── STEP 1: EXTRACT ──────────────────────────────────────
+    // ── STAGE 1: EXTRACT ────────────────────────────────────────────────────
     setCurrentStep(0);
-    setStatus('Extracting document content...');
-    setProgress(35);
+    setStatus('Stage 1 — Extracting document...');
+    setProgress(10);
     const extractData = await callRoute();
     if (extractData.progress) setProgress(extractData.progress);
+    if (extractData.board) setStatus(
+      `Stage 1 ✅ ${extractData.boardName || extractData.board} | ${(extractData.charCount || 0).toLocaleString()} chars | ${extractData.domainCount || 0} domains`
+    );
 
-    // ── STEP 2: LINEARIZE (chunk loop with state machine) ────────
+    // ── STAGE 2: PARSE — deterministic regex, zero AI ───────────────────────
     setCurrentStep(1);
-    setStatus('Pakistan Curriculum Engine — extracting SLOs...');
-    setProgress(38);
+    setStatus('Stage 2 — Deterministic SLO parsing...');
+    setProgress(32);
 
     let chunkIndex = 0;
-    let chunkState: any = null; // State machine context passed between chunks
+    let declaredDomains: any = extractData.declaredDomains || {};
 
     while (true) {
-      const body: any = { chunkIndex };
-      if (chunkState) body.state = chunkState; // Pass state machine forward
-
-      const data = await callRoute(body);
-
+      const data = await callRoute({ chunkIndex, declaredDomains });
       if (data.progress) setProgress(data.progress);
+      if (data.declaredDomains) declaredDomains = { ...declaredDomains, ...data.declaredDomains };
 
       if (data.totalChunks) {
-        setStatus(`[${data.state?.board || 'PKR'}] Chunk ${chunkIndex + 1}/${data.totalChunks} — ${data.slosThisChunk || 0} SLOs`);
+        setStatus(`Stage 2 — Chunk ${chunkIndex + 1}/${data.totalChunks} — ${data.slosThisChunk || 0} SLOs (regex)`);
       }
-
-      // Carry state to next chunk
-      if (data.state) chunkState = data.state;
-
-      if (data.nextStep === 'EMBED' || (data.done && data.step === 'LINEARIZE')) {
-        if (data.sloCount) setStatus(`✅ ${data.sloCount} SLOs extracted. Building vectors...`);
+      if (data.nextStep === 'ENRICH') {
+        setStatus(`Stage 2 ✅ ${data.parsedCount || '?'} SLOs parsed. Starting AI Bloom enrichment...`);
+        setProgress(60);
         break;
       }
-
+      if (data.nextStep === 'EMBED') { setProgress(65); break; }
       if (data.nextStep === 'LINEARIZE' && data.chunkIndex !== undefined) {
         chunkIndex = data.chunkIndex;
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 200));
         continue;
       }
-
       break;
     }
 
-    // ── STEP 3: EMBED ─────────────────────────────────────────
+    // ── STAGE 3: ENRICH — AI Bloom (batched, rate-limit safe) ──────────────
     setCurrentStep(2);
-    setStatus('Building vector search index...');
-    setProgress(65);
+    setStatus('Stage 3 — AI Bloom classification...');
+    setProgress(61);
+
+    let enrichBatch = 0;
+    while (true) {
+      const data = await callRoute({ enrichBatch });
+      if (data.progress) setProgress(data.progress);
+      if (data.totalBatches) {
+        setStatus(`Stage 3 — Bloom batch ${enrichBatch + 1}/${data.totalBatches}`);
+      }
+      if (data.nextStep === 'EMBED') {
+        setStatus(`Stage 3 ✅ ${data.finalSloCount || '?'} SLOs classified. Building vectors...`);
+        setProgress(65);
+        break;
+      }
+      if (data.nextStep === 'ENRICH' && data.enrichBatch !== undefined) {
+        enrichBatch = data.enrichBatch;
+        await new Promise(r => setTimeout(r, 500));
+        continue;
+      }
+      break;
+    }
+
+    // ── STAGE 4: EMBED ──────────────────────────────────────────────────────
+    setCurrentStep(3);
+    setStatus('Stage 4 — Building vector index...');
+    setProgress(70);
 
     const embedData = await callRoute();
     if (embedData.progress) setProgress(embedData.progress);
 
     if (embedData.done) {
       setProgress(100);
-      setCurrentStep(3);
+      setCurrentStep(4);
       setStatus(`✅ Complete — ${embedData.chunkCount || 0} vectors indexed`);
       setIsDone(true);
       setTimeout(() => onComplete({ id: documentId, status: 'ready' }), 1500);
       return;
     }
 
-    throw new Error('Processing incomplete after EMBED step.');
+    throw new Error('Embed step did not complete. Check server logs.');
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
