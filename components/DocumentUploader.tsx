@@ -26,59 +26,84 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   // ── Drive all 3 processing steps sequentially ────────────────────────────
   // This is the KEY fix — old code fired once and never called steps 2 & 3.
   const driveProcessing = async (documentId: string, token: string) => {
-    const MAX_STEPS = 3;
+    const callRoute = async (body: any = {}) => {
+      const res = await fetch(`/api/docs/process/${documentId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
 
-    for (let attempt = 0; attempt < MAX_STEPS; attempt++) {
-      const stepCfg = STEPS[attempt];
-      setCurrentStep(attempt);
-      setStatus(stepCfg.label);
-      setProgress(attempt === 0 ? 35 : stepCfg.pct - 5);
-
-      try {
-        const res = await fetch(`/api/docs/process/${documentId}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        // Safely parse response — server may return plain text on crash
-        let data: any = {};
-        const contentType = res.headers.get('content-type') || '';
-        if (contentType.includes('application/json')) {
-          data = await res.json();
-        } else {
-          const rawText = await res.text();
-          // Try to extract a useful message from plain text / HTML error pages
-          const match = rawText.match(/Error:\s*(.+?)(?:\n|<|$)/);
-          throw new Error(match?.[1] || rawText.substring(0, 200) || `Server error ${res.status}`);
-        }
-
-        if (!res.ok || data.error) {
-          throw new Error(data.error || `Step ${attempt + 1} returned status ${res.status}`);
-        }
-
-        if (data.progress) setProgress(data.progress);
-        if (data.message)  setStatus(data.message);
-
-        if (data.done) {
-          setProgress(100);
-          setCurrentStep(3);
-          setStatus('✅ Document ready! Loading...');
-          setIsDone(true);
-          setTimeout(() => onComplete({ id: documentId, status: 'ready' }), 1500);
-          return;
-        }
-
-        await new Promise(r => setTimeout(r, 1200));
-
-      } catch (err: any) {
-        throw new Error(`Step ${attempt + 1} (${stepCfg.key}) failed: ${err.message}`);
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const rawText = await res.text();
+        const match = rawText.match(/Error:\s*(.+?)(?:\n|<|$)/);
+        throw new Error(match?.[1] || rawText.substring(0, 200) || `Server error ${res.status}`);
       }
+
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `Server error ${res.status}`);
+      return data;
+    };
+
+    // ── STEP 1: EXTRACT ──────────────────────────────────────
+    setCurrentStep(0);
+    setStatus('Extracting document content...');
+    setProgress(35);
+    const extractData = await callRoute();
+    if (extractData.progress) setProgress(extractData.progress);
+
+    // ── STEP 2: LINEARIZE (chunk loop) ───────────────────────
+    setCurrentStep(1);
+    setStatus('AI extracting SLO codes...');
+    setProgress(38);
+
+    let chunkIndex = 0;
+    let totalChunks = 1;
+
+    while (true) {
+      const data = await callRoute({ chunkIndex });
+
+      totalChunks = data.totalChunks || totalChunks;
+      if (data.progress) setProgress(data.progress);
+
+      // Update status with chunk progress
+      if (data.totalChunks) {
+        setStatus(`Processing chunk ${chunkIndex + 1}/${data.totalChunks} — ${data.slosThisChunk || 0} SLOs found`);
+      }
+
+      if (data.nextStep === 'EMBED' || data.done) {
+        // Linearize fully complete
+        if (data.sloCount) setStatus(`✅ ${data.sloCount} SLOs extracted. Building vectors...`);
+        break;
+      }
+
+      if (data.nextStep === 'LINEARIZE' && data.chunkIndex !== undefined) {
+        chunkIndex = data.chunkIndex;
+        await new Promise(r => setTimeout(r, 400)); // small pause between chunks
+        continue;
+      }
+
+      break;
     }
 
-    throw new Error('Processing incomplete after 3 steps. Check server logs.');
+    // ── STEP 3: EMBED ─────────────────────────────────────────
+    setCurrentStep(2);
+    setStatus('Building vector search index...');
+    setProgress(65);
+
+    const embedData = await callRoute();
+    if (embedData.progress) setProgress(embedData.progress);
+
+    if (embedData.done) {
+      setProgress(100);
+      setCurrentStep(3);
+      setStatus(`✅ Complete — ${embedData.chunkCount || 0} vectors indexed`);
+      setIsDone(true);
+      setTimeout(() => onComplete({ id: documentId, status: 'ready' }), 1500);
+      return;
+    }
+
+    throw new Error('Processing incomplete after EMBED step.');
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
