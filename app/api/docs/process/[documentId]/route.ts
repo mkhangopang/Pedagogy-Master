@@ -227,7 +227,7 @@ function deterministicExtract(
 
       // ── Domain orphan check ──
       const hasDeclaredDomains = Object.keys(declaredDomains).length > 0;
-      const isOrphan = hasDeclaredDomains && codeDomain && !declaredDomains[codeDomain];
+      const isOrphan: boolean = !!(hasDeclaredDomains && codeDomain && !declaredDomains[codeDomain]);
 
       // ── Truncation detection ──
       const wordCount = sloText.split(/\s+/).filter(Boolean).length;
