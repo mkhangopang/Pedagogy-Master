@@ -19,47 +19,58 @@ export const maxDuration = 60;
  * FIX: No rpc() calls, safe status guard, quality checks at each step
  */
 
-async function callLinearizer(content: string, recipe: string): Promise<string> {
-  if (content.includes('<STRUCTURED_INDEX>') && content.length > 2000) {
-    console.log('[Linearizer] Vision already structured — skipping AI linearization');
-    return content;
+// HOBBY PLAN TIMEOUT FIX:
+// Process ONE chunk per Vercel call (~5s each, well under 60s limit)
+// Client drives the loop by calling this route repeatedly until done
+async function processOneChunk(
+  content: string,
+  chunkIndex: number
+): Promise<{ slos: any[], totalChunks: number, isDone: boolean }> {
+  const CHUNK_SIZE = 18000;
+  const OVERLAP    = 500;
+
+  // Build chunk boundaries
+  const chunks: Array<{start: number, end: number}> = [];
+  for (let i = 0; i < content.length; i += CHUNK_SIZE - OVERLAP) {
+    chunks.push({ start: i, end: Math.min(i + CHUNK_SIZE, content.length) });
+    if (i + CHUNK_SIZE >= content.length) break;
   }
 
-  // CRITICAL: Keep under 20,000 chars to avoid Vercel 60s timeout
-  // Biology PDF is 269k chars — we take the most content-dense section
-  const safeContent = content.substring(0, 20000);
+  const totalChunks = chunks.length;
+  if (chunkIndex >= totalChunks) {
+    return { slos: [], totalChunks, isDone: true };
+  }
+
+  const { start, end } = chunks[chunkIndex];
+  const chunk = content.substring(start, end);
+
+  console.log(`[Linearizer] Chunk ${chunkIndex + 1}/${totalChunks} (${chunk.length} chars)`);
 
   const result = await neuralGrid.execute(
-    `[CURRICULUM_LINEARIZATION_TASK]
-Extract ALL SLO codes and learning objectives from this curriculum text.
-Return ONLY a JSON array inside <STRUCTURED_INDEX> tags — nothing else.
+    `Extract ALL SLO codes from this curriculum text. Return ONLY a raw JSON array, no explanation, no markdown.
 
-FORMAT (strict):
-<STRUCTURED_INDEX>
-[
-  {
-    "slo_code": "BIO09A01",
-    "slo_full_text": "Full text of learning objective",
-    "bloom_level": "Remember|Understand|Apply|Analyze|Evaluate|Create",
-    "domain": "A",
-    "domain_name": "Cell Biology",
-    "grade": "Grade 9",
-    "subject": "Biology"
-  }
-]
-</STRUCTURED_INDEX>
+Each item: { "slo_code", "slo_full_text", "bloom_level", "domain", "domain_name", "grade", "subject" }
+If no SLOs found return: []
 
-CURRICULUM TEXT:
-${safeContent}`,
+CHUNK ${chunkIndex + 1}/${totalChunks}:
+${chunk}`,
     'INGEST_LINEARIZE',
     { temperature: 0.0, maxTokens: 4096 }
   );
 
-  if (!result.text || result.text.length < 50) {
-    throw new Error(`AI linearizer returned insufficient content (${result.text?.length || 0} chars) via ${result.provider}`);
+  let slos: any[] = [];
+  try {
+    const text = result.text.trim().replace(/```json|```/g, '').trim();
+    const indexMatch = text.match(/<STRUCTURED_INDEX>([\s\S]+?)<\/STRUCTURED_INDEX>/);
+    const jsonText = indexMatch ? indexMatch[1].trim() : text;
+    const arrayMatch = jsonText.match(/\[[\s\S]*\]/);
+    if (arrayMatch) slos = JSON.parse(arrayMatch[0]);
+  } catch (e) {
+    console.warn(`[Linearizer] Chunk ${chunkIndex + 1} parse failed — continuing`);
   }
 
-  return result.text;
+  console.log(`[Linearizer] Chunk ${chunkIndex + 1}: ${slos.length} SLOs found`);
+  return { slos, totalChunks, isDone: chunkIndex >= totalChunks - 1 };
 }
 
 export async function POST(
@@ -116,63 +127,99 @@ export async function POST(
     }
 
     // ── STEP 2: LINEARIZE ─────────────────────────────────────
+    // HOBBY PLAN FIX: One chunk per call, client loops until isDone
     if (job.step === IngestionStep.LINEARIZE) {
-      await queue.updateProgress(job.id, { step: IngestionStep.LINEARIZE, progress: 38, message: 'AI structuring curriculum...' });
-
-      const { data: brain } = await adminSupabase.from('neural_brain').select('master_prompt').eq('id', 'system-brain').maybeSingle();
-      const recipe = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
+      const body = await req.json().catch(() => ({}));
+      const chunkIndex: number = body.chunkIndex ?? 0;
 
       const { data: current, error: fetchErr } = await adminSupabase
         .from('documents').select('extracted_text').eq('id', documentId).single();
-
       if (fetchErr) throw new Error(`LINEARIZE_FAULT: DB read failed — ${fetchErr.message}`);
 
       const rawText = current?.extracted_text || '';
       if (rawText.length < 100) {
-        throw new Error(`LINEARIZE_FAULT: No extracted text found from step 1. Got ${rawText.length} chars. Step 1 may have failed to save.`);
+        throw new Error(`LINEARIZE_FAULT: No extracted text (${rawText.length} chars). Step 1 may have failed.`);
       }
 
-      const markdown = await callLinearizer(rawText, recipe);
+      await queue.updateProgress(job.id, {
+        step: IngestionStep.LINEARIZE,
+        progress: 35 + Math.round((chunkIndex / Math.ceil(rawText.length / 17500)) * 25),
+        message: `Processing chunk ${chunkIndex + 1}...`,
+      });
 
-      let sloCount = 0;
-      const indexMatch = markdown.match(/<STRUCTURED_INDEX>([\s\S]+?)<\/STRUCTURED_INDEX>/);
-      if (indexMatch) {
-        try {
-          const sloIndex = JSON.parse(indexMatch[1].trim().replace(/```json|```/g, '').trim());
-          if (Array.isArray(sloIndex) && sloIndex.length > 0) {
-            const records = sloIndex
-              .filter((s: any) => s.slo_code || s.code)
-              .map((s: any) => ({
-                document_id: documentId,
-                slo_code: (s.slo_code || s.code || '').toUpperCase().trim(),
-                slo_full_text: s.slo_full_text || s.text || '',
-                bloom_level: s.bloom_level || s.bloomLevel || 'Understand',
-                subject: s.subject || '',
-                grade_level: s.grade || '',
-                cognitive_complexity: s.bloom_level || 'Understand',
-                teaching_strategies: [],
-                assessment_ideas: [],
-                prerequisite_concepts: [],
-                common_misconceptions: [],
-                keywords: [],
-              }));
-            await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-            await adminSupabase.from('slo_database').insert(records);
-            sloCount = records.length;
-          }
-        } catch (e) { console.error('[LINEARIZE] SLO parse failed (non-fatal):', e); }
+      const { slos, totalChunks, isDone } = await processOneChunk(rawText, chunkIndex);
+
+      // Upsert SLOs from this chunk into slo_database
+      if (slos.length > 0) {
+        const records = slos
+          .filter((s: any) => s.slo_code)
+          .map((s: any) => ({
+            document_id: documentId,
+            slo_code: (s.slo_code || '').toUpperCase().trim(),
+            slo_full_text: s.slo_full_text || '',
+            bloom_level: s.bloom_level || 'Understand',
+            subject: s.subject || '',
+            grade_level: s.grade || '',
+            cognitive_complexity: s.bloom_level || 'Understand',
+            teaching_strategies: [],
+            assessment_ideas: [],
+            prerequisite_concepts: [],
+            common_misconceptions: [],
+            keywords: [],
+          }));
+
+        // First chunk clears old SLOs, subsequent chunks append
+        if (chunkIndex === 0) {
+          await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+        }
+        if (records.length > 0) {
+          await adminSupabase.from('slo_database').insert(records);
+        }
       }
+
+      const progressPct = 35 + Math.round(((chunkIndex + 1) / totalChunks) * 25);
+
+      if (!isDone) {
+        // Tell client to call again with next chunk index
+        return NextResponse.json({
+          success: true,
+          done: false,
+          step: 'LINEARIZE',
+          nextStep: 'LINEARIZE',
+          chunkIndex: chunkIndex + 1,
+          totalChunks,
+          progress: progressPct,
+          slosThisChunk: slos.length,
+          message: `Chunk ${chunkIndex + 1}/${totalChunks} processed — ${slos.length} SLOs found`,
+        });
+      }
+
+      // All chunks done — count total SLOs
+      const { count: sloCount } = await adminSupabase
+        .from('slo_database')
+        .select('*', { count: 'exact', head: true })
+        .eq('document_id', documentId);
+
+      // Save linearized markdown for EMBED step
+      const { data: allSlos } = await adminSupabase
+        .from('slo_database').select('*').eq('document_id', documentId);
+      const markdown = `### Curriculum SLOs\n\n<STRUCTURED_INDEX>\n${JSON.stringify(allSlos, null, 2)}\n</STRUCTURED_INDEX>`;
 
       await adminSupabase.from('documents').update({
         extracted_text: markdown,
-        document_summary: `Linearized — ${sloCount} SLOs`,
+        document_summary: `Linearized — ${sloCount || 0} SLOs`,
       }).eq('id', documentId);
 
-      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 63, message: `${sloCount} SLOs extracted. Building vectors...` });
+      await queue.updateProgress(job.id, {
+        step: IngestionStep.EMBED,
+        progress: 63,
+        message: `${sloCount} SLOs extracted. Building vectors...`,
+      });
 
       return NextResponse.json({
         success: true, done: false, step: 'LINEARIZE', nextStep: 'EMBED',
-        progress: 63, sloCount, message: `Step 2/3 complete. ${sloCount} SLOs found.`,
+        progress: 63, sloCount,
+        message: `Step 2/3 complete. ${sloCount} SLOs extracted.`,
       });
     }
 
