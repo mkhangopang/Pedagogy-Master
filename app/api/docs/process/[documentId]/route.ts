@@ -104,10 +104,16 @@ export async function POST(
 
       const { data: brain } = await adminSupabase.from('neural_brain').select('master_prompt').eq('id', 'system-brain').maybeSingle();
       const recipe = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
-      const { data: current } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
-      const rawText = current?.extracted_text || '';
 
-      if (rawText.length < 100) throw new Error('LINEARIZE_FAULT: No extracted text found from step 1.');
+      const { data: current, error: fetchErr } = await adminSupabase
+        .from('documents').select('extracted_text').eq('id', documentId).single();
+
+      if (fetchErr) throw new Error(`LINEARIZE_FAULT: DB read failed — ${fetchErr.message}`);
+
+      const rawText = current?.extracted_text || '';
+      if (rawText.length < 100) {
+        throw new Error(`LINEARIZE_FAULT: No extracted text found from step 1. Got ${rawText.length} chars. Step 1 may have failed to save.`);
+      }
 
       const markdown = await callLinearizer(rawText, recipe);
 
