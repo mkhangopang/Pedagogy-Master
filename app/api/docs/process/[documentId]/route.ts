@@ -320,10 +320,10 @@ export async function POST(
       const boardInfo = PAKISTAN_BOARDS[detectedBoard];
 
       await adminSupabase.from('documents').update({
-        extracted_text: extraction.text.substring(0, 100000),
+        extracted_text: extraction.text, // full text — Supabase handles millions of chars
         document_summary: `Extracted via ${extraction.method} — ${extraction.text.length} chars`,
         // Store detected board/subject for LINEARIZE step
-        content: JSON.stringify({ board: detectedBoard, subjectCode: detectedSubjectCode }),
+        document_summary: `Extracted via ${extraction.method} — ${extraction.text.length} chars | Board:${detectedBoard} | Subject:${detectedSubjectCode}`,
       }).eq('id', documentId);
 
       await queue.updateProgress(job.id, { step: IngestionStep.LINEARIZE, progress: 30, message: `${extraction.method === 'vision' ? 'Vision' : 'Text'} extraction complete. Board: ${boardInfo?.name || detectedBoard}` });
@@ -351,10 +351,9 @@ export async function POST(
       }
 
       // Restore board/subject state detected in Step 1
-      let docMeta: any = {};
-      try { docMeta = JSON.parse(current?.content || '{}'); } catch (_) {}
-      const boardKey = docMeta.board || detectBoard((doc.name || '') + rawText.substring(0, 500));
-      const subjectCode = docMeta.subjectCode || detectSubjectCode(rawText.substring(0, 500), boardKey);
+      const summaryMeta = current?.extracted_text ? '' : '';
+const boardKey = detectBoard((doc.name || '') + rawText.substring(0, 2000));
+const subjectCode = detectSubjectCode((doc.name || '') + rawText.substring(0, 2000), boardKey);
       const boardInfo = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
       const subjectName = boardInfo.subjectCodes[subjectCode] || 'Unknown';
 
