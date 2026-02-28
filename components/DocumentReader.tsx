@@ -142,24 +142,70 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     URL.revokeObjectURL(url);
   }, [activeDoc.extractedText, activeDoc.name]);
 
-  const groupedSlos = useMemo(() => {
+  // ── GRADE-FIRST hierarchy: Grade 09 → [Domain A, B, C...] → Grade 10 → ...
+  // Pedagogically correct: teachers plan per grade, not per domain across grades
+  const gradeHierarchy = useMemo(() => {
     const filtered = slos.filter(s =>
       s.slo_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       s.slo_full_text.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (s.domain_name || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
-    const groups: Record<string, SloRecord[]> = {};
+
+    // Grade → Domain → SLOs
+    const hierarchy: Record<string, Record<string, SloRecord[]>> = {};
+
     filtered.forEach(slo => {
-      // Use stored domain_name first, fall back to parsed code
       const parsed = parseSLOCode(slo.slo_code);
+      // Grade key: use stored grade_level, fall back to parsed, fall back to 'Ungraded'
+      const gradeRaw = slo.grade_level || parsed?.grade || 'Ungraded';
+      const gradeKey = gradeRaw === 'Ungraded' ? 'Ungraded' : `Grade ${gradeRaw}`;
+
+      // Domain key: use stored domain + name
       const domainKey = slo.domain
         ? `Domain ${slo.domain}${slo.domain_name ? ` — ${slo.domain_name}` : ''}`
-        : parsed ? `Domain ${parsed.domain}` : 'Core Curriculum';
-      if (!groups[domainKey]) groups[domainKey] = [];
-      groups[domainKey].push(slo);
+        : parsed ? `Domain ${parsed.domain}` : 'Core';
+
+      if (!hierarchy[gradeKey]) hierarchy[gradeKey] = {};
+      if (!hierarchy[gradeKey][domainKey]) hierarchy[gradeKey][domainKey] = [];
+      hierarchy[gradeKey][domainKey].push(slo);
     });
-    return groups;
+
+    // Sort grades numerically (09, 10, 11, 12), domains alphabetically within
+    const sorted: Array<{ grade: string; domains: Array<{ domain: string; slos: SloRecord[] }> }> = [];
+    const gradeOrder = Object.keys(hierarchy).sort((a, b) => {
+      if (a === 'Ungraded') return 1;
+      if (b === 'Ungraded') return -1;
+      const na = parseInt(a.replace('Grade ', '')) || 99;
+      const nb = parseInt(b.replace('Grade ', '')) || 99;
+      return na - nb;
+    });
+
+    gradeOrder.forEach(grade => {
+      const domainsSorted = Object.keys(hierarchy[grade]).sort();
+      sorted.push({
+        grade,
+        domains: domainsSorted.map(d => ({ domain: d, slos: hierarchy[grade][d] })),
+      });
+    });
+
+    return sorted;
   }, [slos, searchTerm]);
+
+  // Legacy flat groupedSlos for stats tab compatibility
+  const groupedSlos = useMemo(() => {
+    const flat: Record<string, SloRecord[]> = {};
+    gradeHierarchy.forEach(({ grade, domains }) => {
+      domains.forEach(({ domain, slos: items }) => {
+        const key = `${grade} / ${domain}`;
+        flat[key] = items;
+      });
+    });
+    return flat;
+  }, [gradeHierarchy]);
+
+  const totalFiltered = useMemo(() =>
+    gradeHierarchy.reduce((sum, g) => sum + g.domains.reduce((s, d) => s + d.slos.length, 0), 0),
+  [gradeHierarchy]);
 
   // ── Stats summary ──────────────────────────────────────────────────────────
   const stats = useMemo(() => {
@@ -363,7 +409,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             />
           </div>
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
-            {Object.values(groupedSlos).flat().length} results
+            {totalFiltered} results
           </span>
         </div>
       )}
@@ -471,9 +517,30 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             </div>
 
           ) : slos.length > 0 ? (
-            /* ── LEDGER VIEW ─────────────────────────────────────────────── */
-            <div className="space-y-16">
-              {(Object.entries(groupedSlos) as [string, SloRecord[]][]).sort().map(([domain, items]) => (
+            /* ── LEDGER VIEW — Grade-first, Domain-second ────────────────── */
+            <div className="space-y-20">
+              {gradeHierarchy.map(({ grade, domains }) => (
+                <div key={grade} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {/* ── Grade header ── */}
+                  <div className="flex items-center gap-4 mb-8 sticky top-0 z-10 bg-slate-50/95 dark:bg-[#020202]/95 backdrop-blur py-3 -mx-2 px-2 rounded-xl">
+                    <div className="p-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl shadow-lg">
+                      <Hash size={18}/>
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-black uppercase tracking-[0.12em] text-slate-900 dark:text-white">{grade}</h2>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                        {domains.length} Domains · {domains.reduce((s, d) => s + d.slos.length, 0)} SLOs
+                      </p>
+                    </div>
+                    <div className="h-px bg-slate-200 dark:bg-white/10 flex-1"/>
+                    <span className="text-[9px] font-black text-slate-400 bg-slate-100 dark:bg-white/5 px-3 py-1 rounded-lg">
+                      {domains.reduce((s, d) => s + d.slos.length, 0)} total
+                    </span>
+                  </div>
+
+                  {/* ── Domains within this grade ── */}
+                  <div className="space-y-10 pl-4 border-l-2 border-slate-100 dark:border-white/5">
+                    {domains.map(({ domain, slos: items }) => (
                 <section key={domain} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
                   {/* Domain header */}
                   <div className="flex items-center gap-4 mb-6">
@@ -578,6 +645,11 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                     })}
                   </div>
                 </section>
+              ))}
+                    </section>
+                  ))}
+                  </div>
+                </div>
               ))}
             </div>
 
