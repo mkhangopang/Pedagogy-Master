@@ -6,7 +6,8 @@ import {
   BrainCircuit, History, RefreshCw, Layers, 
   BookOpen, Hash, ArrowRight, ShieldCheck,
   FileCode, Terminal, AlertTriangle, Zap, Loader2,
-  CheckCircle2
+  CheckCircle2, Download, ClipboardCopy, ChevronDown,
+  TrendingUp, Eye, Flag, BarChart3
 } from 'lucide-react';
 import { Document } from '../types';
 import { renderSTEM } from '../lib/math-renderer';
@@ -19,6 +20,14 @@ interface SloRecord {
   slo_code: string;
   slo_full_text: string;
   bloom_level?: string;
+  domain?: string;
+  domain_name?: string;
+  grade_level?: string;
+  subject?: string;
+  extraction_confidence?: number;
+  page_number?: number;
+  is_truncated?: boolean;
+  is_orphan_domain?: boolean;
   created_at: string;
 }
 
@@ -27,30 +36,64 @@ interface DocumentReaderProps {
   onClose: () => void;
 }
 
-// ── Step config ─────────────────────────────────────────────────────────────
 const STEPS = [
-  { key: 'EXTRACT',   label: 'Extracting text from PDF...',          pct: 10 },
-  { key: 'LINEARIZE', label: 'AI is processing curriculum structure...', pct: 45 },
-  { key: 'EMBED',     label: 'Building vector index...',              pct: 85 },
-  { key: 'COMPLETE',  label: 'Document ready!',                       pct: 100 },
+  { key: 'EXTRACT',   label: 'Extracting text from PDF...',             pct: 10 },
+  { key: 'LINEARIZE', label: 'Parsing SLOs deterministically...',       pct: 45 },
+  { key: 'ENRICH',    label: 'AI Bloom classification...',              pct: 65 },
+  { key: 'EMBED',     label: 'Building vector index...',                pct: 85 },
+  { key: 'COMPLETE',  label: 'Document ready!',                         pct: 100 },
 ];
 
+// Bloom level → color mapping
+const BLOOM_CONFIG: Record<string, { color: string; bg: string; border: string; dot: string }> = {
+  'Remember':  { color: 'text-slate-600 dark:text-slate-300',  bg: 'bg-slate-100 dark:bg-slate-800',    border: 'border-slate-200 dark:border-slate-700', dot: 'bg-slate-400' },
+  'Understand':{ color: 'text-blue-700 dark:text-blue-300',    bg: 'bg-blue-50 dark:bg-blue-950/40',    border: 'border-blue-200 dark:border-blue-800',   dot: 'bg-blue-500' },
+  'Apply':     { color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-50 dark:bg-emerald-950/40', border: 'border-emerald-200 dark:border-emerald-800', dot: 'bg-emerald-500' },
+  'Analyze':   { color: 'text-amber-700 dark:text-amber-300',  bg: 'bg-amber-50 dark:bg-amber-950/40', border: 'border-amber-200 dark:border-amber-800',  dot: 'bg-amber-500' },
+  'Evaluate':  { color: 'text-orange-700 dark:text-orange-300', bg: 'bg-orange-50 dark:bg-orange-950/40', border: 'border-orange-200 dark:border-orange-800', dot: 'bg-orange-500' },
+  'Create':    { color: 'text-purple-700 dark:text-purple-300', bg: 'bg-purple-50 dark:bg-purple-950/40', border: 'border-purple-200 dark:border-purple-800', dot: 'bg-purple-500' },
+};
+
+function BloomBadge({ level }: { level?: string }) {
+  const cfg = BLOOM_CONFIG[level || 'Understand'] || BLOOM_CONFIG['Understand'];
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${cfg.color} ${cfg.bg} ${cfg.border}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`}/>
+      {level || 'Understand'}
+    </span>
+  );
+}
+
+function ConfidencePip({ score }: { score?: number }) {
+  const pct = Math.round((score || 0.75) * 100);
+  const color = pct >= 85 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-rose-500';
+  return (
+    <div className="flex items-center gap-1.5 opacity-60">
+      <div className="w-16 h-1 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }}/>
+      </div>
+      <span className="text-[8px] font-black text-slate-400">{pct}%</span>
+    </div>
+  );
+}
+
 export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: activeDoc, onClose }) => {
-  const [copiedCode, setCopiedCode]     = useState<string | null>(null);
-  const [searchTerm, setSearchTerm]     = useState('');
-  const [viewMode, setViewMode]         = useState<'ledger' | 'raw'>('ledger');
-  const [slos, setSlos]                 = useState<SloRecord[]>([]);
-  const [loading, setLoading]           = useState(true);
+  const [copiedCode, setCopiedCode]         = useState<string | null>(null);
+  const [copiedMd, setCopiedMd]             = useState(false);
+  const [searchTerm, setSearchTerm]         = useState('');
+  const [viewMode, setViewMode]             = useState<'ledger' | 'raw' | 'stats'>('ledger');
+  const [slos, setSlos]                     = useState<SloRecord[]>([]);
+  const [loading, setLoading]               = useState(true);
+  const [expandedSlo, setExpandedSlo]       = useState<string | null>(null);
 
   // Processing state
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processStep, setProcessStep]   = useState('');
-  const [processPct, setProcessPct]     = useState(0);
-  const [processError, setProcessError] = useState('');
-  const [processDone, setProcessDone]   = useState(false);
+  const [isProcessing, setIsProcessing]     = useState(false);
+  const [processStep, setProcessStep]       = useState('');
+  const [processPct, setProcessPct]         = useState(0);
+  const [processError, setProcessError]     = useState('');
+  const [processDone, setProcessDone]       = useState(false);
   const abortRef = useRef(false);
 
-  // ── Fetch SLOs ─────────────────────────────────────────────────────────────
   const fetchSlos = useCallback(async () => {
     setLoading(true);
     try {
@@ -71,9 +114,68 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
   useEffect(() => { fetchSlos(); }, [fetchSlos]);
 
-  // ── Core: run all 3 processing steps sequentially ─────────────────────────
-  // This is the KEY fix — we call the API 3 times, one per step.
-  // The old code called it once and stopped, causing the 98% stuck bug.
+  const handleCopy = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  // ── Copy full raw MD ─────────────────────────────────────────────────────
+  const handleCopyRawMd = useCallback(() => {
+    const text = activeDoc.extractedText || '';
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedMd(true);
+    setTimeout(() => setCopiedMd(false), 2500);
+  }, [activeDoc.extractedText]);
+
+  // ── Download raw MD as file ───────────────────────────────────────────────
+  const handleDownloadMd = useCallback(() => {
+    const text = activeDoc.extractedText || '';
+    if (!text) return;
+    const blob = new Blob([text], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeDoc.name?.replace(/\.[^/.]+$/, '') || 'curriculum'}-slos.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [activeDoc.extractedText, activeDoc.name]);
+
+  const groupedSlos = useMemo(() => {
+    const filtered = slos.filter(s =>
+      s.slo_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.slo_full_text.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (s.domain_name || '').toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    const groups: Record<string, SloRecord[]> = {};
+    filtered.forEach(slo => {
+      // Use stored domain_name first, fall back to parsed code
+      const parsed = parseSLOCode(slo.slo_code);
+      const domainKey = slo.domain
+        ? `Domain ${slo.domain}${slo.domain_name ? ` — ${slo.domain_name}` : ''}`
+        : parsed ? `Domain ${parsed.domain}` : 'Core Curriculum';
+      if (!groups[domainKey]) groups[domainKey] = [];
+      groups[domainKey].push(slo);
+    });
+    return groups;
+  }, [slos, searchTerm]);
+
+  // ── Stats summary ──────────────────────────────────────────────────────────
+  const stats = useMemo(() => {
+    const bloomCounts: Record<string, number> = {};
+    let orphans = 0, truncated = 0, highConf = 0;
+    slos.forEach(s => {
+      const b = s.bloom_level || 'Understand';
+      bloomCounts[b] = (bloomCounts[b] || 0) + 1;
+      if (s.is_orphan_domain) orphans++;
+      if (s.is_truncated) truncated++;
+      if ((s.extraction_confidence || 0) >= 0.85) highConf++;
+    });
+    return { bloomCounts, orphans, truncated, highConf, total: slos.length };
+  }, [slos]);
+
+  // ── Re-Index with full 5-stage pipeline ────────────────────────────────────
   const runProcessing = useCallback(async () => {
     abortRef.current = false;
     setIsProcessing(true);
@@ -87,100 +189,74 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       if (!session) throw new Error('Not authenticated');
       const token = session.access_token;
 
-      // Reset stuck document in Supabase before starting
-      await supabase
-        .from('documents')
-        .update({ status: 'pending', document_summary: null })
-        .eq('id', activeDoc.id);
+      await supabase.from('documents').update({ status: 'pending', document_summary: null }).eq('id', activeDoc.id);
+      await supabase.from('document_processing_jobs').delete().eq('document_id', activeDoc.id).neq('status', 'complete');
 
-      // Delete any stuck job so the route creates a fresh one
-      await supabase
-        .from('document_processing_jobs')
-        .delete()
-        .eq('document_id', activeDoc.id)
-        .neq('status', 'complete');
-
-      // ── Call the route up to 3 times (once per step) ──
-      let done = false;
-      let attempts = 0;
-      const MAX_STEPS = 3;
-
-      while (!done && attempts < MAX_STEPS && !abortRef.current) {
-        attempts++;
-
-        // Find which step we're on from UI state
-        const stepCfg = STEPS[Math.min(attempts - 1, STEPS.length - 2)];
-        setProcessStep(stepCfg.label);
-        setProcessPct(stepCfg.pct);
-
+      const callRoute = async (body: any = {}) => {
         const res = await fetch(`/api/docs/process/${activeDoc.id}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify(body),
         });
-
         const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || `Server error ${res.status}`);
+        return data;
+      };
 
-        if (!res.ok || data.error) {
-          throw new Error(data.error || `Step ${attempts} failed`);
-        }
+      // Stage 1
+      setProcessStep('Stage 1 — Extracting document...');
+      setProcessPct(10);
+      const extractData = await callRoute();
+      if (extractData.progress) setProcessPct(extractData.progress);
 
-        // Update progress from server
+      // Stage 2 — chunk loop
+      setProcessStep('Stage 2 — Parsing SLOs deterministically...');
+      setProcessPct(32);
+      let chunkIndex = 0;
+      let declaredDomains: any = extractData.declaredDomains || {};
+      while (true) {
+        if (abortRef.current) break;
+        const data = await callRoute({ chunkIndex, declaredDomains });
         if (data.progress) setProcessPct(data.progress);
-        if (data.message)  setProcessStep(data.message);
-
-        if (data.done) {
-          done = true;
-        } else {
-          // Small pause between steps so Vercel fully releases the function
-          await new Promise(r => setTimeout(r, 1000));
-        }
+        if (data.declaredDomains) declaredDomains = { ...declaredDomains, ...data.declaredDomains };
+        if (data.totalChunks) setProcessStep(`Stage 2 — Chunk ${chunkIndex + 1}/${data.totalChunks} — ${data.slosThisChunk || 0} SLOs`);
+        if (data.nextStep === 'ENRICH') { setProcessPct(60); break; }
+        if (data.nextStep === 'EMBED') { setProcessPct(65); break; }
+        if (data.nextStep === 'LINEARIZE' && data.chunkIndex !== undefined) { chunkIndex = data.chunkIndex; await new Promise(r => setTimeout(r, 150)); continue; }
+        break;
       }
 
-      if (abortRef.current) {
-        setProcessError('Processing cancelled.');
-        return;
+      // Stage 3 — Bloom enrichment
+      setProcessStep('Stage 3 — AI Bloom classification...');
+      setProcessPct(61);
+      let enrichBatch = 0;
+      while (true) {
+        if (abortRef.current) break;
+        const data = await callRoute({ enrichBatch });
+        if (data.progress) setProcessPct(data.progress);
+        if (data.totalBatches) setProcessStep(`Stage 3 — Bloom batch ${enrichBatch + 1}/${data.totalBatches}`);
+        if (data.nextStep === 'EMBED') { setProcessPct(65); break; }
+        if (data.nextStep === 'ENRICH' && data.enrichBatch !== undefined) { enrichBatch = data.enrichBatch; await new Promise(r => setTimeout(r, 400)); continue; }
+        break;
       }
 
-      // All steps complete
+      // Stage 4 — Embed
+      setProcessStep('Stage 4 — Building vector index...');
+      setProcessPct(70);
+      const embedData = await callRoute({ embedStep: true });
+      if (embedData.progress) setProcessPct(embedData.progress);
+
       setProcessPct(100);
-      setProcessStep('✅ Document ready! Loading standards...');
+      setProcessStep(`✅ Complete — ${embedData.chunkCount || 0} vectors`);
       setProcessDone(true);
 
-      // Refresh SLOs after 1.5s
-      setTimeout(() => {
-        fetchSlos();
-        setIsProcessing(false);
-      }, 1500);
+      setTimeout(() => { fetchSlos(); setIsProcessing(false); }, 1500);
 
     } catch (err: any) {
-      setProcessError(err.message || 'Processing failed. Please try again.');
+      setProcessError(err.message || 'Processing failed.');
       setIsProcessing(false);
     }
   }, [activeDoc.id, fetchSlos]);
-
-  const handleCopy = (code: string) => {
-    navigator.clipboard.writeText(code);
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2000);
-  };
-
-  const groupedSlos = useMemo(() => {
-    const filtered = slos.filter(s =>
-      s.slo_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      s.slo_full_text.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    const groups: Record<string, SloRecord[]> = {};
-    filtered.forEach(slo => {
-      const parsed = parseSLOCode(slo.slo_code);
-      const domainLabel = parsed ? `Domain ${parsed.domain}` : 'Core Curriculum';
-      if (!groups[domainLabel]) groups[domainLabel] = [];
-      groups[domainLabel].push(slo);
-    });
-    return groups;
-  }, [slos, searchTerm]);
 
   // ── Processing overlay ─────────────────────────────────────────────────────
   if (isProcessing || processDone) {
@@ -188,7 +264,6 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     return (
       <div className="fixed inset-0 z-[500] bg-[#020202] flex items-center justify-center p-6 animate-in fade-in duration-300">
         <div className="w-full max-w-lg bg-[#0d0d0d] rounded-[2.5rem] border border-white/5 p-10 shadow-2xl">
-          {/* App icon + version */}
           <div className="flex items-center justify-between mb-10">
             <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-xl">
               <BrainCircuit size={24} className="text-white"/>
@@ -197,199 +272,331 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
               ⚡ GRID SYNC ACTIVE
             </span>
           </div>
-
           <h2 className="text-3xl font-black text-white uppercase tracking-tight mb-1">
-            {processDone ? 'SYNC COMPLETE' : 'INGEST ASSET'}
+            {processDone ? 'SYNC COMPLETE' : 'RE-INDEX ASSET'}
           </h2>
           <p className="text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-10">
-            FOUNDATIONAL CURRICULUM ORCHESTRATOR
+            5-STAGE CURRICULUM ENGINE v4.1
           </p>
-
-          {/* Progress bar */}
           <div className="w-full bg-white/5 rounded-full h-2 mb-4 overflow-hidden">
-            <div
-              className={`h-2 rounded-full transition-all duration-700 ${processDone ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-              style={{ width: `${processPct}%` }}
-            />
+            <div className={`h-full rounded-full transition-all duration-700 ${processDone ? 'bg-emerald-500' : 'bg-indigo-600'}`} style={{ width: `${processPct}%` }}/>
           </div>
-
-          {/* Step label + pct */}
           <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-2">
-              {processDone
-                ? <CheckCircle2 size={14} className="text-emerald-500"/>
-                : <Loader2 size={14} className="animate-spin text-indigo-400"/>
-              }
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-300">
-                {processStep}
-              </span>
-            </div>
-            <span className="text-[10px] font-black text-slate-400">{processPct}%</span>
+            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{processStep}</p>
+            <span className="text-[10px] text-slate-500 font-black">{processPct}%</span>
           </div>
-
-          {/* Step indicators */}
-          <div className="space-y-2 mb-8">
-            {STEPS.slice(0, 3).map((s, i) => {
-              const done = processPct > s.pct;
-              const active = !done && processPct >= (STEPS[i - 1]?.pct || 0);
+          {processError ? (
+            <div className="p-4 bg-rose-950/30 border border-rose-800/30 rounded-2xl text-rose-400 text-xs mb-6">{processError}</div>
+          ) : null}
+          <div className="space-y-2">
+            {STEPS.slice(0, 4).map((step, i) => {
+              const done = processPct >= step.pct;
+              const active = currentStepIndex === i;
               return (
-                <div key={s.key} className={`flex items-center gap-3 text-[10px] font-bold uppercase tracking-widest transition-all ${done ? 'text-emerald-400' : active ? 'text-indigo-300' : 'text-white/20'}`}>
+                <div key={step.key} className={`flex items-center gap-3 text-[9px] font-black uppercase tracking-widest ${done ? 'text-emerald-500' : active ? 'text-indigo-400' : 'text-white/15'}`}>
                   <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${done ? 'bg-emerald-500 border-emerald-500' : active ? 'border-indigo-500' : 'border-white/10'}`}>
-                    {done && <Check size={10} className="text-white"/>}
-                    {active && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"/>}
+                    {done && <Check size={9} className="text-white"/>}
+                    {active && !done && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"/>}
                   </div>
-                  Step {i + 1}: {s.key}
+                  Stage {i + 1}: {step.key}
                 </div>
               );
             })}
           </div>
-
-          {processError && (
-            <div className="bg-red-900/20 border border-red-800/30 rounded-2xl p-4 mb-6">
-              <p className="text-red-400 text-xs font-bold">{processError}</p>
-              <button
-                onClick={runProcessing}
-                className="mt-3 px-4 py-2 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-wide hover:bg-red-700 transition-all"
-              >
-                Retry
-              </button>
-            </div>
+          {processDone && (
+            <button onClick={() => setIsProcessing(false)} className="mt-8 w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+              <ArrowRight size={14}/> View Results
+            </button>
           )}
-
-          <p className="text-[9px] text-slate-600 italic">
-            {processDone
-              ? 'All neural context nodes established successfully.'
-              : 'Establishing neural context nodes. Do not close this window.'}
-          </p>
         </div>
       </div>
     );
   }
 
-  // ── Main reader UI ─────────────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-[500] bg-white dark:bg-[#020202] flex flex-col animate-in fade-in duration-300 overflow-hidden text-left">
-      <header className="h-20 border-b dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-8 shrink-0 z-50 shadow-sm">
-        <div className="flex items-center gap-5">
-          <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-xl">
-            <LayoutList size={22}/>
+    <div className="fixed inset-0 z-[500] bg-white dark:bg-[#020202] flex flex-col animate-in fade-in duration-200">
+      
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <header className="h-16 border-b dark:border-white/5 bg-white dark:bg-[#080808] flex items-center gap-4 px-6 shrink-0 shadow-sm">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-9 h-9 bg-indigo-600 text-white rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
+            <BookOpen size={16}/>
           </div>
-          <div>
-            <h2 className="text-xs font-black uppercase tracking-[0.2em] dark:text-white truncate max-w-sm">{activeDoc.name}</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded">Surgical Ledger Node</span>
-              <span className="text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-emerald-50 text-emerald-500">
-                {slos.length > 0 ? `${slos.length} standards` : 'Verified Grid'}
-              </span>
-            </div>
+          <div className="min-w-0">
+            <p className="text-sm font-black text-slate-900 dark:text-white truncate uppercase tracking-tight">{activeDoc.name}</p>
+            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{slos.length} SLOs · {Object.keys(groupedSlos).length} domains</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="relative hidden md:block">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
-            <input
-              type="text"
-              placeholder="Search Ledger Codes..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="pl-10 pr-6 py-2.5 bg-slate-50 dark:bg-white/5 border-none rounded-2xl text-[11px] font-black uppercase tracking-widest outline-none focus:ring-2 focus:ring-indigo-500 w-64 dark:text-white"
-            />
-          </div>
-          <div className="bg-slate-100 dark:bg-white/5 p-1 rounded-2xl flex gap-1 border dark:border-white/5 shadow-inner">
-            <button onClick={() => setViewMode('ledger')} className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'ledger' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md' : 'text-slate-500'}`}>
-              <BookOpen size={13}/> Ledger
+        {/* View tabs */}
+        <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 rounded-xl p-1">
+          {[
+            { key: 'ledger', icon: <LayoutList size={12}/>, label: 'Ledger' },
+            { key: 'stats',  icon: <BarChart3 size={12}/>,  label: 'Stats' },
+            { key: 'raw',    icon: <Terminal size={12}/>,   label: 'Raw MD' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setViewMode(tab.key as any)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${viewMode === tab.key ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              {tab.icon} {tab.label}
             </button>
-            <button onClick={() => setViewMode('raw')} className={`flex items-center gap-2 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'raw' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md' : 'text-slate-500'}`}>
-              <Terminal size={13}/> Raw MD
-            </button>
-          </div>
-          <button onClick={onClose} className="p-3 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-2xl transition-all">
-            <X size={24}/>
-          </button>
+          ))}
         </div>
+
+        <button onClick={onClose} className="p-2.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-xl transition-all">
+          <X size={20}/>
+        </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/20 dark:bg-[#020202]">
-        <div className="max-w-6xl mx-auto p-6 md:p-12 lg:p-20">
+      {/* ── Search bar (ledger only) ─────────────────────────────────────── */}
+      {viewMode === 'ledger' && (
+        <div className="border-b dark:border-white/5 bg-white dark:bg-[#080808] px-6 py-3 flex items-center gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"/>
+            <input
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Search SLO codes, text, domain..."
+              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 text-slate-900 dark:text-white placeholder-slate-400"
+            />
+          </div>
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+            {Object.values(groupedSlos).flat().length} results
+          </span>
+        </div>
+      )}
+
+      {/* ── Main content ─────────────────────────────────────────────────── */}
+      <main className="flex-1 overflow-y-auto bg-slate-50/30 dark:bg-[#020202]">
+        <div className="max-w-6xl mx-auto p-6 md:p-10">
+
           {loading ? (
             <div className="flex flex-col items-center justify-center py-60 text-center opacity-40">
-              <RefreshCw size={48} className="animate-spin text-indigo-600 mb-8"/>
+              <RefreshCw size={40} className="animate-spin text-indigo-600 mb-6"/>
               <p className="text-xs font-black uppercase tracking-[0.4em] text-indigo-500">Retrieving Neural Artifacts...</p>
             </div>
+
           ) : viewMode === 'raw' ? (
-            <div className="bg-white dark:bg-[#080808] p-10 md:p-20 rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl animate-in slide-in-from-bottom-4">
-              <div className="flex items-center gap-3 mb-12 opacity-40">
-                <History size={16} className="text-indigo-500"/>
-                <span className="text-[10px] font-black uppercase tracking-[0.3em]">Master Linearized Archive</span>
+            /* ── RAW MD VIEW ─────────────────────────────────────────────── */
+            <div className="bg-white dark:bg-[#080808] rounded-[2rem] border border-slate-200 dark:border-white/5 shadow-xl overflow-hidden animate-in slide-in-from-bottom-4">
+              {/* Raw MD toolbar */}
+              <div className="flex items-center justify-between px-8 py-4 border-b dark:border-white/5 bg-slate-50 dark:bg-white/3">
+                <div className="flex items-center gap-3 opacity-60">
+                  <History size={14} className="text-indigo-500"/>
+                  <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-500">Master Linearized Archive</span>
+                  <span className="text-[8px] font-black text-slate-400 bg-slate-200 dark:bg-white/10 px-2 py-0.5 rounded-md">
+                    {(activeDoc.extractedText || '').length.toLocaleString()} chars
+                  </span>
+                </div>
+                {/* ── COPY + DOWNLOAD BUTTONS ── */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyRawMd}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                      copiedMd
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-indigo-400 hover:text-indigo-600'
+                    }`}
+                  >
+                    {copiedMd ? <Check size={12}/> : <ClipboardCopy size={12}/>}
+                    {copiedMd ? 'Copied!' : 'Copy All'}
+                  </button>
+                  <button
+                    onClick={handleDownloadMd}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-600 transition-all"
+                  >
+                    <Download size={12}/> Download .md
+                  </button>
+                </div>
               </div>
-              <div className="prose dark:prose-invert max-w-none font-mono text-sm leading-relaxed whitespace-pre-wrap dark:text-slate-300">
-                {activeDoc.extractedText || '<!-- Vault Empty -->'}
+              {/* Raw content */}
+              <div className="p-8 md:p-12 font-mono text-sm leading-relaxed whitespace-pre-wrap dark:text-slate-300 text-slate-700 max-h-[70vh] overflow-y-auto">
+                {activeDoc.extractedText || '<!-- Vault Empty — No extracted text found -->'}
               </div>
             </div>
-          ) : slos.length > 0 ? (
-            <div className="space-y-24">
-              {(Object.entries(groupedSlos) as [string, SloRecord[]][]).sort().map(([domain, items]) => (
-                <section key={domain} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                  <div className="flex items-center gap-6 mb-8">
-                    <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-500/20">
-                      <Layers size={22}/>
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white">{domain}</h3>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{items.length} Standards Anchored</p>
-                    </div>
-                    <div className="h-px bg-slate-200 dark:bg-white/5 flex-1 ml-4"/>
+
+          ) : viewMode === 'stats' ? (
+            /* ── STATS VIEW ──────────────────────────────────────────────── */
+            <div className="space-y-6 animate-in slide-in-from-bottom-4">
+              {/* Summary cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: 'Total SLOs', value: stats.total, icon: <Hash size={18}/>, color: 'indigo' },
+                  { label: 'High Confidence', value: stats.highConf, icon: <ShieldCheck size={18}/>, color: 'emerald' },
+                  { label: 'Orphan Domains', value: stats.orphans, icon: <Flag size={18}/>, color: stats.orphans > 0 ? 'amber' : 'slate' },
+                  { label: 'Truncated', value: stats.truncated, icon: <AlertTriangle size={18}/>, color: stats.truncated > 0 ? 'rose' : 'slate' },
+                ].map(card => (
+                  <div key={card.label} className="bg-white dark:bg-[#080808] rounded-2xl border border-slate-100 dark:border-white/5 p-6">
+                    <div className={`text-${card.color}-500 mb-3`}>{card.icon}</div>
+                    <div className="text-3xl font-black text-slate-900 dark:text-white">{card.value}</div>
+                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{card.label}</div>
                   </div>
-                  <div className="grid grid-cols-1 gap-4">
-                    {items.map(slo => (
-                      <div key={slo.id} className="group relative flex flex-col md:flex-row gap-6 p-6 bg-white dark:bg-[#080808] rounded-[2rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 hover:shadow-2xl transition-all duration-300">
-                        <div className="md:w-48 shrink-0 space-y-3">
-                          <button
-                            onClick={() => handleCopy(slo.slo_code)}
-                            className="w-full flex items-center justify-between gap-3 px-5 py-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 hover:bg-indigo-600 hover:text-white transition-all"
-                          >
-                            <span className="text-[11px] font-black tracking-widest uppercase truncate">{slo.slo_code}</span>
-                            {copiedCode === slo.slo_code ? <Check size={14} className="text-emerald-500"/> : <Copy size={14} className="opacity-20"/>}
-                          </button>
-                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-lg border dark:border-white/5 block text-center">
-                            {slo.bloom_level || 'Understand'}
-                          </span>
+                ))}
+              </div>
+
+              {/* Bloom distribution */}
+              <div className="bg-white dark:bg-[#080808] rounded-2xl border border-slate-100 dark:border-white/5 p-8">
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white mb-6">Bloom Taxonomy Distribution</h3>
+                <div className="space-y-3">
+                  {Object.entries(BLOOM_CONFIG).map(([level, cfg]) => {
+                    const count = stats.bloomCounts[level] || 0;
+                    const pct = stats.total > 0 ? Math.round((count / stats.total) * 100) : 0;
+                    return (
+                      <div key={level} className="flex items-center gap-4">
+                        <span className={`w-20 text-[9px] font-black uppercase tracking-widest ${cfg.color}`}>{level}</span>
+                        <div className="flex-1 h-2 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${cfg.dot}`} style={{ width: `${pct}%`, transition: 'width 0.8s ease' }}/>
                         </div>
-                        <div className="flex-1 min-w-0 md:pt-1">
-                          <p className="text-[15px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: renderSTEM(slo.slo_full_text) }}/>
-                        </div>
+                        <span className="w-12 text-right text-[9px] font-black text-slate-400">{count} <span className="text-slate-300">({pct}%)</span></span>
                       </div>
-                    ))}
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Domain breakdown */}
+              <div className="bg-white dark:bg-[#080808] rounded-2xl border border-slate-100 dark:border-white/5 p-8">
+                <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white mb-6">Domain Breakdown</h3>
+                <div className="space-y-2">
+                  {Object.entries(groupedSlos).sort().map(([domain, items]) => (
+                    <div key={domain} className="flex items-center justify-between py-2 border-b dark:border-white/5 last:border-0">
+                      <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate max-w-xs">{domain}</span>
+                      <span className="text-[9px] font-black text-indigo-500 bg-indigo-50 dark:bg-indigo-950/30 px-2.5 py-1 rounded-lg">{items.length} SLOs</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+          ) : slos.length > 0 ? (
+            /* ── LEDGER VIEW ─────────────────────────────────────────────── */
+            <div className="space-y-16">
+              {(Object.entries(groupedSlos) as [string, SloRecord[]][]).sort().map(([domain, items]) => (
+                <section key={domain} className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  {/* Domain header */}
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-500/20">
+                      <Layers size={18}/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base font-black uppercase tracking-[0.08em] text-slate-900 dark:text-white truncate">{domain}</h3>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{items.length} Standards Anchored</p>
+                    </div>
+                    <div className="h-px bg-slate-200 dark:bg-white/5 flex-1"/>
+                  </div>
+
+                  {/* SLO cards */}
+                  <div className="space-y-3">
+                    {items.map(slo => {
+                      const isExpanded = expandedSlo === slo.id;
+                      return (
+                        <div
+                          key={slo.id}
+                          className={`group bg-white dark:bg-[#080808] rounded-2xl border transition-all duration-200 ${
+                            slo.is_orphan_domain
+                              ? 'border-amber-200 dark:border-amber-800/40'
+                              : slo.is_truncated
+                              ? 'border-rose-100 dark:border-rose-900/30'
+                              : 'border-slate-100 dark:border-white/5 hover:border-indigo-300 dark:hover:border-indigo-700'
+                          } hover:shadow-lg`}
+                        >
+                          <div className="flex items-start gap-4 p-5">
+                            {/* SLO code + copy */}
+                            <div className="shrink-0 space-y-2">
+                              <button
+                                onClick={() => handleCopy(slo.slo_code)}
+                                className="flex items-center gap-2 px-3 py-2 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all group/copy"
+                              >
+                                <span className="text-[10px] font-black tracking-widest uppercase">{slo.slo_code}</span>
+                                {copiedCode === slo.slo_code
+                                  ? <Check size={11} className="text-emerald-400"/>
+                                  : <Copy size={11} className="opacity-30 group-hover/copy:opacity-100"/>
+                                }
+                              </button>
+                              <BloomBadge level={slo.bloom_level}/>
+                              {slo.extraction_confidence !== undefined && (
+                                <ConfidencePip score={slo.extraction_confidence}/>
+                              )}
+                            </div>
+
+                            {/* SLO text */}
+                            <div className="flex-1 min-w-0">
+                              <p
+                                className="text-[14px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed"
+                                dangerouslySetInnerHTML={{ __html: renderSTEM(slo.slo_full_text) }}
+                              />
+                              {/* Metadata row */}
+                              <div className="flex items-center gap-3 mt-3 flex-wrap">
+                                {slo.grade_level && (
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Grade {slo.grade_level}</span>
+                                )}
+                                {slo.page_number && (
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">~p.{slo.page_number}</span>
+                                )}
+                                {slo.is_truncated && (
+                                  <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest flex items-center gap-1">
+                                    <AlertTriangle size={9}/> Possibly truncated
+                                  </span>
+                                )}
+                                {slo.is_orphan_domain && (
+                                  <span className="text-[8px] font-black text-amber-600 uppercase tracking-widest flex items-center gap-1">
+                                    <Flag size={9}/> Orphan domain
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Expand toggle */}
+                            <button
+                              onClick={() => setExpandedSlo(isExpanded ? null : slo.id)}
+                              className="shrink-0 p-2 text-slate-300 hover:text-slate-600 transition-all"
+                            >
+                              <ChevronDown size={14} className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}/>
+                            </button>
+                          </div>
+
+                          {/* Expanded detail */}
+                          {isExpanded && (
+                            <div className="border-t dark:border-white/5 px-5 pb-5 pt-4 grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50/50 dark:bg-white/2 rounded-b-2xl">
+                              {[
+                                ['Subject', slo.subject || '—'],
+                                ['Grade', slo.grade_level || '—'],
+                                ['Domain', slo.domain || '—'],
+                                ['Confidence', slo.extraction_confidence ? `${Math.round(slo.extraction_confidence * 100)}%` : '—'],
+                              ].map(([label, value]) => (
+                                <div key={label}>
+                                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">{label}</p>
+                                  <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300">{value}</p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </section>
               ))}
             </div>
+
           ) : (
-            // ── Empty state: no SLOs yet ──
-            <div className="flex flex-col items-center justify-center py-40 text-center animate-in zoom-in-95 duration-700">
-              <div className="w-24 h-24 bg-amber-50 dark:bg-amber-950/20 rounded-[2.5rem] flex items-center justify-center mb-10 text-amber-600">
-                <AlertTriangle size={48}/>
+            /* ── Empty state ─────────────────────────────────────────────── */
+            <div className="flex flex-col items-center justify-center py-40 text-center animate-in zoom-in-95 duration-500">
+              <div className="w-20 h-20 bg-amber-50 dark:bg-amber-950/20 rounded-[2rem] flex items-center justify-center mb-8 text-amber-500">
+                <AlertTriangle size={40}/>
               </div>
-              <h3 className="text-2xl font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">
-                Sync Protocol Interrupted
-              </h3>
-              <p className="text-sm font-medium text-slate-500 max-w-sm mt-4 leading-relaxed italic">
-                This document has not been fully processed yet, or was uploaded before the latest neural grid update.
+              <h3 className="text-xl font-black uppercase tracking-[0.15em] text-slate-900 dark:text-white">No SLOs Extracted</h3>
+              <p className="text-sm text-slate-500 max-w-sm mt-3 leading-relaxed">
+                This document hasn't been processed yet, or was indexed before the v4.1 engine update.
               </p>
-              <div className="flex gap-4 mt-12">
-                <button
-                  onClick={fetchSlos}
-                  className="flex items-center gap-3 px-8 py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-[2rem] font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-                >
-                  <RefreshCw size={16}/> Refresh Grid
+              <div className="flex gap-3 mt-10">
+                <button onClick={fetchSlos} className="flex items-center gap-2 px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all">
+                  <RefreshCw size={14}/> Refresh
                 </button>
-                <button
-                  onClick={runProcessing}
-                  className="flex items-center gap-3 px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 active:scale-95 transition-all"
-                >
-                  <Zap size={16}/> Repair & Re-Index
+                <button onClick={runProcessing} className="flex items-center gap-2 px-8 py-4 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 active:scale-95 transition-all">
+                  <Zap size={14}/> Repair & Re-Index
                 </button>
               </div>
             </div>
@@ -397,12 +604,20 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
         </div>
       </main>
 
-      <footer className="h-12 border-t dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-10 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"/>
-          <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em]">Master Protocol Active</span>
+      {/* ── Footer ────────────────────────────────────────────────────────── */}
+      <footer className="h-10 border-t dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-8 shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"/>
+          <span className="text-[7px] font-black text-slate-400 uppercase tracking-[0.3em]">Engine v4.1 Active</span>
         </div>
-        <span className="text-[8px] font-black text-slate-300 uppercase tracking-[0.2em]">Institutional Alignment Verified</span>
+        <div className="flex items-center gap-4">
+          {slos.length > 0 && (
+            <button onClick={runProcessing} className="text-[8px] font-black text-slate-400 hover:text-indigo-500 uppercase tracking-widest transition-all flex items-center gap-1">
+              <RefreshCw size={9}/> Re-Index
+            </button>
+          )}
+          <span className="text-[7px] font-black text-slate-300 uppercase tracking-[0.2em]">Pedagogical Alignment Verified</span>
+        </div>
       </footer>
     </div>
   );
