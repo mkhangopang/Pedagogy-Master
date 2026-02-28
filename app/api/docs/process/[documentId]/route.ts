@@ -245,28 +245,55 @@ async function enrichWithBloom(slos: RawSLO[]): Promise<Map<string, string>> {
   const bloomMap = new Map<string, string>();
   if (slos.length === 0) return bloomMap;
 
-  const batchList = slos.map((s, i) => `${i + 1}. [${s.slo_code}] ${s.slo_full_text}`).join('\n');
+  const batchList = slos.map((s, i) =>
+    `${i + 1}. [${s.slo_code}] ${s.slo_full_text}`
+  ).join('\n');
 
+  // Context-based Bloom classifier — reads cognitive demand, not just verb
   try {
     const result = await neuralGrid.execute(
-      `Classify each SLO by Bloom's Taxonomy level.
-Return ONLY a JSON object mapping code to level. No explanation.
-Levels: Remember | Understand | Apply | Analyze | Evaluate | Create
+      `You are an expert educational taxonomist for Pakistan Sindh curriculum.
+
+Classify each SLO by Bloom\'s Revised Taxonomy. DO NOT classify by verb alone.
+
+CRITICAL RULES:
+1. Read the FULL statement. Assess cognitive demand, not just the action verb.
+2. "Explain" = Understand when paraphrasing a concept. = Analyze when breaking down a mechanism.
+3. "Identify" = Remember when recalling a name. = Analyze when finding causes/patterns.
+4. "Define" alone = Remember. "Define and apply" = Understand.
+5. Biology mechanisms (photosynthesis, respiration, genetics processes) = Analyze.
+6. Calculations, experiments, graph plotting = Apply.
+7. Grade 9-10: default Remember/Understand/Apply unless content demands higher.
+8. Grade 11-12: default Apply/Analyze unless purely definitional.
+9. "Appreciate", "realize", "justify" = Evaluate.
+10. "Design", "propose hypothesis", "formulate" = Create.
+
+LEVELS:
+- Remember   : Recall facts/definitions/names without requiring comprehension
+- Understand : Explain WHY/HOW in own words, summarize, classify, compare
+- Apply      : Use knowledge in new context, solve, calculate, demonstrate
+- Analyze    : Examine mechanisms, identify cause/effect, break down processes
+- Evaluate   : Judge, assess evidence, critique, justify conclusions
+- Create     : Design, formulate hypotheses, synthesize new solutions
+
+Return ONLY raw JSON object. No markdown. No explanation.
+Format: {"B-09-A-01": "Analyze", "B-10-B-03": "Remember"}
 
 SLOs:
-${batchList}
-
-Format: {"B-09-A-01": "Remember", "B-09-A-02": "Apply", ...}`,
+${batchList}`,
       'BLOOM_TAG',
       { temperature: 0.0, maxTokens: 1024 }
     );
 
-    const cleaned = result.text.trim().replace(/```json|```/g, '').trim();
+    const cleaned = result.text.trim().replace(/\`\`\`json|\`\`\`/g, '').trim();
     const objMatch = cleaned.match(/\{[\s\S]*\}/);
     if (objMatch) {
       const parsed = JSON.parse(objMatch[0]);
+      const validLevels = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
       for (const [code, level] of Object.entries(parsed)) {
-        bloomMap.set(code.toUpperCase(), String(level));
+        const normalized = String(level).trim();
+        const matched = validLevels.find(l => l.toLowerCase() === normalized.toLowerCase());
+        bloomMap.set(code.toUpperCase(), matched || 'Understand');
       }
     }
   } catch (err) {
