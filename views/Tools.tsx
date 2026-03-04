@@ -15,78 +15,7 @@ import { ChatInput } from '../components/chat/ChatInput';
 import { MessageItem } from '../components/chat/MessageItem';
 import { supabase } from '../lib/supabase';
 import { ToolType, getToolDisplayName } from '../lib/ai/tool-router';
-import { renderSTEM } from '../lib/math-renderer';
-
-// ── Markdown → HTML renderer (no external dep, pure regex pipeline) ──────────
-// Handles: # headings, **bold**, *italic*, | tables, - lists, numbered lists,
-// --- dividers, `inline code`, ```code blocks```, line breaks
-function markdownToHtml(md: string): string {
-  if (!md) return '';
-  let html = md
-    // Escape HTML entities first
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // Code blocks (must come before inline code)
-    .replace(/```[a-z]*\n?([\s\S]*?)```/g, '<pre class="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl p-4 my-4 overflow-x-auto text-xs font-mono">$1</pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code class="bg-slate-100 dark:bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-indigo-700 dark:text-indigo-300">$1</code>')
-    // H1
-    .replace(/^# (.+)$/gm, '<h1 class="text-2xl font-black text-slate-900 dark:text-white mt-8 mb-4 uppercase tracking-tight">$1</h1>')
-    // H2
-    .replace(/^## (.+)$/gm, '<h2 class="text-lg font-black text-slate-800 dark:text-slate-100 mt-7 mb-3 uppercase tracking-wide border-b border-slate-200 dark:border-white/10 pb-2">$1</h2>')
-    // H3
-    .replace(/^### (.+)$/gm, '<h3 class="text-base font-black text-indigo-700 dark:text-indigo-400 mt-5 mb-2 uppercase tracking-wide">$1</h3>')
-    // H4
-    .replace(/^#### (.+)$/gm, '<h4 class="text-sm font-black text-slate-700 dark:text-slate-300 mt-4 mb-2">$1</h4>')
-    // HR
-    .replace(/^---$/gm, '<hr class="my-6 border-slate-200 dark:border-white/10"/>')
-    // Bold + Italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
-    // Italic
-    .replace(/\*([^*\n]+)\*/g, '<em class="italic text-slate-700 dark:text-slate-300">$1</em>');
-
-  // Tables (pipe-based markdown tables)
-  html = html.replace(/((?:\| .+ \|\n)+)/g, (table) => {
-    const rows = table.trim().split('\n').filter(r => r.trim() && !r.match(/^\|[-| ]+\|$/));
-    if (rows.length === 0) return table;
-    let out = '<div class="overflow-x-auto my-4"><table class="w-full text-sm border-collapse">';
-    rows.forEach((row, i) => {
-      const cells = row.split('|').filter((_, ci) => ci > 0 && ci < row.split('|').length - 1);
-      const tag = i === 0 ? 'th' : 'td';
-      const cellClass = i === 0
-        ? 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-200 font-black text-[10px] uppercase tracking-widest px-4 py-2 border border-slate-200 dark:border-white/10'
-        : 'px-4 py-2.5 border border-slate-100 dark:border-white/5 text-slate-700 dark:text-slate-300';
-      out += `<tr class="${i % 2 === 1 ? 'bg-slate-50/50 dark:bg-white/2' : ''}">${cells.map(c => `<${tag} class="${cellClass}">${c.trim()}</${tag}>`).join('')}</tr>`;
-    });
-    out += '</table></div>';
-    return out;
-  });
-
-  // Unordered lists (collect consecutive - lines)
-  html = html.replace(/((?:^- .+\n?)+)/gm, (block) => {
-    const items = block.trim().split('\n').map(l => l.replace(/^- /, ''));
-    return '<ul class="my-3 space-y-1.5 pl-1">' + items.map(i =>
-      `<li class="flex items-start gap-2 text-slate-700 dark:text-slate-300"><span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span><span>${i}</span></li>`
-    ).join('') + '</ul>';
-  });
-
-  // Ordered lists
-  html = html.replace(/((?:^\d+\. .+\n?)+)/gm, (block) => {
-    const items = block.trim().split('\n').map(l => l.replace(/^\d+\. /, ''));
-    return '<ol class="my-3 space-y-1.5 pl-1 list-none">' + items.map((item, idx) =>
-      `<li class="flex items-start gap-3 text-slate-700 dark:text-slate-300"><span class="shrink-0 w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-[10px] font-black flex items-center justify-center mt-0.5">${idx + 1}</span><span>${item}</span></li>`
-    ).join('') + '</ol>';
-  });
-
-  // Paragraphs — wrap lonely lines not already in tags
-  html = html.replace(/^(?!<[a-z])(.+)$/gm, '<p class="my-2 text-slate-700 dark:text-slate-300 leading-relaxed">$1</p>');
-
-  // Clean double-wrapped paragraphs from already-tagged lines
-  html = html.replace(/<p class="[^"]*">(<(?:h[1-4]|ul|ol|li|pre|table|hr)[^>]*>)/g, '$1');
-
-  return html;
-}
+import { markdownToHtml } from '../lib/markdown-renderer';
 
 interface ToolsProps {
   brain: NeuralBrain;
