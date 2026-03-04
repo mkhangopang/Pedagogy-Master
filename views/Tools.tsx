@@ -16,6 +16,7 @@ import { MessageItem } from '../components/chat/MessageItem';
 import { supabase } from '../lib/supabase';
 import { ToolType, getToolDisplayName } from '../lib/ai/tool-router';
 import { markdownToHtml } from '../lib/markdown-renderer';
+import { PRINT_STYLES } from '../lib/tools-constants';
 
 interface ToolsProps {
   brain: NeuralBrain;
@@ -26,43 +27,6 @@ interface ToolsProps {
 }
 
 type PersonaMode = 'architect' | 'creative' | 'auditor';
-
-// ── Print styles injected once into <head> ──────────────────────────────────
-const PRINT_STYLES = `
-@media print {
-  @page { size: A4; margin: 20mm 18mm; }
-  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  body * { visibility: hidden !important; }
-  #pm-print-zone, #pm-print-zone * { visibility: visible !important; }
-  #pm-print-zone {
-    position: fixed !important; inset: 0 !important;
-    background: white !important; z-index: 99999 !important;
-    padding: 0 !important; overflow: visible !important;
-    font-family: 'Georgia', serif !important;
-    font-size: 11pt !important;
-    line-height: 1.6 !important;
-    color: #1e293b !important;
-  }
-  #pm-print-zone .prose h1 { font-size: 18pt; font-weight: 900; text-transform: uppercase; letter-spacing: 0.05em; color: #1e3a5f; margin: 0 0 12pt; border-bottom: 2pt solid #4f46e5; padding-bottom: 6pt; }
-  #pm-print-zone .prose h2 { font-size: 13pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; color: #1e3a5f; margin: 14pt 0 6pt; border-bottom: 1pt solid #e2e8f0; padding-bottom: 4pt; }
-  #pm-print-zone .prose h3 { font-size: 11pt; font-weight: 800; color: #4f46e5; margin: 10pt 0 4pt; }
-  #pm-print-zone .prose h4 { font-size: 10pt; font-weight: 700; color: #334155; margin: 8pt 0 3pt; }
-  #pm-print-zone .prose p  { margin: 4pt 0; font-size: 10.5pt; }
-  #pm-print-zone .prose ul, #pm-print-zone .prose ol { margin: 6pt 0 6pt 12pt; }
-  #pm-print-zone .prose li { margin: 2pt 0; font-size: 10.5pt; }
-  #pm-print-zone .prose table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 9.5pt; }
-  #pm-print-zone .prose th { background: #f0f0ff !important; color: #1e3a5f; font-weight: 800; text-transform: uppercase; font-size: 8pt; padding: 5pt 8pt; border: 0.5pt solid #c7d2fe; }
-  #pm-print-zone .prose td { padding: 4pt 8pt; border: 0.5pt solid #e2e8f0; vertical-align: top; }
-  #pm-print-zone .prose tr:nth-child(even) td { background: #f8f9ff !important; }
-  #pm-print-zone .prose code { background: #f1f5f9 !important; padding: 1pt 4pt; border-radius: 3pt; font-size: 9pt; font-family: monospace; }
-  #pm-print-zone .prose pre { background: #f1f5f9 !important; padding: 8pt; border-radius: 4pt; font-size: 8pt; overflow: visible; white-space: pre-wrap; }
-  #pm-print-zone .prose hr { border: none; border-top: 0.5pt solid #e2e8f0; margin: 10pt 0; }
-  #pm-print-zone .prose strong { font-weight: 800; color: #0f172a; }
-  .no-print { display: none !important; }
-  .pm-print-header { display: flex !important; }
-}
-@media screen { .pm-print-header { display: none !important; } }
-`;
 
 const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user }) => {
   const [activeTool, setActiveTool] = useState<ToolType | null>(null);
