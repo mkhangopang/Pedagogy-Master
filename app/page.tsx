@@ -123,25 +123,35 @@ export default function App() {
       
       try {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
+          console.log(`📡 [Auth] Event: ${event}`, currentSession ? "Session Active" : "No Session");
+          
           if (currentSession) {
             setSession(currentSession);
             fetchAppData(currentSession.user.id, currentSession.user.email, currentSession);
             setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
           } else if (event === 'SIGNED_OUT') {
+            console.warn("📡 [Auth] Explicit SIGNED_OUT event received");
             setSession(null);
             setCurrentView('landing');
           } else if (event === 'INITIAL_SESSION' && !currentSession) {
             // Don't overwrite if we already have a session from manual login or getSession
-            setSession((prev: any) => prev ? prev : null);
+            setSession((prev: any) => {
+              if (prev) {
+                console.log("📡 [Auth] Preserving existing session during INITIAL_SESSION null");
+                return prev;
+              }
+              return null;
+            });
           }
         });
         authSubscription = subscription;
 
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession) {
+          console.log("📡 [Auth] Existing session found via getSession");
           setSession(existingSession);
           fetchAppData(existingSession.user.id, existingSession.user.email, existingSession);
-          setCurrentView('dashboard');
+          setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
         }
       } catch (err) {
         console.error('📡 [System] Auth initialization failed:', err);

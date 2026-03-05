@@ -179,6 +179,9 @@ export const getSupabaseAdminClient = (): SupabaseClient => {
 };
 
 export const getURL = () => {
+  if (typeof window !== 'undefined') {
+    return window.location.origin + '/';
+  }
   let url = process?.env?.NEXT_PUBLIC_SITE_URL ?? process?.env?.NEXT_PUBLIC_VERCEL_URL ?? 'http://localhost:3000/';
   url = url.includes('http') ? url : `https://${url}`;
   url = url.endsWith('/') ? url : `${url}/`;
