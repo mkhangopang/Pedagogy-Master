@@ -114,7 +114,9 @@ create table if not exists public.ai_model_usage (
 
 -- 7. HEALTH VIEWS (FIX: DROP FIRST TO PREVENT 42P16 ERROR)
 DROP VIEW IF EXISTS public.rag_health_report;
-create or replace view public.rag_health_report as
+create or replace view public.rag_health_report 
+with (security_invoker = true)
+as
 select 
   d.id, d.name, d.status,
   (select count(*) from document_chunks where document_id = d.id) as chunk_count,
@@ -126,7 +128,33 @@ select
   end as health_status
 from documents d;
 
--- 8. RE-SYNC GRID RPC (FP-01 FIX)
+-- 8. ANALYTICS VIEWS (SECURITY FIX: INVOKER MODE)
+DROP VIEW IF EXISTS public.slo_analytics;
+create or replace view public.slo_analytics 
+with (security_invoker = true)
+as
+select 
+  d.id as document_id,
+  d.name as document_name,
+  count(s.id) as slo_count,
+  count(distinct s.bloom_level) as bloom_diversity
+from documents d
+left join slo_database s on s.document_id = d.id
+group by d.id, d.name;
+
+DROP VIEW IF EXISTS public.ai_provider_health;
+create or replace view public.ai_provider_health 
+with (security_invoker = true)
+as
+select 
+  model_name,
+  count(*) as total_requests,
+  avg(execution_time_ms) as avg_latency_ms,
+  sum(tokens_prompt + tokens_completion) as total_tokens
+from ai_model_usage
+group by model_name;
+
+-- 9. RE-SYNC GRID RPC (FP-01 FIX)
 create or replace function reload_schema_cache()
 returns void language plpgsql security definer as $$
 begin
@@ -134,14 +162,17 @@ begin
 end;
 $$;
 
--- 9. PERMISSIONS
+-- 10. PERMISSIONS
 grant execute on function reload_schema_cache to authenticated, anon, service_role;
 grant all on public.slo_database to authenticated, service_role;
 grant all on public.chunk_slo_mapping to authenticated, service_role;
 grant all on public.vertical_alignment to authenticated, service_role;
 grant all on public.ai_model_usage to authenticated, service_role;
+grant select on public.rag_health_report to authenticated, service_role;
+grant select on public.slo_analytics to authenticated, service_role;
+grant select on public.ai_provider_health to authenticated, service_role;
 
--- 10. FORCE RELOAD
+-- 11. FORCE RELOAD
 SELECT reload_schema_cache();
 `;
 
