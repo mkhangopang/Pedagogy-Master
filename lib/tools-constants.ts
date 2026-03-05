@@ -1,0 +1,37 @@
+// lib/tools-constants.ts
+// All string constants for Tools.tsx — kept in a .ts file so the
+// SWC JSX parser never sees CSS/HTML strings inside the .tsx component.
+
+export const PRINT_STYLES: string = [
+  '@media print {',
+  '  @page { size: A4; margin: 20mm 18mm; }',
+  '  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }',
+  '  body * { visibility: hidden !important; }',
+  '  #pm-print-zone, #pm-print-zone * { visibility: visible !important; }',
+  '  #pm-print-zone {',
+  '    position: fixed !important; inset: 0 !important;',
+  '    background: white !important; z-index: 99999 !important;',
+  '    padding: 0 !important; overflow: visible !important;',
+  "    font-family: 'Georgia', serif !important;",
+  '    font-size: 11pt !important; line-height: 1.6 !important; color: #1e293b !important;',
+  '  }',
+  '  #pm-print-zone h1 { font-size:18pt; font-weight:900; text-transform:uppercase; color:#1e3a5f; margin:0 0 12pt; border-bottom:2pt solid #4f46e5; padding-bottom:6pt; }',
+  '  #pm-print-zone h2 { font-size:13pt; font-weight:800; text-transform:uppercase; color:#1e3a5f; margin:14pt 0 6pt; border-bottom:1pt solid #e2e8f0; padding-bottom:4pt; }',
+  '  #pm-print-zone h3 { font-size:11pt; font-weight:800; color:#4f46e5; margin:10pt 0 4pt; }',
+  '  #pm-print-zone h4 { font-size:10pt; font-weight:700; color:#334155; margin:8pt 0 3pt; }',
+  '  #pm-print-zone p  { margin:4pt 0; font-size:10.5pt; }',
+  '  #pm-print-zone ul, #pm-print-zone ol { margin:6pt 0 6pt 12pt; }',
+  '  #pm-print-zone li { margin:2pt 0; font-size:10.5pt; }',
+  '  #pm-print-zone table { width:100%; border-collapse:collapse; margin:8pt 0; font-size:9.5pt; }',
+  '  #pm-print-zone th { background:#f0f0ff !important; color:#1e3a5f; font-weight:800; text-transform:uppercase; font-size:8pt; padding:5pt 8pt; border:0.5pt solid #c7d2fe; }',
+  '  #pm-print-zone td { padding:4pt 8pt; border:0.5pt solid #e2e8f0; vertical-align:top; }',
+  '  #pm-print-zone tr:nth-child(even) td { background:#f8f9ff !important; }',
+  '  #pm-print-zone code { background:#f1f5f9 !important; padding:1pt 4pt; border-radius:3pt; font-size:9pt; font-family:monospace; }',
+  '  #pm-print-zone pre { background:#f1f5f9 !important; padding:8pt; border-radius:4pt; font-size:8pt; white-space:pre-wrap; }',
+  '  #pm-print-zone hr { border:none; border-top:0.5pt solid #e2e8f0; margin:10pt 0; }',
+  '  #pm-print-zone strong { font-weight:800; color:#0f172a; }',
+  '  .no-print { display: none !important; }',
+  '  .pm-print-header { display: flex !important; }',
+  '}',
+  '@media screen { .pm-print-header { display: none !important; } }',
+].join('\n');
