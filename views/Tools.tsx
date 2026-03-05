@@ -55,7 +55,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
 
-  // ── Inject print styles ────────────────────────────────────────────────────
+  // -- Inject print styles ----------------------------------------------------
   useEffect(() => {
     if (document.getElementById('pm-print-styles')) return;
     const el = document.createElement('style');
@@ -76,7 +76,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     setWorkflow(m ? { tool: m[1].toLowerCase() as ToolType, reason: m[2].trim() } : null);
   }, [canvasContent, isGenerating]);
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // -- Helpers ----------------------------------------------------------------
   const cleanContent = () => canvasContent.split('--- Workflow Recommendation')[0].trim();
 
   const buildPrompt = (userInput: string, handoff?: string) => {
@@ -94,7 +94,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     return lines.join('\n');
   };
 
-  // ── Toggle doc context ─────────────────────────────────────────────────────
+  // -- Toggle doc context -----------------------------------------------------
   const toggleDoc = async (docId: string) => {
     const updated = localDocs.map(d => ({ ...d, isSelected: d.id === docId ? !d.isSelected : false }));
     setLocalDocs(updated);
@@ -109,7 +109,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     finally { setSwitching(false); }
   };
 
-  // ── Generate ───────────────────────────────────────────────────────────────
+  // -- Generate ---------------------------------------------------------------
   const handleGenerate = async (userInput: string, handoff?: string) => {
     if (!userInput.trim() || isGenerating || !canQuery) return;
     const tool = activeTool || 'master_plan';
@@ -131,12 +131,18 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         brain, user, curriculumOn ? activeDoc?.id : undefined
       );
       let full = '';
-      for await (const chunk of stream) {
+      // Consume async generator without for-await (SWC JSX compat)
+      let iter = stream[Symbol.asyncIterator]();
+      let next = await iter.next();
+      while (!next.done) {
+        const chunk = next.value;
         if (chunk) {
           full += chunk;
-          setMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: full } : m));
-          setCanvasContent(full);
+          const captured = full;
+          setMessages(prev => prev.map(m => m.id === aiId ? { ...m, content: captured } : m));
+          setCanvasContent(captured);
         }
+        next = await iter.next();
       }
       await adaptiveService.captureGeneration(user.id, tool, full, { tool, document_id: activeDoc?.id, persona, isGlobalEnabled: globalOn });
     } catch (err: any) {
@@ -166,7 +172,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   };
 
   const handleEmail = () => {
-    const subj = encodeURIComponent(getToolDisplayName(activeTool || 'master_plan') + ' — Pedagogy Master AI');
+    const subj = encodeURIComponent(getToolDisplayName(activeTool || 'master_plan') + ' - Pedagogy Master AI');
     const body = encodeURIComponent(
       'Created with Pedagogy Master AI\n\n' + cleanContent().substring(0, 1500) + '...\n\nhttps://pedagogy-master.vercel.app'
     );
@@ -181,12 +187,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   };
 
   const handleWhatsApp = () => {
-    const t = encodeURIComponent('Check out Pedagogy Master AI — free AI curriculum tools for teachers:\nhttps://pedagogy-master.vercel.app');
+    const t = encodeURIComponent('Check out Pedagogy Master AI - free AI curriculum tools for teachers:\nhttps://pedagogy-master.vercel.app');
     window.open('https://wa.me/?text=' + t, '_blank');
     setShareMenu(false);
   };
 
-  // ── Tool picker screen ─────────────────────────────────────────────────────
+  // -- Tool picker screen -----------------------------------------------------
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
@@ -206,7 +212,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 <button key={doc.id} onClick={() => toggleDoc(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}>
                   <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Standard Node</span>
                   <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
-                  <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} · {doc.subject}</p>
+                  <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} &middot; {doc.subject}</p>
                 </button>
               ))}
             </div>
@@ -273,14 +279,14 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     );
   }
 
-  // ── Active tool view ───────────────────────────────────────────────────────
+  // -- Active tool view -------------------------------------------------------
   const html = markdownToHtml(cleanContent());
-  const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  const dateStr = new Date().toDateString();
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden print:h-auto print:overflow-visible">
 
-      {/* Print zone — hidden on screen, visible only when printing */}
+      {/* Print zone - hidden on screen, visible only when printing */}
       <div id="pm-print-zone" className="hidden">
         <div className="pm-print-header" style={{ display: 'none', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #4f46e5' }}>
           <div>
@@ -302,7 +308,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
       <div className="flex-1 flex overflow-hidden print:block print:overflow-visible">
 
-        {/* Left panel — chat */}
+        {/* Left panel - chat */}
         <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 no-print ${mobileTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] shrink-0`}>
           <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
             <div className="flex items-center gap-3">
@@ -326,7 +332,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
         </div>
 
-        {/* Right panel — artifact */}
+        {/* Right panel - artifact */}
         <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
 
           {/* Toolbar */}
@@ -375,11 +381,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                           <div><p className="text-sm font-bold text-slate-800 dark:text-white">Copy App Link</p><p className="text-[10px] text-slate-400">Share Pedagogy Master</p></div>
                         </button>
                         <button onClick={handleWhatsApp} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-green-50 dark:hover:bg-white/5 transition-all text-left">
-                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center shrink-0"><span className="text-sm">📱</span></div>
+                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center shrink-0"><span className="text-sm"></span></div>
                           <div><p className="text-sm font-bold text-slate-800 dark:text-white">WhatsApp</p><p className="text-[10px] text-slate-400">Share with teacher groups</p></div>
                         </button>
                         <button onClick={handleTwitter} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 dark:hover:bg-white/5 transition-all text-left">
-                          <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center shrink-0"><span className="text-white font-black text-xs">𝕏</span></div>
+                          <div className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center shrink-0"><span className="text-white font-black text-xs">X</span></div>
                           <div><p className="text-sm font-bold text-slate-800 dark:text-white">Post on X / Twitter</p><p className="text-[10px] text-slate-400">Spread the word #EdTech</p></div>
                         </button>
                         <button onClick={handleEmail} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-blue-50 dark:hover:bg-white/5 transition-all text-left">
@@ -392,7 +398,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                         </button>
                       </div>
                       <div className="px-4 py-3 bg-slate-50 dark:bg-white/5 border-t border-slate-100 dark:border-white/5">
-                        <p className="text-[9px] text-slate-400 text-center font-medium">Pedagogy Master AI — Free for every educator</p>
+                        <p className="text-[9px] text-slate-400 text-center font-medium">Pedagogy Master AI - Free for every educator</p>
                       </div>
                     </div>
                   </>
