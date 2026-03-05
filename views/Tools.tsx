@@ -196,94 +196,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const html = activeTool ? markdownToHtml(cleanContent()) : '';
   const dateStr = activeTool ? new Date().toDateString() : '';
 
-  // -- Single return with conditional JSX ------------------------------------
-  if (!activeTool) {
-    return (
-      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
-
-        {/* Doc slider */}
-        <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${sliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="p-8 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <Library size={20} className="text-indigo-600" />
-                <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Vault Selection</h3>
-              </div>
-              <button onClick={() => setSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
-            </div>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
-              {localDocs.map(doc => (
-                <button key={doc.id} onClick={() => toggleDoc(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}>
-                  <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Standard Node</span>
-                  <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
-                  <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} &middot; {doc.subject}</p>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
-          <div className="flex items-center gap-6">
-            <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={32} /></div>
-            <div>
-              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
-              <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
-                {curriculumOn && activeDoc
-                  ? <><ShieldCheck size={14} className="text-emerald-500" /><span className="truncate">Brain v4.1 Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></>
-                  : <><Globe size={14} /><span>Autonomous Creative Intelligence Mode.</span></>
-                }
-              </div>
-            </div>
-          </div>
-          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex items-center gap-2 no-print">
-            <button
-              onClick={() => setCurriculumOn(v => !v)}
-              className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${curriculumOn ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
-            >
-              <BookMarked size={16} />
-              <div className="text-left">
-                <p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Vault</p>
-                <p className="text-[10px] font-bold">Curriculum</p>
-              </div>
-            </button>
-            <button
-              onClick={() => setSliderOpen(true)}
-              className={`p-3 rounded-full transition-all ml-1 shadow-inner ${sliderOpen ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}
-            >
-              <Library size={20} />
-            </button>
-          </div>
-        </div>
-
-        {/* Tool cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 no-print">
-          {TOOL_DEFS.map(tool => (
-            <button
-              key={tool.id}
-              onClick={() => setActiveTool(tool.id)}
-              className="p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl"
-            >
-              <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center ${tool.iconColor} shadow-lg`}>
-                <tool.icon size={28} />
-              </div>
-              <div>
-                <h3 className="font-black text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>
-                <p className="text-slate-500 dark:text-slate-400 text-base mt-2 font-medium leading-relaxed">{tool.desc}</p>
-              </div>
-              <div className="flex items-center justify-between mt-auto">
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1"><Sparkles size={10} /> Specialized Neural Tool</span>
-                <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
+  return activeTool ? (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden print:h-auto print:overflow-visible">
 
       {/* Print zone - hidden on screen, visible only when printing */}
@@ -434,6 +347,89 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     </div>
     </div>
     </div>
+  ) : (
+
+      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
+
+        {/* Doc slider */}
+        <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${sliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+          <div className="p-8 flex flex-col h-full">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <Library size={20} className="text-indigo-600" />
+                <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Vault Selection</h3>
+              </div>
+              <button onClick={() => setSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+              {localDocs.map(doc => (
+                <button key={doc.id} onClick={() => toggleDoc(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}>
+                  <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Standard Node</span>
+                  <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
+                  <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} &middot; {doc.subject}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
+          <div className="flex items-center gap-6">
+            <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={32} /></div>
+            <div>
+              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
+              <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
+                {curriculumOn && activeDoc
+                  ? <><ShieldCheck size={14} className="text-emerald-500" /><span className="truncate">Brain v4.1 Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></>
+                  : <><Globe size={14} /><span>Autonomous Creative Intelligence Mode.</span></>
+                }
+              </div>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex items-center gap-2 no-print">
+            <button
+              onClick={() => setCurriculumOn(v => !v)}
+              className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${curriculumOn ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}
+            >
+              <BookMarked size={16} />
+              <div className="text-left">
+                <p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Vault</p>
+                <p className="text-[10px] font-bold">Curriculum</p>
+              </div>
+            </button>
+            <button
+              onClick={() => setSliderOpen(true)}
+              className={`p-3 rounded-full transition-all ml-1 shadow-inner ${sliderOpen ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}
+            >
+              <Library size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* Tool cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 no-print">
+          {TOOL_DEFS.map(tool => (
+            <button
+              key={tool.id}
+              onClick={() => setActiveTool(tool.id)}
+              className="p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl"
+            >
+              <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center ${tool.iconColor} shadow-lg`}>
+                <tool.icon size={28} />
+              </div>
+              <div>
+                <h3 className="font-black text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-base mt-2 font-medium leading-relaxed">{tool.desc}</p>
+              </div>
+              <div className="flex items-center justify-between mt-auto">
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1"><Sparkles size={10} /> Specialized Neural Tool</span>
+                <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
   );
 };
 
