@@ -6,7 +6,7 @@
 
 This contains everything you need to run your app locally.
 
-View your app in AI Studio:   https://pedagogy-master.vercel.app
+View your app in AI Studio:   (https://github.com/google-gemini/aistudio-repository-template)
 
 ## Run Locally
 
