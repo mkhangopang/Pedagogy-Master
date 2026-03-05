@@ -28,11 +28,20 @@ interface ToolsProps {
 
 type PersonaMode = 'architect' | 'creative' | 'auditor';
 
-const TOOL_DEFS = [
-  { id: 'master_plan'    as ToolType, name: 'Master Plan',     icon: BookOpen,     desc: 'Architecture of Instruction (5E, Madeline Hunter, UbD)',                  color: 'bg-indigo-600', iconColor: 'text-white' },
-  { id: 'neural_quiz'    as ToolType, name: 'Neural Quiz',     icon: ClipboardCheck, desc: 'Standards-Aligned Assessment (MCQ, CRQ, Bloom Scaling)',               color: 'bg-emerald-600', iconColor: 'text-white' },
-  { id: 'fidelity_rubric'as ToolType, name: 'Fidelity Rubric', icon: Layers,       desc: 'Criterion-Based Assessment (Observable, Measurable Descriptors)',        color: 'bg-amber-600',  iconColor: 'text-white' },
-  { id: 'audit_tagger'   as ToolType, name: 'Audit Tagger',    icon: SearchCode,   desc: 'SLO Logic Mapping (Curriculum Analysis, DOK, Gap ID)',                   color: 'bg-cyan-600',   iconColor: 'text-white' },
+interface ToolDef {
+  id: ToolType;
+  name: string;
+  icon: React.ElementType;
+  desc: string;
+  color: string;
+  iconColor: string;
+}
+
+const TOOL_DEFS: ToolDef[] = [
+  { id: 'master_plan',     name: 'Master Plan',     icon: BookOpen,      desc: 'Architecture of Instruction (5E, Madeline Hunter, UbD)',                 color: 'bg-indigo-600', iconColor: 'text-white' },
+  { id: 'neural_quiz',     name: 'Neural Quiz',     icon: ClipboardCheck, desc: 'Standards-Aligned Assessment (MCQ, CRQ, Bloom Scaling)',                color: 'bg-emerald-600', iconColor: 'text-white' },
+  { id: 'fidelity_rubric', name: 'Fidelity Rubric', icon: Layers,        desc: 'Criterion-Based Assessment (Observable, Measurable Descriptors)',       color: 'bg-amber-600',  iconColor: 'text-white' },
+  { id: 'audit_tagger',    name: 'Audit Tagger',    icon: SearchCode,    desc: 'SLO Logic Mapping (Curriculum Analysis, DOK, Gap ID)',                  color: 'bg-cyan-600',   iconColor: 'text-white' },
 ];
 
 const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user }) => {
