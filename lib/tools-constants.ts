@@ -1,5 +1,5 @@
 // lib/tools-constants.ts
-// All string constants for Tools.tsx — kept in a .ts file so the
+// All string constants for Tools.tsx - kept in a .ts file so the
 // SWC JSX parser never sees CSS/HTML strings inside the .tsx component.
 
 export const PRINT_STYLES: string = [
