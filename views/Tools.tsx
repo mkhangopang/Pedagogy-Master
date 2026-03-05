@@ -192,7 +192,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     setShareMenu(false);
   };
 
-  // -- Tool picker screen -----------------------------------------------------
+  // -- Compute derived values (always, so single return works) ---------------
+  const html = activeTool ? markdownToHtml(cleanContent()) : '';
+  const dateStr = activeTool ? new Date().toDateString() : '';
+
+  // -- Single return with conditional JSX ------------------------------------
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
@@ -278,10 +282,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       </div>
     );
   }
-
-  // -- Active tool view -------------------------------------------------------
-  const html = markdownToHtml(cleanContent());
-  const dateStr = new Date().toDateString();
 
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden print:h-auto print:overflow-visible">
