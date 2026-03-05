@@ -15,8 +15,6 @@ import { ChatInput } from '../components/chat/ChatInput';
 import { MessageItem } from '../components/chat/MessageItem';
 import { supabase } from '../lib/supabase';
 import { ToolType, getToolDisplayName } from '../lib/ai/tool-router';
-import { markdownToHtml } from '../lib/markdown-renderer';
-import { PRINT_STYLES } from '../lib/tools-constants';
 
 interface ToolsProps {
   brain: NeuralBrain;
@@ -27,6 +25,92 @@ interface ToolsProps {
 }
 
 type PersonaMode = 'architect' | 'creative' | 'auditor';
+
+function mdToHtml(md: string): string {
+  if (!md) return '';
+  let h = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // Code blocks
+  h = h.replace(/```[\s\S]*?```/g, (b) => {
+    const code = b.replace(/^```[a-z]*\n?/, '').replace(/```$/, '');
+    return '<pre style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 18px;margin:14px 0;font-size:12px;font-family:monospace;overflow-x:auto;white-space:pre-wrap;color:#334155">' + code + '</pre>';
+  });
+
+  // Inline code
+  h = h.replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:2px 7px;border-radius:5px;font-size:12px;font-family:monospace;color:#4338ca">$1</code>');
+
+  // Headings
+  h = h.replace(/^# (.+)$/gm, '<h1 style="font-size:22px;font-weight:900;color:#0f172a;margin:28px 0 12px;padding-bottom:10px;border-bottom:3px solid #4f46e5;text-transform:uppercase;letter-spacing:0.03em">$1</h1>');
+  h = h.replace(/^## (.+)$/gm, '<h2 style="font-size:16px;font-weight:800;color:#1e293b;margin:22px 0 8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0;text-transform:uppercase;letter-spacing:0.02em">$1</h2>');
+  h = h.replace(/^### (.+)$/gm, '<h3 style="font-size:14px;font-weight:800;color:#4338ca;margin:16px 0 6px">$1</h3>');
+  h = h.replace(/^#### (.+)$/gm, '<h4 style="font-size:13px;font-weight:700;color:#334155;margin:12px 0 4px">$1</h4>');
+
+  // HR
+  h = h.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0"/>');
+
+  // Bold + italic
+  h = h.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="font-weight:800;color:#0f172a">$1</strong>');
+  h = h.replace(/\*([^*\n]+)\*/g, '<em style="font-style:italic;color:#475569">$1</em>');
+
+  // Tables
+  h = h.replace(/((?:\|.+\|\n?)+)/g, (tbl) => {
+    const rows = tbl.trim().split('\n').filter((r: string) => !/^\|[-| :]+\|$/.test(r.trim()));
+    if (!rows.length) return tbl;
+    let out = '<div style="overflow-x:auto;margin:14px 0"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+    rows.forEach((row: string, i: number) => {
+      const cells = row.split('|').slice(1, -1).map((c: string) => c.trim());
+      if (i === 0) {
+        out += '<thead><tr>' + cells.map((c: string) => '<th style="background:#eef2ff;color:#3730a3;font-weight:800;text-transform:uppercase;font-size:11px;letter-spacing:0.05em;padding:9px 14px;border:1px solid #c7d2fe;text-align:left">' + c + '</th>').join('') + '</tr></thead><tbody>';
+      } else {
+        const bg = i % 2 === 0 ? '' : 'background:#f8faff';
+        out += '<tr style="' + bg + '">' + cells.map((c: string) => '<td style="padding:8px 14px;border:1px solid #e2e8f0;color:#374151;vertical-align:top">' + c + '</td>').join('') + '</tr>';
+      }
+    });
+    return out + '</tbody></table></div>';
+  });
+
+  // Lists
+  h = h.replace(/((?:^- .+\n?)+)/gm, (b) => {
+    const items = b.trim().split('\n').map((l: string) => l.replace(/^- /, ''));
+    return '<ul style="margin:10px 0;padding:0;list-style:none">' + items.map((item: string) =>
+      '<li style="display:flex;align-items:flex-start;gap:8px;margin:5px 0;color:#374151;font-size:14px"><span style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#6366f1;margin-top:7px"></span><span>' + item + '</span></li>'
+    ).join('') + '</ul>';
+  });
+
+  h = h.replace(/((?:^\d+\. .+\n?)+)/gm, (b) => {
+    const items = b.trim().split('\n').map((l: string) => l.replace(/^\d+\. /, ''));
+    return '<ol style="margin:10px 0;padding:0;list-style:none">' + items.map((item: string, idx: number) =>
+      '<li style="display:flex;align-items:flex-start;gap:10px;margin:5px 0;color:#374151;font-size:14px"><span style="flex-shrink:0;min-width:22px;height:22px;border-radius:50%;background:#eef2ff;color:#4338ca;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center">' + (idx + 1) + '</span><span>' + item + '</span></li>'
+    ).join('') + '</ol>';
+  });
+
+  // Paragraphs
+  h = h.replace(/^(?!<[a-zA-Z\/])(.+)$/gm, '<p style="margin:7px 0;color:#374151;line-height:1.75;font-size:14px">$1</p>');
+
+  return h;
+}
+
+const PSTYLES = [
+  '@media print{',
+  '@page{size:A4;margin:20mm 18mm}',
+  '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}',
+  'body *{visibility:hidden!important}',
+  '#pm-print-zone,#pm-print-zone *{visibility:visible!important}',
+  '#pm-print-zone{position:fixed!important;inset:0!important;background:white!important;z-index:99999!important;font-family:Georgia,serif!important;font-size:11pt!important;line-height:1.6!important;color:#1e293b!important}',
+  '#pm-print-zone h1{font-size:18pt;font-weight:900;color:#1e3a5f;border-bottom:2pt solid #4f46e5;padding-bottom:6pt;margin-bottom:12pt}',
+  '#pm-print-zone h2{font-size:13pt;font-weight:800;color:#1e3a5f;border-bottom:1pt solid #e2e8f0;padding-bottom:4pt;margin:14pt 0 6pt}',
+  '#pm-print-zone h3{font-size:11pt;font-weight:800;color:#4f46e5;margin:10pt 0 4pt}',
+  '#pm-print-zone p{margin:4pt 0;font-size:10.5pt}',
+  '#pm-print-zone table{width:100%;border-collapse:collapse;margin:8pt 0;font-size:9.5pt}',
+  '#pm-print-zone th{background:#f0f0ff!important;color:#1e3a5f;font-weight:800;font-size:8pt;padding:5pt 8pt;border:0.5pt solid #c7d2fe}',
+  '#pm-print-zone td{padding:4pt 8pt;border:0.5pt solid #e2e8f0;vertical-align:top}',
+  '#pm-print-zone strong{font-weight:800;color:#0f172a}',
+  '.no-print{display:none!important}',
+  '.pm-print-header{display:flex!important}',
+  '}',
+  '@media screen{.pm-print-header{display:none!important}}',
+].join(' ');
 
 interface ToolDef {
   id: ToolType;
@@ -44,7 +128,7 @@ const TOOL_DEFS: ToolDef[] = [
   { id: 'audit_tagger',    name: 'Audit Tagger',    icon: SearchCode,    desc: 'SLO Logic Mapping (Curriculum Analysis, DOK, Gap ID)',                  color: 'bg-cyan-600',   iconColor: 'text-white' },
 ];
 
-const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user }) => {
+function Tools({ brain, documents, onQuery, canQuery, user }: ToolsProps) {
   const [activeTool, setActiveTool]           = useState<ToolType | null>(null);
   const [persona, setPersona]                 = useState<PersonaMode>('architect');
   const [messages, setMessages]               = useState<any[]>([]);
@@ -69,7 +153,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     if (document.getElementById('pm-print-styles')) return;
     const el = document.createElement('style');
     el.id = 'pm-print-styles';
-    el.innerHTML = PRINT_STYLES;
+    el.innerHTML = PSTYLES;
     document.head.appendChild(el);
   }, []);
 
@@ -202,7 +286,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   };
 
   // -- Compute derived values (always, so single return works) ---------------
-  const html = activeTool ? markdownToHtml(cleanContent()) : '';
+  const html = activeTool ? mdToHtml(cleanContent()) : '';
   const dateStr = activeTool ? new Date().toDateString() : '';
 
   return activeTool ? (
@@ -440,6 +524,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         </div>
       </div>
   );
-};
+}
 
 export default Tools;
