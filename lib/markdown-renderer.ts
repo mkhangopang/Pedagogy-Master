@@ -1,18 +1,18 @@
 // lib/markdown-renderer.ts
-// Pure markdown → HTML converter — no external deps
+// Pure markdown -> HTML converter - no external deps
 // Handles: # headings, **bold**, *italic*, | tables |, - lists, 1. lists,
 //          --- dividers, `inline code`, ```code blocks```
 
 export function markdownToHtml(md: string): string {
   if (!md) return '';
 
-  // ── 1. Escape HTML entities ────────────────────────────────────────────────
+  // -- 1. Escape HTML entities ------------------------------------------------
   let html = md
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // ── 2. Code blocks (must come before inline code) ─────────────────────────
+  // -- 2. Code blocks (must come before inline code) -------------------------
   html = html.replace(
     /```[a-z]*\n?([\s\S]*?)```/g,
     (_m, code) =>
@@ -21,7 +21,7 @@ export function markdownToHtml(md: string): string {
       '</pre>'
   );
 
-  // ── 3. Inline code ─────────────────────────────────────────────────────────
+  // -- 3. Inline code ---------------------------------------------------------
   html = html.replace(
     /`([^`]+)`/g,
     (_m, code) =>
@@ -30,7 +30,7 @@ export function markdownToHtml(md: string): string {
       '</code>'
   );
 
-  // ── 4. Headings ────────────────────────────────────────────────────────────
+  // -- 4. Headings ------------------------------------------------------------
   html = html.replace(
     /^# (.+)$/gm,
     (_m, t) =>
@@ -56,13 +56,13 @@ export function markdownToHtml(md: string): string {
       t + '</h4>'
   );
 
-  // ── 5. Horizontal rules ────────────────────────────────────────────────────
+  // -- 5. Horizontal rules ----------------------------------------------------
   html = html.replace(
     /^---$/gm,
     '<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0"/>'
   );
 
-  // ── 6. Bold + Italic ───────────────────────────────────────────────────────
+  // -- 6. Bold + Italic -------------------------------------------------------
   html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
   html = html.replace(
     /\*\*(.+?)\*\*/g,
@@ -73,7 +73,7 @@ export function markdownToHtml(md: string): string {
     '<em style="font-style:italic;color:#475569">$1</em>'
   );
 
-  // ── 7. Tables ──────────────────────────────────────────────────────────────
+  // -- 7. Tables --------------------------------------------------------------
   html = html.replace(/((?:\|.+\|\n?)+)/g, (block) => {
     const rows = block
       .trim()
@@ -112,7 +112,7 @@ export function markdownToHtml(md: string): string {
     return out;
   });
 
-  // ── 8. Unordered lists ─────────────────────────────────────────────────────
+  // -- 8. Unordered lists -----------------------------------------------------
   html = html.replace(/((?:^- .+\n?)+)/gm, (block) => {
     const items = block
       .trim()
@@ -140,7 +140,7 @@ export function markdownToHtml(md: string): string {
     );
   });
 
-  // ── 9. Ordered lists ───────────────────────────────────────────────────────
+  // -- 9. Ordered lists -------------------------------------------------------
   html = html.replace(/((?:^\d+\. .+\n?)+)/gm, (block) => {
     const items = block
       .trim()
@@ -170,7 +170,7 @@ export function markdownToHtml(md: string): string {
     );
   });
 
-  // ── 10. Paragraphs ─────────────────────────────────────────────────────────
+  // -- 10. Paragraphs ---------------------------------------------------------
   html = html.replace(
     /^(?!<[a-zA-Z\/])(.+)$/gm,
     '<p style="margin:6px 0;color:#374151;line-height:1.7;font-size:13px">$1</p>'
