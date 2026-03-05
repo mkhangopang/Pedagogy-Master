@@ -57,11 +57,11 @@ export default function App() {
     document.documentElement.classList.toggle('dark', newTheme === 'dark');
   };
 
-  const fetchAppData = useCallback(async (userId: string, email?: string) => {
+  const fetchAppData = useCallback(async (userId: string, email?: string, providedSession?: any) => {
     getSupabaseHealth().then(setHealthStatus);
     
     // 1. Fetch Brain / System Prompt from DB
-    const { data: { session: currentSession } } = await supabase.auth.getSession();
+    const currentSession = providedSession || (await supabase.auth.getSession()).data.session;
     if (currentSession) {
       fetch('/api/brain/get', {
         headers: { 'Authorization': `Bearer ${currentSession.access_token}` }
@@ -115,24 +115,24 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (initStarted.current) return;
-    initStarted.current = true;
-
     let authSubscription: { unsubscribe: () => void } | null = null;
 
     const initializeAuth = async () => {
-      refreshSupabaseInstance();
+      // Ensure we have fresh credentials
       const pulseSuccess = await pulseCredentialsFromServer();
       
       try {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
           if (currentSession) {
             setSession(currentSession);
-            fetchAppData(currentSession.user.id, currentSession.user.email);
+            fetchAppData(currentSession.user.id, currentSession.user.email, currentSession);
             setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
-          } else {
+          } else if (event === 'SIGNED_OUT') {
             setSession(null);
-            setCurrentView(prev => (prev !== 'landing' && prev !== 'login') ? 'landing' : prev);
+            setCurrentView('landing');
+          } else if (event === 'INITIAL_SESSION' && !currentSession) {
+            // Don't overwrite if we already have a session from manual login or getSession
+            setSession((prev: any) => prev ? prev : null);
           }
         });
         authSubscription = subscription;
@@ -140,7 +140,7 @@ export default function App() {
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession) {
           setSession(existingSession);
-          fetchAppData(existingSession.user.id, existingSession.user.email);
+          fetchAppData(existingSession.user.id, existingSession.user.email, existingSession);
           setCurrentView('dashboard');
         }
       } catch (err) {

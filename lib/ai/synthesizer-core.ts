@@ -39,7 +39,7 @@ export class SynthesizerCore {
       rpm: 10,
       rpd: 2000,
       tier: 1,
-      enabled: isGeminiEnabled()
+      enabled: true
     });
 
     providers.set('grok-2', {
@@ -52,7 +52,33 @@ export class SynthesizerCore {
       rpm: 20,
       rpd: 5000,
       tier: 1,
-      enabled: !!process.env.GROK_API_KEY
+      enabled: true
+    });
+
+    providers.set('gpt-4o', {
+      id: 'gpt-4o',
+      name: 'GPT-4o (OpenAI)',
+      endpoint: 'https://api.openai.com/v1/chat/completions',
+      model: 'gpt-4o',
+      apiKeyEnv: 'OPENAI_API_KEY',
+      maxTokens: 16384,
+      rpm: 50,
+      rpd: 10000,
+      tier: 1,
+      enabled: true
+    });
+
+    providers.set('claude-3-5', {
+      id: 'claude-3-5',
+      name: 'Claude 3.5 Sonnet',
+      endpoint: 'https://api.anthropic.com/v1/messages',
+      model: 'claude-3-5-sonnet-20241022',
+      apiKeyEnv: 'ANTHROPIC_API_KEY',
+      maxTokens: 8192,
+      rpm: 50,
+      rpd: 10000,
+      tier: 1,
+      enabled: true
     });
 
     // TIER 2: THE ENGINES (Flash Fallback)
@@ -66,7 +92,46 @@ export class SynthesizerCore {
       rpm: 100,
       rpd: 10000,
       tier: 2,
-      enabled: isGeminiEnabled()
+      enabled: true
+    });
+
+    providers.set('mistral-large', {
+      id: 'mistral-large',
+      name: 'Mistral Large',
+      endpoint: 'https://api.mistral.ai/v1/chat/completions',
+      model: 'mistral-large-latest',
+      apiKeyEnv: 'MISTRAL_API_KEY',
+      maxTokens: 32768,
+      rpm: 20,
+      rpd: 5000,
+      tier: 2,
+      enabled: true
+    });
+
+    providers.set('deepseek-v3', {
+      id: 'deepseek-v3',
+      name: 'DeepSeek V3',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-chat',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
+    });
+
+    providers.set('llama-3-3', {
+      id: 'llama-3-3',
+      name: 'Llama 3.3 70B',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      model: 'llama-3.3-70b-versatile',
+      apiKeyEnv: 'GROK_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
     });
 
     return providers;

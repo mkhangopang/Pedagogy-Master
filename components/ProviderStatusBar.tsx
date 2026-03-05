@@ -26,7 +26,7 @@ export const ProviderStatusBar: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]" />
-           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">7-Engine Multi-Provider Synthesis Grid v10.0</span>
+           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">8-Engine Multi-Provider Synthesis Grid v10.0</span>
         </div>
         <button onClick={() => setShow(false)} className="text-slate-500 hover:text-white transition-colors">✕</button>
       </div>
