@@ -26,9 +26,9 @@ export async function GET(
 
     return NextResponse.json({
       id: docRes.data.id,
-      status: docRes.data.status,
+      status: docRes.data.status === 'ready' ? 'complete' : docRes.data.status,
       name: docRes.data.name,
-      progress: docRes.data.status === 'ready' ? 100 : (docRes.data.rag_indexed ? 80 : 20),
+      progress: docRes.data.status === 'ready' ? 100 : (docRes.data.rag_indexed ? 90 : 20),
       summary: docRes.data.document_summary,
       error: docRes.data.error_message,
       slos: sloRes.data || [],

@@ -57,56 +57,71 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       if (!buffer) throw new Error("R2_FAULT: Object unreachable.");
       const raw = await pdf(buffer);
       await adminSupabase.from('documents').update({ extracted_text: raw.text.trim() }).eq('id', documentId);
-      await queue.updateProgress(job.id, { step: IngestionStep.LINEARIZE, progress: 25, message: 'Linearization...' });
-      job.step = IngestionStep.LINEARIZE;
+      await queue.updateProgress(job.id, { step: IngestionStep.PARSE, progress: 25, message: 'Deterministic parsing...' });
+      job.step = IngestionStep.PARSE;
     }
 
-    // STEP 2: PEDAGOGICAL LINEARIZATION
-    if (job.step === IngestionStep.LINEARIZE) {
+    // STEP 2: DETERMINISTIC PARSING
+    if (job.step === IngestionStep.PARSE) {
       const { data: current } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
-      const markdown = await callLinearizer(current?.extracted_text || "", recipe);
+      const text = current?.extracted_text || "";
       
-      const indexMatch = markdown.match(/<STRUCTURED_INDEX>([\s\S]+?)<\/STRUCTURED_INDEX>/);
-      if (indexMatch) {
-        try {
-          const sloIndex = JSON.parse(indexMatch[1].trim().replace(/```json|```/g, '').trim());
-          if (Array.isArray(sloIndex)) {
-            const records = sloIndex.map((s: any) => ({
-              document_id: documentId,
-              slo_code: s.code || s.slo_code,
-              slo_full_text: s.text || s.slo_full_text,
-              bloom_level: s.bloomLevel || 'Understand'
-            }));
-            await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-            await adminSupabase.from('slo_database').insert(records);
-          }
-        } catch (e) { console.error("Structured Index Failure", e); }
+      // Stage 2: Regex state-machine per chunk (simplified for now)
+      const sloRegex = /([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)\s+([\s\S]+?)(?=[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|$)/g;
+      const matches = [...text.matchAll(sloRegex)];
+      
+      if (matches.length > 0) {
+        const records = matches.map(m => ({
+          document_id: documentId,
+          slo_code: m[1].trim(),
+          slo_full_text: m[2].trim(),
+          bloom_level: 'Understand'
+        }));
+        await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+        await adminSupabase.from('slo_database').insert(records);
       }
 
-      await adminSupabase.from('documents').update({ extracted_text: markdown }).eq('id', documentId);
-      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 60, message: 'Vector indexing...' });
+      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 45, message: 'Pedagogical enrichment...' });
+      job.step = IngestionStep.ENRICH;
+    }
+
+    // STEP 3: PEDAGOGICAL ENRICHMENT
+    if (job.step === IngestionStep.ENRICH) {
+      const { data: slos } = await adminSupabase.from('slo_database').select('*').eq('document_id', documentId);
+      
+      if (slos && slos.length > 0) {
+        // Batch 15 SLOs at a time
+        for (let i = 0; i < slos.length; i += 15) {
+          const batch = slos.slice(i, i + 15);
+          const prompt = `Assign Bloom's Taxonomy levels to these SLOs:\n${batch.map(s => `${s.slo_code}: ${s.slo_full_text}`).join('\n')}`;
+          const enrichment = await callLinearizer(prompt, "You are a Bloom's Taxonomy expert. Return JSON mapping code to level.");
+          
+          try {
+            const mapping = JSON.parse(enrichment.match(/\{[\s\S]*\}/)?.[0] || '{}');
+            for (const s of batch) {
+              if (mapping[s.slo_code]) {
+                await adminSupabase.from('slo_database').update({ bloom_level: mapping[s.slo_code] }).eq('id', s.id);
+              }
+            }
+          } catch (e) { console.error("Enrichment batch failure", e); }
+        }
+      }
+
+      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 70, message: 'Vector mapping...' });
       job.step = IngestionStep.EMBED;
     }
 
-    // STEP 3: VECTOR MAPPING & FINALIZATION
+    // STEP 4: VECTOR MAPPING & FINALIZATION
     if (job.step === IngestionStep.EMBED) {
       const { data: finalDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       await indexDocumentForRAG(documentId, finalDoc?.extracted_text || "", adminSupabase, job.id);
       
-      const { data: chunks } = await adminSupabase.from('document_chunks').select('id, slo_codes').eq('document_id', documentId);
-      const { data: slos } = await adminSupabase.from('slo_database').select('id, slo_code').eq('document_id', documentId);
-      
-      if (chunks && slos) {
-        const mappings: any[] = [];
-        const sloCodeToId = Object.fromEntries(slos.map(s => [s.slo_code, s.id]));
-        chunks.forEach(chunk => {
-          (chunk.slo_codes || []).forEach((code: string) => {
-            if (sloCodeToId[code]) mappings.push({ chunk_id: chunk.id, slo_id: sloCodeToId[code], slo_code: code });
-          });
-        });
-        if (mappings.length > 0) await adminSupabase.from('chunk_slo_mapping').insert(mappings);
-      }
+      await queue.updateProgress(job.id, { step: IngestionStep.COMPLETE, progress: 95, message: 'Finalizing node...' });
+      job.step = IngestionStep.COMPLETE;
+    }
 
+    // STEP 5: COMPLETE
+    if (job.step === IngestionStep.COMPLETE) {
       await queue.markComplete(job.id);
       await adminSupabase.from('documents').update({ status: 'ready', rag_indexed: true, document_summary: 'Neural grid verified.' }).eq('id', documentId);
       await adminSupabase.rpc('reload_schema_cache');

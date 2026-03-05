@@ -24,7 +24,7 @@ export class IngestionQueue {
       .insert({
         document_id: documentId,
         step: IngestionStep.EXTRACT,
-        status: JobStatus.QUEUED,
+        status: JobStatus.PENDING,
         updated_at: new Date().toISOString()
       })
       .select()
@@ -56,7 +56,7 @@ export class IngestionQueue {
     await this.supabase
       .from('ingestion_jobs')
       .update({
-        status: JobStatus.COMPLETED,
+        status: JobStatus.COMPLETE,
         updated_at: new Date().toISOString()
       })
       .eq('id', jobId);
@@ -84,7 +84,7 @@ export class IngestionQueue {
       .from('ingestion_jobs')
       .select('*')
       .eq('document_id', documentId)
-      .neq('status', JobStatus.COMPLETED)
+      .neq('status', JobStatus.COMPLETE)
       .maybeSingle();
     
     return data;

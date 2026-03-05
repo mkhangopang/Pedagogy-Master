@@ -19,6 +19,8 @@ const PricingView = lazy(() => import('../views/Pricing'));
 const TrackerView = lazy(() => import('../views/Tracker'));
 const AuditView = lazy(() => import('../views/AuditDashboard'));
 const MissionView = lazy(() => import('../views/MissionControl'));
+const OnboardingView = lazy(() => import('../views/Onboarding'));
+const StandardsBrowserView = lazy(() => import('../views/StandardsBrowser'));
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -41,6 +43,21 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [isViewHydrated, setIsViewHydrated] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('currentView');
+    if (saved && saved !== 'login' && saved !== 'landing') {
+      setCurrentView(saved);
+    }
+    setIsViewHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (isViewHydrated && currentView !== 'login' && currentView !== 'landing') {
+      localStorage.setItem('currentView', currentView);
+    }
+  }, [currentView, isViewHydrated]);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
@@ -85,13 +102,19 @@ export default function App() {
     // 2. Fetch Profile
     getOrCreateProfile(userId, email).then(profile => {
       if (profile) {
-        setUserProfile({
+        const mappedProfile: UserProfile = {
           id: profile.id, email: profile.email || '',
           name: profile.name || email?.split('@')[0] || 'Educator',
           role: profile.role as UserRole, plan: profile.plan as SubscriptionPlan,
           queriesUsed: profile.queries_used || 0, queriesLimit: profile.queries_limit || 30,
-          generationCount: profile.generation_count || 0, successRate: profile.success_rate || 0
-        });
+          generationCount: profile.generation_count || 0, successRate: profile.success_rate || 0,
+          onboarding_completed: profile.onboarding_completed
+        };
+        setUserProfile(mappedProfile);
+        
+        if (!profile.onboarding_completed) {
+          setCurrentView('onboarding');
+        }
       }
     });
 
@@ -115,6 +138,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!isViewHydrated) return;
+    
     let authSubscription: { unsubscribe: () => void } | null = null;
 
     const initializeAuth = async () => {
@@ -133,6 +158,7 @@ export default function App() {
             console.warn("📡 [Auth] Explicit SIGNED_OUT event received");
             setSession(null);
             setCurrentView('landing');
+            localStorage.removeItem('currentView');
           } else if (event === 'INITIAL_SESSION' && !currentSession) {
             // Don't overwrite if we already have a session from manual login or getSession
             setSession((prev: any) => {
@@ -165,7 +191,7 @@ export default function App() {
     return () => {
       if (authSubscription) authSubscription.unsubscribe();
     };
-  }, [fetchAppData]);
+  }, [fetchAppData, isViewHydrated]);
 
   if (isAuthResolving && !bypassHandshake) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
@@ -219,6 +245,8 @@ export default function App() {
                   case 'documents': return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => fetchAppData(safeProfile.id, safeProfile.email)} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={healthStatus.status === 'connected'} />;
                   case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={() => setUserProfile(p => p ? {...p, queriesUsed: p.queriesUsed + 1} : null)} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} />;
                   case 'tracker': return <TrackerView user={safeProfile} documents={documents} />;
+                  case 'standards': return <StandardsBrowserView user={safeProfile} documents={documents} />;
+                  case 'onboarding': return <OnboardingView user={safeProfile} onComplete={(p) => { setUserProfile(p); setCurrentView('dashboard'); }} />;
                   case 'brain': return safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
                   case 'audit': return safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} />;
                   case 'mission': return safeProfile.role === UserRole.APP_ADMIN ? <MissionView /> : <Dashboard {...props} />;

@@ -37,7 +37,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
           const data = await res.json();
           
-          if (data.status === 'ready' || data.status === 'completed') {
+          if (data.status === 'ready' || data.status === 'complete') {
             clearInterval(poller);
             isPolling.current = false;
             setProgress(100);

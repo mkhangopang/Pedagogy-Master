@@ -85,7 +85,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
             if (hasChanged) {
               onUpdateDocument(updated.id, { 
-                status: updated.status as any,
+                status: updated.status === 'complete' ? 'ready' : updated.status as any,
                 documentSummary: updated.document_summary,
                 difficultyLevel: updated.difficulty_level,
                 geminiProcessed: updated.rag_indexed,
@@ -189,9 +189,8 @@ const Documents: React.FC<DocumentsProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {documents.map(doc => {
-          const isProcessing = doc.status === 'processing' || doc.status === 'draft';
-          const isIndexing = doc.status === 'indexing';
-          const isReady = doc.status === 'ready' || doc.status === 'completed';
+          const isProcessing = doc.status === 'processing' || doc.status === 'draft' || doc.status === 'indexing';
+          const isReady = doc.status === 'ready' || doc.status === 'complete';
           const isFailed = doc.status === 'failed';
           const showDelete = canDeleteNode(doc);
 
@@ -199,11 +198,11 @@ const Documents: React.FC<DocumentsProps> = ({
             <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group">
                <div className="flex justify-between items-start mb-6">
                   <div className={`p-5 rounded-[2rem] transition-all ${
-                    (isProcessing || isIndexing) ? 'bg-slate-100 animate-pulse text-slate-400' : 
+                    isProcessing ? 'bg-slate-100 animate-pulse text-slate-400' : 
                     isFailed ? 'bg-rose-50 text-rose-400' :
                     'bg-slate-50 dark:bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
                   }`}>
-                    {(isProcessing || isIndexing) ? <BrainCircuit size={32} className="animate-spin" /> : isFailed ? <AlertTriangle size={32}/> : <FileText size={32}/>}
+                    {isProcessing ? <BrainCircuit size={32} className="animate-spin" /> : isFailed ? <AlertTriangle size={32}/> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
                     {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform shadow-lg"><BookOpen size={16} /></button>}
@@ -232,9 +231,8 @@ const Documents: React.FC<DocumentsProps> = ({
                  <div className="flex flex-wrap gap-2">
                     {isReady && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Standard Anchored</span>}
                     {isProcessing && <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
-                    {isIndexing && <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Database size={10} className="animate-pulse"/> Indexing...</span>}
                     {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
-                 </div>
+                  </div>
                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed italic">
                    {isFailed ? (doc.documentSummary || "Critical fault during extraction. Remove this item and try again.") : (doc.documentSummary || "Master MD extraction in progress...")}
                  </p>

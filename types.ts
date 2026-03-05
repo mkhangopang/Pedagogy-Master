@@ -30,6 +30,7 @@ export interface UserProfile {
   workspaceLogo?: string;
   generationCount: number;
   successRate: number;
+  onboarding_completed?: boolean;
   gradeLevel?: string;
   subjectArea?: string;
   teachingStyle?: string;
@@ -52,18 +53,17 @@ export interface NeuralBrain {
 }
 
 export enum IngestionStep {
-  EXTRACT = 'extract',
-  LINEARIZE = 'linearize',
-  TAG = 'tag',
-  CHUNK = 'chunk',
-  EMBED = 'embed',
-  FINALIZE = 'finalize'
+  EXTRACT = 'EXTRACT',
+  PARSE = 'PARSE',
+  ENRICH = 'ENRICH',
+  EMBED = 'EMBED',
+  COMPLETE = 'COMPLETE'
 }
 
 export enum JobStatus {
-  QUEUED = 'queued',
+  PENDING = 'pending',
   PROCESSING = 'processing',
-  COMPLETED = 'completed',
+  COMPLETE = 'complete',
   FAILED = 'failed'
 }
 
@@ -83,7 +83,7 @@ export interface Document {
   userId: string;
   workspaceId?: string;
   name: string;
-  status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed' | 'indexing';
+  status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed' | 'indexing' | 'complete' | 'pending';
   sourceType: 'markdown' | 'pdf_archival';
   isApproved: boolean;
   curriculumName: string;
