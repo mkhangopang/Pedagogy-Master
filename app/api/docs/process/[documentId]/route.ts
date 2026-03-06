@@ -61,24 +61,45 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       job.step = IngestionStep.PARSE;
     }
 
-    // STEP 2: DETERMINISTIC PARSING
+    // STEP 2: STRUCTURED PARSING
     if (job.step === IngestionStep.PARSE) {
       const { data: current } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       const text = current?.extracted_text || "";
       
-      // Stage 2: Regex state-machine per chunk (simplified for now)
-      const sloRegex = /([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)\s+([\s\S]+?)(?=[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|$)/g;
-      const matches = [...text.matchAll(sloRegex)];
+      // Stage 2: LLM-based structured extraction
+      const prompt = `
+        Analyze the following curriculum text and extract all Student Learning Objectives (SLOs).
+        For each SLO, identify:
+        - grade_level (e.g., "09", "10", "11", "12")
+        - domain_name (e.g., "Nature of Science", "Physical Chemistry", "Organic Chemistry")
+        - slo_code
+        - slo_full_text
+        - bloom_level
+        
+        Return the result as a JSON array of objects.
+        
+        TEXT:
+        ${text.substring(0, 50000)}
+      `;
       
-      if (matches.length > 0) {
-        const records = matches.map(m => ({
-          document_id: documentId,
-          slo_code: m[1].trim(),
-          slo_full_text: m[2].trim(),
-          bloom_level: 'Understand'
-        }));
-        await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-        await adminSupabase.from('slo_database').insert(records);
+      const extraction = await callLinearizer(prompt, "You are a curriculum data extraction expert. Return ONLY a valid JSON array.");
+      
+      try {
+        const records = JSON.parse(extraction.match(/\[[\s\S]*\]/)?.[0] || '[]');
+        
+        if (records.length > 0) {
+          await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+          await adminSupabase.from('slo_database').insert(records.map((r: any) => ({
+            document_id: documentId,
+            slo_code: r.slo_code,
+            slo_full_text: r.slo_full_text,
+            bloom_level: r.bloom_level || 'Understand',
+            grade_level: r.grade_level,
+            domain_name: r.domain_name
+          })));
+        }
+      } catch (e) {
+        console.error("Structured extraction failed", e);
       }
 
       await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 45, message: 'Pedagogical enrichment...' });
