@@ -18,10 +18,42 @@ const MissionControl: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, revenueEst: 0 });
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'users' | 'recipe'>('users');
+  const [recipeData, setRecipeData] = useState<{ sqlSchema: string, masterPrompt: string } | null>(null);
+  const [loadingRecipe, setLoadingRecipe] = useState(false);
 
   useEffect(() => {
     fetchAdminData();
   }, []);
+
+  const fetchRecipe = async () => {
+    if (recipeData) return;
+    setLoadingRecipe(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/admin/recipe', {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setRecipeData(data);
+      } else {
+        alert('Failed to fetch founder secrets.');
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingRecipe(false);
+    }
+  };
+
+  const handleTabChange = (tab: 'users' | 'recipe') => {
+    setActiveTab(tab);
+    if (tab === 'recipe') {
+      fetchRecipe();
+    }
+  };
 
   const fetchAdminData = async () => {
     setLoading(true);
@@ -100,7 +132,21 @@ const MissionControl: React.FC = () => {
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight uppercase">Mission Control</h1>
           <p className="text-slate-500 mt-1 font-medium text-xs">Bootstrap Grid & Identities.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col sm:flex-row gap-3">
+           <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+              <button 
+                onClick={() => handleTabChange('users')}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${activeTab === 'users' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                Identities
+              </button>
+              <button 
+                onClick={() => handleTabChange('recipe')}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 ${activeTab === 'recipe' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                <Key size={12} /> App Recipe
+              </button>
+           </div>
            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm text-center min-w-[120px]">
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Rev (PKR)</p>
               <p className="text-xl font-bold text-emerald-600">{(stats.proUsers * 2500).toLocaleString()}</p>
@@ -112,8 +158,9 @@ const MissionControl: React.FC = () => {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 px-4 md:px-0">
-        <section className="lg:col-span-1 space-y-6">
+      {activeTab === 'users' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 px-4 md:px-0">
+          <section className="lg:col-span-1 space-y-6">
            <div className="bg-indigo-50 dark:bg-indigo-950/20 p-6 rounded-[2.5rem] border border-indigo-100 dark:border-indigo-900/30">
               <h3 className="text-xs font-bold uppercase tracking-widest text-indigo-600 mb-4 flex items-center gap-2">
                  <Wallet size={16} /> Activator
