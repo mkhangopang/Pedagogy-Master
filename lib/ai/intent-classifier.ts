@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { resolveApiKey } from "./env-server";
+import { resolveApiKey } from "../env-server";
 
 export type QueryIntent = 'lookup' | 'creation' | 'analysis' | 'comparison' | 'general';
 
