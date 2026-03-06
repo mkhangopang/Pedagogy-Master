@@ -5,7 +5,7 @@ import {
   Sparkles, ClipboardCheck, BookOpen, Layers, Loader2, 
   FileText, Copy, ArrowRight, PenTool, Compass, SearchCode, 
   Zap, ChevronLeft, Library, Crown, Globe2, Globe, Check, X,
-  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck
+  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck, Printer
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -14,7 +14,8 @@ import { ChatInput } from '../components/chat/ChatInput';
 import { MessageItem } from '../components/chat/MessageItem';
 import { supabase } from '../lib/supabase';
 import { ToolType, getToolDisplayName } from '../lib/ai/tool-router';
-import { renderSTEM } from '../lib/math-renderer';
+import { markdownToHtml } from '../lib/markdown-renderer';
+import { PRINT_STYLES } from '../lib/tools-constants';
 
 interface ToolsProps {
   brain: NeuralBrain;
@@ -46,6 +47,17 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
   const isPro = user.plan !== SubscriptionPlan.FREE;
+
+  // -- Inject print styles ----------------------------------------------------
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const styleId = 'pm-print-styles';
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.innerHTML = PRINT_STYLES;
+    document.head.appendChild(style);
+  }, []);
 
   useEffect(() => {
     setLocalDocs(documents);
@@ -156,6 +168,12 @@ USER_QUERY: ${userInput}`;
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
+  const handlePrint = () => {
+    if (typeof window !== 'undefined') {
+      window.print();
+    }
+  };
+
   const toolDefinitions: { id: ToolType, name: string, icon: any, desc: string, color: string, iconColor: string }[] = [
     { id: 'master_plan', name: 'Master Plan', icon: BookOpen, desc: 'Architecture of Instruction (5E, Madeline Hunter, UbD)', color: 'bg-indigo-600', iconColor: 'text-white' },
     { id: 'neural_quiz', name: 'Neural Quiz', icon: ClipboardCheck, desc: 'Standards-Aligned Assessment (MCQ, CRQ, Bloom Scaling)', color: 'bg-emerald-600', iconColor: 'text-white' },
@@ -261,14 +279,32 @@ USER_QUERY: ${userInput}`;
                 <button onClick={handleRichCopy} className={`px-4 py-2 ${copySuccess ? 'bg-emerald-50 text-emerald-600' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600'} rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0`}>
                   {copySuccess ? <Check size={14}/> : <Copy size={14}/>} {copySuccess ? 'Copied' : 'Rich Copy'}
                 </button>
+                <button onClick={handlePrint} className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0">
+                  <Printer size={14}/> Print
+                </button>
               </div>
            </div>
            
            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0">
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none">
+              {/* Print zone - hidden on screen, visible only when printing */}
+              <div id="pm-print-zone" className="hidden">
+                <div className="pm-print-header" style={{ display: 'none', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #4f46e5' }}>
+                  <div>
+                    <div style={{ fontSize: '20px', fontWeight: 900, textTransform: 'uppercase', color: '#1e3a5f' }}>Pedagogy Master AI</div>
+                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{getToolDisplayName(activeTool || 'master_plan')} &bull; {activeDoc ? activeDoc.name : 'General Mode'}</div>
+                  </div>
+                  <div style={{ textAlign: 'right', fontSize: '11px', color: '#94a3b8' }}>
+                    <div style={{ fontWeight: 700, color: '#475569' }}>{user.name}</div>
+                    <div>pedagogy-master.vercel.app</div>
+                  </div>
+                </div>
+                <div dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} />
+              </div>
+
+              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none print:rounded-none print:p-0">
                 {canvasContent ? (
                   <div className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500" 
-                       dangerouslySetInnerHTML={{ __html: renderSTEM(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} />
+                       dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} />
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-40 text-center opacity-30 no-print">
                     <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-8"><FileText size={48} className="text-slate-300" /></div>

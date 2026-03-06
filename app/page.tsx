@@ -200,9 +200,14 @@ export default function App() {
       setIsAuthResolving(false);
     };
 
-    initializeAuth();
+    const timeout = setTimeout(() => {
+      if (initStarted.current) return;
+      initializeAuth();
+      initStarted.current = true;
+    }, 500);
 
     return () => {
+      clearTimeout(timeout);
       if (authSubscription) authSubscription.unsubscribe();
     };
   }, [fetchAppData, isViewHydrated]);

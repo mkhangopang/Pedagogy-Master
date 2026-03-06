@@ -92,20 +92,28 @@ export const getSupabaseClient = (): SupabaseClient => {
           getItem: (key) => {
             if (typeof window === 'undefined') return null;
             // Try cookie first (SameSite=None support)
-            const cookies = document.cookie.split('; ');
-            const cookie = cookies.find(c => c.startsWith(`${key}=`));
+            const cookies = document.cookie.split(';');
+            const cookie = cookies.find(c => c.trim().startsWith(`${key}=`));
             if (cookie) {
-              try { return decodeURIComponent(cookie.split('=')[1]); } catch (e) {}
+              try { 
+                const value = decodeURIComponent(cookie.split('=')[1].trim());
+                if (value && value !== 'undefined' && value !== 'null') return value;
+              } catch (e) {}
             }
             // Fallback to localStorage
-            try { return localStorage.getItem(key); } catch (e) { return null; }
+            try { 
+              const local = localStorage.getItem(key);
+              if (local) return local;
+            } catch (e) {}
+            return null;
           },
           setItem: (key, value) => {
             if (typeof window === 'undefined') return;
             // Set cookie with SameSite=None; Secure for iframe support
             const expires = new Date();
             expires.setFullYear(expires.getFullYear() + 1);
-            document.cookie = `${key}=${encodeURIComponent(value)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
+            const cookieValue = `${key}=${encodeURIComponent(value)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
+            document.cookie = cookieValue;
             // Also set localStorage as secondary
             try { localStorage.setItem(key, value); } catch (e) {}
           },
