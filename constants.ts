@@ -64,6 +64,11 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='chunk_index') THEN
     ALTER TABLE public.document_chunks ADD COLUMN chunk_index int;
   END IF;
+
+  -- Ensure ai_model_usage has execution_time_ms column
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ai_model_usage' AND column_name='execution_time_ms') THEN
+    ALTER TABLE public.ai_model_usage ADD COLUMN execution_time_ms int DEFAULT 0;
+  END IF;
 END $$;
 
 -- 3. SLO DATABASE (CLEAN SLATE)
