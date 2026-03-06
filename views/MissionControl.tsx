@@ -258,6 +258,77 @@ const MissionControl: React.FC = () => {
            </div>
         </section>
       </div>
+      ) : (
+        <div className="px-4 md:px-0 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-rose-50 dark:bg-rose-950/20 p-6 rounded-[2.5rem] border border-rose-100 dark:border-rose-900/30">
+            <h2 className="text-lg font-black text-rose-900 dark:text-rose-100 uppercase tracking-tight mb-2 flex items-center gap-3">
+              <Key size={20} className="text-rose-600" />
+              Founder Secrets & App Recipe
+            </h2>
+            <p className="text-xs text-rose-700 dark:text-rose-300 font-medium max-w-3xl leading-relaxed">
+              Because this repository is public on GitHub, hardcoding your SQL schema or Master Prompts in the source code exposes them to the world. 
+              To keep your "App Recipe" strictly private, you must store it in the <strong className="font-black">FOUNDER_SQL_SCHEMA</strong> and <strong className="font-black">FOUNDER_MASTER_PROMPT</strong> environment variables. 
+              Only authorized founders can view this tab.
+            </p>
+          </div>
+
+          {loadingRecipe ? (
+            <div className="p-12 text-center text-slate-400 text-xs font-bold uppercase tracking-widest animate-pulse">
+              Decrypting Founder Secrets...
+            </div>
+          ) : recipeData ? (
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+              {/* SQL Schema Section */}
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-white/5">
+                  <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                    <Database size={14} className="text-indigo-600" />
+                    SQL Schema
+                  </h3>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(recipeData.sqlSchema)}
+                    className="text-[9px] font-bold text-indigo-600 uppercase hover:underline flex items-center gap-1"
+                  >
+                    Copy SQL
+                  </button>
+                </div>
+                <div className="p-6 bg-slate-900 flex-1">
+                  <pre className="text-[10px] text-emerald-400 font-mono whitespace-pre-wrap overflow-x-auto custom-scrollbar">
+                    {recipeData.sqlSchema}
+                  </pre>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-white/5 border-t border-slate-100 dark:border-white/5 text-[10px] text-slate-500 font-medium">
+                  Copy this schema and run it manually in your Supabase SQL Editor.
+                </div>
+              </div>
+
+              {/* Master Prompt Section */}
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-white/5">
+                  <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
+                    <Zap size={14} className="text-amber-600" />
+                    Brain Master Prompt
+                  </h3>
+                  <button 
+                    onClick={() => navigator.clipboard.writeText(recipeData.masterPrompt)}
+                    className="text-[9px] font-bold text-amber-600 uppercase hover:underline flex items-center gap-1"
+                  >
+                    Copy Prompt
+                  </button>
+                </div>
+                <div className="p-6 bg-slate-900 flex-1">
+                  <pre className="text-[10px] text-amber-400 font-mono whitespace-pre-wrap overflow-x-auto custom-scrollbar">
+                    {recipeData.masterPrompt}
+                  </pre>
+                </div>
+                <div className="p-4 bg-slate-50 dark:bg-white/5 border-t border-slate-100 dark:border-white/5 text-[10px] text-slate-500 font-medium">
+                  This is your core AI instruction set. Keep it secure.
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 };
