@@ -87,7 +87,34 @@ export const getSupabaseClient = (): SupabaseClient => {
         autoRefreshToken: true, 
         detectSessionInUrl: true, 
         flowType: 'pkce',
-        storageKey: 'sb-edunexus-auth-stable-v1'
+        storageKey: 'sb-edunexus-auth-stable-v1',
+        storage: {
+          getItem: (key) => {
+            if (typeof window === 'undefined') return null;
+            // Try cookie first (SameSite=None support)
+            const cookies = document.cookie.split('; ');
+            const cookie = cookies.find(c => c.startsWith(`${key}=`));
+            if (cookie) {
+              try { return decodeURIComponent(cookie.split('=')[1]); } catch (e) {}
+            }
+            // Fallback to localStorage
+            try { return localStorage.getItem(key); } catch (e) { return null; }
+          },
+          setItem: (key, value) => {
+            if (typeof window === 'undefined') return;
+            // Set cookie with SameSite=None; Secure for iframe support
+            const expires = new Date();
+            expires.setFullYear(expires.getFullYear() + 1);
+            document.cookie = `${key}=${encodeURIComponent(value)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
+            // Also set localStorage as secondary
+            try { localStorage.setItem(key, value); } catch (e) {}
+          },
+          removeItem: (key) => {
+            if (typeof window === 'undefined') return;
+            document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=None; Secure`;
+            try { localStorage.removeItem(key); } catch (e) {}
+          }
+        }
       },
     }
   );

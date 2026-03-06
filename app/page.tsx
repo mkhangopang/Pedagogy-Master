@@ -46,7 +46,15 @@ export default function App() {
   const [isViewHydrated, setIsViewHydrated] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem('currentView');
+    // Try cookie first, then localStorage
+    const cookies = document.cookie.split('; ');
+    const cookie = cookies.find(c => c.startsWith('currentView='));
+    let saved = cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+    
+    if (!saved) {
+      try { saved = localStorage.getItem('currentView'); } catch (e) {}
+    }
+
     if (saved && saved !== 'login' && saved !== 'landing') {
       setCurrentView(saved);
     }
@@ -55,7 +63,13 @@ export default function App() {
 
   useEffect(() => {
     if (isViewHydrated && currentView !== 'login' && currentView !== 'landing') {
-      localStorage.setItem('currentView', currentView);
+      try {
+        localStorage.setItem('currentView', currentView);
+        // Set cookie with SameSite=None; Secure
+        const expires = new Date();
+        expires.setFullYear(expires.getFullYear() + 1);
+        document.cookie = `currentView=${encodeURIComponent(currentView)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
+      } catch (e) {}
     }
   }, [currentView, isViewHydrated]);
 
