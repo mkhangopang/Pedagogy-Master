@@ -70,7 +70,8 @@ export function renderSTEM(text: string): string {
   try {
     // Pre-process: Restore dollar signs that models often escape incorrectly
     let processed = text.replace(/\\(\$)/g, '$1');
-    marked.setOptions({ gfm: true, breaks: true });
+    // Use marked.use for options as setOptions is deprecated
+    marked.use({ gfm: true, breaks: true });
     return marked.parse(processed) as string;
   } catch (e) {
     return text;

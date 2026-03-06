@@ -4,6 +4,7 @@ import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { GoogleGenAI } from '@google/genai';
+import { resolveApiKey } from '../../../../lib/env-server';
 import { performanceMonitor } from '../../../../lib/monitoring/performance';
 
 export const runtime = 'nodejs';
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     // 3. AI HANDSHAKE (Gemini)
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: resolveApiKey() });
       const test = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: 'ping'

@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { resolveApiKey } from "./env-server";
 
 export type QueryIntent = 'lookup' | 'creation' | 'analysis' | 'comparison' | 'general';
 
@@ -16,7 +17,7 @@ export interface IntentResult {
  * Uses Gemini 3 Flash for zero-cost, high-speed routing logic.
  */
 export async function classifyIntent(query: string): Promise<IntentResult> {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: resolveApiKey() });
   
   try {
     const response = await ai.models.generateContent({

@@ -1,5 +1,5 @@
-import { GoogleGenAI } from "@google/genai";
-import { isGeminiEnabled } from '../env-server';
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { resolveApiKey } from '../env-server';
 
 export interface AIProvider {
   id: string;
@@ -8,7 +8,7 @@ export interface AIProvider {
   model: string;
   apiKeyEnv: string;
   maxTokens: number;
-  thinkingBudget?: number;
+  thinkingLevel?: ThinkingLevel;
   rpm: number;
   rpd: number;
   tier: 1 | 2 | 3; 
@@ -30,12 +30,12 @@ export class SynthesizerCore {
     // TIER 1: THE REASONERS
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 3 Pro',
+      name: 'Gemini 3.1 Pro',
       endpoint: 'native',
-      model: 'gemini-3-pro-preview',
-      apiKeyEnv: 'API_KEY',
+      model: 'gemini-3.1-pro-preview',
+      apiKeyEnv: 'NEXT_PUBLIC_GEMINI_API_KEY',
       maxTokens: 16384,
-      thinkingBudget: 4096, 
+      thinkingLevel: ThinkingLevel.HIGH, 
       rpm: 10,
       rpd: 2000,
       tier: 1,
@@ -87,7 +87,7 @@ export class SynthesizerCore {
       name: 'Gemini 3 Flash',
       endpoint: 'native',
       model: 'gemini-3-flash-preview',
-      apiKeyEnv: 'API_KEY',
+      apiKeyEnv: 'NEXT_PUBLIC_GEMINI_API_KEY',
       maxTokens: 8192,
       rpm: 100,
       rpd: 10000,
@@ -167,7 +167,10 @@ export class SynthesizerCore {
 
     for (const provider of candidates) {
       try {
-        const apiKey = process.env[provider.apiKeyEnv];
+        const apiKey = provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' 
+          ? resolveApiKey() 
+          : process.env[provider.apiKeyEnv];
+          
         if (!apiKey) continue;
 
         if (provider.endpoint === 'native') {
@@ -181,7 +184,7 @@ export class SynthesizerCore {
             config: { 
               systemInstruction: systemPrompt,
               temperature: 0.1,
-              thinkingConfig: provider.thinkingBudget ? { thinkingBudget: provider.thinkingBudget } : undefined
+              thinkingConfig: provider.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : undefined
             }
           });
           return { text: res.text, provider: provider.name };

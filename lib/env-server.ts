@@ -4,10 +4,10 @@
  */
 
 export const resolveApiKey = (): string => {
-  // CRITICAL: process.env.API_KEY is only available on Vercel's backend.
-  // Next.js prevents variables without NEXT_PUBLIC_ from being bundled into the frontend JS.
+  // CRITICAL: process.env.NEXT_PUBLIC_GEMINI_API_KEY is the standard platform variable.
+  // Fallback to API_KEY for legacy support.
   if (typeof window === 'undefined') {
-    return (process.env.API_KEY || '').trim();
+    return (process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.API_KEY || '').trim();
   }
   
   // Return empty string on client side to prevent accidental log leaks
