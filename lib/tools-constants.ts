@@ -12,6 +12,7 @@ export const PRINT_STYLES: string = [
   '    position: fixed !important; inset: 0 !important;',
   '    background: white !important; z-index: 99999 !important;',
   '    padding: 0 !important; overflow: visible !important;',
+  '    display: block !important;',
   "    font-family: 'Georgia', serif !important;",
   '    font-size: 11pt !important; line-height: 1.6 !important; color: #1e293b !important;',
   '  }',

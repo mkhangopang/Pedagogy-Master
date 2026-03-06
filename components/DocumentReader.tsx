@@ -182,6 +182,13 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                    <History size={16} className="text-indigo-500" />
                    <span className="text-[10px] font-black uppercase tracking-[0.3em]">Master Linearized Archive</span>
                  </div>
+                 <button 
+                   onClick={() => handleCopy(activeDoc.extractedText || "")}
+                   className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 transition-all"
+                 >
+                   {copiedCode === activeDoc.extractedText ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                   {copiedCode === activeDoc.extractedText ? 'Copied' : 'Copy Raw MD'}
+                 </button>
                </div>
                <div className="prose dark:prose-invert max-w-none font-mono text-sm leading-relaxed whitespace-pre-wrap dark:text-slate-300">
                   {activeDoc.extractedText || "<!-- Vault Empty -->"}
