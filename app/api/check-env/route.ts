@@ -26,7 +26,7 @@ export async function GET() {
     timestamp: new Date().toISOString(),
     config: {
       url: supabaseUrl,
-      key: mask(supabaseKey)
+      key: supabaseKey
     },
     diagnostics: env,
     resolution: isConfigured 

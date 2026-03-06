@@ -157,10 +157,10 @@ export default function App() {
     let authSubscription: { unsubscribe: () => void } | null = null;
 
     const initializeAuth = async () => {
-      // Ensure we have fresh credentials
-      const pulseSuccess = await pulseCredentialsFromServer();
-      
       try {
+        // Ensure we have fresh credentials
+        await pulseCredentialsFromServer();
+        
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
           console.log(`📡 [Auth] Event: ${event}`, currentSession ? "Session Active" : "No Session");
           
@@ -174,14 +174,7 @@ export default function App() {
             setCurrentView('landing');
             localStorage.removeItem('currentView');
           } else if (event === 'INITIAL_SESSION' && !currentSession) {
-            // Don't overwrite if we already have a session from manual login or getSession
-            setSession((prev: any) => {
-              if (prev) {
-                console.log("📡 [Auth] Preserving existing session during INITIAL_SESSION null");
-                return prev;
-              }
-              return null;
-            });
+            setSession((prev: any) => prev || null);
           }
         });
         authSubscription = subscription;
@@ -195,16 +188,17 @@ export default function App() {
         }
       } catch (err) {
         console.error('📡 [System] Auth initialization failed:', err);
+      } finally {
+        // Delay clearing the loader slightly to ensure session state propagates
+        setTimeout(() => setIsAuthResolving(false), 300);
       }
-      
-      setIsAuthResolving(false);
     };
 
     const timeout = setTimeout(() => {
       if (initStarted.current) return;
-      initializeAuth();
       initStarted.current = true;
-    }, 500);
+      initializeAuth();
+    }, 100);
 
     return () => {
       clearTimeout(timeout);

@@ -158,18 +158,17 @@ export const pulseCredentialsFromServer = async (): Promise<boolean> => {
     const res = await fetch('/api/check-env', { cache: 'no-store' });
     if (!res.ok) return false;
     const data = await res.json();
-    if (data.config?.url && data.config?.key) {
-      const { url: currentUrl, key: currentKey } = getCredentials();
-      if (data.config.url !== currentUrl || data.config.key !== currentKey) {
-        const win = window as any;
-        win.env = win.env || {};
-        win.env.NEXT_PUBLIC_SUPABASE_URL = data.config.url;
-        win.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = data.config.key;
-        refreshSupabaseInstance();
-        return true;
+      if (data.config.url && data.config.key && !data.config.key.includes('...')) {
+        const { url: currentUrl, key: currentKey } = getCredentials();
+        if (data.config.url !== currentUrl || data.config.key !== currentKey) {
+          const win = window as any;
+          win.env = win.env || {};
+          win.env.NEXT_PUBLIC_SUPABASE_URL = data.config.url;
+          win.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = data.config.key;
+          refreshSupabaseInstance();
+          return true;
+        }
       }
-      return false;
-    }
     return false;
   } catch (err) { return false; }
 };
