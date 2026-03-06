@@ -1,20 +1,20 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Pedagogy Master AI
 
-# Run and deploy your AI Studio app
+A production-ready EdTech SaaS platform for intelligent curriculum analysis and pedagogical tool generation.
 
-This contains everything you need to run your app locally.
+## Live Application
+You can access the working application here: [https://pedagogy-master.vercel.app/](https://pedagogy-master.vercel.app/)
 
-View your app in AI Studio: https://ai.studio/apps/1a1c2b9f-c811-49f7-82ec-6d602319b1e2
+## Features
+- Intelligent Curriculum Analysis
+- Pedagogical Tool Generation
+- SLO Database Management
+- RAG (Retrieval-Augmented Generation) for Educational Documents
+- Bloom's Taxonomy Alignment
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Tech Stack
+- Next.js 15+
+- Tailwind CSS
+- Supabase (PostgreSQL + Vector)
+- Gemini AI API
+- Framer Motion
