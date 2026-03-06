@@ -19,6 +19,9 @@ interface SloRecord {
   slo_full_text: string;
   bloom_level?: string;
   created_at: string;
+  grade_level?: string;
+  domain?: string;
+  domain_name?: string;
 }
 
 interface DocumentReaderProps {
@@ -104,12 +107,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       s.slo_full_text.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const groups: Record<string, SloRecord[]> = {};
+    const groups: Record<string, Record<string, SloRecord[]>> = {};
     filtered.forEach(slo => {
-      const parsed = parseSLOCode(slo.slo_code);
-      const domainLabel = parsed ? `Domain ${parsed.domain}` : 'Core Curriculum';
-      if (!groups[domainLabel]) groups[domainLabel] = [];
-      groups[domainLabel].push(slo);
+      const grade = slo.grade_level || 'Ungraded';
+      const domain = slo.domain_name || slo.domain || 'Core Curriculum';
+      
+      if (!groups[grade]) groups[grade] = {};
+      if (!groups[grade][domain]) groups[grade][domain] = [];
+      groups[grade][domain].push(slo);
     });
 
     return groups;
@@ -196,42 +201,49 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             </div>
           ) : slos.length > 0 ? (
             <div className="space-y-24">
-              {(Object.entries(groupedSlos) as [string, SloRecord[]][]).sort().map(([domain, items]) => (
-                <section key={domain} className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-                   <div className="flex items-center gap-6 mb-8">
-                      <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-500/20">
-                        <Layers size={22}/>
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white">{domain}</h3>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{items.length} Standards Anchored</p>
-                      </div>
-                      <div className="h-px bg-slate-200 dark:bg-white/5 flex-1 ml-4" />
-                   </div>
+              {Object.entries(groupedSlos).sort().map(([grade, domains]) => (
+                <div key={grade} className="space-y-12">
+                  <h2 className="text-3xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tighter border-b border-indigo-100 dark:border-indigo-900 pb-4">
+                    Grade {grade}
+                  </h2>
+                  {Object.entries(domains).sort().map(([domain, items]) => (
+                    <section key={`${grade}-${domain}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700 ml-8">
+                       <div className="flex items-center gap-6 mb-8">
+                          <div className="p-3 bg-indigo-600 text-white rounded-2xl shadow-xl shadow-indigo-500/20">
+                            <Layers size={22}/>
+                          </div>
+                          <div>
+                            <h3 className="text-xl font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white">{domain}</h3>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{items.length} Standards Anchored</p>
+                          </div>
+                          <div className="h-px bg-slate-200 dark:bg-white/5 flex-1 ml-4" />
+                       </div>
 
-                   <div className="grid grid-cols-1 gap-4">
-                      {items.map((slo) => (
-                        <div key={slo.id} className="group relative flex flex-col md:flex-row gap-6 p-6 bg-white dark:bg-[#080808] rounded-[2rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 hover:shadow-2xl transition-all duration-300">
-                           <div className="md:w-48 shrink-0 space-y-4">
-                             <button 
-                               onClick={() => handleCopy(slo.slo_code)}
-                               className="w-full flex items-center justify-between gap-3 px-5 py-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 hover:bg-indigo-600 hover:text-white transition-all group-hover:scale-[1.02]"
-                             >
-                                <span className="text-[11px] font-black tracking-widest uppercase truncate">{slo.slo_code}</span>
-                                {copiedCode === slo.slo_code ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="opacity-20 group-hover:opacity-100" />}
-                             </button>
-                             <div className="flex flex-wrap gap-2">
-                               <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-lg border dark:border-white/5">{slo.bloom_level || 'Understand'}</span>
-                             </div>
-                           </div>
-                           <div className="flex-1 min-w-0 md:pt-1">
-                              <p className="text-[15px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed selection:bg-indigo-500 selection:text-white" 
-                                 dangerouslySetInnerHTML={{ __html: renderSTEM(slo.slo_full_text) }} />
-                           </div>
-                        </div>
-                      ))}
-                   </div>
-                </section>
+                       <div className="grid grid-cols-1 gap-4">
+                          {items.map((slo) => (
+                            <div key={slo.id} className="group relative flex flex-col md:flex-row gap-6 p-6 bg-white dark:bg-[#080808] rounded-[2rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 hover:shadow-2xl transition-all duration-300">
+                               <div className="md:w-48 shrink-0 space-y-4">
+                                 <button 
+                                   onClick={() => handleCopy(slo.slo_code)}
+                                   className="w-full flex items-center justify-between gap-3 px-5 py-3 bg-slate-50 dark:bg-white/5 rounded-2xl border border-slate-200 dark:border-white/10 hover:bg-indigo-600 hover:text-white transition-all group-hover:scale-[1.02]"
+                                 >
+                                    <span className="text-[11px] font-black tracking-widest uppercase truncate">{slo.slo_code}</span>
+                                    {copiedCode === slo.slo_code ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} className="opacity-20 group-hover:opacity-100" />}
+                                 </button>
+                                 <div className="flex flex-wrap gap-2">
+                                   <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-lg border dark:border-white/5">{slo.bloom_level || 'Understand'}</span>
+                                 </div>
+                               </div>
+                               <div className="flex-1 min-w-0 md:pt-1">
+                                  <p className="text-[15px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed selection:bg-indigo-500 selection:text-white" 
+                                     dangerouslySetInnerHTML={{ __html: renderSTEM(slo.slo_full_text) }} />
+                               </div>
+                            </div>
+                          ))}
+                       </div>
+                    </section>
+                  ))}
+                </div>
               ))}
             </div>
           ) : (
