@@ -72,6 +72,19 @@ export async function indexDocumentForRAG(
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
       
+      // Check if this batch was already processed (idempotency)
+      const { data: existing } = await supabase
+        .from('document_chunks')
+        .select('chunk_index')
+        .eq('document_id', documentId)
+        .gte('chunk_index', i)
+        .lt('chunk_index', i + BATCH_SIZE);
+      
+      if (existing && existing.length === batch.length) {
+        console.log(`Batch ${i / BATCH_SIZE + 1} already indexed. Skipping.`);
+        continue;
+      }
+
       if (jobId) {
         await supabase.from('ingestion_jobs').update({ 
           payload: { processed: i, total: nodes.length, status: 'generating_vectors' } 
