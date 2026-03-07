@@ -63,7 +63,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             setError(cleanErr);
             setIsUploading(false);
           } else {
-            const currentProgress = prev => Math.min(98, prev + (data.progress > prev ? (data.progress - prev) : 0.5));
+            const currentProgress = (prev: number) => Math.min(98, prev + (data.progress > prev ? (data.progress - prev) : 0.5));
             setProgress(currentProgress);
             setStatus(data.summary || 'Unrolling Curriculum Domains...');
 
