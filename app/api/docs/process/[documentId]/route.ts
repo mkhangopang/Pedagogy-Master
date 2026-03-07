@@ -66,40 +66,54 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
       const { data: current } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       const text = current?.extracted_text || "";
       
-      // Stage 2: LLM-based structured extraction
-      const prompt = `
-        Analyze the following curriculum text and extract all Student Learning Objectives (SLOs).
-        For each SLO, identify:
-        - grade_level (e.g., "09", "10", "11", "12")
-        - domain_name (e.g., "Nature of Science", "Physical Chemistry", "Organic Chemistry")
-        - slo_code
-        - slo_full_text
-        - bloom_level
-        
-        Return the result as a JSON array of objects.
-        
-        TEXT:
-        ${text.substring(0, 50000)}
-      `;
+      let records: any[] = [];
       
-      const extraction = await callLinearizer(prompt, "You are a curriculum data extraction expert. Return ONLY a valid JSON array.");
-      
+      // Attempt LLM-based structured extraction
       try {
-        const records = JSON.parse(extraction.match(/\[[\s\S]*\]/)?.[0] || '[]');
+        const prompt = `
+          Analyze the following curriculum text and extract all Student Learning Objectives (SLOs).
+          For each SLO, identify:
+          - grade_level (e.g., "09", "10", "11", "12")
+          - domain_name (e.g., "Nature of Science", "Physical Chemistry", "Organic Chemistry")
+          - slo_code
+          - slo_full_text
+          - bloom_level
+          
+          Return the result as a JSON array of objects.
+          
+          TEXT:
+          ${text.substring(0, 20000)}
+        `;
         
-        if (records.length > 0) {
-          await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-          await adminSupabase.from('slo_database').insert(records.map((r: any) => ({
-            document_id: documentId,
-            slo_code: r.slo_code,
-            slo_full_text: r.slo_full_text,
-            bloom_level: r.bloom_level || 'Understand',
-            grade_level: r.grade_level,
-            domain_name: r.domain_name
-          })));
-        }
+        const extraction = await callLinearizer(prompt, "You are a curriculum data extraction expert. Return ONLY a valid JSON array.");
+        records = JSON.parse(extraction.match(/\[[\s\S]*\]/)?.[0] || '[]');
       } catch (e) {
-        console.error("Structured extraction failed", e);
+        console.error("LLM extraction failed, falling back to regex", e);
+      }
+      
+      // Fallback to regex if LLM failed or returned no records
+      if (records.length === 0) {
+        const sloRegex = /([A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+)\s+([\s\S]+?)(?=[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+|$)/g;
+        const matches = [...text.matchAll(sloRegex)];
+        records = matches.map(m => ({
+          slo_code: m[1].trim(),
+          slo_full_text: m[2].trim(),
+          bloom_level: 'Understand',
+          grade_level: '09', // Default fallback
+          domain_name: 'Core Curriculum'
+        }));
+      }
+        
+      if (records.length > 0) {
+        await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+        await adminSupabase.from('slo_database').insert(records.map((r: any) => ({
+          document_id: documentId,
+          slo_code: r.slo_code,
+          slo_full_text: r.slo_full_text,
+          bloom_level: r.bloom_level || 'Understand',
+          grade_level: r.grade_level || '09',
+          domain_name: r.domain_name || 'Core Curriculum'
+        })));
       }
 
       await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 45, message: 'Pedagogical enrichment...' });
