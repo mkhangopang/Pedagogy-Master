@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../lib/supabase';
 import { getObjectBuffer } from '../../../lib/r2';
-import { indexDocumentForRAG } from '../../../lib/rag/document-indexer';
-import { smartExtractPDF } from '../../../lib/rag/vision-extractor';
 import { IngestionStep } from '../../../types';
 import { neuralGrid } from '../../../lib/ai/model-orchestrator';
 import { IngestionQueue } from '../../../lib/jobs/ingestion-queue';
