@@ -78,7 +78,9 @@ export async function indexDocumentForRAG(
         }).eq('id', jobId);
       }
 
+      console.log(`Processing batch ${i / BATCH_SIZE + 1} of ${Math.ceil(nodes.length / BATCH_SIZE)}`);
       const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
+      console.log(`Embeddings generated for batch ${i / BATCH_SIZE + 1}`);
       
       const records = batch.map((node, j) => ({
         document_id: documentId,
@@ -91,8 +93,13 @@ export async function indexDocumentForRAG(
         metadata: node.metadata
       }));
 
+      console.log(`Inserting batch ${i / BATCH_SIZE + 1} into document_chunks`);
       const { error: insertError } = await supabase.from('document_chunks').insert(records);
-      if (insertError) throw insertError;
+      if (insertError) {
+        console.error("Insert error:", insertError);
+        throw insertError;
+      }
+      console.log(`Batch ${i / BATCH_SIZE + 1} inserted successfully`);
     }
 
     return { success: true, count: nodes.length };

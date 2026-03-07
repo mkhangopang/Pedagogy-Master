@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import { embeddingCache } from "./embedding-cache";
 import { performanceMonitor } from "../monitoring/performance";
+import { resolveApiKey } from "../env-server";
 
 function sanitizeText(text: string): string {
   if (!text) return " ";
@@ -32,7 +33,8 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
   if (uncachedTexts.length === 0) return finalResults as number[][];
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = resolveApiKey();
+    const ai = new GoogleGenAI({ apiKey });
     
     const results = await Promise.all(uncachedTexts.map(text => 
       ai.models.embedContent({
