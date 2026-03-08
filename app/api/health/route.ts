@@ -39,8 +39,3 @@ export async function GET() {
     services: results,
   }, { status: isHealthy ? 200 : 503 });
 }
-```
-
-Commit message:
-```
-fix: replace health route with correct minimal implementation
