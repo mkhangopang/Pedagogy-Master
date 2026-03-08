@@ -600,9 +600,54 @@ export async function POST(
       const boardKey = detectBoard(doc.name || '');
       const boardInfo = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
       const subjectCode = detectSubject(doc.name || '');
-      const markdown = `### ${boardInfo.name} — ${boardInfo.subjectCodes[subjectCode] || 'Curriculum'}\n\n<STRUCTURED_INDEX>\n${JSON.stringify(allSlosForMd, null, 2)}\n</STRUCTURED_INDEX>`;
+      // REPLACE the markdown variable with this function + call
 
-      await adminSupabase.from('documents').update({
+function buildCleanMarkdown(slos: any[], boardName: string, subjectName: string): string {
+  // Group by grade, then domain
+  const byGrade: Record<string, Record<string, typeof slos>> = {};
+
+  for (const slo of slos) {
+    const grade = slo.grade_level || 'Unknown';
+    const domain = slo.domain || '?';
+    if (!byGrade[grade]) byGrade[grade] = {};
+    if (!byGrade[grade][domain]) byGrade[grade][domain] = [];
+    byGrade[grade][domain].push(slo);
+  }
+
+  const lines: string[] = [];
+  lines.push(`# ${boardName} — ${subjectName}`);
+  lines.push('');
+
+  for (const grade of Object.keys(byGrade).sort()) {
+    lines.push(`## Grade ${grade}`);
+    lines.push('');
+
+    for (const domain of Object.keys(byGrade[grade]).sort()) {
+      const domainName = byGrade[grade][domain][0]?.domain_name || `Domain ${domain}`;
+      lines.push(`### Domain ${domain}: ${domainName}`);
+      lines.push('');
+
+      for (const slo of byGrade[grade][domain]) {
+        lines.push(`- ${slo.slo_code} — ${slo.slo_full_text}`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Keep structured index for RAG — but after the clean markdown
+  lines.push('<STRUCTURED_INDEX>');
+  lines.push(JSON.stringify(slos, null, 2));
+  lines.push('</STRUCTURED_INDEX>');
+
+  return lines.join('\n');
+}
+
+// Then replace the old markdown variable with:
+const markdown = buildCleanMarkdown(
+  allSlosForMd || [],
+  boardInfo.name,
+  boardInfo.subjectCodes[subjectCode] || 'Curriculum'
+);      await adminSupabase.from('documents').update({
         extracted_text: markdown,
         document_summary: `Linearized — ${finalSloCount} SLOs`,
       }).eq('id', documentId);
