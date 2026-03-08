@@ -55,8 +55,4 @@ export async function smartExtractPDF(buffer: Buffer, fileName: string): Promise
   } catch (e) { }
   return extractPDFWithVision(buffer, fileName);
 }
-```
 
-Commit message:
-```
-fix: re-add vision-extractor.ts to lib/rag
