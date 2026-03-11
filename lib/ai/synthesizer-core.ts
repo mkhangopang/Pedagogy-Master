@@ -205,9 +205,10 @@ export class SynthesizerCore {
         }
       } catch (e: any) {
         // Blacklist node for 10 mins if it's a 429
-        const cooldown = e.message.includes('429') ? 600000 : 60000;
+        const msg = e?.message || "Unknown error";
+        const cooldown = msg.includes('429') ? 600000 : 60000;
         this.failedProviders.set(provider.id, Date.now() + cooldown);
-        console.warn(`🔴 [Grid] Node ${provider.name} saturated. Failover initiated.`);
+        console.warn(`🔴 [Grid] Node ${provider.name} saturated. Failover initiated. Error: ${msg}`);
       }
     }
     throw new Error("AI Alert: Global Synthesis Failure. All engines saturated.");

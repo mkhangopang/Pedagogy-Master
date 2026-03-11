@@ -85,7 +85,7 @@ export async function indexDocumentForRAG(
         continue;
       }
 
-      if (jobId) {
+      if (jobId && nodes.length > 0) {
         const progressPercent = Math.round(70 + ((i / nodes.length) * 25)); // EMBED step is 70-95%
         await supabase.from('ingestion_jobs').update({ 
           payload: { 

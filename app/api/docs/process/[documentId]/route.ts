@@ -186,7 +186,8 @@ export async function POST(req: NextRequest, props: { params: Promise<{ document
 
     return NextResponse.json({ success: true });
   } catch (err: any) {
-    const msg = err.message || "Synthesis grid exception.";
+    console.error("❌ [Ingestion Engine Fault]:", err);
+    const msg = err?.message || err?.error_description || "Synthesis grid exception.";
     await queue.markFailed(job.id, msg);
     await adminSupabase.from('documents').update({ status: 'failed', document_summary: msg }).eq('id', documentId);
     return NextResponse.json({ error: msg }, { status: 500 });
