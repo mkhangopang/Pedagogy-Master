@@ -33,17 +33,19 @@ export const ROLE_LIMITS = {
 };
 
 export const DEFAULT_MASTER_PROMPT = `
-# IDENTITY: PEDAGOGICAL OPERATING SYSTEM
-STATUS: AWAITING_LOGIC_INJECTION_FROM_FOUNDER_CONSOLE
-Please log in to the Admin Dashboard to commit the Master Recipe (IP).
+# IDENTITY: ESSENTIAL CURRICULUM EXTRACTOR
+STATUS: ACTIVE
+GOAL: Extract clean, sequenced SLO codes and text.
+FORMAT: SLO [CODE] [TEXT]
+ORDER: Grade -> Domain -> Number
 `;
 
 /**
- * SYSTEM INFRASTRUCTURE BLUEPRINT v11.0 (RALPH FIX EDITION)
+ * SYSTEM INFRASTRUCTURE BLUEPRINT v12.0 (ESSENTIAL EXTRACTION EDITION)
  * MANDATORY: RUN THIS IN SUPABASE SQL EDITOR TO FIX ALL SCHEMA ERRORS.
  */
 export const LATEST_SQL_BLUEPRINT = `-- ==========================================
--- EDUNEXUS AI: INFRASTRUCTURE REPAIR v11.0
+-- EDUNEXUS AI: INFRASTRUCTURE REPAIR v12.0
 -- ==========================================
 
 -- 1. EXTENSIONS
@@ -71,25 +73,30 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- 3. SLO DATABASE (CLEAN SLATE)
+-- 3. SLO DATABASE (ESSENTIAL SCHEMA)
 create table if not exists public.slo_database (
   id uuid primary key default uuid_generate_v4(),
   document_id uuid references public.documents(id) on delete cascade,
   slo_code text not null,
   slo_full_text text not null,
-  bloom_level text,
+  bloom_level text default 'Understand',
   domain_tag text,
-  prerequisite_slos text[] default ARRAY[]::text[],
-  successor_slos text[] default ARRAY[]::text[],
+  domain_name text,
+  subject text,
+  grade_level text,
+  extraction_confidence float default 1.0,
+  page_number int,
+  is_truncated boolean default false,
+  is_orphan_domain boolean default false,
   created_at timestamp with time zone default now()
 );
 
--- 4. JUNCTION TABLE (FP-03 FIX: Atomic SLO-Chunk Linking)
+-- 4. JUNCTION TABLE
 create table if not exists public.chunk_slo_mapping (
   id uuid primary key default uuid_generate_v4(),
   chunk_id uuid references public.document_chunks(id) on delete cascade,
   slo_id uuid references public.slo_database(id) on delete cascade,
-  slo_code text, -- Denormalized for fast regex matching
+  slo_code text,
   relevance_score float default 1.0,
   unique(chunk_id, slo_id)
 );

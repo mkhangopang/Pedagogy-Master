@@ -33,6 +33,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'ledger' | 'raw'>('ledger');
+  const [extractedText, setExtractedText] = useState<string | null>(null);
   const [slos, setSlos] = useState<SloRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [isReindexing, setIsReindexing] = useState(false);
@@ -52,6 +53,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       
       const data = await res.json();
       setSlos(data.slos || []);
+      setExtractedText(data.extracted_text || null);
       setJobStatus(data.status);
     } catch (e) {
       console.error("Ledger Fetch Error:", e);
@@ -188,15 +190,15 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                    <span className="text-[10px] font-black uppercase tracking-[0.3em]">Master Linearized Archive</span>
                  </div>
                  <button 
-                   onClick={() => handleCopy(activeDoc.extractedText || "")}
+                   onClick={() => handleCopy(extractedText || "")}
                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 transition-all"
                  >
-                   {copiedCode === activeDoc.extractedText ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                   {copiedCode === activeDoc.extractedText ? 'Copied' : 'Copy Raw MD'}
+                   {copiedCode === extractedText ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                   {copiedCode === extractedText ? 'Copied' : 'Copy Raw MD'}
                  </button>
                </div>
                <div className="prose dark:prose-invert max-w-none font-mono text-sm leading-relaxed whitespace-pre-wrap dark:text-slate-300">
-                  {activeDoc.extractedText || "<!-- Vault Empty -->"}
+                  {extractedText || "<!-- Vault Empty -->"}
                </div>
             </div>
           ) : slos.length > 0 ? (

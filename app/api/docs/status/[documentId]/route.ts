@@ -40,6 +40,7 @@ export async function GET(
       summary: docRes.data.document_summary || jobRes.data?.payload?.message,
       error: docRes.data.error_message || jobRes.data?.error_message,
       slos: sloRes.data || [],
+      extracted_text: docRes.data.extracted_text,
       metadata: {
         subject: docRes.data.subject,
         grade: docRes.data.grade_level,

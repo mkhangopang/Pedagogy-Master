@@ -68,7 +68,7 @@ export async function indexDocumentForRAG(
       }
     }
 
-    const BATCH_SIZE = 5; 
+    const BATCH_SIZE = 15; 
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
       

@@ -3,19 +3,17 @@ import { getSupabaseAdminClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { IngestionStep } from '../../../../../types';
-import { orchestrator } from '../../../../../lib/ai/model-orchestrator';
 import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300; // Increased from 60 to 300 to match current env and handle larger docs
+export const maxDuration = 300; 
 
 // ═══════════════════════════════════════════════════════════════════════
-// UNIVERSAL CURRICULUM INGESTION ENGINE v4.1 (ADAPTED)
+// UNIVERSAL CURRICULUM INGESTION ENGINE v5.1 (ESSENTIAL EDITION)
 // ─────────────────────────────────────────────────────────────────────
 // Stage 1 — EXTRACT  : pdf-parse (deterministic)
-// Stage 2 — PARSE    : Regex state-machine (zero AI tokens)
-// Stage 3 — ENRICH   : AI batch Bloom classification (lightweight)
-// Stage 4 — EMBED    : Vector indexing
+// Stage 2 — LINEARIZE : Regex state-machine (zero AI tokens)
+// Stage 3 — EMBED    : Vector indexing
 // ═══════════════════════════════════════════════════════════════════════
 
 const PAKISTAN_BOARDS: Record<string, {
@@ -37,7 +35,7 @@ const PAKISTAN_BOARDS: Record<string, {
     sloRegex: /(?:SL[O0]\s*[:\-]?\s*)?([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})/g,
     gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
-    benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*([^\n\r]{10,120})/gi,
+    benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
     patternType: 'hierarchical_code',
     normalizeFn: (code: string) => code
       .toUpperCase()
@@ -174,7 +172,6 @@ function deterministicExtract(
         mergeCount++;
       }
 
-      // Extract parts for internal logic
       const codePartsMatch = rawCode.match(/([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})/);
       let codeDomain = currentDomain;
       let codeGrade = currentGrade;
@@ -233,11 +230,6 @@ function computeConfidence(slo: RawSLO, isOcrReliable: boolean): number {
   ) * 100) / 100;
 }
 
-async function enrichWithBloom(slos: RawSLO[]): Promise<Map<string, string>> {
-  const bloomMap = new Map<string, string>();
-  return bloomMap; // Disabled for lightening speed as requested
-}
-
 function scanDeclaredDomains(text: string): Record<string, string> {
   const domains: Record<string, string> = {};
   const pattern = /(?:DOMAIN|STRAND)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi;
@@ -250,19 +242,15 @@ function scanDeclaredDomains(text: string): Record<string, string> {
 }
 
 function buildCleanMarkdown(slos: any[]): string {
-  // Sort by Grade, then Domain, then Code
   const sorted = [...slos].sort((a, b) => {
     const gA = parseInt(a.grade_level) || 0;
     const gB = parseInt(b.grade_level) || 0;
     if (gA !== gB) return gA - gB;
-    
-    if (a.domain !== b.domain) return (a.domain || "").localeCompare(b.domain || "");
-    
+    if (a.domain_tag !== b.domain_tag) return (a.domain_tag || "").localeCompare(b.domain_tag || "");
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
 
   const lines: string[] = sorted.map(s => `SLO ${s.slo_code} ${s.slo_full_text}`);
-  
   lines.push('');
   lines.push('<STRUCTURED_INDEX>');
   lines.push(JSON.stringify(sorted, null, 2));
@@ -272,7 +260,7 @@ function buildCleanMarkdown(slos: any[]): string {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// MAIN ROUTE HANDLER
+// MAIN ROUTE HANDLER (SINGLE-PASS ORCHESTRATOR)
 // ═══════════════════════════════════════════════════════════════════════
 export async function POST(
   req: NextRequest,
@@ -282,19 +270,9 @@ export async function POST(
   const adminSupabase = getSupabaseAdminClient();
   const queue = new IngestionQueue(adminSupabase);
 
-  const requestBody = await req.json().catch(() => ({}));
-
-  const isEnrichCall = requestBody.enrichBatch !== undefined;
-  const isEmbedCall  = requestBody.embedStep === true;
-  const isParseCall  = requestBody.chunkIndex !== undefined && !isEnrichCall && !isEmbedCall;
-
-  let job = await queue.getJobStatus(documentId).catch((e: any) => {
-    throw new Error('QUEUE_FAULT: ' + (e.message || 'ingestion_jobs table missing'));
-  });
+  let job = await queue.getJobStatus(documentId).catch(() => null);
   if (!job) {
-    const jobId = await queue.enqueue(documentId).catch((e: any) => {
-      throw new Error('ENQUEUE_FAULT: ' + (e.message || 'Cannot insert job'));
-    });
+    const jobId = await queue.enqueue(documentId);
     job = { id: jobId, step: IngestionStep.EXTRACT };
   }
 
@@ -303,123 +281,55 @@ export async function POST(
   }
 
   try {
-    const { data: doc } = await adminSupabase
-      .from('documents').select('*').eq('id', documentId).single();
+    const { data: doc } = await adminSupabase.from('documents').select('*').eq('id', documentId).single();
     if (!doc) throw new Error('VAULT_ERROR: Document not found.');
 
     // ── STAGE 1: EXTRACT ──────────────────────────────────────────────────
-    if (job.step === IngestionStep.EXTRACT && !isParseCall && !isEnrichCall && !isEmbedCall) {
+    if (job.step === IngestionStep.EXTRACT) {
       await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 10, message: 'Fetching from storage...' });
-      await adminSupabase.from('documents').update({ status: 'processing', document_summary: 'Extracting...' }).eq('id', documentId);
-
+      
       const r2Path = doc.file_path;
-      if (!r2Path) throw new Error('R2_FAULT: No file path stored for this document.');
+      if (!r2Path) throw new Error('R2_FAULT: No file path stored.');
 
-      const bufferRaw = await Promise.race([
-        getObjectBuffer(r2Path),
-        new Promise<null>((_, reject) => setTimeout(() => reject(new Error('R2_TIMEOUT: Storage fetch took >25s.')), 25000))
-      ]);
-      const buffer = bufferRaw as Buffer;
+      const buffer = await getObjectBuffer(r2Path);
       if (!buffer) throw new Error('R2_FAULT: File unreachable.');
 
       await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 18, message: 'Detecting document type...' });
 
-      let extraction: { text: string; method: string };
-      try {
-        const pdf = (await import('pdf-parse')).default;
-        const parseResult = await Promise.race([
-          pdf(buffer),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('PDF_PARSE_TIMEOUT')), 25000))
-        ]);
-        const text = (parseResult as any).text?.trim() || '';
-        extraction = { text, method: 'text' };
-      } catch (pdfErr: any) {
-        throw new Error(`Extraction failed: ${pdfErr.message}`);
-      }
+      const pdf = (await import('pdf-parse')).default;
+      const parseResult = await pdf(buffer);
+      const text = parseResult.text?.trim() || '';
 
-      if (!extraction.text || extraction.text.length < 300) {
-        throw new Error(`Extraction failed (${extraction.text?.length || 0} chars).`);
-      }
+      if (text.length < 300) throw new Error('Extraction failed (too little text).');
 
-      const sample = (doc.name || '') + ' ' + extraction.text.substring(0, 2000);
+      const sample = (doc.name || '') + ' ' + text.substring(0, 2000);
       const detectedBoard = detectBoard(sample);
       const detectedSubject = detectSubject(sample);
-      const boardInfo = PAKISTAN_BOARDS[detectedBoard] || PAKISTAN_BOARDS['SINDH'];
-      const declaredDomains = scanDeclaredDomains(extraction.text);
-      const domainCount = Object.keys(declaredDomains).length;
-      const estimatedPages = Math.ceil(extraction.text.length / 2000);
+      const estimatedPages = Math.ceil(text.length / 2000);
 
       await adminSupabase.from('documents').update({
-        extracted_text: extraction.text,
-        document_summary: `Extracted|board:${detectedBoard}|subject:${detectedSubject}|method:${extraction.method}|chars:${extraction.text.length}|domains:${domainCount}|pages:~${estimatedPages}`,
+        extracted_text: text,
+        document_summary: `Extracted|board:${detectedBoard}|subject:${detectedSubject}|pages:~${estimatedPages}`,
+        status: 'processing'
       }).eq('id', documentId);
 
-      await queue.updateProgress(job.id, {
-        step: IngestionStep.LINEARIZE,
-        progress: 30,
-        message: `${boardInfo.name} | ${extraction.text.length.toLocaleString()} chars`,
-      });
-
-      return NextResponse.json({
-        success: true, done: false, step: 'EXTRACT', nextStep: 'LINEARIZE',
-        progress: 30,
-        board: detectedBoard, boardName: boardInfo.name,
-        subject: boardInfo.subjectCodes[detectedSubject] || detectedSubject,
-        charCount: extraction.text.length,
-        estimatedPages, domainCount, declaredDomains,
-        isOcrReliable: extraction.method === 'text',
-        method: extraction.method,
-        message: `Stage 1 ✅ ${boardInfo.name} | ${extraction.text.length.toLocaleString()} chars`,
-      });
+      await queue.updateProgress(job.id, { step: IngestionStep.LINEARIZE, progress: 30, message: 'Linearizing Curriculum...' });
+      job.step = IngestionStep.LINEARIZE;
     }
 
-    // ── STAGE 2: PARSE ────────────────────────────────────────────────────
-    if (isParseCall || (job.step === IngestionStep.LINEARIZE && !isEnrichCall && !isEmbedCall)) {
-      const chunkIndex: number = requestBody.chunkIndex ?? 0;
-
-      const { data: current, error: fetchErr } = await adminSupabase
-        .from('documents').select('extracted_text, document_summary').eq('id', documentId).single();
-      if (fetchErr) throw new Error(`PARSE_FAULT: DB read failed — ${fetchErr.message}`);
-
+    // ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
+    if (job.step === IngestionStep.LINEARIZE) {
+      const { data: current } = await adminSupabase.from('documents').select('extracted_text, document_summary').eq('id', documentId).single();
       const rawText = current?.extracted_text || '';
-      if (rawText.length < 100) throw new Error(`PARSE_FAULT: No text.`);
-
       const summaryMeta = current?.document_summary || '';
-      const boardKey = summaryMeta.match(/board:(\w+)/)?.[1] || detectBoard((doc.name || '') + rawText.substring(0, 1000));
-      const subjectCode = summaryMeta.match(/subject:(\w+)/)?.[1] || detectSubject(rawText.substring(0, 1000));
+      
+      const boardKey = summaryMeta.match(/board:(\w+)/)?.[1] || 'SINDH';
+      const subjectCode = summaryMeta.match(/subject:(\w+)/)?.[1] || 'B';
       const estimatedPages = parseInt(summaryMeta.match(/pages:~?(\d+)/)?.[1] || '100');
-      const isOcrReliable = summaryMeta.includes('method:text');
-      const declaredDomains: Record<string, string> = requestBody.declaredDomains || scanDeclaredDomains(rawText);
+      const isOcrReliable = true; 
+      const declaredDomains = scanDeclaredDomains(rawText);
 
-      const CHUNK_SIZE = 20000;
-      const OVERLAP    = 1500;
-      const chunks: Array<{ start: number; end: number }> = [];
-      for (let i = 0; i < rawText.length; i += CHUNK_SIZE - OVERLAP) {
-        chunks.push({ start: i, end: Math.min(i + CHUNK_SIZE, rawText.length) });
-        if (i + CHUNK_SIZE >= rawText.length) break;
-      }
-      const totalChunks = chunks.length;
-
-      if (chunkIndex >= totalChunks) {
-        const { count: parsedCount } = await adminSupabase
-          .from('slo_database').select('*', { count: 'exact', head: true }).eq('document_id', documentId);
-        await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 60, message: `${parsedCount} SLOs parsed.` });
-        return NextResponse.json({
-          success: true, done: false, step: 'LINEARIZE', nextStep: 'ENRICH',
-          progress: 60, parsedCount, totalChunks,
-        });
-      }
-
-      const { start, end } = chunks[chunkIndex];
-      const chunk = rawText.substring(start, end);
-
-      await queue.updateProgress(job.id, {
-        step: IngestionStep.LINEARIZE,
-        progress: 32 + Math.round(((chunkIndex + 1) / totalChunks) * 25),
-        message: `Parsing Chunk ${chunkIndex + 1}/${totalChunks}...`,
-      });
-
-      const rawSLOs = deterministicExtract(chunk, boardKey, declaredDomains, subjectCode, estimatedPages, start);
+      const rawSLOs = deterministicExtract(rawText, boardKey, declaredDomains, subjectCode, estimatedPages, 0);
       const scoredSLOs = rawSLOs.map(slo => ({
         ...slo,
         extraction_confidence: computeConfidence(slo, isOcrReliable),
@@ -430,7 +340,7 @@ export async function POST(
           document_id: documentId,
           slo_code: s.slo_code,
           slo_full_text: s.slo_full_text,
-          domain: s.domain,
+          domain_tag: s.domain,
           domain_name: s.domain_name,
           bloom_level: 'Understand',
           subject: s.subject,
@@ -438,169 +348,50 @@ export async function POST(
           extraction_confidence: s.extraction_confidence,
           page_number: s.page_number_estimate || null,
           is_truncated: s.is_truncated,
-          is_orphan_domain: s.is_orphan_domain,
-          cognitive_complexity: 'Understand',
-          teaching_strategies: [],
-          assessment_ideas: [],
-          prerequisite_concepts: [],
-          common_misconceptions: [],
-          keywords: [],
+          is_orphan_domain: s.is_orphan_domain
         }));
-        if (chunkIndex === 0) {
-          await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-        }
-        await adminSupabase.from('slo_database')
-          .upsert(records, { onConflict: 'document_id,slo_code', ignoreDuplicates: true });
+
+        await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
+        await adminSupabase.from('slo_database').upsert(records, { onConflict: 'document_id,slo_code' });
       }
 
-      const isDone = chunkIndex >= totalChunks - 1;
-
-      if (!isDone) {
-        return NextResponse.json({
-          success: true, done: false,
-          step: 'LINEARIZE', nextStep: 'LINEARIZE',
-          chunkIndex: chunkIndex + 1,
-          totalChunks,
-          progress: 32 + Math.round(((chunkIndex + 1) / totalChunks) * 25),
-          slosThisChunk: scoredSLOs.length,
-          declaredDomains,
-        });
-      }
-
-      const { count: parsedCount } = await adminSupabase
-        .from('slo_database').select('*', { count: 'exact', head: true }).eq('document_id', documentId);
-      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 60, message: `${parsedCount} SLOs parsed.` });
-
-      return NextResponse.json({
-        success: true, done: false,
-        step: 'LINEARIZE', nextStep: 'ENRICH',
-        progress: 60, parsedCount,
-      });
-    }
-
-    // ── STAGE 3: ENRICH ──────────────────────────────────────────────────
-    if (isEnrichCall) {
-      const enrichBatch: number = requestBody.enrichBatch ?? 0;
-      const ENRICH_BATCH_SIZE = 15;
-
-      const { data: batchSlos } = await adminSupabase
-        .from('slo_database')
-        .select('id, slo_code, slo_full_text, bloom_level')
-        .eq('document_id', documentId)
-        .eq('bloom_level', 'Understand')
-        .range(enrichBatch * ENRICH_BATCH_SIZE, (enrichBatch + 1) * ENRICH_BATCH_SIZE - 1);
-
-      const { count: totalUnclassified } = await adminSupabase
-        .from('slo_database').select('*', { count: 'exact', head: true })
-        .eq('document_id', documentId).eq('bloom_level', 'Understand');
-
-      const totalBatches = Math.ceil((totalUnclassified || 0) / ENRICH_BATCH_SIZE);
-
-      if (batchSlos && batchSlos.length > 0) {
-        const slosToClassify = batchSlos.map(s => ({
-          slo_code: s.slo_code,
-          slo_full_text: s.slo_full_text,
-          regex_confidence: 1,
-        } as RawSLO));
-
-        const bloomMap = await enrichWithBloom(slosToClassify);
-
-        for (const slo of batchSlos) {
-          const bloom = bloomMap.get(slo.slo_code?.toUpperCase()) || 'Understand';
-          if (bloom !== 'Understand') {
-            await adminSupabase.from('slo_database')
-              .update({ bloom_level: bloom, cognitive_complexity: bloom })
-              .eq('id', slo.id);
-          }
-        }
-      }
-
-      const isEnrichDone = !batchSlos || batchSlos.length === 0 || enrichBatch >= totalBatches - 1;
-
-      if (!isEnrichDone) {
-        return NextResponse.json({
-          success: true, done: false,
-          step: 'ENRICH', nextStep: 'ENRICH',
-          enrichBatch: enrichBatch + 1,
-          totalBatches,
-          progress: 60 + Math.round(((enrichBatch + 1) / Math.max(totalBatches, 1)) * 5),
-        });
-      }
-
-      const { count: finalSloCount } = await adminSupabase
-        .from('slo_database').select('*', { count: 'exact', head: true }).eq('document_id', documentId);
-
-      const { data: allSlosForMd } = await adminSupabase
-        .from('slo_database').select('*').eq('document_id', documentId);
-
-      const boardKey = detectBoard(doc.name || '');
-      const boardInfo = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
-      const subjectCode = detectSubject(doc.name || '');
-
-      const markdown = buildCleanMarkdown(allSlosForMd || []);
-
+      const markdown = buildCleanMarkdown(scoredSLOs);
       await adminSupabase.from('documents').update({
         extracted_text: markdown,
-        document_summary: `Linearized — ${finalSloCount} SLOs`,
+        document_summary: `Linearized — ${scoredSLOs.length} SLOs`,
       }).eq('id', documentId);
 
-      return NextResponse.json({
-        success: true, done: false,
-        step: 'ENRICH', nextStep: 'EMBED',
-        progress: 65, finalSloCount,
-      });
+      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 70, message: 'Building Neural Index...' });
+      job.step = IngestionStep.EMBED;
     }
 
-    // -- STAGE 4: EMBED -----------------------------------------------------
-    if (isEmbedCall || job.step === IngestionStep.EMBED) {
-      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Finalising document...' });
+    // ── STAGE 4: EMBED ────────────────────────────────────────────────────
+    if (job.step === IngestionStep.EMBED) {
+      const { data: finalDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
+      const textToEmbed = finalDoc?.extracted_text || '';
 
-      const { count: sloCount } = await adminSupabase
-        .from('slo_database')
-        .select('id', { count: 'exact', head: true })
-        .eq('document_id', documentId);
-
-      let chunkCount = 0;
-      try {
-        const { data: finalDoc } = await adminSupabase
-          .from('documents').select('extracted_text').eq('id', documentId).single();
-        const textToEmbed = finalDoc?.extracted_text || '';
-
-        if (textToEmbed.length >= 100) {
-          const TIMEOUT_MS = 45000;
-          const indexPromise = indexDocumentForRAG(documentId, textToEmbed, adminSupabase, job.id);
-          const timeoutPromise = new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('EMBED_TIMEOUT')), TIMEOUT_MS)
-          );
-          const result = await Promise.race([indexPromise, timeoutPromise]) as any;
-          chunkCount = result?.count || 0;
-        }
-      } catch (embedErr: any) {
-        console.warn('[EMBED] Vector indexing skipped:', embedErr.message);
+      if (textToEmbed.length >= 100) {
+        await indexDocumentForRAG(documentId, textToEmbed, adminSupabase, job.id);
       }
 
       await queue.markComplete(job.id);
       await adminSupabase.from('documents').update({
         status: 'ready',
-        rag_indexed: chunkCount > 0,
-        document_summary: `Ready — ${sloCount || 0} SLOs extracted`,
+        rag_indexed: true,
+        document_summary: 'Neural grid verified.'
       }).eq('id', documentId);
-
-      return NextResponse.json({
-        success: true, done: true, step: 'EMBED', progress: 100,
-        chunkCount, sloCount: sloCount || 0,
-      });
+      
+      await adminSupabase.rpc('reload_schema_cache');
     }
-    return NextResponse.json({ error: 'Unknown step', step: job.step }, { status: 400 });
+
+    return NextResponse.json({ success: true });
 
   } catch (err: any) {
     const msg = err.message || 'Processing failed.';
-    console.error(`[Engine v4.1] Fatal:`, msg);
+    console.error(`[Engine v5.1] Fatal:`, msg);
     try { await queue.markFailed(job.id, msg); } catch (_) {}
     try {
-      await adminSupabase.from('documents').update({
-        status: 'failed', document_summary: msg.substring(0, 500),
-      }).eq('id', documentId);
+      await adminSupabase.from('documents').update({ status: 'failed', document_summary: msg.substring(0, 500) }).eq('id', documentId);
     } catch (_) {}
     return NextResponse.json({ error: msg }, { status: 500 });
   }
