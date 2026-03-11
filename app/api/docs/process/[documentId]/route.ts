@@ -32,13 +32,14 @@ const PAKISTAN_BOARDS: Record<string, {
       'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
       'E': 'English', 'U': 'Urdu', 'CS': 'Computer Science', 'GEO': 'Geography',
     },
-    sloRegex: /(?:SL[O0]\s*[:\-]?\s*)?([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})/g,
+    sloRegex: /(?:\[|\b)(?:SL[O0]\s*[:\-]?\s*)?([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})(?:\]|\b)/g,
     gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
     benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
     patternType: 'hierarchical_code',
     normalizeFn: (code: string) => code
       .toUpperCase()
+      .replace(/[\[\]]/g, '')
       .replace(/SL[O0]/g, '')
       .replace(/[:\-]/g, '')
       .replace(/\s+/g, '')
@@ -172,6 +173,9 @@ function deterministicExtract(
         mergeCount++;
       }
 
+      // Clean leading punctuation and brackets
+      sloText = sloText.replace(/^[\]\:\-\s\.]+/g, '').trim();
+
       const codePartsMatch = rawCode.match(/([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})/);
       let codeDomain = currentDomain;
       let codeGrade = currentGrade;
@@ -243,10 +247,10 @@ function scanDeclaredDomains(text: string): Record<string, string> {
 
 function buildCleanMarkdown(slos: any[]): string {
   const sorted = [...slos].sort((a, b) => {
-    const gA = parseInt(a.grade_level) || 0;
-    const gB = parseInt(b.grade_level) || 0;
+    const gA = parseInt(a.grade) || 0;
+    const gB = parseInt(b.grade) || 0;
     if (gA !== gB) return gA - gB;
-    if (a.domain_tag !== b.domain_tag) return (a.domain_tag || "").localeCompare(b.domain_tag || "");
+    if (a.domain !== b.domain) return (a.domain || "").localeCompare(b.domain || "");
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
 

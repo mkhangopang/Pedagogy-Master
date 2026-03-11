@@ -20,7 +20,7 @@ interface SloRecord {
   bloom_level?: string;
   created_at: string;
   grade_level?: string;
-  domain?: string;
+  domain_tag?: string;
   domain_name?: string;
 }
 
@@ -112,7 +112,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     const groups: Record<string, Record<string, SloRecord[]>> = {};
     filtered.forEach(slo => {
       const grade = slo.grade_level || 'Ungraded';
-      const domain = slo.domain_name || slo.domain || 'Core Curriculum';
+      const domain = slo.domain_name || slo.domain_tag || 'Core Curriculum';
       
       if (!groups[grade]) groups[grade] = {};
       if (!groups[grade][domain]) groups[grade][domain] = [];
