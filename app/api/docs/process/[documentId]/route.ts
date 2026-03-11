@@ -41,10 +41,9 @@ const PAKISTAN_BOARDS: Record<string, {
     patternType: 'hierarchical_code',
     normalizeFn: (code: string) => code
       .toUpperCase()
-      .replace(/SL0/g, 'SLO')
+      .replace(/SL[O0]/g, '')
+      .replace(/[:\-]/g, '')
       .replace(/\s+/g, '')
-      .replace(/-(\d)-/g, (_, n) => `-${n.padStart(2, '0')}-`)
-      .replace(/-(\d)$/, (_, n) => `-${n.padStart(2, '0')}`)
       .trim(),
   },
   PUNJAB: {
@@ -55,7 +54,7 @@ const PAKISTAN_BOARDS: Record<string, {
     domainRegex: /(?:UNIT|CHAPTER|TOPIC)\s+(\d+)\s*[:\-]\s*([^\n\r]+)/gi,
     benchmarkRegex: /(?:OBJECTIVE|OBJ)\s*[:\-]?\s*([^\n\r]{10,120})/gi,
     patternType: 'decimal',
-    normalizeFn: (code: string) => code.trim().toUpperCase(),
+    normalizeFn: (code: string) => code.trim().toUpperCase().replace(/[:\-]/g, ''),
   },
 };
 
@@ -175,7 +174,8 @@ function deterministicExtract(
         mergeCount++;
       }
 
-      const codePartsMatch = normalizedCode.match(/^([A-Z]{1,3})-(\d{2})-([A-Z])-(\d{2})$/);
+      // Extract parts for internal logic
+      const codePartsMatch = rawCode.match(/([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})/);
       let codeDomain = currentDomain;
       let codeGrade = currentGrade;
       let codeSubject = subjectCode;
@@ -235,62 +235,7 @@ function computeConfidence(slo: RawSLO, isOcrReliable: boolean): number {
 
 async function enrichWithBloom(slos: RawSLO[]): Promise<Map<string, string>> {
   const bloomMap = new Map<string, string>();
-  if (slos.length === 0) return bloomMap;
-
-  const batchList = slos.map((s, i) =>
-    `${i + 1}. [${s.slo_code}] ${s.slo_full_text}`
-  ).join('\n');
-
-  try {
-    const result = await orchestrator.executeTask(
-      `You are an expert educational taxonomist for Pakistan Sindh curriculum.
-
-Classify each SLO by Bloom's Revised Taxonomy. DO NOT classify by verb alone.
-
-CRITICAL RULES:
-1. Read the FULL statement. Assess cognitive demand, not just the action verb.
-2. "Explain" = Understand when paraphrasing a concept. = Analyze when breaking down a mechanism.
-3. "Identify" = Remember when recalling a name. = Analyze when finding causes/patterns.
-4. "Define" alone = Remember. "Define and apply" = Understand.
-5. Biology mechanisms (photosynthesis, respiration, genetics processes) = Analyze.
-6. Calculations, experiments, graph plotting = Apply.
-7. Grade 9-10: default Remember/Understand/Apply unless content demands higher.
-8. Grade 11-12: default Apply/Analyze unless purely definitional.
-9. "Appreciate", "realize", "justify" = Evaluate.
-10. "Design", "propose hypothesis", "formulate" = Create.
-
-LEVELS:
-- Remember   : Recall facts/definitions/names without requiring comprehension
-- Understand : Explain WHY/HOW in own words, summarize, classify, compare
-- Apply      : Use knowledge in new context, solve, calculate, demonstrate
-- Analyze    : Examine mechanisms, identify cause/effect, break down processes
-- Evaluate   : Judge, assess evidence, critique, justify conclusions
-- Create     : Design, formulate hypotheses, synthesize new solutions
-
-Return ONLY raw JSON object. No markdown. No explanation.
-Format: {"B-09-A-01": "Analyze", "B-10-B-03": "Remember"}
-
-SLOs:
-${batchList}`,
-      'strategy'
-    );
-
-    const cleaned = result.text.trim().replace(/\`\`\`json|\`\`\`/g, '').trim();
-    const objMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      const parsed = JSON.parse(objMatch[0]);
-      const validLevels = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
-      for (const [code, level] of Object.entries(parsed)) {
-        const normalized = String(level).trim();
-        const matched = validLevels.find(l => l.toLowerCase() === normalized.toLowerCase());
-        bloomMap.set(code.toUpperCase(), matched || 'Understand');
-      }
-    }
-  } catch (err) {
-    console.warn(`[Bloom] Failed (non-fatal):`, err);
-  }
-
-  return bloomMap;
+  return bloomMap; // Disabled for lightening speed as requested
 }
 
 function scanDeclaredDomains(text: string): Record<string, string> {
@@ -304,39 +249,23 @@ function scanDeclaredDomains(text: string): Record<string, string> {
   return domains;
 }
 
-function buildCleanMarkdown(slos: any[], boardName: string, subjectName: string): string {
-  const byGrade: Record<string, Record<string, typeof slos>> = {};
+function buildCleanMarkdown(slos: any[]): string {
+  // Sort by Grade, then Domain, then Code
+  const sorted = [...slos].sort((a, b) => {
+    const gA = parseInt(a.grade_level) || 0;
+    const gB = parseInt(b.grade_level) || 0;
+    if (gA !== gB) return gA - gB;
+    
+    if (a.domain !== b.domain) return (a.domain || "").localeCompare(b.domain || "");
+    
+    return (a.slo_code || "").localeCompare(b.slo_code || "");
+  });
 
-  for (const slo of slos) {
-    const grade = slo.grade_level || 'Unknown';
-    const domain = slo.domain || '?';
-    if (!byGrade[grade]) byGrade[grade] = {};
-    if (!byGrade[grade][domain]) byGrade[grade][domain] = [];
-    byGrade[grade][domain].push(slo);
-  }
-
-  const lines: string[] = [];
-  lines.push(`# ${boardName} — ${subjectName}`);
+  const lines: string[] = sorted.map(s => `SLO ${s.slo_code} ${s.slo_full_text}`);
+  
   lines.push('');
-
-  for (const grade of Object.keys(byGrade).sort()) {
-    lines.push(`## Grade ${grade}`);
-    lines.push('');
-
-    for (const domain of Object.keys(byGrade[grade]).sort()) {
-      const domainName = byGrade[grade][domain][0]?.domain_name || `Domain ${domain}`;
-      lines.push(`### Domain ${domain}: ${domainName}`);
-      lines.push('');
-
-      for (const slo of byGrade[grade][domain]) {
-        lines.push(`- ${slo.slo_code} — ${slo.slo_full_text}`);
-      }
-      lines.push('');
-    }
-  }
-
   lines.push('<STRUCTURED_INDEX>');
-  lines.push(JSON.stringify(slos, null, 2));
+  lines.push(JSON.stringify(sorted, null, 2));
   lines.push('</STRUCTURED_INDEX>');
 
   return lines.join('\n');
@@ -608,11 +537,7 @@ export async function POST(
       const boardInfo = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
       const subjectCode = detectSubject(doc.name || '');
 
-      const markdown = buildCleanMarkdown(
-        allSlosForMd || [],
-        boardInfo.name,
-        boardInfo.subjectCodes[subjectCode] || 'Curriculum'
-      );
+      const markdown = buildCleanMarkdown(allSlosForMd || []);
 
       await adminSupabase.from('documents').update({
         extracted_text: markdown,
