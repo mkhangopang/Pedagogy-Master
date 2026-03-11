@@ -52,7 +52,6 @@ export async function POST(req: NextRequest) {
       user_id: user.id,
       name: name,
       file_path: r2Key,
-      r2_key: r2Key,
       status: 'pending',
       mime_type: contentType,
       subject: 'Detecting...',

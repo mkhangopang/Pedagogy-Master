@@ -53,13 +53,12 @@ export interface NeuralBrain {
 }
 
 export enum IngestionStep {
-  EXTRACT   = 'EXTRACT',
-  LINEARIZE = 'LINEARIZE',
-  ENRICH    = 'ENRICH',
-  EMBED     = 'EMBED',
-  COMPLETE  = 'COMPLETE',
+  EXTRACT = 'EXTRACT',
+  PARSE = 'PARSE',
+  ENRICH = 'ENRICH',
+  EMBED = 'EMBED',
+  COMPLETE = 'COMPLETE'
 }
-
 
 export enum JobStatus {
   PENDING = 'pending',

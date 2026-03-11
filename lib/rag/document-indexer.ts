@@ -86,8 +86,15 @@ export async function indexDocumentForRAG(
       }
 
       if (jobId) {
+        const progressPercent = Math.round(70 + ((i / nodes.length) * 25)); // EMBED step is 70-95%
         await supabase.from('ingestion_jobs').update({ 
-          payload: { processed: i, total: nodes.length, status: 'generating_vectors' } 
+          payload: { 
+            processed: i, 
+            total: nodes.length, 
+            status: 'generating_vectors',
+            progress: progressPercent,
+            message: `Vectorizing batch ${Math.ceil(i / BATCH_SIZE) + 1} of ${Math.ceil(nodes.length / BATCH_SIZE)}...`
+          } 
         }).eq('id', jobId);
       }
 
