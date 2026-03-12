@@ -49,9 +49,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
       
-      if (!res.ok) throw new Error("Status Fetch Fault");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error("Status Fetch Fault:", errData);
+        throw new Error(`Status Fetch Fault (Status: ${res.status})`);
+      }
       
       const data = await res.json();
+      console.log("Fetched SLO data:", data);
       setSlos(data.slos || []);
       setExtractedText(data.extracted_text || null);
       setJobStatus(data.status);

@@ -187,16 +187,32 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   };
 
   async function handshakeWithGateway(name: string, contentType: string, extractedText: string, token: string) {
-    const res = await fetch('/api/docs/upload', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, contentType, extractedText })
-    });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || "Gateway Handshake Refused.");
+    console.log("Attempting handshake with:", '/api/docs/upload');
+    try {
+      const res = await fetch('/api/docs/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, contentType, extractedText })
+      });
+      
+      console.log("Handshake response status:", res.status);
+      
+      if (!res.ok) {
+        let errorMessage = "Gateway Handshake Refused.";
+        try {
+          const err = await res.json();
+          console.error("Handshake error response:", err);
+          errorMessage = err.error || errorMessage;
+        } catch (e) {
+          errorMessage = `Gateway Handshake Refused (Status: ${res.status})`;
+        }
+        throw new Error(errorMessage);
+      }
+      return await res.json();
+    } catch (e) {
+      console.error("Handshake fetch error:", e);
+      throw e;
     }
-    return await res.json();
   }
 
   const isQuotaError = error?.toLowerCase().includes('quota') || error?.toLowerCase().includes('429');
