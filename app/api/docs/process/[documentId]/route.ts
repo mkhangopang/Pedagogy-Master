@@ -232,6 +232,7 @@ function deterministicExtract(
     }
   }
 
+  console.log(`[Ingestion] deterministicExtract: Found ${results.length} SLOs for board ${boardKey}`);
   return results;
 }
 
@@ -312,7 +313,9 @@ export async function POST(
       await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 18, message: 'Detecting document type...' });
 
       // BUG-R4 FIX: Static import used instead of dynamic
+      console.log(`[Ingestion] Starting PDF extraction for ${documentId}`);
       const parseResult = await pdf(buffer);
+      console.log(`[Ingestion] PDF extraction complete for ${documentId}, text length: ${parseResult.text?.length}`);
       const text = parseResult.text?.trim() || '';
 
       if (text.length < 300) throw new Error('Extraction failed (too little text).');
