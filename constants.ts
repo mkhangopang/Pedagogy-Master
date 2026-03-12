@@ -89,7 +89,7 @@ create table if not exists public.slo_database (
   is_truncated boolean default false,
   is_orphan_domain boolean default false,
   created_at timestamp with time zone default now(),
-  unique(document_id, slo_code)
+  constraint slo_database_unique_slo unique(document_id, slo_code)
 );
 
 -- 4. JUNCTION TABLE

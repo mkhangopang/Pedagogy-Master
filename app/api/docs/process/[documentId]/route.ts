@@ -32,7 +32,7 @@ const PAKISTAN_BOARDS: Record<string, {
       'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
       'E': 'English', 'U': 'Urdu', 'CS': 'Computer Science', 'GEO': 'Geography',
     },
-    sloRegex: /(?:\[|\b)(?:SL[O0]\s*[:\-]?\s*)?([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})(?:\]|\b)/g,
+    sloRegex: /(?:\[|\b)(?:SL[O0]\s*[:\-]?\s*)?([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})(?:\]|\b)/g,
     gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
     benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
@@ -359,7 +359,7 @@ export async function POST(
         }));
 
         await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-        await adminSupabase.from('slo_database').upsert(records, { onConflict: 'document_id,slo_code' });
+        await adminSupabase.from('slo_database').upsert(records, { onConflict: 'slo_database_unique_slo' });
       }
 
       const markdown = buildCleanMarkdown(scoredSLOs);
