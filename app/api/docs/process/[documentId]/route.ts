@@ -151,7 +151,7 @@ function deterministicExtract(
     let sloMatch;
     while ((sloMatch = sloRegex.exec(trimmed)) !== null) {
       const rawCode = sloMatch[0];
-      const normalizedCode = board.normalizeFn(rawCode);
+      let normalizedCode = board.normalizeFn(rawCode);
 
       let sloText = trimmed.substring(sloMatch.index + rawCode.length).trim();
 
@@ -185,6 +185,9 @@ function deterministicExtract(
         codeSubject = codePartsMatch[1];
         codeGrade = normalizeGrade(codePartsMatch[2]);
         codeDomain = codePartsMatch[3];
+        const sloNum = codePartsMatch[4];
+        // Ensure consistent 6-character code: B09A01
+        normalizedCode = `${codeSubject}${codeGrade}${codeDomain}${sloNum.padStart(2, '0')}`;
       }
 
       const hasDeclaredDomains = Object.keys(declaredDomains).length > 0;

@@ -185,7 +185,34 @@ grant select on public.rag_health_report to authenticated, service_role;
 grant select on public.slo_analytics to authenticated, service_role;
 grant select on public.ai_provider_health to authenticated, service_role;
 
--- 11. FORCE RELOAD
+-- 11. RLS POLICIES (SECURITY LAYER)
+alter table public.slo_database enable row level security;
+alter table public.chunk_slo_mapping enable row level security;
+
+drop policy if exists "Users can view SLOs for their own documents" on public.slo_database;
+create policy "Users can view SLOs for their own documents"
+  on public.slo_database for select
+  using (
+    exists (
+      select 1 from public.documents
+      where documents.id = slo_database.document_id
+      and documents.user_id = auth.uid()
+    )
+  );
+
+drop policy if exists "Users can view mappings for their own documents" on public.chunk_slo_mapping;
+create policy "Users can view mappings for their own documents"
+  on public.chunk_slo_mapping for select
+  using (
+    exists (
+      select 1 from public.document_chunks
+      join public.documents on documents.id = document_chunks.document_id
+      where document_chunks.id = chunk_slo_mapping.chunk_id
+      and documents.user_id = auth.uid()
+    )
+  );
+
+-- 12. FORCE RELOAD
 SELECT reload_schema_cache();
 `;
 

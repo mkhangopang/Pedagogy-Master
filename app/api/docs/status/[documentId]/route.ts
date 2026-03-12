@@ -38,7 +38,7 @@ export async function GET(
       name: docRes.data.name,
       progress: realProgress,
       summary: docRes.data.document_summary || jobRes.data?.payload?.message,
-      error: docRes.data.error_message || jobRes.data?.error_message,
+      error: docRes.data.error_message || jobRes.data?.error_message || sloRes.error?.message,
       slos: sloRes.data || [],
       extracted_text: docRes.data.extracted_text,
       metadata: {
