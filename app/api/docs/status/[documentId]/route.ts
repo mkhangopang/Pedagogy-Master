@@ -21,6 +21,11 @@ export async function GET(
       supabase.from('ingestion_jobs').select('*').eq('document_id', documentId).neq('status', 'complete').maybeSingle()
     ]);
 
+    console.log(`[Status API] SLO Database Response for ${documentId}:`, {
+      error: sloRes.error,
+      count: sloRes.data?.length
+    });
+
     if (docRes.error || !docRes.data) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }

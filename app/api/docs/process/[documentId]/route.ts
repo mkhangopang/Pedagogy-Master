@@ -376,9 +376,17 @@ export async function POST(
           is_orphan_domain: s.is_orphan_domain
         }));
 
+        console.log(`[Ingestion] Attempting to insert ${records.length} SLO records for document ${documentId}`);
         await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
         // BUG-R1 FIX: Use column names for onConflict
-        await adminSupabase.from('slo_database').upsert(records, { onConflict: 'document_id,slo_code' });
+        const { error: upsertError } = await adminSupabase.from('slo_database').upsert(records, { onConflict: 'document_id,slo_code' });
+        if (upsertError) {
+          console.error(`[Ingestion] Error upserting SLO records:`, upsertError);
+        } else {
+          console.log(`[Ingestion] Successfully upserted SLO records for document ${documentId}`);
+        }
+      } else {
+        console.log(`[Ingestion] No SLOs found to insert for document ${documentId}`);
       }
 
       const markdown = buildCleanMarkdown(scoredSLOs);
