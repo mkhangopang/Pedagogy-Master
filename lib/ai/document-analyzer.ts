@@ -102,8 +102,17 @@ export async function analyzeDocumentWithAI(
       }));
 
       // Scorch previous index if re-processing
+      console.log(`[Analyzer] Deleting existing SLOs for document ${documentId}`);
       await supabase.from('slo_database').delete().eq('document_id', documentId);
-      await supabase.from('slo_database').insert(sloRecords);
+      
+      console.log(`[Analyzer] Inserting ${sloRecords.length} SLO records for document ${documentId}`);
+      const { error: insertError } = await supabase.from('slo_database').insert(sloRecords);
+      
+      if (insertError) {
+        console.error(`[Analyzer] Error inserting SLO records:`, insertError);
+      } else {
+        console.log(`[Analyzer] Successfully inserted SLO records for document ${documentId}`);
+      }
     }
 
   } catch (error) {
