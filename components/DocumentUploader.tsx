@@ -1,3 +1,4 @@
+// FIXED: components/DocumentUploader.tsx — Pedagogy Master AI
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -17,6 +18,16 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const [docId, setDocId] = useState<string | null>(null);
   
   const isPolling = useRef(false);
+  // BUG-U1 FIX: Progress ref to avoid stale closure
+  const progressRef = useRef(0);
+  // BUG-U2 FIX: Component-scoped ref for heartbeat tracking
+  const lastTriggerRef = useRef<number>(0);
+
+  // Helper to update both state and ref
+  const updateProgress = (value: number) => {
+    progressRef.current = value;
+    setProgress(value);
+  };
 
   useEffect(() => {
     if (docId && isUploading && !isPolling.current) {
@@ -40,7 +51,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           if (data.status === 'ready' || data.status === 'complete') {
             clearInterval(poller);
             isPolling.current = false;
-            setProgress(100);
+            updateProgress(100);
             setStatus('Neural Alignment Verified!');
             setTimeout(() => onComplete(data), 1000);
           } else if (data.status === 'failed') {
@@ -65,24 +76,40 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           } else {
             // Use real progress from backend, only fallback to slow creep if progress is not moving
             const backendProgress = data.progress || 0;
-            setProgress(prev => {
-              if (backendProgress > prev) return backendProgress;
+            const currentProgress = progressRef.current;
+            
+            if (backendProgress > currentProgress) {
+              updateProgress(backendProgress);
+            } else {
               // Slow creep if we're waiting on a long step, but cap at 99% to avoid looking "complete"
-              return Math.min(99, prev + 0.1);
-            });
+              updateProgress(Math.min(99, currentProgress + 0.1));
+            }
+            
             setStatus(data.summary || 'Unrolling Curriculum Domains...');
 
-            // HEARTBEAT: If stuck at 98% for more than 30s, re-trigger process endpoint
-            // This handles serverless timeouts gracefully
-            if (Math.round(progress) >= 95) {
-              const lastTrigger = (window as any)._lastIngestTrigger || 0;
-              if (Date.now() - lastTrigger > 30000) {
-                (window as any)._lastIngestTrigger = Date.now();
+            // BUG-U1 & BUG-U2 FIX: Use refs for heartbeat check
+            if (Math.round(progressRef.current) >= 95) {
+              if (Date.now() - lastTriggerRef.current > 30000) {
+                lastTriggerRef.current = Date.now();
                 console.log("Stuck detected. Re-triggering neural orchestrator...");
+                
+                // BUG-U3 FIX: Add AbortController and timeout
+                const triggerController = new AbortController();
+                const triggerTimeout = setTimeout(() => triggerController.abort(), 290000);
+
                 fetch(`/api/docs/process/${docId}`, {
                   method: 'POST',
-                  headers: { 'Authorization': `Bearer ${session.access_token}` }
-                }).catch(e => console.warn("Heartbeat trigger failed", e));
+                  headers: { 'Authorization': `Bearer ${session.access_token}` },
+                  signal: triggerController.signal
+                }).then(async (res) => {
+                  clearTimeout(triggerTimeout);
+                  if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    console.error("Orchestrator Trigger Fault:", errData);
+                  }
+                }).catch(e => {
+                  if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);
+                });
               }
             }
           }
@@ -98,6 +125,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
       return () => {
         clearInterval(poller);
+        // BUG-U4 FIX: Reset isPolling.current on unmount
         isPolling.current = false;
       };
     }
@@ -109,7 +137,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
     setError(null);
     setIsUploading(true);
-    setProgress(5);
+    updateProgress(5);
     setStatus('Handshaking with Grid...');
 
     try {
@@ -120,7 +148,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       const { uploadUrl, documentId } = handshake;
       setDocId(documentId);
       
-      setProgress(20);
+      updateProgress(20);
       setStatus('Streaming Binary Payload...');
       
       const uploadRes = await fetch(uploadUrl, { 
@@ -131,18 +159,26 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       
       if (!uploadRes.ok) throw new Error("R2_GATEWAY_REJECTION: Link severed.");
 
-      setProgress(40);
+      updateProgress(40);
       setStatus('Initializing Neural Orchestrator...');
       
+      // BUG-U3 FIX: Add AbortController and timeout
+      const triggerController = new AbortController();
+      const triggerTimeout = setTimeout(() => triggerController.abort(), 290000);
+
       fetch(`/api/docs/process/${documentId}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${session.access_token}` }
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+        signal: triggerController.signal
       }).then(async (res) => {
+        clearTimeout(triggerTimeout);
         if (!res.ok) {
-           const errData = await res.json();
+           const errData = await res.json().catch(() => ({}));
            console.error("Orchestrator Trigger Fault:", errData);
         }
-      }).catch(e => console.warn("Background trigger warning:", e));
+      }).catch(e => {
+        if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);
+      });
 
     } catch (err: any) {
       setError(err.message || "Institutional Sync Failure.");
@@ -194,7 +230,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                </div>
             </div>
             <button 
-              onClick={() => {setError(null); setIsUploading(false); setProgress(0); setDocId(null);}} 
+              onClick={() => {setError(null); setIsUploading(false); updateProgress(0); setDocId(null);}} 
               className={`w-full py-4 ${isQuotaError ? 'bg-indigo-600' : 'bg-rose-600'} text-white rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] shadow-xl hover:opacity-90 active:scale-95 transition-all flex items-center justify-center gap-2`}
             >
               <RefreshCw size={14}/> {isQuotaError ? 'Wait and Retry' : 'Re-Initialize Node'}

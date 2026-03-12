@@ -51,7 +51,7 @@ const Documents: React.FC<DocumentsProps> = ({
   };
 
   const processingIds = documents
-    .filter(d => d.status === 'processing' || d.status === 'indexing' || d.status === 'draft')
+    .filter(d => d.status === 'processing' || d.status === 'pending')
     .map(d => d.id)
     .join(',');
 
@@ -85,7 +85,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
             if (hasChanged) {
               onUpdateDocument(updated.id, { 
-                status: updated.status === 'complete' ? 'ready' : updated.status as any,
+                status: updated.status as any,
                 documentSummary: updated.document_summary,
                 difficultyLevel: updated.difficulty_level,
                 geminiProcessed: updated.rag_indexed,
@@ -189,8 +189,8 @@ const Documents: React.FC<DocumentsProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {documents.map(doc => {
-          const isProcessing = doc.status === 'processing' || doc.status === 'draft' || doc.status === 'indexing';
-          const isReady = doc.status === 'ready' || doc.status === 'complete';
+          const isProcessing = doc.status === 'processing' || doc.status === 'pending';
+          const isReady = doc.status === 'ready';
           const isFailed = doc.status === 'failed';
           const showDelete = canDeleteNode(doc);
 

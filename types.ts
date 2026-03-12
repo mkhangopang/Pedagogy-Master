@@ -1,3 +1,4 @@
+// FIXED: types.ts — Pedagogy Master AI
 export enum UserRole {
   TEACHER = 'teacher',
   ENTERPRISE_ADMIN = 'enterprise_admin',
@@ -84,7 +85,7 @@ export interface Document {
   userId: string;
   workspaceId?: string;
   name: string;
-  status: 'draft' | 'validating' | 'ready' | 'failed' | 'processing' | 'completed' | 'indexing' | 'complete' | 'pending';
+  status: 'pending' | 'processing' | 'ready' | 'failed';
   sourceType: 'markdown' | 'pdf_archival';
   isApproved: boolean;
   curriculumName: string;

@@ -1,9 +1,12 @@
+// FIXED: app/api/docs/process/[documentId]/route.ts — Pedagogy Master AI
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { IngestionStep } from '../../../../../types';
 import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
+import pdf from 'pdf-parse';
+import { GoogleGenAI } from "@google/genai";
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; 
@@ -13,7 +16,8 @@ export const maxDuration = 300;
 // ─────────────────────────────────────────────────────────────────────
 // Stage 1 — EXTRACT  : pdf-parse (deterministic)
 // Stage 2 — LINEARIZE : Regex state-machine (zero AI tokens)
-// Stage 3 — EMBED    : Vector indexing
+// Stage 3 — ENRICH    : AI Bloom Taxonomy classification
+// Stage 4 — EMBED    : Vector indexing
 // ═══════════════════════════════════════════════════════════════════════
 
 const PAKISTAN_BOARDS: Record<string, {
@@ -128,6 +132,9 @@ function deterministicExtract(
   const lines = text.split(/\r?\n/);
   let charPos = 0;
 
+  // BUG-R3 FIX: Cache compiled regex
+  const compiledSloCheck = new RegExp(board.sloRegex.source);
+
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx];
     const trimmed = line.trim();
@@ -162,7 +169,8 @@ function deterministicExtract(
       while (nextLineIdx < lines.length && mergeCount < maxMerge) {
         const nextLine = lines[nextLineIdx].trim();
         if (!nextLine) break;
-        const isNewSLO = new RegExp(board.sloRegex.source).test(nextLine);
+        // BUG-R3 FIX: Use cached regex
+        const isNewSLO = compiledSloCheck.test(nextLine);
         const isNewGrade = /^(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/i.test(nextLine);
         const isNewDomain = /^(?:DOMAIN|STRAND|UNIT)\s+[A-Z]\s*[:\-]/i.test(nextLine);
         const isPageNumber = /^\d{1,3}$/.test(nextLine);
@@ -176,7 +184,7 @@ function deterministicExtract(
       // Clean leading punctuation and brackets
       sloText = sloText.replace(/^[\]\:\-\s\.]+/g, '').trim();
 
-      const codePartsMatch = rawCode.match(/([A-Z]{1,3})-(\d{1,2})-([A-Z])-(\d{1,2})/);
+      const codePartsMatch = rawCode.match(/([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/);
       let codeDomain = currentDomain;
       let codeGrade = currentGrade;
       let codeSubject = subjectCode;
@@ -303,7 +311,7 @@ export async function POST(
 
       await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 18, message: 'Detecting document type...' });
 
-      const pdf = (await import('pdf-parse')).default;
+      // BUG-R4 FIX: Static import used instead of dynamic
       const parseResult = await pdf(buffer);
       const text = parseResult.text?.trim() || '';
 
@@ -321,7 +329,8 @@ export async function POST(
       }).eq('id', documentId);
 
       await queue.updateProgress(job.id, { step: IngestionStep.LINEARIZE, progress: 30, message: 'Linearizing Curriculum...' });
-      job.step = IngestionStep.LINEARIZE;
+      // BUG-R5 FIX: Re-read authoritative state
+      job = await queue.getJobStatus(documentId);
     }
 
     // ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
@@ -333,7 +342,13 @@ export async function POST(
       const boardKey = summaryMeta.match(/board:(\w+)/)?.[1] || 'SINDH';
       const subjectCode = summaryMeta.match(/subject:(\w+)/)?.[1] || 'B';
       const estimatedPages = parseInt(summaryMeta.match(/pages:~?(\d+)/)?.[1] || '100');
-      const isOcrReliable = true; 
+      
+      // BUG-R7 FIX: Compute isOcrReliable
+      const avgLineLength = rawText.split('\n')
+        .filter((l: string) => l.trim().length > 0)
+        .reduce((sum: number, l: string) => sum + l.length, 0) / (rawText.split('\n').length || 1);
+      const isOcrReliable = avgLineLength > 30 && rawText.length > 500;
+
       const declaredDomains = scanDeclaredDomains(rawText);
 
       const rawSLOs = deterministicExtract(rawText, boardKey, declaredDomains, subjectCode, estimatedPages, 0);
@@ -359,7 +374,8 @@ export async function POST(
         }));
 
         await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
-        await adminSupabase.from('slo_database').upsert(records, { onConflict: 'slo_database_unique_slo' });
+        // BUG-R1 FIX: Use column names for onConflict
+        await adminSupabase.from('slo_database').upsert(records, { onConflict: 'document_id,slo_code' });
       }
 
       const markdown = buildCleanMarkdown(scoredSLOs);
@@ -368,8 +384,73 @@ export async function POST(
         document_summary: `Linearized — ${scoredSLOs.length} SLOs`,
       }).eq('id', documentId);
 
-      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 70, message: 'Building Neural Index...' });
-      job.step = IngestionStep.EMBED;
+      // BUG-R2 FIX: Advance to ENRICH stage
+      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 60, message: 'Classifying Bloom Taxonomy...' });
+      // BUG-R5 FIX: Re-read authoritative state
+      job = await queue.getJobStatus(documentId);
+    }
+
+    // ── STAGE 3: ENRICH (AI Bloom Taxonomy) ───────────────────────────────
+    if (job.step === IngestionStep.ENRICH) {
+      try {
+        const { data: slos } = await adminSupabase
+          .from('slo_database')
+          .select('slo_code, slo_full_text')
+          .eq('document_id', documentId);
+
+        if (slos && slos.length > 0) {
+          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
+          
+          // Batch into groups of 20
+          const batchSize = 20;
+          for (let i = 0; i < slos.length; i += batchSize) {
+            const batch = slos.slice(i, i + batchSize);
+            const prompt = `You are a Bloom's Taxonomy classifier for educational curriculum.
+Classify each SLO into exactly one level: Remember, Understand, Apply, Analyze, Evaluate, or Create.
+
+Rules:
+- Remember: recall, list, name, define, identify
+- Understand: explain, describe, summarize, interpret, classify
+- Apply: use, solve, demonstrate, calculate, implement
+- Analyze: differentiate, compare, examine, break down, distinguish
+- Evaluate: judge, critique, justify, assess, recommend
+- Create: design, construct, produce, formulate, compose
+
+Respond ONLY with a valid JSON array. No explanation, no markdown.
+Each item: { "slo_code": "...", "bloom_level": "..." }
+
+SLOs to classify:
+${batch.map(s => `${s.slo_code}: ${s.slo_full_text}`).join('\n')}`;
+
+            const response = await ai.models.generateContent({
+              model: "gemini-2.0-flash",
+              contents: [{ parts: [{ text: prompt }] }],
+              config: { responseMimeType: "application/json" }
+            });
+
+            const resultText = response.text;
+            if (resultText) {
+              const classifications = JSON.parse(resultText);
+
+              if (Array.isArray(classifications)) {
+                const updates = classifications.map(c => ({
+                  document_id: documentId,
+                  slo_code: c.slo_code,
+                  bloom_level: c.bloom_level
+                }));
+                
+                await adminSupabase.from('slo_database').upsert(updates, { onConflict: 'document_id,slo_code' });
+              }
+            }
+          }
+        }
+      } catch (enrichErr) {
+        console.warn("[Enrichment] Non-fatal failure:", enrichErr);
+      }
+
+      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Building Neural Index...' });
+      // BUG-R5 FIX: Re-read authoritative state
+      job = await queue.getJobStatus(documentId);
     }
 
     // ── STAGE 4: EMBED ────────────────────────────────────────────────────
@@ -388,7 +469,7 @@ export async function POST(
         document_summary: 'Neural grid verified.'
       }).eq('id', documentId);
       
-      await adminSupabase.rpc('reload_schema_cache');
+      // BUG-R6 FIX: Removed reload_schema_cache
     }
 
     return NextResponse.json({ success: true });
