@@ -366,7 +366,7 @@ export async function POST(
           document_id: documentId,
           slo_code: s.slo_code,
           slo_full_text: s.slo_full_text,
-          domain_tag: s.domain,
+          domain: s.domain,
           domain_name: s.domain_name,
           bloom_level: 'Understand',
           subject: s.subject,
@@ -374,7 +374,11 @@ export async function POST(
           extraction_confidence: s.extraction_confidence,
           page_number: s.page_number_estimate || null,
           is_truncated: s.is_truncated,
-          is_orphan_domain: s.is_orphan_domain
+          is_orphan_domain: s.is_orphan_domain,
+          raw_code_as_found: s.raw_code_as_found,
+          char_offset: s.char_offset,
+          benchmark: s.benchmark,
+          board: s.board
         }));
 
         console.log(`[Ingestion] Attempting to insert ${records.length} SLO records for document ${documentId}`);
