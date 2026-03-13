@@ -36,7 +36,7 @@ const PAKISTAN_BOARDS: Record<string, {
       'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
       'E': 'English', 'U': 'Urdu', 'CS': 'Computer Science', 'GEO': 'Geography',
     },
-    sloRegex: /(?:\[|\b)(?:SL[O0]\s*[:\-]?\s*)?([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})(?:\]|\b)|(?:SLO|LO)\s*[:\-]?\s*(\d+)\.(\d+)\.(\d+)/gi,
+    sloRegex: /(?:\[SL[O0][:\]\s]*)?([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})|(?:SLO|LO)\s*[:\-]?\s*(\d+)\.(\d+)\.(\d+)/gi,
     gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
     benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
@@ -112,77 +112,128 @@ interface RawSLO {
   regex_confidence: number;
 }
 
-async function aiExtractSLOs(text: string, documentId: string, boardKey: string): Promise<RawSLO[]> {
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
-  
-  const prompt = `You are an expert curriculum analyst. Extract all Student Learning Outcomes (SLOs) from the provided curriculum text.
-  
-  The SLO codes can have diverse formats, such as:
-  - B09A01, b09a01
-  - C-09-A-01, B-09-A-01
-  - 1.1.1, 2.2.1
-  - CIXA01, M01X01
-  
-  Please normalize the SLO codes to a consistent format (e.g., B09A01) if possible, or keep the original if normalization is ambiguous.
-  
-  Extract the following fields for each SLO:
-  - slo_code: The normalized or original SLO code.
-  - slo_full_text: The full text of the SLO.
-  - grade: The grade level (e.g., 09, 10, 11, 12).
-  - domain: The domain code (e.g., A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, X).
-  - domain_name: The name of the domain.
-  - subject: The subject (e.g., Biology, Chemistry, Physics, Mathematics).
-  - bloom_level: Classify into: Remember, Understand, Apply, Analyze, Evaluate, or Create.
+function deterministicExtract(
+  text: string,
+  boardKey: string,
+  declaredDomains: Record<string, string>,
+  subjectCode: string,
+  estimatedPages: number,
+  chunkCharOffset: number,
+): RawSLO[] {
+  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS['SINDH'];
+  const subjectName = board.subjectCodes[subjectCode] || 'Unknown';
+  const results: RawSLO[] = [];
 
-  Respond ONLY with a valid JSON array. No explanation, no markdown.
-  
-  Curriculum Text:
-  ${text.substring(0, 50000)}
-  `;
+  let currentGrade = '';
+  let currentDomain = '';
+  let currentDomainName = '';
+  let currentBenchmark = '';
 
-  const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: [{ parts: [{ text: prompt }] }],
-    config: { responseMimeType: "application/json" }
-  });
+  const lines = text.split(/\r?\n/);
+  let charPos = 0;
 
-  const resultText = response.text;
-  if (!resultText) return [];
-  
-  try {
-    const slos = JSON.parse(resultText);
-    return slos.map((s: any) => ({
-      slo_code: s.slo_code,
-      raw_code_as_found: s.slo_code,
-      slo_full_text: s.slo_full_text,
-      grade: s.grade,
-      domain: s.domain,
-      domain_name: s.domain_name,
-      benchmark: '',
-      subject: s.subject,
-      subject_code: s.subject.substring(0,1).toUpperCase(),
-      board: boardKey,
-      char_offset: 0,
-      page_number_estimate: 0,
-      is_truncated: false,
-      is_orphan_domain: false,
-      regex_confidence: 1.0,
-      bloom_level: s.bloom_level
-    }));
-  } catch (e) {
-    console.error("[Ingestion] Failed to parse AI extraction:", e);
-    return [];
+  // BUG-R3 FIX: Cache compiled regex
+  const compiledSloCheck = new RegExp(board.sloRegex.source);
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+    const trimmed = line.trim();
+    charPos += line.length + 1;
+
+    const gradeMatch = trimmed.match(/(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/i);
+    if (gradeMatch) { currentGrade = normalizeGrade(gradeMatch[1]); continue; }
+
+    const domainMatch = trimmed.match(/(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*(.+)/i);
+    if (domainMatch) {
+      currentDomain = domainMatch[1].toUpperCase();
+      currentDomainName = domainMatch[2].trim();
+      if (!declaredDomains[currentDomain]) declaredDomains[currentDomain] = currentDomainName;
+      continue;
+    }
+
+    const bmMatch = trimmed.match(/(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/i);
+    if (bmMatch) { currentBenchmark = bmMatch[1].trim(); continue; }
+
+    const sloRegex = new RegExp(board.sloRegex.source, 'g');
+    let sloMatch;
+    while ((sloMatch = sloRegex.exec(trimmed)) !== null) {
+      const rawCode = sloMatch[0];
+      let normalizedCode = board.normalizeFn(rawCode);
+
+      let sloText = trimmed.substring(sloMatch.index + rawCode.length).trim();
+
+      let nextLineIdx = lineIdx + 1;
+      const maxMerge = 6;
+      let mergeCount = 0;
+
+      while (nextLineIdx < lines.length && mergeCount < maxMerge) {
+        const nextLine = lines[nextLineIdx].trim();
+        if (!nextLine) break;
+        // BUG-R3 FIX: Use cached regex
+        const isNewSLO = compiledSloCheck.test(nextLine);
+        const isNewGrade = /^(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/i.test(nextLine);
+        const isNewDomain = /^(?:DOMAIN|STRAND|UNIT)\s+[A-Z]\s*[:\-]/i.test(nextLine);
+        const isPageNumber = /^\d{1,3}$/.test(nextLine);
+        const isHeader = nextLine.length < 5;
+        if (isNewSLO || isNewGrade || isNewDomain || isPageNumber || isHeader) break;
+        sloText = sloText ? `${sloText} ${nextLine}` : nextLine;
+        nextLineIdx++;
+        mergeCount++;
+      }
+
+      // Clean leading punctuation and brackets
+      sloText = sloText.replace(/^[\]\:\-\s\.]+/g, '').trim();
+
+      const codePartsMatch = rawCode.match(/([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/);
+      let codeDomain = currentDomain;
+      let codeGrade = currentGrade;
+      let codeSubject = subjectCode;
+
+      if (codePartsMatch) {
+        codeSubject = codePartsMatch[1];
+        codeGrade = normalizeGrade(codePartsMatch[2]);
+        codeDomain = codePartsMatch[3];
+        const sloNum = codePartsMatch[4];
+        // Ensure consistent 6-character code: B09A01
+        normalizedCode = `${codeSubject}${codeGrade}${codeDomain}${sloNum.padStart(2, '0')}`;
+      }
+
+      const hasDeclaredDomains = Object.keys(declaredDomains).length > 0;
+      const isOrphan: boolean = !!(hasDeclaredDomains && codeDomain && !declaredDomains[codeDomain]);
+
+      const wordCount = sloText.split(/\s+/).filter(Boolean).length;
+      const endsWithPunctuation = /[.!?;]$/.test(sloText.trim());
+      const isTruncated = wordCount < 4 || (!endsWithPunctuation && wordCount < 8);
+
+      const regexConfidence = codePartsMatch ? 1.0 : 0.6;
+
+      const absoluteOffset = chunkCharOffset + charPos;
+      const pageEstimate = estimatedPages > 0
+        ? Math.ceil((absoluteOffset / (text.length + chunkCharOffset)) * estimatedPages)
+        : null;
+
+      results.push({
+        slo_code: normalizedCode,
+        raw_code_as_found: rawCode,
+        slo_full_text: sloText || `[Code found: ${normalizedCode} — text not captured]`,
+        grade: codeGrade || currentGrade || '',
+        domain: codeDomain || currentDomain || '',
+        domain_name: declaredDomains[codeDomain] || currentDomainName || `Domain ${codeDomain}`,
+        benchmark: currentBenchmark,
+        subject: board.subjectCodes[codeSubject] || subjectName,
+        subject_code: codeSubject || subjectCode,
+        board: boardKey,
+        char_offset: absoluteOffset,
+        page_number_estimate: pageEstimate || 0,
+        is_truncated: isTruncated,
+        is_orphan_domain: isOrphan,
+        regex_confidence: regexConfidence,
+      });
+    }
   }
-}
 
-function computeConfidence(slo: RawSLO, isOcrReliable: boolean): number {
-  const weights = { regex: 0.35, domain: 0.25, boundary: 0.20, ocr: 0.20 };
-  return Math.round((
-    (slo.regex_confidence * weights.regex) +
-    ((!slo.is_orphan_domain ? 1.0 : 0.2) * weights.domain) +
-    ((slo.is_truncated ? 0.3 : 1.0) * weights.boundary) +
-    ((isOcrReliable ? 1.0 : 0.6) * weights.ocr)
-  ) * 100) / 100;
+  console.log(`[Ingestion] deterministicExtract: Found ${results.length} SLOs for board ${boardKey}`);
+  return results;
 }
 
 function scanDeclaredDomains(text: string): Record<string, string> {
@@ -293,7 +344,7 @@ export async function POST(
 
       const declaredDomains = scanDeclaredDomains(rawText);
 
-      const rawSLOs = await aiExtractSLOs(rawText, documentId, boardKey);
+      const rawSLOs = deterministicExtract(rawText, boardKey, declaredDomains, subjectCode, estimatedPages, 0);
       const scoredSLOs = rawSLOs.map(slo => ({
         ...slo,
         extraction_confidence: computeConfidence(slo, isOcrReliable),
