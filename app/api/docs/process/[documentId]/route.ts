@@ -36,7 +36,7 @@ const PAKISTAN_BOARDS: Record<string, {
       'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
       'E': 'English', 'U': 'Urdu', 'CS': 'Computer Science', 'GEO': 'Geography',
     },
-    sloRegex: /(?:\[SL[O0][:\]\s]*)?([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})|(?:SLO|LO)\s*[:\-]?\s*(\d+)\.(\d+)\.(\d+)/gi,
+    sloRegex: /(?:SLO\s+)([A-Z]{1,3})(\d{2})([A-Z])(\d{2})/gi,
     gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
     benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
