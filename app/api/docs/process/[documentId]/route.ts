@@ -112,6 +112,16 @@ interface RawSLO {
   regex_confidence: number;
 }
 
+function computeConfidence(slo: RawSLO, isOcrReliable: boolean): number {
+  const weights = { regex: 0.35, domain: 0.25, boundary: 0.20, ocr: 0.20 };
+  return Math.round((
+    (slo.regex_confidence * weights.regex) +
+    ((!slo.is_orphan_domain ? 1.0 : 0.2) * weights.domain) +
+    ((slo.is_truncated ? 0.3 : 1.0) * weights.boundary) +
+    ((isOcrReliable ? 1.0 : 0.6) * weights.ocr)
+  ) * 100) / 100;
+}
+
 function deterministicExtract(
   text: string,
   boardKey: string,
