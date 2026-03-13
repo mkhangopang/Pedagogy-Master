@@ -393,64 +393,7 @@ export async function POST(
 
     // ── STAGE 3: ENRICH (AI Bloom Taxonomy) ───────────────────────────────
     if (job.step === IngestionStep.ENRICH) {
-      try {
-        const { data: slos } = await adminSupabase
-          .from('slo_database')
-          .select('slo_code, slo_full_text')
-          .eq('document_id', documentId);
-
-        if (slos && slos.length > 0) {
-          const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
-          
-          // Batch into groups of 20
-          const batchSize = 20;
-          for (let i = 0; i < slos.length; i += batchSize) {
-            const batch = slos.slice(i, i + batchSize);
-            const prompt = `You are a Bloom's Taxonomy classifier for educational curriculum.
-Classify each SLO into exactly one level: Remember, Understand, Apply, Analyze, Evaluate, or Create.
-
-Rules:
-- Remember: recall, list, name, define, identify
-- Understand: explain, describe, summarize, interpret, classify
-- Apply: use, solve, demonstrate, calculate, implement
-- Analyze: differentiate, compare, examine, break down, distinguish
-- Evaluate: judge, critique, justify, assess, recommend
-- Create: design, construct, produce, formulate, compose
-
-Respond ONLY with a valid JSON array. No explanation, no markdown.
-Each item: { "slo_code": "...", "bloom_level": "..." }
-
-SLOs to classify:
-${batch.map(s => `${s.slo_code}: ${s.slo_full_text}`).join('\n')}`;
-
-            const response = await ai.models.generateContent({
-              model: "gemini-2.0-flash",
-              contents: [{ parts: [{ text: prompt }] }],
-              config: { responseMimeType: "application/json" }
-            });
-
-            const resultText = response.text;
-            if (resultText) {
-              const classifications = JSON.parse(resultText);
-
-              if (Array.isArray(classifications)) {
-                const updates = classifications.map(c => ({
-                  document_id: documentId,
-                  slo_code: c.slo_code,
-                  bloom_level: c.bloom_level
-                }));
-                
-                await adminSupabase.from('slo_database').upsert(updates, { onConflict: 'document_id,slo_code' });
-              }
-            }
-          }
-        }
-      } catch (enrichErr) {
-        console.warn("[Enrichment] Non-fatal failure:", enrichErr);
-      }
-
       await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Building Neural Index...' });
-      // BUG-R5 FIX: Re-read authoritative state
       job = await queue.getJobStatus(documentId);
     }
 
