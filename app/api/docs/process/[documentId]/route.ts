@@ -338,6 +338,7 @@ export async function POST(
 
     // ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
     if (job.step === IngestionStep.LINEARIZE) {
+      console.log(`[Ingestion] Starting LINEARIZE for ${documentId}`);
       const { data: current } = await adminSupabase.from('documents').select('extracted_text, document_summary').eq('id', documentId).single();
       const rawText = current?.extracted_text || '';
       const summaryMeta = current?.document_summary || '';
@@ -409,6 +410,7 @@ export async function POST(
 
     // ── STAGE 4: EMBED ────────────────────────────────────────────────────
     if (job.step === IngestionStep.EMBED) {
+      console.log(`[Ingestion] Starting EMBED for ${documentId}`);
       const { data: finalDoc } = await adminSupabase.from('documents').select('extracted_text').eq('id', documentId).single();
       const textToEmbed = finalDoc?.extracted_text || '';
 
