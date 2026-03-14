@@ -25,7 +25,7 @@ export async function callGroq(
         model: 'llama-3.3-70b-versatile',
         messages, 
         temperature: hasDocuments ? 0.0 : 0.7,
-        max_tokens: 4096,
+        max_tokens: 8192,
         top_p: 1
       })
     });

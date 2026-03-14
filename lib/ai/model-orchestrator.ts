@@ -43,7 +43,7 @@ export class ModelOrchestrator {
         return 'gemini-3.1-flash-preview'; 
       case 'lookup':
       default:
-        return 'gemini-3.1-flash-lite-preview';
+        return 'gemini-3-flash-preview'; // Use standard Flash for lookup
     }
   }
 

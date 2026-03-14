@@ -157,37 +157,42 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   ${processingText}
   `;
 
+  const schema = {
+    type: Type.OBJECT,
+    properties: {
+      slos: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            slo_code: { type: Type.STRING, nullable: true },
+            slo_full_text: { type: Type.STRING },
+            grade: { type: Type.STRING, nullable: true },
+            domain: { type: Type.STRING, nullable: true },
+            domain_name: { type: Type.STRING, nullable: true },
+            benchmark: { type: Type.STRING, nullable: true },
+            subject: { type: Type.STRING, nullable: true },
+            subject_code: { type: Type.STRING, nullable: true },
+            board: { type: Type.STRING, nullable: true }
+          },
+          required: ["slo_full_text"]
+        }
+      }
+    }
+  };
+
+  const apiKey = resolveApiKey();
+  const ai = new GoogleGenAI({ apiKey });
+
+  // TIER 1: Gemini 3.1 Pro (Maximum Reasoning)
   try {
-    // Attempt Primary Node (Gemini 3.1 Pro for Maximum Reasoning)
-    const ai = new GoogleGenAI({ apiKey: resolveApiKey() });
+    console.log(`[Ingestion] Attempting Tier 1: Gemini 3.1 Pro...`);
     const response = await ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            slos: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  slo_code: { type: Type.STRING, nullable: true },
-                  slo_full_text: { type: Type.STRING },
-                  grade: { type: Type.STRING, nullable: true },
-                  domain: { type: Type.STRING, nullable: true },
-                  domain_name: { type: Type.STRING, nullable: true },
-                  benchmark: { type: Type.STRING, nullable: true },
-                  subject: { type: Type.STRING, nullable: true },
-                  subject_code: { type: Type.STRING, nullable: true },
-                  board: { type: Type.STRING, nullable: true }
-                },
-                required: ["slo_full_text"]
-              }
-            }
-          }
-        },
+        responseSchema: schema,
         thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
       }
     });
@@ -199,16 +204,39 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
     const isQuotaError = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED');
     
     if (isQuotaError) {
-      console.warn(`[Ingestion Node] Gemini Quota Hit. Engaging Orchestrator Fallback...`);
-      // Use the orchestrator which has access to Mistral, Groq, SambaNova, etc.
-      const result = await orchestrator.executeTask(prompt, 'creation');
+      console.warn(`[Ingestion] Tier 1 Quota Hit. Falling back to Tier 2: Gemini 3 Flash...`);
       
+      // TIER 2: Gemini 3 Flash (High Quota, High Speed)
       try {
-        const data = extractJson(result.text);
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: schema
+          }
+        });
+
+        const data = extractJson(response.text || '{"slos": []}');
         return processSlos(data.slos || [], boardKey, subjectCode);
-      } catch (parseErr) {
-        console.error("[Ingestion Node] Fallback JSON Parse Failure:", parseErr);
-        throw new Error("Neural Extraction Failed: All nodes exhausted or returned invalid data.");
+
+      } catch (flashErr: any) {
+        const isFlashQuota = flashErr.message?.includes('429') || flashErr.message?.includes('quota');
+        
+        if (isFlashQuota) {
+          console.warn(`[Ingestion] Tier 2 Quota Hit. Engaging Orchestrator (Multi-Node Fallback)...`);
+          
+          // TIER 3: Orchestrator (Mistral, Groq, SambaNova, etc.)
+          const result = await orchestrator.executeTask(prompt, 'creation');
+          try {
+            const data = extractJson(result.text);
+            return processSlos(data.slos || [], boardKey, subjectCode);
+          } catch (parseErr) {
+            console.error("[Ingestion] Fallback JSON Parse Failure:", parseErr);
+            throw new Error("Neural Extraction Failed: All nodes exhausted or returned invalid data.");
+          }
+        }
+        throw flashErr;
       }
     }
     throw err;

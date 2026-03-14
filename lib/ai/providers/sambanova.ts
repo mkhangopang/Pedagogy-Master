@@ -22,7 +22,7 @@ export async function callSambaNova(
         model: 'Meta-Llama-3.1-70B-Instruct',
         messages, 
         temperature: 0.1, 
-        max_tokens: 4096
+        max_tokens: 8192
       })
     });
 

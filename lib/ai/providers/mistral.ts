@@ -21,7 +21,7 @@ export async function callMistral(
       model: 'mistral-large-latest',
       messages, 
       temperature: hasDocuments ? 0.0 : 0.7,
-      max_tokens: 4096
+      max_tokens: 8192
     })
   });
 
