@@ -165,12 +165,25 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   const schema = {
     type: Type.OBJECT,
     properties: {
+      metadata: {
+        type: Type.OBJECT,
+        properties: {
+          subject: { type: Type.STRING },
+          subject_code: { type: Type.STRING },
+          board: { type: Type.STRING },
+          grades_found: { type: Type.ARRAY, items: { type: Type.STRING } },
+          domains_found: { type: Type.ARRAY, items: { type: Type.STRING } },
+          total_slos_extracted: { type: Type.INTEGER },
+          extraction_notes: { type: Type.STRING }
+        }
+      },
       slos: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
           properties: {
             slo_code: { type: Type.STRING, nullable: true },
+            raw_code_as_found: { type: Type.STRING },
             slo_full_text: { type: Type.STRING },
             grade: { type: Type.STRING, nullable: true },
             domain: { type: Type.STRING, nullable: true },
@@ -178,9 +191,11 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
             benchmark: { type: Type.STRING, nullable: true },
             subject: { type: Type.STRING, nullable: true },
             subject_code: { type: Type.STRING, nullable: true },
-            board: { type: Type.STRING, nullable: true }
+            board: { type: Type.STRING, nullable: true },
+            is_truncated: { type: Type.BOOLEAN },
+            is_orphan_domain: { type: Type.BOOLEAN }
           },
-          required: ["slo_full_text"]
+          required: ["slo_full_text", "raw_code_as_found", "is_truncated", "is_orphan_domain"]
         }
       }
     }
@@ -194,25 +209,176 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
     const processingText = text.substring(offset, offset + CHUNK_SIZE);
     console.log(`[Ingestion] Processing chunk at offset ${offset}, length ${processingText.length}`);
 
-    const prompt = `### NEURAL CURRICULUM EXTRACTION TASK (CHUNK ${Math.floor(offset/CHUNK_SIZE) + 1})
-    You are an elite pedagogical data engineer. Extract all Student Learning Outcomes (SLOs) and Curriculum Aims from the provided text.
-    
-    ### EXTRACTION STRATEGY:
-    1. **SPECIFIC SLOs**: Capture outcomes with explicit codes (e.g., B-09-A-01, 1.1.1).
-    2. **CURRICULUM AIMS/STANDARDS**: High-level goals (e.g., "Knowledgeable about key concepts").
-    3. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
-    4. **ZERO HALLUCINATION (METADATA)**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
-    5. **FORMAT**: Return ONLY a valid JSON object with a "slos" key containing the array.
-    
-    ### CONTEXT:
-    - TARGET_BOARD: ${boardKey}
-    - TARGET_SUBJECT: ${subjectCode}
-    
-    ${feedbackPrompt}
-    
-    ### TEXT TO PROCESS:
-    ${processingText}
-    `;
+    const prompt = `You are an elite pedagogical data engineer specializing in Pakistani curriculum extraction for the Sindh Board (DCAR - Directorate of Curriculum, Assessment & Research, Jamshoro).
+
+Your sole task is to extract Student Learning Outcomes (SLOs) from Sindh Board curriculum documents with zero hallucination and maximum fidelity.
+
+═══════════════════════════════════════════════════════════
+UNIVERSAL SLO CODE SYSTEM — MEMORIZE THIS
+═══════════════════════════════════════════════════════════
+
+Every SLO has a structured code:
+  [SUBJECT] [GRADE] [DOMAIN] [NUMBER]
+
+SUBJECT CODES (1–3 uppercase letters):
+  B   = Biology
+  C   = Chemistry
+  P   = Physics
+  M   = Mathematics
+  E   = English
+  U   = Urdu
+  S   = General Science
+  CS  = Computer Science
+  GEO = Geography
+  ECO = Economics
+  PST = Pakistan Studies
+
+GRADE CODES (always output as 2-digit number):
+  IX   → 09
+  X    → 10
+  XI   → 11
+  XII  → 12
+  (If already numeric: 9→09, 10→10, 11→11, 12→12)
+
+DOMAIN CODES (single uppercase letter A–Z):
+  Each domain letter maps to a named domain found in the document.
+
+SLO NUMBER (always output as 2-digit, padded):
+  1→01, 2→02, 9→09, 10→10, 27→27, 35→35
+
+NORMALIZED OUTPUT FORMAT (no dashes, no brackets):
+  Input:  [SLO:B-09-A-01]   →  Output code: B09A01
+  Input:  [SLO:C-11-B-15]   →  Output code: C11B15
+  Input:  SL0:B-12-K-03     →  Output code: B12K03  (SL0 with zero = OCR error)
+  Input:  B-9-A-1           →  Output code: B09A01  (pad grade and number)
+  Input:  [SLO:B-09-A-0l]   →  Output code: B09A01  (l = lowercase L = OCR for 1)
+  Input:  5L0:C-11-B-19     →  Output code: C11B19  (5L0 = OCR error for SLO)
+  Input:  BIX-A-01          →  Output code: B09A01  (IX = Roman numeral grade)
+  Input:  BXII-K-03         →  Output code: B12K03  (XII = Roman numeral grade)
+
+═══════════════════════════════════════════════════════════
+OCR ERROR CORRECTION RULES — APPLY ALWAYS
+═══════════════════════════════════════════════════════════
+
+Before normalizing any code, apply these fixes IN ORDER:
+
+1. Strip prefixes:    Remove [SLO:  or SLO:  or SL0:  or 5L0:  or LO:
+2. Strip wrappers:    Remove [  ]  (  )  :
+3. Strip separators:  Remove all dashes -  dots .  spaces
+4. Fix trailing L→1:  If code ends in letter L after digits → replace with 1
+                      Example: C09A0l → C09A01
+5. Fix O→0:           If letter O appears where a digit is expected → replace with 0
+                      Example: C09AO1 → C09A01
+6. Pad grade:         Single digit grade → pad to 2: 9→09, not 9→9
+7. Pad SLO number:    Single digit number → pad to 2: 1→01, not 1→1
+8. Roman numerals:    IX→09, X→10, XI→11, XII→12 when in grade position
+
+═══════════════════════════════════════════════════════════
+GRADE DETECTION HIERARCHY
+═══════════════════════════════════════════════════════════
+
+Detect grade using this priority order:
+1. EXPLICIT in the SLO code itself:        [SLO:B-11-B-05] → grade 11
+2. SECTION HEADER in text:                 "Grade – XI" or "XI" section → grade 11
+3. BENCHMARK header above SLO:             "Benchmark 1: Grade XI..." → grade 11
+4. CHAPTER header:                         "IX Chapter 01" → grade 09
+5. DOMAIN header context:                  Domain only appears in certain grades
+6. DOCUMENT title:                         "Biology Grade XI-XII" → grades 11 or 12
+7. FALLBACK:                               If cannot determine → null (never guess)
+
+═══════════════════════════════════════════════════════════
+DOMAIN DETECTION HIERARCHY
+═══════════════════════════════════════════════════════════
+
+Detect domain using this priority order:
+1. EXPLICIT in the SLO code:               [SLO:B-09-H-01] → domain H
+2. DOMAIN HEADING in text:                 "DOMAIN H: Form and Functions of Plants" → H
+3. BENCHMARK section above SLO:            benchmark belongs to a specific domain
+4. CHAPTER title matches known domain:     "Chapter 09 FORM AND FUNCTIONS OF PLANTS" → H
+5. FALLBACK:                               If cannot determine → null
+
+═══════════════════════════════════════════════════════════
+BENCHMARK DETECTION
+═══════════════════════════════════════════════════════════
+
+Benchmarks appear as:
+  "Benchmark 1: Students should be able to..."
+  "Benchmark 2: Students will be able to..."
+
+Rules:
+- A benchmark applies to ALL SLOs that follow it until the next benchmark
+- Capture the full benchmark text as written
+- If no benchmark precedes an SLO → benchmark: null
+- Never invent or paraphrase benchmark text
+
+═══════════════════════════════════════════════════════════
+TRUNCATION DETECTION
+═══════════════════════════════════════════════════════════
+
+Mark is_truncated: true when the slo_full_text:
+- Ends mid-sentence (no period, no complete clause)
+- Ends with a comma
+- Ends with "e.g." or "i.e." or "such as" with no continuation
+- Ends with an opening parenthesis (
+- Is fewer than 8 words long (likely cut off by PDF column break)
+
+Examples:
+  "Justify why chemists use"  → is_truncated: true
+  "Define acid rain."         → is_truncated: false
+  "Classify oxides as acidic, including SO"  → is_truncated: true
+
+═══════════════════════════════════════════════════════════
+CROSS-CUTTING / GENERAL SLOs (NO CODE)
+═══════════════════════════════════════════════════════════
+
+Some SLOs appear in preambles, introductions, or "After completing this curriculum students will be able to:" sections. They have NO SLO code. Handle them as:
+  slo_code: null
+  raw_code_as_found: "null"
+  is_orphan_domain: true
+  grade: infer from surrounding context, or "09-12" if truly general
+
+Examples of codeless SLOs:
+  "Knowledgeable about the key concepts and theories of Biology"
+  "Able to think scientifically and use Biology content knowledge"
+  "Focus on understanding, not syllabus coverage"
+
+═══════════════════════════════════════════════════════════
+ABSOLUTE PROHIBITIONS — NEVER DO THESE
+═══════════════════════════════════════════════════════════
+
+❌ NEVER invent an SLO code that does not appear in the text
+❌ NEVER invent domain_name if not stated in the document
+❌ NEVER invent benchmark text — only copy verbatim or set null
+❌ NEVER skip SLOs — extract everything, even truncated ones
+❌ NEVER merge two separate SLOs into one
+❌ NEVER split one SLO into two
+❌ NEVER change the slo_full_text — copy it exactly as written
+❌ NEVER output markdown fences — output raw JSON only
+❌ NEVER add commentary before or after the JSON
+❌ NEVER use placeholder values like "N/A" or "Unknown" — use null
+
+═══════════════════════════════════════════════════════════
+SORTING ORDER IN OUTPUT ARRAY
+═══════════════════════════════════════════════════════════
+
+Sort the slos array in this exact order:
+1. PRIMARY:   grade ascending      (09 → 10 → 11 → 12)
+2. SECONDARY: domain ascending     (A → B → C → ... → X)
+3. TERTIARY:  slo_number ascending (01 → 02 → 03 → ... → 99)
+
+Codeless SLOs (slo_code: null) go FIRST within their grade,
+before any domain-coded SLOs for that grade.
+
+### CONTEXT:
+- TARGET_BOARD: ${boardKey}
+- TARGET_SUBJECT: ${subjectCode}
+- CHUNK: ${Math.floor(offset/CHUNK_SIZE) + 1}
+
+${feedbackPrompt}
+
+### TEXT TO PROCESS:
+${processingText}
+`;
 
     try {
       let chunkSlos: any[] = [];
