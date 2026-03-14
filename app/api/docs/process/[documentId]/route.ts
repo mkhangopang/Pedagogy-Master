@@ -7,6 +7,7 @@ import { IngestionStep } from '../../../../../types';
 import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 import pdf from 'pdf-parse';
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { createHash } from 'crypto';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; 
@@ -44,14 +45,18 @@ const PAKISTAN_BOARDS: Record<string, {
     normalizeFn: (code: string) => {
       let cleaned = code
         .toUpperCase()
-        .replace(/[\[\]]/g, '')
-        .replace(/SL[O0]/g, '')
-        .replace(/[:\-·. ]/g, '') // Added space to removal
+        // Remove known prefixes and wrappers
+        .replace(/^\[?(?:5L0|SL[O0]|LO)[:\s]*/i, '')
+        .replace(/[\[\]:]/g, '')
+        .replace(/[·.\s]/g, '')
         .trim();
       
-      // Fix common OCR/AI errors: Trailing 'L' or 'I' instead of '1'
-      cleaned = cleaned.replace(/(\d)[LI]$/, '$11');
-      cleaned = cleaned.replace(/(\d)O$/, '$10'); // Fix trailing O -> 0
+      // Fix OCR artifacts: trailing "L]", "l]", "I" → "1"
+      cleaned = cleaned.replace(/L\]?$/, '1').replace(/I$/, '1');
+      // Fix "O" → "0" at end of numeric section
+      cleaned = cleaned.replace(/(\d)O$/, '$10');
+      // Remove dashes (C-09-A-01 → C09A01)
+      cleaned = cleaned.replace(/-/g, '');
 
       // Try to pad if it matches the 4-part pattern (Subject, Grade, Domain, SLO)
       // e.g. C9A5 -> C09A05
@@ -64,7 +69,7 @@ const PAKISTAN_BOARDS: Record<string, {
         return `${subj}${grade}${domain}${slo}`;
       }
 
-      return cleaned;
+      return cleaned.length > 2 ? cleaned : null;
     },
   },
   PUNJAB: {
@@ -151,8 +156,9 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       feedbackExamples.map(f => `INPUT: ${f.original_text}\nOUTPUT: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
   }
 
-  const CHUNK_SIZE = 100000;
-  const OVERLAP = 5000;
+  const CHUNK_SIZE = 60000;
+  const OVERLAP = 3000;
+  const MAX_OUTPUT_TOKENS = 8192;
   const allRawSlos: any[] = [];
   const seenFingerprints = new Set<string>();
 
@@ -219,7 +225,8 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
           config: {
             responseMimeType: "application/json",
             responseSchema: schema,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+            maxOutputTokens: MAX_OUTPUT_TOKENS
           }
         });
         const data = extractJson(response.text || '{"slos": []}');
@@ -242,7 +249,10 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
 
       // Deduplicate and add to master list
       for (const s of chunkSlos) {
-        const fingerprint = `${s.slo_code || 'null'}:${s.slo_full_text.substring(0, 50)}`;
+        const fingerprint = createHash('md5')
+          .update(`${s.slo_code ?? 'null'}:${s.slo_full_text}`)
+          .digest('hex');
+          
         if (!seenFingerprints.has(fingerprint)) {
           seenFingerprints.add(fingerprint);
           allRawSlos.push(s);
@@ -419,11 +429,26 @@ export async function POST(
       job = await queue.getJobStatus(documentId);
     }
 
-    // ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
+    function deduplicateRecords(records: any[]) {
+  const seen = new Map<string, number>();
+  return records.map(r => {
+    const key = `${r.document_id}:${r.slo_code}`;
+    const count = seen.get(key) ?? 0;
+    seen.set(key, count + 1);
+    return count === 0 
+      ? r 
+      : { ...r, slo_code: `${r.slo_code}_v${count + 1}` };
+  });
+}
+
+// ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
     if (job.step === IngestionStep.LINEARIZE) {
       console.log(`[Ingestion] Starting LINEARIZE for ${documentId}`);
       const { data: current } = await adminSupabase.from('documents').select('extracted_text, document_summary').eq('id', documentId).single();
       const rawText = current?.extracted_text || '';
+      console.log('[DEBUG] Raw text length:', rawText.length);
+      console.log('[DEBUG] Estimated chunks:', Math.ceil(rawText.length / (60000 - 3000)));
+
       const summaryMeta = current?.document_summary || '';
       
       const boardKey = summaryMeta.match(/board:(\w+)/)?.[1] || 'SINDH';
@@ -446,12 +471,27 @@ export async function POST(
         .limit(10);
 
       const rawSLOs = await llmExtract(rawText, boardKey, subjectCode, feedback || []);
+      console.log(`[Ingestion] llmExtract returned ${rawSLOs.length} SLOs`);
+
+      const domainCounts = rawSLOs.reduce((acc, s) => {
+        const key = `G${s.grade}-D${s.domain ?? 'null'}`;
+        acc[key] = (acc[key] ?? 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      console.log('[Ingestion] Domain distribution:', JSON.stringify(domainCounts));
+
       const scoredSLOs = rawSLOs.map(slo => ({
         ...slo,
         extraction_confidence: computeConfidence(slo, isOcrReliable),
       }));
 
       if (scoredSLOs.length > 0) {
+        console.log('[DEBUG] Total SLOs extracted:', scoredSLOs.length);
+        console.log('[DEBUG] Grades found:', [...new Set(scoredSLOs.map(s => s.grade))].sort());
+        console.log('[DEBUG] Domains found:', [...new Set(scoredSLOs.map(s => s.domain))].sort());
+        console.log('[DEBUG] Truncated SLOs:', scoredSLOs.filter(s => s.is_truncated).length);
+        console.log('[DEBUG] Null codes:', scoredSLOs.filter(s => !s.slo_code).length);
+
         const records = scoredSLOs.map(s => ({
           document_id: documentId,
           slo_code: s.slo_code,
@@ -472,11 +512,13 @@ export async function POST(
         }));
 
         console.log(`[Ingestion] Attempting to insert ${records.length} SLO records for document ${documentId}`);
+        const dedupedRecords = deduplicateRecords(records);
         await adminSupabase.from('slo_database').delete().eq('document_id', documentId);
         // BUG-R1 FIX: Use column names for onConflict
-        const { error: upsertError } = await adminSupabase.from('slo_database').upsert(records, { onConflict: 'document_id,slo_code' });
+        const { error: upsertError } = await adminSupabase.from('slo_database').upsert(dedupedRecords, { onConflict: 'document_id,slo_code' });
         if (upsertError) {
-          console.error(`[Ingestion] Error upserting SLO records:`, upsertError);
+          console.error(`[Ingestion] Error upserting SLO records:`, JSON.stringify(upsertError));
+          throw new Error(`DB_FAULT: ${upsertError.message}`);
         } else {
           console.log(`[Ingestion] Successfully upserted SLO records for document ${documentId}`);
         }
