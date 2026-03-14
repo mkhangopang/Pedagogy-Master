@@ -1,6 +1,8 @@
 
 import { orchestrator } from "./model-orchestrator";
 
+import { extractJson } from "./utils";
+
 export type QueryIntent = 'lookup' | 'creation' | 'analysis' | 'comparison' | 'general';
 
 export interface IntentResult {
@@ -29,11 +31,7 @@ export async function classifyIntent(query: string): Promise<IntentResult> {
     }`;
 
     const result = await orchestrator.executeTask(prompt, 'lookup');
-    const responseText = result.text;
-    
-    // Clean potential markdown formatting
-    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
-    return JSON.parse(cleanJson || '{}');
+    return extractJson(result.text || '{}');
   } catch (e) {
     // Default fallback
     return {

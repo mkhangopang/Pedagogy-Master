@@ -3,6 +3,8 @@ import { orchestrator } from "./model-orchestrator";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getObjectText } from "../r2";
 
+import { extractJson } from "./utils";
+
 /**
  * NEURAL DOCUMENT INTELLIGENCE (v12.0)
  * Generates rich pedagogical metadata for the Supabase Vault.
@@ -47,11 +49,7 @@ export async function analyzeDocumentWithAI(
       ${content.substring(0, 100000)}`;
 
     const result = await orchestrator.executeTask(prompt, 'strategy');
-    const responseText = result.text;
-    
-    // Clean potential markdown formatting
-    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
-    const parsedResult = JSON.parse(cleanJson || '{}');
+    const parsedResult = extractJson(result.text || '{}');
 
     // 1. Update Main Document Record
     await supabase.from('documents').update({

@@ -4,6 +4,8 @@ import { orchestrator } from '@/lib/ai/model-orchestrator';
 import { generateEmbedding } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
+import { extractJson } from '@/lib/ai/utils';
+
 export interface RetrievalFilters {
   userId?: string;
   documentIds?: string[];
@@ -136,16 +138,7 @@ export async function rerankResults(
       Example: [85, 72, 91, 45, 68]`;
 
     const result = await orchestrator.executeTask(prompt, 'lookup');
-    const responseText = result.text;
-    
-    if (!responseText) {
-      console.warn('No response text from reranking, using original order');
-      return chunks.slice(0, topK);
-    }
-
-    // Clean potential markdown formatting
-    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
-    const scores = JSON.parse(cleanJson);
+    const scores = extractJson(result.text || '[]');
 
     if (!Array.isArray(scores) || scores.length !== chunks.length) {
       console.warn('Invalid scores format, using original order');

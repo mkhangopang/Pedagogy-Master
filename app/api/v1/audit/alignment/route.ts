@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiKey } from '@/lib/auth/api-guard';
 import { orchestrator } from '@/lib/ai/model-orchestrator';
+import { extractJson } from '@/lib/ai/utils';
 
 export const runtime = 'nodejs';
 
@@ -37,15 +38,7 @@ export async function POST(req: NextRequest) {
       }`;
 
     const result = await orchestrator.executeTask(prompt, 'strategy');
-    const responseText = result.text;
-    
-    if (!responseText) {
-      return NextResponse.json({ error: 'Neural engine failed to produce a valid response.' }, { status: 500 });
-    }
-
-    // Clean potential markdown formatting
-    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
-    return NextResponse.json(JSON.parse(cleanJson));
+    return NextResponse.json(extractJson(result.text || '{}'));
 
   } catch (error: any) {
     return NextResponse.json({ error: 'Audit Engine Failure', message: error.message }, { status: 500 });

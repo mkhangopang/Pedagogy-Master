@@ -8,6 +8,8 @@ import { callGrok } from "./providers/grok";
 import { callCerebras } from "./providers/cerebras";
 import { callDeepSeek } from "./providers/deepseek";
 
+import { resolveApiKey } from "../env-server";
+
 export type ComplexityLevel = 'lookup' | 'strategy' | 'creation';
 
 export interface TaskResult {
@@ -27,7 +29,7 @@ export class ModelOrchestrator {
   private latencyHistory: Record<string, number[]> = {};
 
   constructor() {
-    this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
+    this.ai = new GoogleGenAI({ apiKey: resolveApiKey() });
   }
 
   /**

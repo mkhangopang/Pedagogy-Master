@@ -123,6 +123,8 @@ function computeConfidence(slo: RawSLO, isOcrReliable: boolean): number {
 }
 
 import { orchestrator } from '../../../../../lib/ai/model-orchestrator';
+import { resolveApiKey } from '../../../../../lib/env-server';
+import { extractJson } from '../../../../../lib/ai/utils';
 
 async function llmExtract(text: string, boardKey: string, subjectCode: string, feedbackExamples: any[] = []): Promise<RawSLO[]> {
   let feedbackPrompt = "";
@@ -139,7 +141,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   2. **CURRICULUM AIMS/STANDARDS**: High-level goals (e.g., "Knowledgeable about key concepts"). If these lack codes in the text, assign a logical identifier based on the subject (e.g., ${subjectCode}-1, ${subjectCode}-2) to maintain structure.
   3. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
   4. **ZERO HALLUCINATION (METADATA)**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
-  5. **FORMAT**: Return ONLY a valid JSON object with a "slos" key.
+  5. **FORMAT**: Return ONLY a valid JSON object with a "slos" key containing the array.
   
   ### CONTEXT:
   - TARGET_BOARD: ${boardKey}
@@ -153,7 +155,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
 
   try {
     // Attempt Primary Node (Gemini 3.1 Pro for Maximum Reasoning)
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
+    const ai = new GoogleGenAI({ apiKey: resolveApiKey() });
     const response = await ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -186,7 +188,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       }
     });
 
-    const data = JSON.parse(response.text || '{"slos": []}');
+    const data = extractJson(response.text || '{"slos": []}');
     return processSlos(data.slos || [], boardKey, subjectCode);
 
   } catch (err: any) {
@@ -198,9 +200,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       const result = await orchestrator.executeTask(prompt, 'creation');
       
       try {
-        // Clean markdown if present
-        const jsonStr = result.text.replace(/```json\n?|\n?```/g, '').trim();
-        const data = JSON.parse(jsonStr);
+        const data = extractJson(result.text);
         return processSlos(data.slos || [], boardKey, subjectCode);
       } catch (parseErr) {
         console.error("[Ingestion Node] Fallback JSON Parse Failure:", parseErr);
