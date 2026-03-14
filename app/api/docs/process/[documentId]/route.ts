@@ -42,16 +42,29 @@ const PAKISTAN_BOARDS: Record<string, {
     benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
     patternType: 'hierarchical_code',
     normalizeFn: (code: string) => {
-      const cleaned = code
+      let cleaned = code
         .toUpperCase()
         .replace(/[\[\]]/g, '')
         .replace(/SL[O0]/g, '')
-        .replace(/[:\-]/g, '')
+        .replace(/[:\-·.]/g, '') // Added dots and middle dots
         .replace(/\s+/g, '')
         .trim();
       
       // Fix common OCR/AI errors: Trailing 'L' or 'I' instead of '1'
-      return cleaned.replace(/(\d)[LI]$/, '$11');
+      cleaned = cleaned.replace(/(\d)[LI]$/, '$11');
+
+      // Try to pad if it matches the 4-part pattern (Subject, Grade, Domain, SLO)
+      // e.g. C9A5 -> C09A05
+      const match = cleaned.match(/^([A-Z]{1,3})(\d{1,2})([A-Z])(\d{1,2})$/);
+      if (match) {
+        const subj = match[1];
+        const grade = match[2].padStart(2, '0');
+        const domain = match[3];
+        const slo = match[4].padStart(2, '0');
+        return `${subj}${grade}${domain}${slo}`;
+      }
+
+      return cleaned;
     },
   },
   PUNJAB: {
@@ -138,29 +151,10 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       feedbackExamples.map(f => `INPUT: ${f.original_text}\nOUTPUT: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
   }
 
-  // INCREASED WINDOW: Gemini 3.1 Pro can handle much more than 30k.
-  // We'll use 150k chars which is ~40-50 pages of text.
-  const processingText = text.substring(0, 150000);
-
-  const prompt = `### NEURAL CURRICULUM EXTRACTION TASK
-  You are an elite pedagogical data engineer. Extract all Student Learning Outcomes (SLOs) and Curriculum Aims from the provided text.
-  
-  ### EXTRACTION STRATEGY:
-  1. **SPECIFIC SLOs**: Capture outcomes with explicit codes (e.g., B-09-A-01, 1.1.1).
-  2. **CURRICULUM AIMS/STANDARDS**: High-level goals (e.g., "Knowledgeable about key concepts").
-  3. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
-  4. **ZERO HALLUCINATION (METADATA)**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
-  5. **FORMAT**: Return ONLY a valid JSON object with a "slos" key containing the array.
-  
-  ### CONTEXT:
-  - TARGET_BOARD: ${boardKey}
-  - TARGET_SUBJECT: ${subjectCode}
-  
-  ${feedbackPrompt}
-  
-  ### TEXT TO PROCESS:
-  ${processingText}
-  `;
+  const CHUNK_SIZE = 100000;
+  const OVERLAP = 5000;
+  const allRawSlos: any[] = [];
+  const seenFingerprints = new Set<string>();
 
   const schema = {
     type: Type.OBJECT,
@@ -189,63 +183,82 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   const apiKey = resolveApiKey();
   const ai = new GoogleGenAI({ apiKey });
 
-  // TIER 1: Gemini 3.1 Pro (Maximum Reasoning)
-  try {
-    console.log(`[Ingestion] Attempting Tier 1: Gemini 3.1 Pro...`);
-    const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: schema,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
-      }
-    });
+  // SLIDING WINDOW EXTRACTION: Process the entire document in chunks
+  for (let offset = 0; offset < text.length; offset += (CHUNK_SIZE - OVERLAP)) {
+    const processingText = text.substring(offset, offset + CHUNK_SIZE);
+    console.log(`[Ingestion] Processing chunk at offset ${offset}, length ${processingText.length}`);
 
-    const data = extractJson(response.text || '{"slos": []}');
-    return processSlos(data.slos || [], boardKey, subjectCode);
-
-  } catch (err: any) {
-    const isQuotaError = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED');
+    const prompt = `### NEURAL CURRICULUM EXTRACTION TASK (CHUNK ${Math.floor(offset/CHUNK_SIZE) + 1})
+    You are an elite pedagogical data engineer. Extract all Student Learning Outcomes (SLOs) and Curriculum Aims from the provided text.
     
-    if (isQuotaError) {
-      console.warn(`[Ingestion] Tier 1 Quota Hit. Falling back to Tier 2: Gemini 3 Flash...`);
+    ### EXTRACTION STRATEGY:
+    1. **SPECIFIC SLOs**: Capture outcomes with explicit codes (e.g., B-09-A-01, 1.1.1).
+    2. **CURRICULUM AIMS/STANDARDS**: High-level goals (e.g., "Knowledgeable about key concepts").
+    3. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
+    4. **ZERO HALLUCINATION (METADATA)**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
+    5. **FORMAT**: Return ONLY a valid JSON object with a "slos" key containing the array.
+    
+    ### CONTEXT:
+    - TARGET_BOARD: ${boardKey}
+    - TARGET_SUBJECT: ${subjectCode}
+    
+    ${feedbackPrompt}
+    
+    ### TEXT TO PROCESS:
+    ${processingText}
+    `;
+
+    try {
+      let chunkSlos: any[] = [];
       
-      // TIER 2: Gemini 3 Flash (High Quota, High Speed)
+      // TIER 1: Gemini 3.1 Pro
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
+          model: "gemini-3.1-pro-preview",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           config: {
             responseMimeType: "application/json",
-            responseSchema: schema
+            responseSchema: schema,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
           }
         });
-
         const data = extractJson(response.text || '{"slos": []}');
-        return processSlos(data.slos || [], boardKey, subjectCode);
-
-      } catch (flashErr: any) {
-        const isFlashQuota = flashErr.message?.includes('429') || flashErr.message?.includes('quota');
-        
-        if (isFlashQuota) {
-          console.warn(`[Ingestion] Tier 2 Quota Hit. Engaging Orchestrator (Multi-Node Fallback)...`);
-          
-          // TIER 3: Orchestrator (Mistral, Groq, SambaNova, etc.)
-          const result = await orchestrator.executeTask(prompt, 'creation');
-          try {
-            const data = extractJson(result.text);
-            return processSlos(data.slos || [], boardKey, subjectCode);
-          } catch (parseErr) {
-            console.error("[Ingestion] Fallback JSON Parse Failure:", parseErr);
-            throw new Error("Neural Extraction Failed: All nodes exhausted or returned invalid data.");
-          }
+        chunkSlos = data.slos || [];
+      } catch (err: any) {
+        const isQuotaError = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED');
+        if (isQuotaError) {
+          console.warn(`[Ingestion] Tier 1 Quota Hit for chunk. Falling back to Tier 2: Gemini 3 Flash...`);
+          const response = await ai.models.generateContent({
+            model: "gemini-3-flash-preview",
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            config: { responseMimeType: "application/json", responseSchema: schema }
+          });
+          const data = extractJson(response.text || '{"slos": []}');
+          chunkSlos = data.slos || [];
+        } else {
+          throw err;
         }
-        throw flashErr;
       }
+
+      // Deduplicate and add to master list
+      for (const s of chunkSlos) {
+        const fingerprint = `${s.slo_code || 'null'}:${s.slo_full_text.substring(0, 50)}`;
+        if (!seenFingerprints.has(fingerprint)) {
+          seenFingerprints.add(fingerprint);
+          allRawSlos.push(s);
+        }
+      }
+
+    } catch (chunkErr: any) {
+      console.error(`[Ingestion] Failed to process chunk at offset ${offset}:`, chunkErr.message);
+      // Continue to next chunk instead of failing entire document
     }
-    throw err;
+
+    // Safety break to prevent infinite loops or excessive costs on massive docs
+    if (offset > 1000000) break; 
   }
+
+  return processSlos(allRawSlos, boardKey, subjectCode);
 }
 
 function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO[] {
