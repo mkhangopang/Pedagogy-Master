@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiKey } from '@/lib/auth/api-guard';
-import { GoogleGenAI } from '@google/genai';
+import { orchestrator } from '@/lib/ai/model-orchestrator';
 
 export const runtime = 'nodejs';
 
@@ -19,36 +19,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Parameter "slo_code" is required.' }, { status: 400 });
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    // Use Gemini 3 Pro for Institutional Quality
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: `COMMAND: Synthesize a high-fidelity ${type} for SLO: ${slo_code}.
+    const prompt = `COMMAND: Synthesize a high-fidelity ${type} for SLO: ${slo_code}.
       INSTITUTIONAL CONTEXT: ${context}
       RULES:
       1. Use the 5E Instructional Model.
       2. Ensure strict alignment with standardized Bloom's Taxonomy.
-      3. Output in clean Markdown.`,
-      config: {
-        temperature: 0.2, // Low temperature for consistency
-        thinkingConfig: { thinkingBudget: 2000 }
-      }
-    });
+      3. Output in clean Markdown.`;
 
-    const text = response.text;
-    if (!text) {
-      return NextResponse.json({ error: 'Neural engine failed to synthesize the artifact.' }, { status: 500 });
-    }
+    const result = await orchestrator.executeTask(prompt, 'creation');
 
     return NextResponse.json({
       success: true,
-      artifact: text,
+      artifact: result.text,
       metadata: {
-        node: 'edunexus-neural-v1',
-        model: 'gemini-3-pro',
+        node: 'edunexus-neural-v3',
+        model: result.modelUsed,
         slo_verified: true,
-        timestamp: new Date().toISOString()
+        timestamp: result.timestamp,
+        latency: result.latencyMs
       }
     });
 

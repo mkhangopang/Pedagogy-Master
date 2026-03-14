@@ -140,10 +140,9 @@ interface RawSLO {
   regex_confidence: number;
 }
 
+import { orchestrator } from '../../../../../lib/ai/model-orchestrator';
+
 async function llmExtract(text: string, boardKey: string, subjectCode: string, feedbackExamples: any[] = []): Promise<RawSLO[]> {
-  // Use the free Gemini models available in the environment
-  const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.API_KEY || '' });
-  
   let feedbackPrompt = "";
   if (feedbackExamples.length > 0) {
     feedbackPrompt = `\nHere are some examples of CORRECT extractions based on user feedback to guide you:\n` + 
@@ -153,47 +152,75 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   const prompt = `Extract SLOs (Student Learning Outcomes) from the following text. 
   Return a JSON array of objects with the following fields: 
   slo_code, slo_full_text, grade, domain, domain_name, benchmark, subject, subject_code, board.
+  
+  IMPORTANT: Return ONLY a JSON object with a "slos" key containing the array. No markdown, no conversational text.
+  
   ${feedbackPrompt}
   
   Text: ${text.substring(0, 15000)}
   `;
 
-  // Orchestration: Use Gemini 3.1 Pro for complex extraction tasks
-  const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          slos: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                slo_code: { type: Type.STRING },
-                slo_full_text: { type: Type.STRING },
-                grade: { type: Type.STRING },
-                domain: { type: Type.STRING },
-                domain_name: { type: Type.STRING },
-                benchmark: { type: Type.STRING },
-                subject: { type: Type.STRING },
-                subject_code: { type: Type.STRING },
-                board: { type: Type.STRING }
-              },
-              required: ["slo_code", "slo_full_text"]
+  try {
+    // Attempt Primary Node (Gemini)
+    const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.API_KEY || '' });
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-pro-preview",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            slos: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  slo_code: { type: Type.STRING },
+                  slo_full_text: { type: Type.STRING },
+                  grade: { type: Type.STRING },
+                  domain: { type: Type.STRING },
+                  domain_name: { type: Type.STRING },
+                  benchmark: { type: Type.STRING },
+                  subject: { type: Type.STRING },
+                  subject_code: { type: Type.STRING },
+                  board: { type: Type.STRING }
+                },
+                required: ["slo_code", "slo_full_text"]
+              }
             }
           }
-        }
-      },
-      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+        },
+        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+      }
+    });
+
+    const data = JSON.parse(response.text || '{"slos": []}');
+    return processSlos(data.slos || [], boardKey, subjectCode);
+
+  } catch (err: any) {
+    const isQuotaError = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED');
+    
+    if (isQuotaError) {
+      console.warn(`[Ingestion Node] Gemini Quota Hit. Engaging Orchestrator Fallback...`);
+      // Use the orchestrator which has access to Mistral, Groq, SambaNova, etc.
+      const result = await orchestrator.executeTask(prompt, 'creation');
+      
+      try {
+        // Clean markdown if present
+        const jsonStr = result.text.replace(/```json\n?|\n?```/g, '').trim();
+        const data = JSON.parse(jsonStr);
+        return processSlos(data.slos || [], boardKey, subjectCode);
+      } catch (parseErr) {
+        console.error("[Ingestion Node] Fallback JSON Parse Failure:", parseErr);
+        throw new Error("Neural Extraction Failed: All nodes exhausted or returned invalid data.");
+      }
     }
-  });
+    throw err;
+  }
+}
 
-  const data = JSON.parse(response.text || '{"slos": []}');
-  const slos = data.slos || [];
-
+function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO[] {
   return slos.map((s: any) => ({
     ...s,
     raw_code_as_found: s.slo_code,

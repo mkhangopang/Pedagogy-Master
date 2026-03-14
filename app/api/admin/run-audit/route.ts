@@ -4,7 +4,7 @@ import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { GoogleGenAI } from '@google/genai';
-import { resolveApiKey } from '../../../../lib/env-server';
+import { orchestrator } from '../../../../lib/ai/model-orchestrator';
 import { performanceMonitor } from '../../../../lib/monitoring/performance';
 
 export const runtime = 'nodejs';
@@ -75,15 +75,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. AI HANDSHAKE (Gemini)
+    // 3. AI HANDSHAKE (Orchestrator)
     try {
-      const ai = new GoogleGenAI({ apiKey: resolveApiKey() });
-      const test = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: 'ping'
-      });
+      const test = await orchestrator.executeTask('ping', 'lookup');
       if (!test.text) throw new Error("Empty AI response");
       benchmarks.pedagogical_fidelity = 0.96;
+      benchmarks.active_node = test.modelUsed;
     } catch (e: any) {
       findings.push({
         category: 'Synthesis',

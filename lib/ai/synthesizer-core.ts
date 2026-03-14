@@ -33,11 +33,24 @@ export class SynthesizerCore {
       name: 'Gemini 3.1 Pro',
       endpoint: 'native',
       model: 'gemini-3.1-pro-preview',
-      apiKeyEnv: 'NEXT_PUBLIC_GEMINI_API_KEY',
+      apiKeyEnv: 'API_KEY', // User has API_KEY for Gemini
       maxTokens: 16384,
       thinkingLevel: ThinkingLevel.HIGH, 
       rpm: 10,
       rpd: 2000,
+      tier: 1,
+      enabled: true
+    });
+
+    providers.set('sambanova', {
+      id: 'sambanova',
+      name: 'SambaNova (Llama 3.1 405B)',
+      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
+      model: 'Meta-Llama-3.1-405B-Instruct',
+      apiKeyEnv: 'SAMBANOVA_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
       tier: 1,
       enabled: true
     });
@@ -52,42 +65,29 @@ export class SynthesizerCore {
       rpm: 20,
       rpd: 5000,
       tier: 1,
-      enabled: true
-    });
-
-    providers.set('gpt-4o', {
-      id: 'gpt-4o',
-      name: 'GPT-4o (OpenAI)',
-      endpoint: 'https://api.openai.com/v1/chat/completions',
-      model: 'gpt-4o',
-      apiKeyEnv: 'OPENAI_API_KEY',
-      maxTokens: 16384,
-      rpm: 50,
-      rpd: 10000,
-      tier: 1,
-      enabled: true
-    });
-
-    providers.set('claude-3-5', {
-      id: 'claude-3-5',
-      name: 'Claude 3.5 Sonnet',
-      endpoint: 'https://api.anthropic.com/v1/messages',
-      model: 'claude-3-5-sonnet-20241022',
-      apiKeyEnv: 'ANTHROPIC_API_KEY',
-      maxTokens: 8192,
-      rpm: 50,
-      rpd: 10000,
-      tier: 1,
-      enabled: true
+      enabled: !!process.env.GROK_API_KEY
     });
 
     // TIER 2: THE ENGINES (Flash Fallback)
+    providers.set('cerebras', {
+      id: 'cerebras',
+      name: 'Cerebras (Llama 3.1 70B)',
+      endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+      model: 'llama3.1-70b',
+      apiKeyEnv: 'CEREBRAS_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
+    });
+
     providers.set('gemini-flash', {
       id: 'gemini-flash',
       name: 'Gemini 3 Flash',
       endpoint: 'native',
       model: 'gemini-3-flash-preview',
-      apiKeyEnv: 'NEXT_PUBLIC_GEMINI_API_KEY',
+      apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
       rpm: 100,
       rpd: 10000,
@@ -100,7 +100,7 @@ export class SynthesizerCore {
       name: 'Mistral Large',
       endpoint: 'https://api.mistral.ai/v1/chat/completions',
       model: 'mistral-large-latest',
-      apiKeyEnv: 'MISTRAL_API_KEY',
+      apiKeyEnv: 'API_MISTRAL', // User has API_MISTRAL
       maxTokens: 32768,
       rpm: 20,
       rpd: 5000,
@@ -121,16 +121,16 @@ export class SynthesizerCore {
       enabled: true
     });
 
-    providers.set('llama-3-3', {
-      id: 'llama-3-3',
-      name: 'Llama 3.3 70B',
-      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-      model: 'llama-3.3-70b-versatile',
-      apiKeyEnv: 'GROK_API_KEY',
+    providers.set('openrouter', {
+      id: 'openrouter',
+      name: 'OpenRouter (Auto-Fallback)',
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      model: 'openrouter/auto',
+      apiKeyEnv: 'OPENROUTER_API_KEY',
       maxTokens: 8192,
       rpm: 100,
       rpd: 10000,
-      tier: 2,
+      tier: 3,
       enabled: true
     });
 
@@ -167,8 +167,8 @@ export class SynthesizerCore {
 
     for (const provider of candidates) {
       try {
-        const apiKey = provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' 
-          ? resolveApiKey() 
+        const apiKey = (provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
+          ? (process.env.API_KEY || resolveApiKey()) 
           : process.env[provider.apiKeyEnv];
           
         if (!apiKey) continue;

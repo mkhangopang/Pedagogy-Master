@@ -1,6 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
-import { resolveApiKey } from "../env-server";
+import { orchestrator } from "./model-orchestrator";
 
 export type QueryIntent = 'lookup' | 'creation' | 'analysis' | 'comparison' | 'general';
 
@@ -14,32 +13,27 @@ export interface IntentResult {
 
 /**
  * NEURAL INTENT CLASSIFIER (v1.0)
- * Uses Gemini 3 Flash for zero-cost, high-speed routing logic.
+ * Uses high-speed routing logic with multi-node fallback.
  */
 export async function classifyIntent(query: string): Promise<IntentResult> {
-  const ai = new GoogleGenAI({ apiKey: resolveApiKey() });
-  
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Classify the pedagogical intent of this user query: "${query}"`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            intent: { type: Type.STRING, enum: ['lookup', 'creation', 'analysis', 'comparison', 'general'] },
-            complexity: { type: Type.INTEGER, description: "1: Simple recall, 2: Application, 3: Complex synthesis" },
-            suggestedProvider: { type: Type.STRING, description: "gemini-pro, groq, deepseek, or gemini-flash" },
-            isSTEM: { type: Type.BOOLEAN },
-            requiresGrounding: { type: Type.BOOLEAN }
-          },
-          required: ["intent", "complexity", "suggestedProvider", "isSTEM", "requiresGrounding"]
-        }
-      }
-    });
+    const prompt = `Classify the pedagogical intent of this user query: "${query}"
+    
+    Return ONLY a JSON object with this schema:
+    {
+      "intent": "lookup" | "creation" | "analysis" | "comparison" | "general",
+      "complexity": 1 | 2 | 3,
+      "suggestedProvider": "string",
+      "isSTEM": boolean,
+      "requiresGrounding": boolean
+    }`;
 
-    return JSON.parse(response.text || '{}');
+    const result = await orchestrator.executeTask(prompt, 'lookup');
+    const responseText = result.text;
+    
+    // Clean potential markdown formatting
+    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
+    return JSON.parse(cleanJson || '{}');
   } catch (e) {
     // Default fallback
     return {

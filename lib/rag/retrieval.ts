@@ -1,6 +1,6 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import { GoogleGenAI, Type } from "@google/genai";
+import { orchestrator } from '@/lib/ai/model-orchestrator';
 import { generateEmbedding } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
 
@@ -123,10 +123,7 @@ export async function rerankResults(
   if (chunks.length === 0) return [];
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `You are a relevance scorer for curriculum documents.
+    const prompt = `You are a relevance scorer for curriculum documents.
       
       QUERY: "${query}"
       
@@ -136,20 +133,19 @@ export async function rerankResults(
       ${chunks.map((chunk, i) => `[${i}] ${chunk.content.substring(0, 500)}...`).join('\n---\n')}
       
       Return ONLY a JSON array of numbers (scores) representing the relevance of each index.
-      Example: [85, 72, 91, 45, 68]`,
-      config: {
-        responseMimeType: 'application/json'
-      }
-    });
+      Example: [85, 72, 91, 45, 68]`;
 
-    const responseText = response.text;
+    const result = await orchestrator.executeTask(prompt, 'lookup');
+    const responseText = result.text;
     
     if (!responseText) {
       console.warn('No response text from reranking, using original order');
       return chunks.slice(0, topK);
     }
 
-    const scores = JSON.parse(responseText);
+    // Clean potential markdown formatting
+    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
+    const scores = JSON.parse(cleanJson);
 
     if (!Array.isArray(scores) || scores.length !== chunks.length) {
       console.warn('Invalid scores format, using original order');

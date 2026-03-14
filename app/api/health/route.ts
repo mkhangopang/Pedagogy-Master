@@ -35,8 +35,8 @@ export async function GET() {
     supabase: { status: supabaseRes.error ? 'error' : 'operational', message: supabaseRes.error?.message || 'Interface responsive.' },
     r2: { status: r2Res ? 'operational' : 'degraded', message: r2Res ? 'Storage online.' : 'Storage unreachable or unconfigured.' },
     orchestrator: {
-      flashLatency: orchestrator.getAverageLatency('gemini-3-flash-preview'),
-      proLatency: orchestrator.getAverageLatency('gemini-3-pro-preview')
+      flashLatency: orchestrator.getAverageLatency('gemini-3.1-flash-preview'),
+      proLatency: orchestrator.getAverageLatency('gemini-3.1-pro-preview')
     }
   };
 

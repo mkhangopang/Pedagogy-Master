@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { orchestrator } from "./model-orchestrator";
 import { SupabaseClient } from "@supabase/supabase-js";
 import { getObjectText } from "../r2";
 
@@ -13,9 +13,6 @@ export async function analyzeDocumentWithAI(
   supabase: SupabaseClient
 ) {
   try {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("Neural Node Error: API Key missing.");
-
     const { data: doc, error: fetchError } = await supabase
       .from('documents')
       .select('*')
@@ -34,66 +31,42 @@ export async function analyzeDocumentWithAI(
       return;
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Perform a world-class pedagogical analysis on this Master MD curriculum file. 
+    const prompt = `Perform a world-class pedagogical analysis on this Master MD curriculum file. 
       Generate a structured JSON metadata block for the institutional vault.
       
-      DOCUMENT TEXT:
-      ${content.substring(0, 100000)}`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            metadata: {
-              type: Type.OBJECT,
-              properties: {
-                title: { type: Type.STRING },
-                subject: { type: Type.STRING },
-                gradeLevels: { type: Type.ARRAY, items: { type: Type.STRING } },
-                board: { type: Type.STRING },
-                curriculumYear: { type: Type.STRING }
-              },
-              required: ["title", "subject", "gradeLevels"]
-            },
-            sloIndex: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  code: { type: Type.STRING },
-                  description: { type: Type.STRING },
-                  bloomLevel: { type: Type.STRING, description: "Remember, Understand, Apply, Analyze, Evaluate, Create" }
-                },
-                required: ["code", "description"]
-              }
-            },
-            summary: { type: Type.STRING }
-          },
-          required: ["metadata", "sloIndex", "summary"]
-        }
+      RULES:
+      1. Return ONLY a valid JSON object.
+      2. Follow this schema:
+      {
+        "metadata": { "title": "string", "subject": "string", "gradeLevels": ["string"], "board": "string", "curriculumYear": "string" },
+        "sloIndex": [ { "code": "string", "description": "string", "bloomLevel": "string" } ],
+        "summary": "string"
       }
-    });
+      
+      DOCUMENT TEXT:
+      ${content.substring(0, 100000)}`;
 
-    const result = JSON.parse(response.text || '{}');
+    const result = await orchestrator.executeTask(prompt, 'strategy');
+    const responseText = result.text;
+    
+    // Clean potential markdown formatting
+    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
+    const parsedResult = JSON.parse(cleanJson || '{}');
 
     // 1. Update Main Document Record
     await supabase.from('documents').update({
-      name: result.metadata.title || doc.name,
-      subject: result.metadata.subject,
-      grade_level: result.metadata.gradeLevels?.join(', ') || 'Auto',
-      authority: result.metadata.board || 'Independent',
-      version_year: result.metadata.curriculumYear || '2024',
-      document_summary: result.summary,
+      name: parsedResult.metadata?.title || doc.name,
+      subject: parsedResult.metadata?.subject,
+      grade_level: parsedResult.metadata?.gradeLevels?.join(', ') || 'Auto',
+      authority: parsedResult.metadata?.board || 'Independent',
+      version_year: parsedResult.metadata?.curriculumYear || '2024',
+      document_summary: parsedResult.summary,
       status: 'ready'
     }).eq('id', documentId);
 
     // 2. Populate SLO Database for Surgical Grounding
-    if (result.sloIndex && Array.isArray(result.sloIndex)) {
-      const sloRecords = result.sloIndex.map((s: any) => ({
+    if (parsedResult.sloIndex && Array.isArray(parsedResult.sloIndex)) {
+      const sloRecords = parsedResult.sloIndex.map((s: any) => ({
         document_id: documentId,
         slo_code: s.code,
         slo_full_text: s.description,

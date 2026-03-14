@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateApiKey } from '@/lib/auth/api-guard';
-import { GoogleGenAI, Type } from '@google/genai';
+import { orchestrator } from '@/lib/ai/model-orchestrator';
 
 export const runtime = 'nodejs';
 
@@ -20,38 +20,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Fields "content_transcript" and "target_slo" are required.' }, { status: 400 });
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `AUDIT TASK: Compare the following CONTENT TRANSCRIPT against the pedagogical requirements of SLO: ${target_slo}.
+    const prompt = `AUDIT TASK: Compare the following CONTENT TRANSCRIPT against the pedagogical requirements of SLO: ${target_slo}.
       
       TRANSCRIPT:
       ${content_transcript.substring(0, 10000)}
       
-      Evaluate accuracy, depth, and alignment.`,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            alignment_score: { type: Type.NUMBER, description: "0 to 100 percentage" },
-            matching_clauses: { type: Type.ARRAY, items: { type: Type.STRING } },
-            missing_concepts: { type: Type.ARRAY, items: { type: Type.STRING } },
-            pedagogical_critique: { type: Type.STRING },
-            status: { type: Type.STRING, enum: ["ALIGNED", "PARTIAL", "NON_COMPLIANT"] }
-          },
-          required: ["alignment_score", "status", "pedagogical_critique"]
-        }
-      }
-    });
+      Evaluate accuracy, depth, and alignment.
+      
+      Return ONLY a JSON object with this schema:
+      {
+        "alignment_score": number,
+        "matching_clauses": ["string"],
+        "missing_concepts": ["string"],
+        "pedagogical_critique": "string",
+        "status": "ALIGNED" | "PARTIAL" | "NON_COMPLIANT"
+      }`;
 
-    const text = response.text;
-    if (!text) {
+    const result = await orchestrator.executeTask(prompt, 'strategy');
+    const responseText = result.text;
+    
+    if (!responseText) {
       return NextResponse.json({ error: 'Neural engine failed to produce a valid response.' }, { status: 500 });
     }
 
-    return NextResponse.json(JSON.parse(text));
+    // Clean potential markdown formatting
+    const cleanJson = responseText.replace(/```json\n?|\n?```/g, '').trim();
+    return NextResponse.json(JSON.parse(cleanJson));
 
   } catch (error: any) {
     return NextResponse.json({ error: 'Audit Engine Failure', message: error.message }, { status: 500 });
