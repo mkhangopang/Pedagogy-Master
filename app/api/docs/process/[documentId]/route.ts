@@ -132,19 +132,14 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   }
 
   const prompt = `### NEURAL CURRICULUM EXTRACTION TASK
-  You are an elite pedagogical data engineer. Extract all Student Learning Outcomes (SLOs) from the provided text.
+  You are an elite pedagogical data engineer. Extract all Student Learning Outcomes (SLOs) and Curriculum Aims from the provided text.
   
-  ### EXTRACTION RULES:
-  1. **ZERO HALLUCINATION POLICY**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
-  2. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
-  3. **NORMALIZATION**: 'slo_code' should be the alphanumeric identifier (e.g., BIOL-1).
-  4. **FORMAT**: Return ONLY a valid JSON object with a "slos" key. No conversational filler.
-  5. **VERIFICATION**: For every field you populate (especially domain_name and benchmark), ensure the value exists as a string within the provided text. If it's a summary or a guess, set it to null.
-  
-  ### NEGATIVE EXAMPLE (DO NOT DO THIS):
-  INPUT: "SLO BIOL-1 Knowledgeable about the key concepts and theories of Biology"
-  POOR OUTPUT (HALLUCINATED): {"slo_code": "BIOL-1", "domain_name": "Nature of Science in Biology", "benchmark": "Understand fundamental principles", ...}
-  CORRECT OUTPUT: {"slo_code": "BIOL-1", "domain_name": null, "benchmark": null, ...}
+  ### EXTRACTION STRATEGY:
+  1. **SPECIFIC SLOs**: Capture outcomes with explicit codes (e.g., B-09-A-01, 1.1.1).
+  2. **CURRICULUM AIMS/STANDARDS**: High-level goals (e.g., "Knowledgeable about key concepts"). If these lack codes in the text, assign a logical identifier based on the subject (e.g., ${subjectCode}-1, ${subjectCode}-2) to maintain structure.
+  3. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
+  4. **ZERO HALLUCINATION (METADATA)**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
+  5. **FORMAT**: Return ONLY a valid JSON object with a "slos" key.
   
   ### CONTEXT:
   - TARGET_BOARD: ${boardKey}
@@ -153,7 +148,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   ${feedbackPrompt}
   
   ### TEXT TO PROCESS:
-  ${text.substring(0, 25000)}
+  ${text.substring(0, 30000)}
   `;
 
   try {
@@ -255,7 +250,10 @@ function buildCleanMarkdown(slos: any[]): string {
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
 
-  const lines: string[] = sorted.map(s => `SLO ${s.slo_code} ${s.slo_full_text}`);
+  const lines: string[] = sorted.map(s => {
+    const code = s.slo_code || "GENERAL";
+    return `SLO [${code}]: ${s.slo_full_text}`;
+  });
   lines.push('');
   lines.push('<STRUCTURED_INDEX>');
   lines.push(JSON.stringify(sorted, null, 2));
