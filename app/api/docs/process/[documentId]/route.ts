@@ -46,12 +46,12 @@ const PAKISTAN_BOARDS: Record<string, {
         .toUpperCase()
         .replace(/[\[\]]/g, '')
         .replace(/SL[O0]/g, '')
-        .replace(/[:\-·.]/g, '') // Added dots and middle dots
-        .replace(/\s+/g, '')
+        .replace(/[:\-·. ]/g, '') // Added space to removal
         .trim();
       
       // Fix common OCR/AI errors: Trailing 'L' or 'I' instead of '1'
       cleaned = cleaned.replace(/(\d)[LI]$/, '$11');
+      cleaned = cleaned.replace(/(\d)O$/, '$10'); // Fix trailing O -> 0
 
       // Try to pad if it matches the 4-part pattern (Subject, Grade, Domain, SLO)
       // e.g. C9A5 -> C09A05
@@ -265,22 +265,33 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO
   const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
 
   return slos.map((s: any) => {
-    const isMissingDomain = !s.domain_name || s.domain_name === 'N/A' || s.domain_name === 'null';
-    const isMissingBenchmark = !s.benchmark || s.benchmark === 'N/A' || s.benchmark === 'null';
-    
     // Normalize code using the board's logic
     const normalizedCode = s.slo_code ? board.normalizeFn(s.slo_code) : null;
-    const grade = s.grade ? normalizeGrade(s.grade) : null;
+    let grade = s.grade ? normalizeGrade(s.grade) : null;
+    let domain = s.domain || null;
+    let domainName = s.domain_name || null;
+
+    // METADATA RECOVERY: If grade/domain is missing, try to extract from the code
+    // Sindh Pattern: C09A01 -> Grade 09, Domain A
+    if (normalizedCode && normalizedCode.match(/^[A-Z](\d{2})([A-Z])/)) {
+      const match = normalizedCode.match(/^[A-Z](\d{2})([A-Z])/);
+      if (!grade) grade = match![1];
+      if (!domain) domain = match![2];
+    }
+
+    const isMissingDomain = !domainName || domainName === 'N/A' || domainName === 'null';
 
     return {
       ...s,
       code: normalizedCode, // Add 'code' for legacy compatibility
       slo_code: normalizedCode,
-      grade: grade,
+      grade: grade || "IX-XII", // Default to general grade if still missing
+      domain: domain,
+      domain_name: domainName,
       raw_code_as_found: s.slo_code || 'null',
-      char_offset: 0,
-      page_number_estimate: 0,
-      is_truncated: false,
+      char_offset: s.char_offset || 0,
+      page_number_estimate: s.page_number_estimate || 0,
+      is_truncated: s.is_truncated || false,
       is_orphan_domain: isMissingDomain,
       regex_confidence: normalizedCode ? 1.0 : 0.7,
       board: boardKey,
@@ -322,11 +333,13 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   let lastDomain = "";
 
   sorted.forEach(s => {
-    if (s.grade && s.grade !== lastGrade) {
-      lines.push(`# GRADE ${s.grade}`);
-      lastGrade = s.grade;
+    const currentGrade = s.grade || "IX-XII";
+    if (currentGrade !== lastGrade) {
+      lines.push(`# GRADE ${currentGrade}`);
+      lastGrade = currentGrade;
       lastDomain = ""; // Reset domain on grade change
     }
+    
     if (s.domain && s.domain !== lastDomain) {
       const domainName = s.domain_name ? `: ${s.domain_name}` : "";
       lines.push(`### DOMAIN ${s.domain}${domainName}`);
