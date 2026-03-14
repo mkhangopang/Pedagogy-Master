@@ -136,7 +136,18 @@ create table if not exists public.ai_model_usage (
   created_at timestamp with time zone default now()
 );
 
--- 7. HEALTH VIEWS (FIX: DROP FIRST TO PREVENT 42P16 ERROR)
+-- 7. FEEDBACK LOOP (LEARNING ENGINE)
+create table if not exists public.slo_feedback (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid references public.profiles(id),
+  original_text text not null,
+  original_json jsonb not null,
+  corrected_json jsonb not null,
+  context_metadata jsonb,
+  created_at timestamp with time zone default now()
+);
+
+-- 8. HEALTH VIEWS (FIX: DROP FIRST TO PREVENT 42P16 ERROR)
 DROP VIEW IF EXISTS public.rag_health_report;
 create or replace view public.rag_health_report 
 with (security_invoker = true)
@@ -192,6 +203,7 @@ grant all on public.slo_database to authenticated, service_role;
 grant all on public.chunk_slo_mapping to authenticated, service_role;
 grant all on public.vertical_alignment to authenticated, service_role;
 grant all on public.ai_model_usage to authenticated, service_role;
+grant all on public.slo_feedback to authenticated, service_role;
 grant select on public.rag_health_report to authenticated, service_role;
 grant select on public.slo_analytics to authenticated, service_role;
 grant select on public.ai_provider_health to authenticated, service_role;
@@ -199,6 +211,7 @@ grant select on public.ai_provider_health to authenticated, service_role;
 -- 11. RLS POLICIES (SECURITY LAYER)
 alter table public.slo_database enable row level security;
 alter table public.chunk_slo_mapping enable row level security;
+alter table public.slo_feedback enable row level security;
 
 drop policy if exists "Users can view SLOs for their own documents" on public.slo_database;
 create policy "Users can view SLOs for their own documents"
@@ -210,6 +223,12 @@ create policy "Users can view SLOs for their own documents"
       and documents.user_id = auth.uid()
     )
   );
+
+drop policy if exists "Users can manage their own feedback" on public.slo_feedback;
+create policy "Users can manage their own feedback"
+  on public.slo_feedback for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 drop policy if exists "Users can view mappings for their own documents" on public.chunk_slo_mapping;
 create policy "Users can view mappings for their own documents"

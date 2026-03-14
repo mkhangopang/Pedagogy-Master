@@ -145,6 +145,17 @@ const Documents: React.FC<DocumentsProps> = ({
     }
   };
 
+  const handleReprocess = async (id: string) => {
+    try {
+      onUpdateDocument(id, { status: 'pending', documentSummary: 'Re-triggering ingestion...' });
+      const response = await fetch(`/api/docs/process/${id}`, { method: 'POST' });
+      if (!response.ok) throw new Error('Failed to start processing');
+    } catch (err) {
+      console.error("Reprocess failure:", err);
+      alert("Neural Gateway Error: Unable to re-trigger ingestion.");
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-24 px-4 text-left">
       {showUploader && (
@@ -207,6 +218,16 @@ const Documents: React.FC<DocumentsProps> = ({
                   <div className="flex flex-col gap-3">
                     {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform shadow-lg"><BookOpen size={16} /></button>}
                     
+                    {(isFailed || isAdmin) && !isProcessing && (
+                      <button 
+                        onClick={() => handleReprocess(doc.id)}
+                        className="p-2.5 bg-amber-50 text-amber-600 rounded-full opacity-0 group-hover:opacity-100 hover:bg-amber-600 hover:text-white transition-all shadow-sm"
+                        title="Re-trigger Neural Ingestion"
+                      >
+                        <RefreshCw size={16} />
+                      </button>
+                    )}
+
                     {showDelete && (
                       <button 
                         onClick={() => handleDelete(doc.id)} 

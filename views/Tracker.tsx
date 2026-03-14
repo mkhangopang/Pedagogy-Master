@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardCheck, Target, BarChart3, 
   ChevronRight, Search, CheckCircle2, 
-  Clock, BookOpen, Loader2, ChevronDown, Layers, Filter, Bookmark, Hash
+  Clock, BookOpen, Loader2, ChevronDown, Layers, Filter, Bookmark, Hash, Edit2, Check, X
 } from 'lucide-react';
 import { UserProfile, Document, TeacherProgress } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -46,6 +46,9 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
   const [isSaving, setIsSaving] = useState<string | null>(null);
   
   const [expandedGrades, setExpandedGrades] = useState<Record<string, boolean>>({});
+  const [editingSlo, setEditingSlo] = useState<string | null>(null);
+  const [editData, setEditData] = useState<{ code: string; text: string }>({ code: '', text: '' });
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -120,6 +123,47 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
       }
     } finally {
       setIsSaving(null);
+    }
+  };
+
+  const handleStartEdit = (slo: SloRecord) => {
+    setEditingSlo(slo.id);
+    setEditData({ code: slo.slo_code, text: slo.slo_full_text });
+  };
+
+  const handleSaveEdit = async (slo: SloRecord) => {
+    setIsSubmittingFeedback(true);
+    try {
+      // 1. Submit Feedback to API
+      await fetch('/api/slo/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          original_text: slo.slo_full_text,
+          original_json: { slo_code: slo.slo_code, slo_full_text: slo.slo_full_text },
+          corrected_json: { slo_code: editData.code, slo_full_text: editData.text },
+          context_metadata: { document_id: (slo as any).document_id }
+        })
+      });
+
+      // 2. Update Local State & Database
+      const { error } = await supabase
+        .from('slo_database')
+        .update({
+          slo_code: editData.code,
+          slo_full_text: editData.text
+        })
+        .eq('id', slo.id);
+
+      if (!error) {
+        setSlos(prev => prev.map(s => s.id === slo.id ? { ...s, slo_code: editData.code, slo_full_text: editData.text } : s));
+        setEditingSlo(null);
+      }
+    } catch (err) {
+      console.error('Feedback submission failed', err);
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
 
@@ -339,14 +383,58 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
                                     key={slo.id} 
                                     className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-100 dark:border-white/5 hover:border-indigo-500 transition-all flex flex-col md:flex-row items-start md:items-center gap-4 group shadow-sm hover:shadow-lg"
                                   >
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-3 mb-1.5">
-                                        <span className="font-black text-white bg-indigo-600 px-2 py-0.5 rounded text-[10px] tracking-wide">{slo.slo_code}</span>
-                                        <span className="text-[9px] font-bold text-slate-400 uppercase truncate">
-                                          {slo.documents.authority}
-                                        </span>
-                                      </div>
-                                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300 leading-snug">{slo.slo_full_text}</p>
+                                    <div className="flex-1 min-w-0 w-full">
+                                      {editingSlo === slo.id ? (
+                                        <div className="space-y-3 animate-in fade-in zoom-in-95 duration-200">
+                                          <input 
+                                            value={editData.code}
+                                            onChange={(e) => setEditData({ ...editData, code: e.target.value })}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-indigo-500/30 rounded-lg px-3 py-1.5 text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            placeholder="SLO Code"
+                                          />
+                                          <textarea 
+                                            value={editData.text}
+                                            onChange={(e) => setEditData({ ...editData, text: e.target.value })}
+                                            className="w-full bg-slate-50 dark:bg-slate-800 border border-indigo-500/30 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none min-h-[80px]"
+                                            placeholder="SLO Full Text"
+                                          />
+                                          <div className="flex justify-end gap-2">
+                                            <button 
+                                              onClick={() => setEditingSlo(null)}
+                                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-slate-100 dark:bg-white/5 text-slate-500 hover:bg-slate-200"
+                                            >
+                                              <X size={12} /> Cancel
+                                            </button>
+                                            <button 
+                                              onClick={() => handleSaveEdit(slo)}
+                                              disabled={isSubmittingFeedback}
+                                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                                            >
+                                              {isSubmittingFeedback ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}
+                                              Save & Train AI
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <>
+                                          <div className="flex items-center justify-between mb-1.5">
+                                            <div className="flex items-center gap-3">
+                                              <span className="font-black text-white bg-indigo-600 px-2 py-0.5 rounded text-[10px] tracking-wide">{slo.slo_code}</span>
+                                              <span className="text-[9px] font-bold text-slate-400 uppercase truncate">
+                                                {slo.documents.authority}
+                                              </span>
+                                            </div>
+                                            <button 
+                                              onClick={() => handleStartEdit(slo)}
+                                              className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg text-slate-400 transition-all"
+                                              title="Correct AI Extraction"
+                                            >
+                                              <Edit2 size={14} />
+                                            </button>
+                                          </div>
+                                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300 leading-snug">{slo.slo_full_text}</p>
+                                        </>
+                                      )}
                                     </div>
 
                                     <div className="flex items-center gap-2 shrink-0 w-full md:w-auto justify-end border-t md:border-t-0 border-slate-100 dark:border-white/5 pt-3 md:pt-0">
