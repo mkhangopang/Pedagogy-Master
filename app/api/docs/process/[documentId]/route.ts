@@ -133,6 +133,10 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       feedbackExamples.map(f => `INPUT: ${f.original_text}\nOUTPUT: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
   }
 
+  // INCREASED WINDOW: Gemini 3.1 Pro can handle much more than 30k.
+  // We'll use 150k chars which is ~40-50 pages of text.
+  const processingText = text.substring(0, 150000);
+
   const prompt = `### NEURAL CURRICULUM EXTRACTION TASK
   You are an elite pedagogical data engineer. Extract all Student Learning Outcomes (SLOs) and Curriculum Aims from the provided text.
   
@@ -150,7 +154,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   ${feedbackPrompt}
   
   ### TEXT TO PROCESS:
-  ${text.substring(0, 30000)}
+  ${processingText}
   `;
 
   try {
@@ -249,7 +253,10 @@ function scanDeclaredDomains(text: string): Record<string, string> {
   return domains;
 }
 
-function buildCleanMarkdown(slos: any[]): string {
+function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string): string {
+  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
+  const subjectName = board.subjectCodes[subjectCode] || "General";
+
   const sorted = [...slos].sort((a, b) => {
     const gA = parseInt(a.grade) || 0;
     const gB = parseInt(b.grade) || 0;
@@ -258,7 +265,29 @@ function buildCleanMarkdown(slos: any[]): string {
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
 
-  const lines: string[] = sorted.map(s => `SLO ${s.slo_code || 'null'} ${s.slo_full_text}`);
+  const lines: string[] = [];
+  lines.push(`Board: ${board.name}`);
+  lines.push(`Subject: ${subjectName}`);
+  lines.push(`<!-- MASTER_MD_DIALECT: Institutional Vault -->`);
+  lines.push('');
+
+  let lastGrade = "";
+  let lastDomain = "";
+
+  sorted.forEach(s => {
+    if (s.grade && s.grade !== lastGrade) {
+      lines.push(`# GRADE ${s.grade}`);
+      lastGrade = s.grade;
+      lastDomain = ""; // Reset domain on grade change
+    }
+    if (s.domain && s.domain !== lastDomain) {
+      const domainName = s.domain_name ? `: ${s.domain_name}` : "";
+      lines.push(`### DOMAIN ${s.domain}${domainName}`);
+      lastDomain = s.domain;
+    }
+    lines.push(`SLO ${s.slo_code || 'null'} ${s.slo_full_text}`);
+  });
+
   lines.push('');
   lines.push('<STRUCTURED_INDEX>');
   lines.push(JSON.stringify(sorted, null, 2));
@@ -393,11 +422,21 @@ export async function POST(
         console.log(`[Ingestion] No SLOs found to insert for document ${documentId}`);
       }
 
-      const markdown = buildCleanMarkdown(scoredSLOs);
-      await adminSupabase.from('documents').update({
-        extracted_text: markdown,
-        document_summary: `Linearized — ${scoredSLOs.length} SLOs`,
-      }).eq('id', documentId);
+      const markdown = buildCleanMarkdown(scoredSLOs, boardKey, subjectCode);
+      
+      // SAFETY: If extraction failed to find any SLOs, don't wipe the extracted_text
+      // This prevents the "42-char wipe" bug.
+      if (scoredSLOs.length > 0) {
+        await adminSupabase.from('documents').update({
+          extracted_text: markdown,
+          document_summary: `Linearized — ${scoredSLOs.length} SLOs`,
+        }).eq('id', documentId);
+      } else {
+        console.warn(`[Ingestion] No SLOs extracted for ${documentId}. Preserving raw text.`);
+        await adminSupabase.from('documents').update({
+          document_summary: `Linearized — 0 SLOs (Raw text preserved)`,
+        }).eq('id', documentId);
+      }
 
       // BUG-R2 FIX: Advance to ENRICH stage
       await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 60, message: 'Classifying Bloom Taxonomy...' });
