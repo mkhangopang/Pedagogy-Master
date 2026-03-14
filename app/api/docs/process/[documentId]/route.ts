@@ -171,6 +171,16 @@ function deterministicExtract(
       let normalizedCode = board.normalizeFn(rawCode);
 
       let sloText = trimmed.substring(sloMatch.index + rawCode.length).trim();
+      
+      // If grade is not set, extract it from the SLO code
+      if (!currentGrade && sloMatch[2]) {
+        currentGrade = normalizeGrade(sloMatch[2]);
+      }
+      
+      // If domain is not set, extract it from the SLO code
+      if (!currentDomain && sloMatch[3]) {
+        currentDomain = sloMatch[3].toUpperCase();
+      }
 
       let nextLineIdx = lineIdx + 1;
       const maxMerge = 6;
