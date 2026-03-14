@@ -122,47 +122,43 @@ function computeConfidence(slo: RawSLO, isOcrReliable: boolean): number {
   ) * 100) / 100;
 }
 
-interface RawSLO {
-  slo_code: string;
-  raw_code_as_found: string;
-  slo_full_text: string;
-  grade: string;
-  domain: string;
-  domain_name: string;
-  benchmark: string;
-  subject: string;
-  subject_code: string;
-  board: string;
-  char_offset: number;
-  page_number_estimate: number;
-  is_truncated: boolean;
-  is_orphan_domain: boolean;
-  regex_confidence: number;
-}
-
 import { orchestrator } from '../../../../../lib/ai/model-orchestrator';
 
 async function llmExtract(text: string, boardKey: string, subjectCode: string, feedbackExamples: any[] = []): Promise<RawSLO[]> {
   let feedbackPrompt = "";
   if (feedbackExamples.length > 0) {
-    feedbackPrompt = `\nHere are some examples of CORRECT extractions based on user feedback to guide you:\n` + 
-      feedbackExamples.map(f => `Original Text: ${f.original_text}\nCorrected JSON: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
+    feedbackPrompt = `\n### FEEDBACK-DRIVEN CORRECTIONS (STRICT ADHERENCE REQUIRED):\n` + 
+      feedbackExamples.map(f => `INPUT: ${f.original_text}\nOUTPUT: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
   }
 
-  const prompt = `Extract SLOs (Student Learning Outcomes) from the following text. 
-  Return a JSON array of objects with the following fields: 
-  slo_code, slo_full_text, grade, domain, domain_name, benchmark, subject, subject_code, board.
+  const prompt = `### NEURAL CURRICULUM EXTRACTION TASK
+  You are an elite pedagogical data engineer. Extract all Student Learning Outcomes (SLOs) from the provided text.
   
-  IMPORTANT: Return ONLY a JSON object with a "slos" key containing the array. No markdown, no conversational text.
+  ### EXTRACTION RULES:
+  1. **ZERO HALLUCINATION POLICY**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
+  2. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
+  3. **NORMALIZATION**: 'slo_code' should be the alphanumeric identifier (e.g., BIOL-1).
+  4. **FORMAT**: Return ONLY a valid JSON object with a "slos" key. No conversational filler.
+  5. **VERIFICATION**: For every field you populate (especially domain_name and benchmark), ensure the value exists as a string within the provided text. If it's a summary or a guess, set it to null.
+  
+  ### NEGATIVE EXAMPLE (DO NOT DO THIS):
+  INPUT: "SLO BIOL-1 Knowledgeable about the key concepts and theories of Biology"
+  POOR OUTPUT (HALLUCINATED): {"slo_code": "BIOL-1", "domain_name": "Nature of Science in Biology", "benchmark": "Understand fundamental principles", ...}
+  CORRECT OUTPUT: {"slo_code": "BIOL-1", "domain_name": null, "benchmark": null, ...}
+  
+  ### CONTEXT:
+  - TARGET_BOARD: ${boardKey}
+  - TARGET_SUBJECT: ${subjectCode}
   
   ${feedbackPrompt}
   
-  Text: ${text.substring(0, 15000)}
+  ### TEXT TO PROCESS:
+  ${text.substring(0, 25000)}
   `;
 
   try {
-    // Attempt Primary Node (Gemini)
-    const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY || process.env.API_KEY || '' });
+    // Attempt Primary Node (Gemini 3.1 Pro for Maximum Reasoning)
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '' });
     const response = await ai.models.generateContent({
       model: "gemini-3.1-pro-preview",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -178,13 +174,13 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
                 properties: {
                   slo_code: { type: Type.STRING },
                   slo_full_text: { type: Type.STRING },
-                  grade: { type: Type.STRING },
-                  domain: { type: Type.STRING },
-                  domain_name: { type: Type.STRING },
-                  benchmark: { type: Type.STRING },
-                  subject: { type: Type.STRING },
-                  subject_code: { type: Type.STRING },
-                  board: { type: Type.STRING }
+                  grade: { type: Type.STRING, nullable: true },
+                  domain: { type: Type.STRING, nullable: true },
+                  domain_name: { type: Type.STRING, nullable: true },
+                  benchmark: { type: Type.STRING, nullable: true },
+                  subject: { type: Type.STRING, nullable: true },
+                  subject_code: { type: Type.STRING, nullable: true },
+                  board: { type: Type.STRING, nullable: true }
                 },
                 required: ["slo_code", "slo_full_text"]
               }
@@ -221,17 +217,22 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
 }
 
 function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO[] {
-  return slos.map((s: any) => ({
-    ...s,
-    raw_code_as_found: s.slo_code,
-    char_offset: 0,
-    page_number_estimate: 0,
-    is_truncated: false,
-    is_orphan_domain: false,
-    regex_confidence: 1.0,
-    board: boardKey,
-    subject_code: subjectCode
-  }));
+  return slos.map((s: any) => {
+    const isMissingDomain = !s.domain_name || s.domain_name === 'N/A' || s.domain_name === 'null';
+    const isMissingBenchmark = !s.benchmark || s.benchmark === 'N/A' || s.benchmark === 'null';
+    
+    return {
+      ...s,
+      raw_code_as_found: s.slo_code,
+      char_offset: 0,
+      page_number_estimate: 0,
+      is_truncated: false,
+      is_orphan_domain: isMissingDomain,
+      regex_confidence: isMissingDomain && isMissingBenchmark ? 0.7 : 1.0,
+      board: boardKey,
+      subject_code: subjectCode
+    };
+  });
 }
 
 function scanDeclaredDomains(text: string): Record<string, string> {
