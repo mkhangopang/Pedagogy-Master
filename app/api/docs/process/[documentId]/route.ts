@@ -29,7 +29,7 @@ const PAKISTAN_BOARDS: Record<string, {
   domainRegex: RegExp;
   benchmarkRegex: RegExp;
   patternType: 'hierarchical_code' | 'decimal' | 'lo_textual';
-  normalizeFn: (code: string) => string;
+  normalizeFn: (code: string) => string | null;
 }> = {
   SINDH: {
     name: 'Sindh Textbook Board',
@@ -118,7 +118,7 @@ function normalizeGrade(raw: string): string {
 }
 
 interface RawSLO {
-  slo_code: string;
+  slo_code: string | null;
   raw_code_as_found: string;
   slo_full_text: string;
   grade: string;
