@@ -138,7 +138,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   
   ### EXTRACTION STRATEGY:
   1. **SPECIFIC SLOs**: Capture outcomes with explicit codes (e.g., B-09-A-01, 1.1.1).
-  2. **CURRICULUM AIMS/STANDARDS**: High-level goals (e.g., "Knowledgeable about key concepts"). If these lack codes in the text, assign a logical identifier based on the subject (e.g., ${subjectCode}-1, ${subjectCode}-2) to maintain structure.
+  2. **CURRICULUM AIMS/STANDARDS**: High-level goals (e.g., "Knowledgeable about key concepts").
   3. **FIDELITY**: Capture 'slo_full_text' exactly as written in the document.
   4. **ZERO HALLUCINATION (METADATA)**: Do NOT invent 'domain_name', 'benchmark', or 'grade' if they are not explicitly mentioned in the text. If missing, set to null.
   5. **FORMAT**: Return ONLY a valid JSON object with a "slos" key containing the array.
@@ -169,7 +169,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  slo_code: { type: Type.STRING },
+                  slo_code: { type: Type.STRING, nullable: true },
                   slo_full_text: { type: Type.STRING },
                   grade: { type: Type.STRING, nullable: true },
                   domain: { type: Type.STRING, nullable: true },
@@ -179,7 +179,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
                   subject_code: { type: Type.STRING, nullable: true },
                   board: { type: Type.STRING, nullable: true }
                 },
-                required: ["slo_code", "slo_full_text"]
+                required: ["slo_full_text"]
               }
             }
           }
@@ -212,18 +212,26 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
 }
 
 function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO[] {
+  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
+
   return slos.map((s: any) => {
     const isMissingDomain = !s.domain_name || s.domain_name === 'N/A' || s.domain_name === 'null';
     const isMissingBenchmark = !s.benchmark || s.benchmark === 'N/A' || s.benchmark === 'null';
     
+    // Normalize code using the board's logic
+    const normalizedCode = s.slo_code ? board.normalizeFn(s.slo_code) : null;
+    const grade = s.grade ? normalizeGrade(s.grade) : null;
+
     return {
       ...s,
-      raw_code_as_found: s.slo_code,
+      slo_code: normalizedCode,
+      grade: grade,
+      raw_code_as_found: s.slo_code || 'null',
       char_offset: 0,
       page_number_estimate: 0,
       is_truncated: false,
       is_orphan_domain: isMissingDomain,
-      regex_confidence: isMissingDomain && isMissingBenchmark ? 0.7 : 1.0,
+      regex_confidence: normalizedCode ? 1.0 : 0.7,
       board: boardKey,
       subject_code: subjectCode
     };
@@ -250,10 +258,7 @@ function buildCleanMarkdown(slos: any[]): string {
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
 
-  const lines: string[] = sorted.map(s => {
-    const code = s.slo_code || "GENERAL";
-    return `SLO [${code}]: ${s.slo_full_text}`;
-  });
+  const lines: string[] = sorted.map(s => `SLO ${s.slo_code || 'null'} ${s.slo_full_text}`);
   lines.push('');
   lines.push('<STRUCTURED_INDEX>');
   lines.push(JSON.stringify(sorted, null, 2));
