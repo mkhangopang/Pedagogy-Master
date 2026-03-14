@@ -41,13 +41,18 @@ const PAKISTAN_BOARDS: Record<string, {
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
     benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
     patternType: 'hierarchical_code',
-    normalizeFn: (code: string) => code
-      .toUpperCase()
-      .replace(/[\[\]]/g, '')
-      .replace(/SL[O0]/g, '')
-      .replace(/[:\-]/g, '')
-      .replace(/\s+/g, '')
-      .trim(),
+    normalizeFn: (code: string) => {
+      const cleaned = code
+        .toUpperCase()
+        .replace(/[\[\]]/g, '')
+        .replace(/SL[O0]/g, '')
+        .replace(/[:\-]/g, '')
+        .replace(/\s+/g, '')
+        .trim();
+      
+      // Fix common OCR/AI errors: Trailing 'L' or 'I' instead of '1'
+      return cleaned.replace(/(\d)[LI]$/, '$11');
+    },
   },
   PUNJAB: {
     name: 'Punjab Curriculum & Textbook Board',
@@ -256,6 +261,7 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO
 
     return {
       ...s,
+      code: normalizedCode, // Add 'code' for legacy compatibility
       slo_code: normalizedCode,
       grade: grade,
       raw_code_as_found: s.slo_code || 'null',
@@ -313,7 +319,9 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
       lines.push(`### DOMAIN ${s.domain}${domainName}`);
       lastDomain = s.domain;
     }
-    lines.push(`SLO ${s.slo_code || 'null'} ${s.slo_full_text}`);
+    
+    const codeDisplay = s.slo_code || "[GENERAL]:";
+    lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
   });
 
   lines.push('');
