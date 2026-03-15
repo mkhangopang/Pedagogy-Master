@@ -537,9 +537,13 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
     const gA = parseInt(a.grade) || 0;
     const gB = parseInt(b.grade) || 0;
     if (gA !== gB) return gA - gB;
-    if (a.domain !== b.domain) return (a.domain || "").localeCompare(b.domain || "");
+    const dA = a.domain || "";
+    const dB = b.domain || "";
+    if (dA !== dB) return dA.localeCompare(dB);
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
+
+  console.log('[DEBUG] Sorted SLOs:', sorted.map(s => `${s.grade}-${s.domain}-${s.slo_code}`));
 
   const lines: string[] = [];
   lines.push(`Board: ${board.name}`);
@@ -558,9 +562,10 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
       lastDomain = ""; // Reset domain on grade change
     }
     
-    if (s.domain && s.domain !== lastDomain) {
+    if (s.domain !== lastDomain) {
+      const domainDisplay = s.domain || "General";
       const domainName = s.domain_name ? `: ${s.domain_name}` : "";
-      lines.push(`### DOMAIN ${s.domain}${domainName}`);
+      lines.push(`### DOMAIN ${domainDisplay}${domainName}`);
       lastDomain = s.domain;
     }
     
