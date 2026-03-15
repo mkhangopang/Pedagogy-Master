@@ -257,6 +257,15 @@ NORMALIZED OUTPUT FORMAT (no dashes, no brackets):
   Input:  BXII-K-03         →  Output code: B12K03  (XII = Roman numeral grade)
 
 ═══════════════════════════════════════════════════════════
+PROGRESSION GRIDS & COLUMN LAYOUTS — CRITICAL
+═══════════════════════════════════════════════════════════
+
+Many curriculum documents use "Progression Grids" where grades are listed side-by-side in columns (e.g., Grade IX | Grade X | Grade XI | Grade XII).
+Because PDF extraction flattens text, these columns might be mixed up left-to-right in the raw text.
+You MUST extract SLOs grade-by-grade. First, enlist all SLOs for the lowest grade in the grid (e.g., Grade 9), then all SLOs for the next grade (e.g., Grade 10), and so on.
+Carefully trace which SLO belongs to which grade column by looking at the SLO code or the column headers.
+
+═══════════════════════════════════════════════════════════
 OCR ERROR CORRECTION RULES — APPLY ALWAYS
 ═══════════════════════════════════════════════════════════
 
