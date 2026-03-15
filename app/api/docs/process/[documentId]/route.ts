@@ -165,25 +165,13 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   const schema = {
     type: Type.OBJECT,
     properties: {
-      metadata: {
-        type: Type.OBJECT,
-        properties: {
-          subject: { type: Type.STRING },
-          subject_code: { type: Type.STRING },
-          board: { type: Type.STRING },
-          grades_found: { type: Type.ARRAY, items: { type: Type.STRING } },
-          domains_found: { type: Type.ARRAY, items: { type: Type.STRING } },
-          total_slos_extracted: { type: Type.INTEGER },
-          extraction_notes: { type: Type.STRING }
-        }
-      },
       slos: {
         type: Type.ARRAY,
         items: {
           type: Type.OBJECT,
           properties: {
             slo_code: { type: Type.STRING, nullable: true },
-            raw_code_as_found: { type: Type.STRING },
+            raw_code_as_found: { type: Type.STRING, nullable: true },
             slo_full_text: { type: Type.STRING },
             grade: { type: Type.STRING, nullable: true },
             domain: { type: Type.STRING, nullable: true },
@@ -192,10 +180,10 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
             subject: { type: Type.STRING, nullable: true },
             subject_code: { type: Type.STRING, nullable: true },
             board: { type: Type.STRING, nullable: true },
-            is_truncated: { type: Type.BOOLEAN },
-            is_orphan_domain: { type: Type.BOOLEAN }
+            is_truncated: { type: Type.BOOLEAN, nullable: true },
+            is_orphan_domain: { type: Type.BOOLEAN, nullable: true }
           },
-          required: ["slo_full_text", "raw_code_as_found", "is_truncated", "is_orphan_domain"]
+          required: ["slo_full_text"]
         }
       }
     }
@@ -365,6 +353,45 @@ ABSOLUTE PROHIBITIONS — NEVER DO THESE
 ❌ NEVER output markdown fences — output raw JSON only
 ❌ NEVER add commentary before or after the JSON
 ❌ NEVER use placeholder values like "N/A" or "Unknown" — use null
+
+═══════════════════════════════════════════════════════════
+OUTPUT SCHEMA — STRICT JSON
+═══════════════════════════════════════════════════════════
+
+Return ONLY this JSON structure, nothing else:
+
+{
+  "slos": [
+    {
+      "slo_code": "B09A01",
+      "raw_code_as_found": "[SLO:B-09-A-01]",
+      "slo_full_text": "Exact text as written in document",
+      "grade": "09",
+      "domain": "A",
+      "domain_name": "Nature of Science in Biology",
+      "benchmark": "Exact benchmark text or null",
+      "subject": "Biology",
+      "subject_code": "B",
+      "board": "SINDH",
+      "is_truncated": false,
+      "is_orphan_domain": false
+    }
+  ]
+}
+
+Field rules:
+  slo_code          STRING or NULL  — normalized code (B09A01 format, no dashes)
+  raw_code_as_found STRING          — exactly as it appears in source text
+  slo_full_text     STRING          — exact text, never modified
+  grade             STRING          — "09" / "10" / "11" / "12" or null
+  domain            STRING          — single letter "A"–"Z" or null
+  domain_name       STRING or NULL  — full domain name from document headings
+  benchmark         STRING or NULL  — full benchmark text or null
+  subject           STRING          — full subject name
+  subject_code      STRING          — B / C / P / M / E etc.
+  board             STRING          — always "SINDH" for this document
+  is_truncated      BOOLEAN         — true if text appears cut off
+  is_orphan_domain  BOOLEAN         — true if domain cannot be determined
 
 ═══════════════════════════════════════════════════════════
 SORTING ORDER IN OUTPUT ARRAY
