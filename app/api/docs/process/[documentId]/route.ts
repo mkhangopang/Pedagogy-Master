@@ -533,22 +533,28 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
   const subjectName = board.subjectCodes[subjectCode] || "General";
 
+function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string): string {
+  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
+  const subjectName = board.subjectCodes[subjectCode] || "General";
+
+  // Sort: Grade -> Domain -> SLO Code
   const sorted = [...slos].sort((a, b) => {
     const gA = parseInt(a.grade) || 0;
     const gB = parseInt(b.grade) || 0;
     if (gA !== gB) return gA - gB;
-    const dA = a.domain || "";
-    const dB = b.domain || "";
+    
+    const dA = (a.domain || "Z").toUpperCase();
+    const dB = (b.domain || "Z").toUpperCase();
     if (dA !== dB) return dA.localeCompare(dB);
+    
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
 
-  console.log('[DEBUG] Sorted SLOs:', sorted.map(s => `${s.grade}-${s.domain}-${s.slo_code}`));
+  console.log('[DEBUG] Final Sorted Order:', sorted.map(s => `${s.grade}-${s.domain}-${s.slo_code}`));
 
   const lines: string[] = [];
   lines.push(`Board: ${board.name}`);
   lines.push(`Subject: ${subjectName}`);
-  lines.push(`<!-- MASTER_MD_DIALECT: Institutional Vault -->`);
   lines.push('');
 
   let lastGrade = "";
@@ -557,16 +563,16 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   sorted.forEach(s => {
     const currentGrade = s.grade || "IX-XII";
     if (currentGrade !== lastGrade) {
-      lines.push(`# GRADE ${currentGrade}`);
+      lines.push(`\n# GRADE ${currentGrade}`);
       lastGrade = currentGrade;
       lastDomain = ""; // Reset domain on grade change
     }
     
-    if (s.domain !== lastDomain) {
-      const domainDisplay = s.domain || "General";
+    const currentDomain = (s.domain || "General").toUpperCase();
+    if (currentDomain !== lastDomain) {
       const domainName = s.domain_name ? `: ${s.domain_name}` : "";
-      lines.push(`### DOMAIN ${domainDisplay}${domainName}`);
-      lastDomain = s.domain;
+      lines.push(`\n### DOMAIN ${currentDomain}${domainName}`);
+      lastDomain = currentDomain;
     }
     
     const codeDisplay = s.slo_code || "[GENERAL]:";
