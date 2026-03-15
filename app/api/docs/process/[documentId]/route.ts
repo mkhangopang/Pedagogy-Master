@@ -60,12 +60,14 @@ const PAKISTAN_BOARDS: Record<string, {
 
       // Try to pad if it matches the 4-part pattern (Subject, Grade, Domain, SLO)
       // e.g. C9A5 -> C09A05
-      const match = cleaned.match(/^([A-Z]{1,3})(\d{1,2})([A-Z])(\d{1,2})$/);
+      const match = cleaned.match(/^([A-Z]{1,3})(\d{1,2})([A-Z])(\d{1,3})$/);
       if (match) {
         const subj = match[1];
         const grade = match[2].padStart(2, '0');
         const domain = match[3];
-        const slo = match[4].padStart(2, '0');
+        const slo = match[4].length === 3 && match[4].startsWith('00') 
+          ? match[4].slice(-2) // Fix 001 -> 01
+          : match[4].padStart(2, '0');
         return `${subj}${grade}${domain}${slo}`;
       }
 
@@ -156,7 +158,7 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       feedbackExamples.map(f => `INPUT: ${f.original_text}\nOUTPUT: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
   }
 
-  const CHUNK_SIZE = 60000;
+  const CHUNK_SIZE = 30000;
   const OVERLAP = 3000;
   const MAX_OUTPUT_TOKENS = 8192;
   const allRawSlos: any[] = [];
@@ -480,7 +482,11 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO
     // Normalize code using the board's logic
     const normalizedCode = s.slo_code ? board.normalizeFn(s.slo_code) : null;
     let grade = s.grade ? normalizeGrade(s.grade) : null;
-    let domain = s.domain || null;
+    let domain = s.domain ? s.domain.trim().toUpperCase() : null;
+    if (domain && domain.length > 1) {
+      const match = domain.match(/([A-Z])/);
+      if (match) domain = match[1];
+    }
     let domainName = s.domain_name || null;
 
     // METADATA RECOVERY: If grade/domain is missing, try to extract from the code
