@@ -533,10 +533,6 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
   const subjectName = board.subjectCodes[subjectCode] || "General";
 
-function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string): string {
-  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
-  const subjectName = board.subjectCodes[subjectCode] || "General";
-
   // Sort: Grade -> Domain -> SLO Code
   const sorted = [...slos].sort((a, b) => {
     const gA = parseInt(a.grade) || 0;
