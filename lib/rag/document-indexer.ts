@@ -22,13 +22,18 @@ export async function indexDocumentForRAG(
     let currentDomain = "N/A";
     
     const nodes: any[] = [];
-    let buffer = "";
+    let lineBuffer: string[] = [];
+    let currentSize = 0;
     let codesInChunk = new Set<string>();
+
+    const CHUNK_SIZE_LIMIT = 1500; // Increased for better context
+    const OVERLAP_LINES = 3; // Keep last 3 lines for context overlap
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
 
+      // Track hierarchical context
       if (line.match(/^Board:|^Subject:/i)) {
         currentSubject = line.split(':')[1]?.trim() || currentSubject;
       } else if (line.startsWith('# GRADE')) {
@@ -43,9 +48,12 @@ export async function indexDocumentForRAG(
         if (normalized) codesInChunk.add(normalized);
       });
 
-      buffer += (buffer ? '\n' : '') + line;
+      lineBuffer.push(line);
+      currentSize += line.length;
 
-      if (buffer.length >= 1000 || i === lines.length - 1) {
+      // Flush chunk if limit reached or end of document
+      if (currentSize >= CHUNK_SIZE_LIMIT || i === lines.length - 1) {
+        const buffer = lineBuffer.join('\n');
         const fingerprint = Buffer.from(buffer.trim()).toString('base64').substring(0, 50);
         const contextPath = `[NODE_PATH: ${currentSubject} > ${currentGrade} > ${currentDomain}]`;
         const enrichedText = `${contextPath}\n${buffer.trim()}`;
@@ -63,8 +71,21 @@ export async function indexDocumentForRAG(
           }
         });
 
-        buffer = "";
+        // Overlap logic: keep last N lines for the next chunk
+        const actualOverlap = Math.min(lineBuffer.length, OVERLAP_LINES);
+        lineBuffer = lineBuffer.slice(lineBuffer.length - actualOverlap);
+        currentSize = lineBuffer.reduce((acc, l) => acc + l.length, 0);
+        
+        // We don't clear codesInChunk completely if we overlap, 
+        // but for simplicity in RAG, we'll clear and let the next iteration find them again in the overlap lines
         codesInChunk.clear();
+        // Re-scan overlap lines for codes to ensure they are attributed to the next chunk too
+        lineBuffer.forEach(l => {
+          extractSLOCodes(l).forEach(c => {
+            const normalized = normalizeSLO(c.code);
+            if (normalized) codesInChunk.add(normalized);
+          });
+        });
       }
     }
 

@@ -31,43 +31,95 @@ export function chunkDocument(documentText: string): DocumentChunk[] {
     const rawMatch = match[0];
     const sloCode = rawMatch.split(/[:\s-]/)[0].toUpperCase();
     
-    // Provide 200 chars prefix and 800 chars suffix for context
-    const startPos = Math.max(0, match.index - 200);
-    const endPos = Math.min(documentText.length, match.index + 800);
+    // Expand to paragraph boundaries for better context
+    const { text: paragraphText } = expandToParagraph(documentText, match.index);
     
     chunks.push({
-      text: documentText.substring(startPos, endPos).trim(),
+      text: paragraphText.trim(),
       index: chunkIndex++,
       type: 'slo',
       sloMentioned: [sloCode],
-      keywords: extractKeywords(documentText.substring(startPos, endPos)),
+      keywords: extractKeywords(paragraphText),
     });
   }
   
-  // STRATEGY 2: Sliding Window for conceptual coverage
-  const words = documentText.split(/\s+/);
-  const wordsPerChunk = 400;
-  const overlap = 100;
+  // STRATEGY 2: Sentence-Aware Sliding Window for conceptual coverage
+  const sentences = splitIntoSentences(documentText);
+  const targetChunkSize = 1200; // characters
+  const overlapSize = 300; // characters
   
-  for (let i = 0; i < words.length; i += (wordsPerChunk - overlap)) {
-    const chunkWords = words.slice(i, i + wordsPerChunk);
-    const chunkText = chunkWords.join(' ');
+  let currentChunk: string[] = [];
+  let currentLength = 0;
+  
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i];
+    currentChunk.push(sentence);
+    currentLength += sentence.length;
     
-    if (chunkText.length < 150) continue; 
-    
-    const mentionedSLOs = extractSLOCodes(chunkText);
-    
-    chunks.push({
-      text: chunkText.trim(),
-      index: chunkIndex++,
-      type: determineChunkType(chunkText),
-      sloMentioned: mentionedSLOs,
-      keywords: extractKeywords(chunkText),
-    });
+    if (currentLength >= targetChunkSize || i === sentences.length - 1) {
+      const chunkText = currentChunk.join(' ');
+      if (chunkText.length > 150) {
+        const mentionedSLOs = extractSLOCodes(chunkText);
+        chunks.push({
+          text: chunkText.trim(),
+          index: chunkIndex++,
+          type: determineChunkType(chunkText),
+          sloMentioned: mentionedSLOs,
+          keywords: extractKeywords(chunkText),
+        });
+      }
+      
+      // Overlap: keep last few sentences that fit in overlapSize
+      let overlapChunk: string[] = [];
+      let overlapLen = 0;
+      for (let j = currentChunk.length - 1; j >= 0; j--) {
+        if (overlapLen + currentChunk[j].length <= overlapSize) {
+          overlapChunk.unshift(currentChunk[j]);
+          overlapLen += currentChunk[j].length;
+        } else {
+          break;
+        }
+      }
+      currentChunk = overlapChunk;
+      currentLength = overlapLen;
+    }
   }
   
   console.log(`✅ [Chunking] Generated ${chunks.length} segments`);
   return chunks;
+}
+
+function splitIntoSentences(text: string): string[] {
+  // Simple but effective sentence splitter
+  return text
+    .replace(/([.?!])\s+(?=[A-Z])/g, "$1|")
+    .split("|")
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+}
+
+function expandToParagraph(text: string, index: number): { text: string, start: number, end: number } {
+  // Find start of paragraph (double newline or start of text)
+  let start = text.lastIndexOf('\n\n', index);
+  if (start === -1) start = 0; else start += 2;
+  
+  // Find end of paragraph (double newline or end of text)
+  let end = text.indexOf('\n\n', index);
+  if (end === -1) end = text.length;
+  
+  // Safety: if paragraph is too large (> 2000 chars), cap it around the index
+  if (end - start > 2000) {
+    start = Math.max(start, index - 500);
+    end = Math.min(end, index + 1500);
+  }
+  
+  // Safety: if paragraph is too small (< 300 chars), expand to at least some context
+  if (end - start < 300) {
+    start = Math.max(0, index - 200);
+    end = Math.min(text.length, index + 800);
+  }
+  
+  return { text: text.substring(start, end), start, end };
 }
 
 function determineChunkType(text: string): 'slo' | 'teaching' | 'assessment' | 'general' {

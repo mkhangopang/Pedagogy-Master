@@ -200,8 +200,8 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       feedbackExamples.map(f => `INPUT: ${f.original_text}\nOUTPUT: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
   }
 
-  const CHUNK_SIZE = 30000;
-  const OVERLAP = 3000;
+  const CHUNK_SIZE = 18000; // Reduced for better focus
+  const OVERLAP = 4500;   // Increased to ensure context (benchmarks) is captured
   const MAX_OUTPUT_TOKENS = 8192;
   const allRawSlos: any[] = [];
   const seenFingerprints = new Set<string>();
@@ -237,8 +237,19 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
   const ai = new GoogleGenAI({ apiKey });
 
   // SLIDING WINDOW EXTRACTION: Process the entire document in chunks
-  for (let offset = 0; offset < text.length; offset += (CHUNK_SIZE - OVERLAP)) {
-    const processingText = text.substring(offset, offset + CHUNK_SIZE);
+  let offset = 0;
+  while (offset < text.length) {
+    // Smart boundary detection: try to end chunk at a newline within the overlap zone
+    let end = Math.min(offset + CHUNK_SIZE, text.length);
+    if (end < text.length) {
+      const searchRegion = text.substring(end - 1000, end);
+      const lastNewline = searchRegion.lastIndexOf('\n');
+      if (lastNewline !== -1) {
+        end = (end - 1000) + lastNewline + 1;
+      }
+    }
+
+    const processingText = text.substring(offset, end);
     console.log(`[Ingestion] Processing chunk at offset ${offset}, length ${processingText.length}`);
 
     const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
@@ -509,6 +520,14 @@ ${processingText}
     } catch (chunkErr: any) {
       console.error(`[Ingestion] Failed to process chunk at offset ${offset}:`, chunkErr.message);
       // Continue to next chunk instead of failing entire document
+    }
+
+    // Advance offset
+    const nextOffset = end - OVERLAP;
+    if (nextOffset <= offset) {
+      offset = end; // Ensure progress
+    } else {
+      offset = nextOffset;
     }
 
     // Safety break to prevent infinite loops or excessive costs on massive docs
