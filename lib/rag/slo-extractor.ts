@@ -11,8 +11,8 @@ export interface ExtractedSLO {
 }
 
 const SLO_PATTERNS = [
-  // 1. v110.0 Master Prefix Format: P09A-01, B11J-13, S08C-03
-  /\b([P|B|C|S|M|E])(\d{2})([A-Z])[-]?(\d{1,4})\b/g,
+  // 1. v110.0 Master Prefix Format: P09A-01, B11J-13, S08C-03, ISL09A01
+  /\b([A-Z]{1,3})(\d{2})([A-Z])[-]?(\d{1,4})\b/g,
   
   // 2. legacy hyphenated: B-11-J-13-01
   /\b([A-Z]{1,3})[-\s]?(\d{1,2})[-\s]?([A-Z])[-\s]?(\d{1,2})[-\s]?(\d{1,3})\b/g,
@@ -22,6 +22,9 @@ const SLO_PATTERNS = [
 
   // 4. Spaced/Messy Sindh Format: [SLO: B - 09 - A - 01]
   /(?:\[|\b)SL[O0]\s*[:\s-]*([A-Z]{1,3})\s*[:\s-]+\s*(\d{2})\s*[:\s-]+\s*([A-Z])\s*[:\s-]+\s*(\d{1,3})(?:\]|\b)/gi,
+  
+  // 5. Minimal Raw MD format: SLO [CODE]
+  /\bSLO\s+([A-Z]{1,3}\d{2}[A-Z]\d{1,4})\b/gi,
 ];
 
 export function extractSLOCodes(documentText: string): ExtractedSLO[] {

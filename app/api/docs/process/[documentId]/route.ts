@@ -21,6 +21,13 @@ export const maxDuration = 300;
 // Stage 4 — EMBED    : Vector indexing
 // ═══════════════════════════════════════════════════════════════════════
 
+const UNIVERSAL_SUBJECTS: Record<string, string> = {
+  'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
+  'E': 'English', 'U': 'Urdu', 'S': 'General Science', 'CS': 'Computer Science',
+  'GEO': 'Geography', 'ECO': 'Economics', 'PST': 'Pakistan Studies',
+  'ISL': 'Islamiat', 'SS': 'Social Studies', 'ETH': 'Ethics', 'SIN': 'Sindhi', 'ARA': 'Arabic'
+};
+
 const PAKISTAN_BOARDS: Record<string, {
   name: string;
   subjectCodes: Record<string, string>;
@@ -33,11 +40,7 @@ const PAKISTAN_BOARDS: Record<string, {
 }> = {
   SINDH: {
     name: 'Sindh Textbook Board',
-    subjectCodes: {
-      'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
-      'E': 'English', 'U': 'Urdu', 'CS': 'Computer Science', 'GEO': 'Geography',
-      'S': 'General Science', 'ECO': 'Economics', 'PST': 'Pakistan Studies'
-    },
+    subjectCodes: UNIVERSAL_SUBJECTS,
     sloRegex: /(?:SLO|LO|\[SLO:)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
     gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
@@ -86,7 +89,7 @@ const PAKISTAN_BOARDS: Record<string, {
   },
   PUNJAB: {
     name: 'Punjab Curriculum & Textbook Board',
-    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    subjectCodes: UNIVERSAL_SUBJECTS,
     sloRegex: /(?:SLO|LO|Outcome)\s*[:\-]?\s*(\d+)\.(\d+)\.(\d+)/g,
     gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
     domainRegex: /(?:UNIT|CHAPTER|TOPIC)\s+(\d+)\s*[:\-]\s*([^\n\r]+)/gi,
@@ -96,7 +99,7 @@ const PAKISTAN_BOARDS: Record<string, {
   },
   FBISE: {
     name: 'Federal Board of Intermediate and Secondary Education',
-    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    subjectCodes: UNIVERSAL_SUBJECTS,
     sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
     gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
@@ -106,7 +109,7 @@ const PAKISTAN_BOARDS: Record<string, {
   },
   KPK: {
     name: 'Khyber Pakhtunkhwa Textbook Board',
-    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    subjectCodes: UNIVERSAL_SUBJECTS,
     sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
     gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
@@ -116,7 +119,7 @@ const PAKISTAN_BOARDS: Record<string, {
   },
   BALOCHISTAN: {
     name: 'Balochistan Curriculum & Textbook Board',
-    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    subjectCodes: UNIVERSAL_SUBJECTS,
     sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
     gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
@@ -126,7 +129,7 @@ const PAKISTAN_BOARDS: Record<string, {
   },
   AJK: {
     name: 'AJK Textbook Board',
-    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    subjectCodes: UNIVERSAL_SUBJECTS,
     sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
     gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
     domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
@@ -166,6 +169,11 @@ function detectSubject(text: string): string {
   if (t.includes('pakistan studies')) return 'PST';
   if (t.includes('urdu')) return 'U';
   if (t.includes('geography')) return 'GEO';
+  if (t.includes('islamiat')) return 'ISL';
+  if (t.includes('social studies')) return 'SS';
+  if (t.includes('ethics')) return 'ETH';
+  if (t.includes('sindhi')) return 'SIN';
+  if (t.includes('arabic')) return 'ARA';
   return 'B';
 }
 
@@ -215,8 +223,8 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
       feedbackExamples.map(f => `INPUT: ${f.original_text}\nOUTPUT: ${JSON.stringify(f.corrected_json)}`).join('\n---\n');
   }
 
-  const CHUNK_SIZE = 18000; // Reduced for better focus
-  const OVERLAP = 4500;   // Increased to ensure context (benchmarks) is captured
+  const CHUNK_SIZE = 24000; // Increased for better context
+  const OVERLAP = 6000;   // Increased to ensure context (benchmarks) is captured
   const MAX_OUTPUT_TOKENS = 8192;
   const allRawSlos: any[] = [];
   const seenFingerprints = new Set<string>();
@@ -270,7 +278,13 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
     const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
     const prompt = `You are an elite pedagogical data engineer specializing in Pakistani curriculum extraction for the ${board.name}.
 
-Your sole task is to extract Student Learning Outcomes (SLOs) from ${board.name} curriculum documents with zero hallucination and maximum fidelity.
+Your sole task is to extract EVERY SINGLE Student Learning Outcome (SLO) from ${board.name} curriculum documents with zero hallucination and maximum fidelity.
+
+### CRITICAL MISSION:
+1. EXTRACT ALL SLOs: Do not skip anything that looks like a learning outcome.
+2. CODELESS SLOs: Many SLOs in preambles or general sections have NO code. You MUST extract them with slo_code: null.
+3. VERBATIM TEXT: Copy the slo_full_text exactly as written. Do not summarize.
+4. PROGRESSION GRIDS: If you see a table with grades IX, X, XI, XII as columns, extract them one by one.
 
 ═══════════════════════════════════════════════════════════
 UNIVERSAL SLO CODE SYSTEM — MEMORIZE THIS
@@ -409,6 +423,16 @@ Examples of codeless SLOs:
   "Knowledgeable about the key concepts and theories of Biology"
   "Able to think scientifically and use Biology content knowledge"
   "Focus on understanding, not syllabus coverage"
+
+═══════════════════════════════════════════════════════════
+PROGRESSION GRIDS & TABLES
+═══════════════════════════════════════════════════════════
+
+Curriculum documents often contain "Progression Grids" where SLOs for multiple grades are listed side-by-side.
+- You MUST extract each cell as a separate SLO.
+- Assign the correct grade (09, 10, 11, 12) based on the column header.
+- If a cell is empty, skip it.
+- If a cell contains "Cont...", "Same as Grade X", or similar, resolve the reference or skip if redundant.
 
 ═══════════════════════════════════════════════════════════
 ABSOLUTE PROHIBITIONS — NEVER DO THESE
@@ -610,9 +634,6 @@ function scanDeclaredDomains(text: string): Record<string, string> {
 }
 
 function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string): string {
-  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
-  const subjectName = board.subjectCodes[subjectCode] || "General";
-
   // Sort: Grade -> Domain -> SLO Code
   const sorted = [...slos].sort((a, b) => {
     const gA = parseInt(a.grade) || 0;
@@ -626,49 +647,32 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
     return (a.slo_code || "").localeCompare(b.slo_code || "");
   });
 
-  console.log('[DEBUG] Final Sorted Order:', sorted.map(s => `${s.grade}-${s.domain}-${s.slo_code}`));
-
   const lines: string[] = [];
-  lines.push(`Board: ${board.name}`);
-  lines.push(`Subject: ${subjectName}`);
-  lines.push('<!-- MASTER_MD_DIALECT: Institutional Vault -->');
-  lines.push('');
+  let currentGrade = "";
+  let currentDomain = "";
 
-  let lastGrade = "";
-  let lastDomain = "";
-
+  // Minimal Raw MD Format with hierarchical headers for RAG
   sorted.forEach(s => {
-    const currentGrade = s.grade || "IX-XII";
-    if (currentGrade !== lastGrade) {
+    if (s.grade && s.grade !== currentGrade) {
+      currentGrade = s.grade;
       lines.push(`\n# GRADE ${currentGrade}`);
-      lastGrade = currentGrade;
-      lastDomain = ""; // Reset domain on grade change
     }
-    
-    const currentDomain = (s.domain || "General").toUpperCase();
-    if (currentDomain !== lastDomain) {
+    if (s.domain && s.domain !== currentDomain) {
+      currentDomain = s.domain;
       const domainName = s.domain_name ? `: ${s.domain_name}` : "";
-      lines.push(`\n### DOMAIN ${currentDomain}${domainName}`);
-      lastDomain = currentDomain;
+      lines.push(`### DOMAIN ${currentDomain}${domainName}`);
     }
-    
-    const codeDisplay = s.slo_code || "[GENERAL]:";
+
+    const codeDisplay = s.slo_code || "[GENERAL]";
     lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
   });
 
   lines.push('');
   
-  // Issue 8: Re-add structured index for RAG metadata awareness
+  // Structured Index for RAG metadata awareness
   lines.push('<STRUCTURED_INDEX>');
   lines.push(JSON.stringify(sorted, null, 2));
   lines.push('</STRUCTURED_INDEX>');
-
-  // RAW MD Format as requested
-  lines.push('\n\n<!-- RAW_SLO_LIST -->');
-  sorted.forEach(s => {
-    const codeDisplay = s.slo_code || "[GENERAL]";
-    lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
-  });
 
   return lines.join('\n');
 }
@@ -722,6 +726,7 @@ async function enrichBloomTaxonomy(documentId: string, supabase: any) {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         config: {
           responseMimeType: "application/json",
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
           responseSchema: {
             type: Type.OBJECT,
             additionalProperties: { type: Type.STRING }
@@ -910,15 +915,15 @@ export async function POST(
       }
 
       // BUG-R2 FIX: Advance to ENRICH stage
-      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 60, message: 'Classifying Bloom Taxonomy...' });
+      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 60, message: 'Cleaning & Enriching Data...' });
       // BUG-R5 FIX: Re-read authoritative state
       job = await queue.getJobStatus(documentId);
     }
 
-    // ── STAGE 3: ENRICH (AI Bloom Taxonomy) ───────────────────────────────
+    // ── STAGE 3: CLEAN & ENRICH (AI Bloom Taxonomy) ───────────────────────
     if (job.step === IngestionStep.ENRICH) {
-      console.log(`[Ingestion] Starting ENRICH for ${documentId}`);
-      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 65, message: 'Classifying Bloom Taxonomy...' });
+      console.log(`[Ingestion] Starting CLEAN/ENRICH for ${documentId}`);
+      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 65, message: 'Cleaning & Enriching Data...' });
       
       await enrichBloomTaxonomy(documentId, adminSupabase);
       
