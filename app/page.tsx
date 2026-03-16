@@ -37,7 +37,7 @@ export default function App() {
   const [brain, setBrain] = useState<NeuralBrain>({
     id: 'system-brain', masterPrompt: DEFAULT_MASTER_PROMPT,
     bloomRules: DEFAULT_BLOOM_RULES, version: 1, isActive: true,
-    updatedAt: new Date().toISOString()
+    updatedAt: '2024-01-01T00:00:00.000Z'
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
