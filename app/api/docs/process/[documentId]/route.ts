@@ -577,7 +577,7 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string, declare
     const isMissingDomain = !domainName || domainName === 'N/A' || domainName === 'null';
     
     // Stop GEN- fabrication. Keep null as null.
-    const finalSloCode = normalizedCode || null;
+    const finalSloCode = normalizedCode || "GENERAL";
 
     return {
       ...s,
@@ -670,7 +670,7 @@ function deduplicateRecords(records: any[]) {
   const seen = new Map<string, number>();
   return records.map(r => {
     // Codeless SLOs get a stable unique key from their text
-    const baseKey = r.slo_code != null 
+    const baseKey = r.slo_code !== "GENERAL"
       ? `${r.document_id}:${r.slo_code}`
       : `${r.document_id}:NULL:${r.slo_full_text?.substring(0, 80)}`;
     
@@ -680,8 +680,8 @@ function deduplicateRecords(records: any[]) {
     if (count === 0) return r;
     
     // For coded SLOs: append version suffix
-    // For null SLOs: they're already unique by text, so skip duplicates
-    return r.slo_code != null 
+    // For GENERAL SLOs: they're already unique by text, so skip duplicates
+    return r.slo_code !== "GENERAL"
       ? { ...r, slo_code: `${r.slo_code}_v${count + 1}` }
       : null; // drop exact text duplicates for codeless SLOs
   }).filter(Boolean);
