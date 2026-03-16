@@ -36,6 +36,7 @@ const PAKISTAN_BOARDS: Record<string, {
     subjectCodes: {
       'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics',
       'E': 'English', 'U': 'Urdu', 'CS': 'Computer Science', 'GEO': 'Geography',
+      'S': 'General Science', 'ECO': 'Economics', 'PST': 'Pakistan Studies'
     },
     sloRegex: /(?:SLO|LO|\[SLO:)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
     gradeRegex: /(?:grade|class|std)\s*[:\-]?\s*(IX|X{1,3}I{0,3}|V?I{1,3}|\d{1,2})\b/gi,
@@ -57,6 +58,15 @@ const PAKISTAN_BOARDS: Record<string, {
       cleaned = cleaned.replace(/(\d)O$/, '$10');
       // Remove dashes (C-09-A-01 → C09A01)
       cleaned = cleaned.replace(/-/g, '');
+
+      // Handle Roman numeral grades embedded in codes (e.g. BIXA01 -> B09A01)
+      cleaned = cleaned.replace(
+        /^([A-Z]{1,3})(XII|XI|IX|X|VIII|VII|VI|V|IV|III|II)([A-Z])(\d{1,3})$/,
+        (_, subj, roman, domain, num) => {
+          const grade = ROMAN_TO_GRADE[roman] ?? roman;
+          return `${subj}${grade}${domain}${num.padStart(2, '0')}`;
+        }
+      );
 
       // Try to pad if it matches the 4-part pattern (Subject, Grade, Domain, SLO)
       // e.g. C9A5 -> C09A05
@@ -151,6 +161,11 @@ function detectSubject(text: string): string {
   if (t.includes('mathematics') || t.includes(' math')) return 'M';
   if (t.includes('english')) return 'E';
   if (t.includes('computer')) return 'CS';
+  if (t.includes('general science')) return 'S';
+  if (t.includes('economics')) return 'ECO';
+  if (t.includes('pakistan studies')) return 'PST';
+  if (t.includes('urdu')) return 'U';
+  if (t.includes('geography')) return 'GEO';
   return 'B';
 }
 
@@ -523,21 +538,18 @@ ${processingText}
     }
 
     // Advance offset
+    const MIN_ADVANCE = Math.floor(CHUNK_SIZE / 2);
     const nextOffset = end - OVERLAP;
-    if (nextOffset <= offset) {
-      offset = end; // Ensure progress
-    } else {
-      offset = nextOffset;
-    }
+    offset = Math.max(offset + MIN_ADVANCE, nextOffset);
 
     // Safety break to prevent infinite loops or excessive costs on massive docs
     if (offset > 1000000) break; 
   }
 
-  return processSlos(allRawSlos, boardKey, subjectCode);
+  return processSlos(allRawSlos, boardKey, subjectCode, scanDeclaredDomains(text));
 }
 
-function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO[] {
+function processSlos(slos: any[], boardKey: string, subjectCode: string, declaredDomains: Record<string, string> = {}): RawSLO[] {
   const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
 
   return slos.map((s: any) => {
@@ -549,7 +561,9 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO
       const match = domain.match(/([A-Z])/);
       if (match) domain = match[1];
     }
-    let domainName = s.domain_name || null;
+    
+    // Domain Name Recovery: Use declared domains if LLM missed it
+    let domainName = s.domain_name || (domain ? declaredDomains[domain] : null) || null;
 
     // METADATA RECOVERY: If grade/domain is missing, try to extract from the code
     // Sindh Pattern: C09A01 -> Grade 09, Domain A
@@ -557,10 +571,13 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO
       const match = normalizedCode.match(/^[A-Z](\d{2})([A-Z])/);
       if (!grade) grade = match![1];
       if (!domain) domain = match![2];
+      if (!domainName && domain) domainName = declaredDomains[domain] || null;
     }
 
     const isMissingDomain = !domainName || domainName === 'N/A' || domainName === 'null';
-    const finalSloCode = normalizedCode || `GEN-${createHash('md5').update(s.slo_full_text || '').digest('hex').substring(0, 8)}`;
+    
+    // Stop GEN- fabrication. Keep null as null.
+    const finalSloCode = normalizedCode || null;
 
     return {
       ...s,
@@ -640,8 +657,87 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   });
 
   lines.push('');
+  
+  // Issue 8: Re-add structured index for RAG metadata awareness
+  lines.push('<STRUCTURED_INDEX>');
+  lines.push(JSON.stringify(sorted, null, 2));
+  lines.push('</STRUCTURED_INDEX>');
 
   return lines.join('\n');
+}
+
+function deduplicateRecords(records: any[]) {
+  const seen = new Map<string, number>();
+  return records.map(r => {
+    // Codeless SLOs get a stable unique key from their text
+    const baseKey = r.slo_code != null 
+      ? `${r.document_id}:${r.slo_code}`
+      : `${r.document_id}:NULL:${r.slo_full_text?.substring(0, 80)}`;
+    
+    const count = seen.get(baseKey) ?? 0;
+    seen.set(baseKey, count + 1);
+    
+    if (count === 0) return r;
+    
+    // For coded SLOs: append version suffix
+    // For null SLOs: they're already unique by text, so skip duplicates
+    return r.slo_code != null 
+      ? { ...r, slo_code: `${r.slo_code}_v${count + 1}` }
+      : null; // drop exact text duplicates for codeless SLOs
+  }).filter(Boolean);
+}
+
+async function enrichBloomTaxonomy(documentId: string, supabase: any) {
+  const { data: slos } = await supabase
+    .from('slo_database')
+    .select('id, slo_full_text')
+    .eq('document_id', documentId);
+
+  if (!slos || slos.length === 0) return;
+
+  const apiKey = resolveApiKey();
+  const ai = new GoogleGenAI({ apiKey });
+  
+  const BATCH_SIZE = 25;
+  for (let i = 0; i < slos.length; i += BATCH_SIZE) {
+    const batch = slos.slice(i, i + BATCH_SIZE);
+    const prompt = `Classify the following Student Learning Outcomes (SLOs) into Bloom's Taxonomy levels: Remember, Understand, Apply, Analyze, Evaluate, Create.
+    
+    Return ONLY a JSON object where keys are the SLO IDs and values are the Bloom levels.
+    
+    SLOs:
+    ${batch.map((s: any) => `ID: ${s.id} | TEXT: ${s.slo_full_text}`).join('\n')}
+    `;
+
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            additionalProperties: { type: Type.STRING }
+          }
+        }
+      });
+
+      const classifications = extractJson(response.text || '{}');
+      
+      // Update each SLO in the batch
+      for (const [id, level] of Object.entries(classifications)) {
+        const validLevels = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
+        const finalLevel = validLevels.includes(level as string) ? level : 'Understand';
+        
+        await supabase
+          .from('slo_database')
+          .update({ bloom_level: finalLevel })
+          .eq('id', id);
+      }
+    } catch (err) {
+      console.error(`[Enrichment] Failed batch ${i / BATCH_SIZE}:`, err);
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -705,21 +801,7 @@ export async function POST(
       job = await queue.getJobStatus(documentId);
     }
 
-    function deduplicateRecords(records: any[]) {
-  const seen = new Map<string, number>();
-  return records
-    .filter(r => r.slo_code != null) // Strict guard against nulls
-    .map(r => {
-      const key = `${r.document_id}:${r.slo_code}`;
-      const count = seen.get(key) ?? 0;
-      seen.set(key, count + 1);
-      return count === 0 
-        ? r 
-        : { ...r, slo_code: `${r.slo_code}_v${count + 1}` };
-    });
-}
-
-// ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
+    // ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
     if (job.step === IngestionStep.LINEARIZE) {
       console.log(`[Ingestion] Starting LINEARIZE for ${documentId}`);
       const { data: current } = await adminSupabase.from('documents').select('extracted_text, document_summary').eq('id', documentId).single();
@@ -828,6 +910,11 @@ export async function POST(
 
     // ── STAGE 3: ENRICH (AI Bloom Taxonomy) ───────────────────────────────
     if (job.step === IngestionStep.ENRICH) {
+      console.log(`[Ingestion] Starting ENRICH for ${documentId}`);
+      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 65, message: 'Classifying Bloom Taxonomy...' });
+      
+      await enrichBloomTaxonomy(documentId, adminSupabase);
+      
       await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Building Neural Index...' });
       job = await queue.getJobStatus(documentId);
     }
