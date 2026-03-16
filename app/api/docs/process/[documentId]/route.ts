@@ -663,6 +663,13 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   lines.push(JSON.stringify(sorted, null, 2));
   lines.push('</STRUCTURED_INDEX>');
 
+  // RAW MD Format as requested
+  lines.push('\n\n<!-- RAW_SLO_LIST -->');
+  sorted.forEach(s => {
+    const codeDisplay = s.slo_code || "[GENERAL]";
+    lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
+  });
+
   return lines.join('\n');
 }
 
