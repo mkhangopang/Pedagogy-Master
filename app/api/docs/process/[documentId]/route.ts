@@ -84,6 +84,26 @@ const PAKISTAN_BOARDS: Record<string, {
     patternType: 'decimal',
     normalizeFn: (code: string) => code.trim().toUpperCase().replace(/[:\-]/g, ''),
   },
+  FBISE: {
+    name: 'Federal Board of Intermediate and Secondary Education',
+    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
+    gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
+    domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
+    benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
+    patternType: 'hierarchical_code',
+    normalizeFn: (code: string) => code.trim().toUpperCase().replace(/[\-\s]/g, ''),
+  },
+  KPK: {
+    name: 'Khyber Pakhtunkhwa Textbook Board',
+    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
+    gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
+    domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
+    benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
+    patternType: 'hierarchical_code',
+    normalizeFn: (code: string) => code.trim().toUpperCase().replace(/[\-\s]/g, ''),
+  },
 };
 
 const ROMAN_TO_GRADE: Record<string, string> = {
@@ -576,9 +596,6 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   });
 
   lines.push('');
-  lines.push('<STRUCTURED_INDEX>');
-  lines.push(JSON.stringify(sorted, null, 2));
-  lines.push('</STRUCTURED_INDEX>');
 
   return lines.join('\n');
 }
