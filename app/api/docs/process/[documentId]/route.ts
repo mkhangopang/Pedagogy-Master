@@ -104,6 +104,26 @@ const PAKISTAN_BOARDS: Record<string, {
     patternType: 'hierarchical_code',
     normalizeFn: (code: string) => code.trim().toUpperCase().replace(/[\-\s]/g, ''),
   },
+  BALOCHISTAN: {
+    name: 'Balochistan Curriculum & Textbook Board',
+    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
+    gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
+    domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
+    benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
+    patternType: 'hierarchical_code',
+    normalizeFn: (code: string) => code.trim().toUpperCase().replace(/[\-\s]/g, ''),
+  },
+  AJK: {
+    name: 'AJK Textbook Board',
+    subjectCodes: { 'B': 'Biology', 'P': 'Physics', 'C': 'Chemistry', 'M': 'Mathematics' },
+    sloRegex: /(?:SLO|LO)\s*[:\-]?\s*([A-Z]{1,3})[-]?(\d{1,2})[-]?([A-Z])[-]?(\d{1,2})/gi,
+    gradeRegex: /(?:grade|class)\s*[:\-]?\s*(IX|X|XI|XII|\d{1,2})\b/gi,
+    domainRegex: /(?:DOMAIN|STRAND|UNIT)\s+([A-Z])\s*[:\-]\s*([^\n\r]+)/gi,
+    benchmarkRegex: /(?:BENCHMARK|BM)\s*[:\-]?\s*(.{10,120})/gi,
+    patternType: 'hierarchical_code',
+    normalizeFn: (code: string) => code.trim().toUpperCase().replace(/[\-\s]/g, ''),
+  },
 };
 
 const ROMAN_TO_GRADE: Record<string, string> = {
@@ -118,6 +138,8 @@ function detectBoard(text: string): string {
   if (t.includes('punjab') || t.includes('pctb')) return 'PUNJAB';
   if (t.includes('federal') || t.includes('fbise')) return 'FBISE';
   if (t.includes('kpk') || t.includes('khyber')) return 'KPK';
+  if (t.includes('balochistan') || t.includes('bctb')) return 'BALOCHISTAN';
+  if (t.includes('ajk') || t.includes('azad jammu')) return 'AJK';
   return 'SINDH';
 }
 
@@ -219,9 +241,10 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
     const processingText = text.substring(offset, offset + CHUNK_SIZE);
     console.log(`[Ingestion] Processing chunk at offset ${offset}, length ${processingText.length}`);
 
-    const prompt = `You are an elite pedagogical data engineer specializing in Pakistani curriculum extraction for the Sindh Board (DCAR - Directorate of Curriculum, Assessment & Research, Jamshoro).
+    const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
+    const prompt = `You are an elite pedagogical data engineer specializing in Pakistani curriculum extraction for the ${board.name}.
 
-Your sole task is to extract Student Learning Outcomes (SLOs) from Sindh Board curriculum documents with zero hallucination and maximum fidelity.
+Your sole task is to extract Student Learning Outcomes (SLOs) from ${board.name} curriculum documents with zero hallucination and maximum fidelity.
 
 ═══════════════════════════════════════════════════════════
 UNIVERSAL SLO CODE SYSTEM — MEMORIZE THIS
@@ -394,7 +417,7 @@ Return ONLY this JSON structure, nothing else:
       "benchmark": "Exact benchmark text or null",
       "subject": "Biology",
       "subject_code": "B",
-      "board": "SINDH",
+      "board": "${boardKey}",
       "is_truncated": false,
       "is_orphan_domain": false
     }
@@ -411,7 +434,7 @@ Field rules:
   benchmark         STRING or NULL  — full benchmark text or null
   subject           STRING          — full subject name
   subject_code      STRING          — B / C / P / M / E etc.
-  board             STRING          — always "SINDH" for this document
+  board             STRING          — always "${boardKey}" for this document
   is_truncated      BOOLEAN         — true if text appears cut off
   is_orphan_domain  BOOLEAN         — true if domain cannot be determined
 
@@ -518,11 +541,12 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string): RawSLO
     }
 
     const isMissingDomain = !domainName || domainName === 'N/A' || domainName === 'null';
+    const finalSloCode = normalizedCode || `GEN-${createHash('md5').update(s.slo_full_text || '').digest('hex').substring(0, 8)}`;
 
     return {
       ...s,
-      code: normalizedCode, // Add 'code' for legacy compatibility
-      slo_code: normalizedCode,
+      code: finalSloCode, // Add 'code' for legacy compatibility
+      slo_code: finalSloCode,
       grade: grade || "IX-XII", // Default to general grade if still missing
       domain: domain,
       domain_name: domainName,
@@ -571,6 +595,7 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   const lines: string[] = [];
   lines.push(`Board: ${board.name}`);
   lines.push(`Subject: ${subjectName}`);
+  lines.push('<!-- MASTER_MD_DIALECT: Institutional Vault -->');
   lines.push('');
 
   let lastGrade = "";
@@ -663,14 +688,16 @@ export async function POST(
 
     function deduplicateRecords(records: any[]) {
   const seen = new Map<string, number>();
-  return records.map(r => {
-    const key = `${r.document_id}:${r.slo_code}`;
-    const count = seen.get(key) ?? 0;
-    seen.set(key, count + 1);
-    return count === 0 
-      ? r 
-      : { ...r, slo_code: `${r.slo_code}_v${count + 1}` };
-  });
+  return records
+    .filter(r => r.slo_code != null) // Strict guard against nulls
+    .map(r => {
+      const key = `${r.document_id}:${r.slo_code}`;
+      const count = seen.get(key) ?? 0;
+      seen.set(key, count + 1);
+      return count === 0 
+        ? r 
+        : { ...r, slo_code: `${r.slo_code}_v${count + 1}` };
+    });
 }
 
 // ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
