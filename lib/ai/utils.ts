@@ -11,8 +11,8 @@ export function extractJson(raw: string): any {
     return JSON.parse(raw.trim());
   } catch (e) {
     // 2. Try to find JSON block using balanced braces or regex
-    // This regex looks for the first { and the last }
-    const match = raw.match(/\{[\s\S]*\}/);
+    // This regex looks for the first { or [ and the last } or ]
+    const match = raw.match(/(\{|\[)[\s\S]*(\}|\])/);
     if (match) {
       const candidate = match[0];
       try {

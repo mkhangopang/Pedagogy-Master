@@ -276,12 +276,12 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
     console.log(`[Ingestion] Processing chunk at offset ${offset}, length ${processingText.length}`);
 
     const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
-    const prompt = `You are an elite pedagogical data engineer specializing in Pakistani curriculum extraction for the ${board.name}.
+    const prompt = `You are an elite pedagogical data engineer specializing in curriculum extraction.
 
-Your sole task is to extract EVERY SINGLE Student Learning Outcome (SLO) from ${board.name} curriculum documents with zero hallucination and maximum fidelity.
+Your sole task is to extract EVERY SINGLE Student Learning Outcome (SLO) from the provided curriculum document with zero hallucination and maximum fidelity.
 
 ### CRITICAL MISSION:
-1. EXTRACT ALL SLOs: Do not skip anything that looks like a learning outcome.
+1. EXTRACT ALL SLOs: Do not skip anything that looks like a learning outcome, objective, or standard.
 2. CODELESS SLOs: Many SLOs in preambles or general sections have NO code. You MUST extract them with slo_code: null.
 3. VERBATIM TEXT: Copy the slo_full_text exactly as written. Do not summarize.
 4. PROGRESSION GRIDS: If you see a table with grades IX, X, XI, XII as columns, extract them one by one.
@@ -527,7 +527,7 @@ ${processingText}
           }
         });
         const data = extractJson(response.text || '{"slos": []}');
-        chunkSlos = data.slos || [];
+        chunkSlos = Array.isArray(data) ? data : (data.slos || []);
       } catch (err: any) {
         const isQuotaError = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED');
         if (isQuotaError) {
@@ -538,7 +538,7 @@ ${processingText}
             config: { responseMimeType: "application/json", responseSchema: schema }
           });
           const data = extractJson(response.text || '{"slos": []}');
-          chunkSlos = data.slos || [];
+          chunkSlos = Array.isArray(data) ? data : (data.slos || []);
         } else {
           throw err;
         }
@@ -648,6 +648,15 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
   });
 
   const lines: string[] = [];
+  
+  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
+  const subjectName = board.subjectCodes[subjectCode] || "General";
+  lines.push(`<!-- MASTER_MD_DIALECT: Institutional Vault -->`);
+  lines.push(`# Curriculum Metadata`);
+  lines.push(`Board: ${board.name}`);
+  lines.push(`Subject: ${subjectName}`);
+  lines.push(``);
+
   let currentGrade = "";
   let currentDomain = "";
 
@@ -663,8 +672,9 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
       lines.push(`### DOMAIN ${currentDomain}${domainName}`);
     }
 
-    const codeDisplay = s.slo_code || "[GENERAL]";
-    lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
+    const codeDisplay = s.slo_code || "GENERAL";
+    const bloomLevel = s.bloom_level || "Understand";
+    lines.push(`- [SLO:${codeDisplay}] | [${bloomLevel}] : ${s.slo_full_text}`);
   });
 
   lines.push('');
