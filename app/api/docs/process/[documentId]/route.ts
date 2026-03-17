@@ -286,240 +286,36 @@ async function llmExtract(text: string, boardKey: string, subjectCode: string, f
     console.log(`[Ingestion] Processing chunk at offset ${offset}, length ${processingText.length}`);
 
     const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
-    const prompt = `You are an elite pedagogical data engineer specializing in curriculum extraction.
+    const prompt = `You are an elite pedagogical data engineer.
+    
+Your task: Extract EVERY Student Learning Outcome (SLO) from the text.
+    
+### RULES:
+1. EXTRACT ALL: Do not skip any learning objective.
+2. VERBATIM: Copy slo_full_text exactly.
+3. CODES: Extract slo_code (e.g., B09A01). If missing, use null.
+4. GRIDS: If grades are in columns, extract them grade-by-grade.
+5. NO BLOOM: Do NOT classify Bloom Taxonomy levels. Focus only on extraction.
 
-Your sole task is to extract EVERY SINGLE Student Learning Outcome (SLO) from the provided curriculum document with zero hallucination and maximum fidelity.
-
-### CRITICAL MISSION:
-1. EXTRACT ALL SLOs: Do not skip anything that looks like a learning outcome, objective, or standard.
-2. CODELESS SLOs: Many SLOs in preambles or general sections have NO code. You MUST extract them with slo_code: null.
-3. VERBATIM TEXT: Copy the slo_full_text exactly as written. Do not summarize.
-4. PROGRESSION GRIDS: If you see a table with grades IX, X, XI, XII as columns, extract them one by one.
-
-═══════════════════════════════════════════════════════════
-UNIVERSAL SLO CODE SYSTEM — MEMORIZE THIS
-═══════════════════════════════════════════════════════════
-
-Every SLO has a structured code:
-  [SUBJECT] [GRADE] [DOMAIN] [NUMBER]
-
-SUBJECT CODES (1–3 uppercase letters):
-  B   = Biology
-  C   = Chemistry
-  P   = Physics
-  M   = Mathematics
-  E   = English
-  U   = Urdu
-  S   = General Science
-  CS  = Computer Science
-  GEO = Geography
-  ECO = Economics
-  PST = Pakistan Studies
-
-GRADE CODES (always output as 2-digit number):
-  IX   → 09
-  X    → 10
-  XI   → 11
-  XII  → 12
-  (If already numeric: 9→09, 10→10, 11→11, 12→12)
-
-DOMAIN CODES (single uppercase letter A–Z):
-  Each domain letter maps to a named domain found in the document.
-
-SLO NUMBER (always output as 2-digit, padded):
-  1→01, 2→02, 9→09, 10→10, 27→27, 35→35
-
-NORMALIZED OUTPUT FORMAT (no dashes, no brackets):
-  Input:  [SLO:B-09-A-01]   →  Output code: B09A01
-  Input:  [SLO:C-11-B-15]   →  Output code: C11B15
-  Input:  SL0:B-12-K-03     →  Output code: B12K03  (SL0 with zero = OCR error)
-  Input:  B-9-A-1           →  Output code: B09A01  (pad grade and number)
-  Input:  [SLO:B-09-A-0l]   →  Output code: B09A01  (l = lowercase L = OCR for 1)
-  Input:  5L0:C-11-B-19     →  Output code: C11B19  (5L0 = OCR error for SLO)
-  Input:  BIX-A-01          →  Output code: B09A01  (IX = Roman numeral grade)
-  Input:  BXII-K-03         →  Output code: B12K03  (XII = Roman numeral grade)
-
-═══════════════════════════════════════════════════════════
-PROGRESSION GRIDS & COLUMN LAYOUTS — CRITICAL
-═══════════════════════════════════════════════════════════
-
-Many curriculum documents use "Progression Grids" where grades are listed side-by-side in columns (e.g., Grade IX | Grade X | Grade XI | Grade XII).
-Because PDF extraction flattens text, these columns might be mixed up left-to-right in the raw text.
-You MUST extract SLOs grade-by-grade. First, enlist all SLOs for the lowest grade in the grid (e.g., Grade 9), then all SLOs for the next grade (e.g., Grade 10), and so on.
-Carefully trace which SLO belongs to which grade column by looking at the SLO code or the column headers.
-
-═══════════════════════════════════════════════════════════
-OCR ERROR CORRECTION RULES — APPLY ALWAYS
-═══════════════════════════════════════════════════════════
-
-Before normalizing any code, apply these fixes IN ORDER:
-
-1. Strip prefixes:    Remove [SLO:  or SLO:  or SL0:  or 5L0:  or LO:
-2. Strip wrappers:    Remove [  ]  (  )  :
-3. Strip separators:  Remove all dashes -  dots .  spaces
-4. Fix trailing L→1:  If code ends in letter L after digits → replace with 1
-                      Example: C09A0l → C09A01
-5. Fix O→0:           If letter O appears where a digit is expected → replace with 0
-                      Example: C09AO1 → C09A01
-6. Pad grade:         Single digit grade → pad to 2: 9→09, not 9→9
-7. Pad SLO number:    Single digit number → pad to 2: 1→01, not 1→1
-8. Roman numerals:    IX→09, X→10, XI→11, XII→12 when in grade position
-
-═══════════════════════════════════════════════════════════
-GRADE DETECTION HIERARCHY
-═══════════════════════════════════════════════════════════
-
-Detect grade using this priority order:
-1. EXPLICIT in the SLO code itself:        [SLO:B-11-B-05] → grade 11
-2. SECTION HEADER in text:                 "Grade – XI" or "XI" section → grade 11
-3. BENCHMARK header above SLO:             "Benchmark 1: Grade XI..." → grade 11
-4. CHAPTER header:                         "IX Chapter 01" → grade 09
-5. DOMAIN header context:                  Domain only appears in certain grades
-6. DOCUMENT title:                         "Biology Grade XI-XII" → grades 11 or 12
-7. FALLBACK:                               If cannot determine → null (never guess)
-
-═══════════════════════════════════════════════════════════
-DOMAIN DETECTION HIERARCHY
-═══════════════════════════════════════════════════════════
-
-Detect domain using this priority order:
-1. EXPLICIT in the SLO code:               [SLO:B-09-H-01] → domain H
-2. DOMAIN HEADING in text:                 "DOMAIN H: Form and Functions of Plants" → H
-3. BENCHMARK section above SLO:            benchmark belongs to a specific domain
-4. CHAPTER title matches known domain:     "Chapter 09 FORM AND FUNCTIONS OF PLANTS" → H
-5. FALLBACK:                               If cannot determine → null
-
-═══════════════════════════════════════════════════════════
-BENCHMARK DETECTION
-═══════════════════════════════════════════════════════════
-
-Benchmarks appear as:
-  "Benchmark 1: Students should be able to..."
-  "Benchmark 2: Students will be able to..."
-
-Rules:
-- A benchmark applies to ALL SLOs that follow it until the next benchmark
-- Capture the full benchmark text as written
-- If no benchmark precedes an SLO → benchmark: null
-- Never invent or paraphrase benchmark text
-
-═══════════════════════════════════════════════════════════
-TRUNCATION DETECTION
-═══════════════════════════════════════════════════════════
-
-Mark is_truncated: true when the slo_full_text:
-- Ends mid-sentence (no period, no complete clause)
-- Ends with a comma
-- Ends with "e.g." or "i.e." or "such as" with no continuation
-- Ends with an opening parenthesis (
-- Is fewer than 8 words long (likely cut off by PDF column break)
-
-Examples:
-  "Justify why chemists use"  → is_truncated: true
-  "Define acid rain."         → is_truncated: false
-  "Classify oxides as acidic, including SO"  → is_truncated: true
-
-═══════════════════════════════════════════════════════════
-CROSS-CUTTING / GENERAL SLOs (NO CODE)
-═══════════════════════════════════════════════════════════
-
-Some SLOs appear in preambles, introductions, or "After completing this curriculum students will be able to:" sections. They have NO SLO code. Handle them as:
-  slo_code: null
-  raw_code_as_found: "null"
-  is_orphan_domain: true
-  grade: infer from surrounding context, or "09-12" if truly general
-
-Examples of codeless SLOs:
-  "Knowledgeable about the key concepts and theories of Biology"
-  "Able to think scientifically and use Biology content knowledge"
-  "Focus on understanding, not syllabus coverage"
-
-═══════════════════════════════════════════════════════════
-PROGRESSION GRIDS & TABLES
-═══════════════════════════════════════════════════════════
-
-Curriculum documents often contain "Progression Grids" where SLOs for multiple grades are listed side-by-side.
-- You MUST extract each cell as a separate SLO.
-- Assign the correct grade (09, 10, 11, 12) based on the column header.
-- If a cell is empty, skip it.
-- If a cell contains "Cont...", "Same as Grade X", or similar, resolve the reference or skip if redundant.
-
-═══════════════════════════════════════════════════════════
-ABSOLUTE PROHIBITIONS — NEVER DO THESE
-═══════════════════════════════════════════════════════════
-
-❌ NEVER invent an SLO code that does not appear in the text
-❌ NEVER invent domain_name if not stated in the document
-❌ NEVER invent benchmark text — only copy verbatim or set null
-❌ NEVER skip SLOs — extract everything, even truncated ones
-❌ NEVER merge two separate SLOs into one
-❌ NEVER split one SLO into two
-❌ NEVER change the slo_full_text — copy it exactly as written
-❌ NEVER output markdown fences — output raw JSON only
-❌ NEVER add commentary before or after the JSON
-❌ NEVER use placeholder values like "N/A" or "Unknown" — use null
-
-═══════════════════════════════════════════════════════════
-OUTPUT SCHEMA — STRICT JSON
-═══════════════════════════════════════════════════════════
-
-Return ONLY this JSON structure, nothing else:
-
+### OUTPUT SCHEMA:
 {
   "slos": [
     {
       "slo_code": "B09A01",
-      "raw_code_as_found": "[SLO:B-09-A-01]",
-      "slo_full_text": "Exact text as written in document",
+      "slo_full_text": "Verbatim text",
       "grade": "09",
       "domain": "A",
-      "domain_name": "Nature of Science in Biology",
-      "benchmark": "Exact benchmark text or null",
+      "domain_name": "Domain Name",
+      "benchmark": "Benchmark text or null",
       "subject": "Biology",
       "subject_code": "B",
       "board": "${boardKey}",
-      "is_truncated": false,
-      "is_orphan_domain": false
+      "is_truncated": false
     }
   ]
 }
 
-Field rules:
-  slo_code          STRING or NULL  — normalized code (B09A01 format, no dashes)
-  raw_code_as_found STRING          — exactly as it appears in source text
-  slo_full_text     STRING          — exact text, never modified
-  grade             STRING          — "09" / "10" / "11" / "12" or null
-  domain            STRING          — single letter "A"–"Z" or null
-  domain_name       STRING or NULL  — full domain name from document headings
-  benchmark         STRING or NULL  — full benchmark text or null
-  subject           STRING          — full subject name
-  subject_code      STRING          — B / C / P / M / E etc.
-  board             STRING          — always "${boardKey}" for this document
-  is_truncated      BOOLEAN         — true if text appears cut off
-  is_orphan_domain  BOOLEAN         — true if domain cannot be determined
-
-═══════════════════════════════════════════════════════════
-SORTING ORDER IN OUTPUT ARRAY
-═══════════════════════════════════════════════════════════
-
-Sort the slos array in this exact order:
-1. PRIMARY:   grade ascending      (09 → 10 → 11 → 12)
-2. SECONDARY: domain ascending     (A → B → C → ... → X)
-3. TERTIARY:  slo_number ascending (01 → 02 → 03 → ... → 99)
-
-Codeless SLOs (slo_code: null) go FIRST within their grade,
-before any domain-coded SLOs for that grade.
-
-### CONTEXT:
-- TARGET_BOARD: ${boardKey}
-- TARGET_SUBJECT: ${subjectCode}
-- CHUNK: ${Math.floor(offset/CHUNK_SIZE) + 1}
-
-(Note: Extract ALL SLOs found in the text, even if their subject code does not match the TARGET_SUBJECT. Do not filter them out.)
-
-${feedbackPrompt}
-
-### TEXT TO PROCESS:
+### TEXT:
 ${processingText}
 `;
 
@@ -878,7 +674,7 @@ export async function POST(
           slo_full_text: s.slo_full_text,
           domain: s.domain,
           domain_name: s.domain_name,
-          bloom_level: 'Pending',
+          bloom_level: 'N/A',
           subject: s.subject,
           grade_level: s.grade,
           extraction_confidence: s.extraction_confidence,
@@ -922,19 +718,15 @@ export async function POST(
         }).eq('id', documentId);
       }
 
-      // BUG-R2 FIX: Advance to ENRICH stage
-      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 60, message: 'Cleaning & Enriching Data...' });
+      // SKIP ENRICHMENT: Advance directly to EMBED stage
+      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Building Neural Index...' });
       // BUG-R5 FIX: Re-read authoritative state
       job = await queue.getJobStatus(documentId);
     }
 
-    // ── STAGE 3: CLEAN & ENRICH (AI Bloom Taxonomy) ───────────────────────
+    // ── STAGE 3: CLEAN & ENRICH (SKIPPED) ─────────────────────────────────
     if (job.step === IngestionStep.ENRICH) {
-      console.log(`[Ingestion] Starting CLEAN/ENRICH for ${documentId}`);
-      await queue.updateProgress(job.id, { step: IngestionStep.ENRICH, progress: 65, message: 'Cleaning & Enriching Data...' });
-      
-      await enrichBloomTaxonomy(documentId, adminSupabase);
-      
+      console.log(`[Ingestion] Skipping ENRICH for ${documentId} (Disabled)`);
       await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Building Neural Index...' });
       job = await queue.getJobStatus(documentId);
     }
