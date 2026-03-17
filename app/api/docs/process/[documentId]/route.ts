@@ -158,6 +158,16 @@ function detectBoard(text: string): string {
 
 function detectSubject(text: string): string {
   const t = text.toLowerCase();
+  
+  // Look at the first 1000 characters for the primary subject title
+  const titleRegion = t.substring(0, 1000);
+  if (titleRegion.includes('chemistry')) return 'C';
+  if (titleRegion.includes('physics')) return 'P';
+  if (titleRegion.includes('biology')) return 'B';
+  if (titleRegion.includes('mathematics') || titleRegion.includes(' math')) return 'M';
+  if (titleRegion.includes('computer')) return 'CS';
+  
+  // Fallback to general search
   if (t.includes('biology')) return 'B';
   if (t.includes('physics')) return 'P';
   if (t.includes('chemistry')) return 'C';
@@ -505,6 +515,8 @@ before any domain-coded SLOs for that grade.
 - TARGET_SUBJECT: ${subjectCode}
 - CHUNK: ${Math.floor(offset/CHUNK_SIZE) + 1}
 
+(Note: Extract ALL SLOs found in the text, even if their subject code does not match the TARGET_SUBJECT. Do not filter them out.)
+
 ${feedbackPrompt}
 
 ### TEXT TO PROCESS:
@@ -649,32 +661,9 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
 
   const lines: string[] = [];
   
-  const board = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
-  const subjectName = board.subjectCodes[subjectCode] || "General";
-  lines.push(`<!-- MASTER_MD_DIALECT: Institutional Vault -->`);
-  lines.push(`# Curriculum Metadata`);
-  lines.push(`Board: ${board.name}`);
-  lines.push(`Subject: ${subjectName}`);
-  lines.push(``);
-
-  let currentGrade = "";
-  let currentDomain = "";
-
-  // Minimal Raw MD Format with hierarchical headers for RAG
   sorted.forEach(s => {
-    if (s.grade && s.grade !== currentGrade) {
-      currentGrade = s.grade;
-      lines.push(`\n# GRADE ${currentGrade}`);
-    }
-    if (s.domain && s.domain !== currentDomain) {
-      currentDomain = s.domain;
-      const domainName = s.domain_name ? `: ${s.domain_name}` : "";
-      lines.push(`### DOMAIN ${currentDomain}${domainName}`);
-    }
-
     const codeDisplay = s.slo_code || "GENERAL";
-    const bloomLevel = s.bloom_level || "Understand";
-    lines.push(`- [SLO:${codeDisplay}] | [${bloomLevel}] : ${s.slo_full_text}`);
+    lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
   });
 
   lines.push('');
