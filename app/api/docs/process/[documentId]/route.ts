@@ -322,34 +322,33 @@ ${processingText}
     try {
       let chunkSlos: any[] = [];
       
-      // TIER 1: Gemini 3.1 Pro
+      // TIER 1: Gemini 3 Flash (Cost-Efficient)
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.1-pro-preview",
+          model: "gemini-3-flash-preview",
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           config: {
             responseMimeType: "application/json",
             responseSchema: schema,
-            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+            thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
             maxOutputTokens: MAX_OUTPUT_TOKENS
           }
         });
         const data = extractJson(response.text || '{"slos": []}');
         chunkSlos = Array.isArray(data) ? data : (data.slos || []);
       } catch (err: any) {
-        const isQuotaError = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED');
-        if (isQuotaError) {
-          console.warn(`[Ingestion] Tier 1 Quota Hit for chunk. Falling back to Tier 2: Gemini 3 Flash...`);
-          const response = await ai.models.generateContent({
-            model: "gemini-3-flash-preview",
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            config: { responseMimeType: "application/json", responseSchema: schema }
-          });
-          const data = extractJson(response.text || '{"slos": []}');
-          chunkSlos = Array.isArray(data) ? data : (data.slos || []);
-        } else {
-          throw err;
-        }
+        console.warn(`[Ingestion] Tier 1 Flash failed for chunk. Falling back to Tier 2: Gemini 3.1 Pro...`);
+        const response = await ai.models.generateContent({
+          model: "gemini-3.1-pro-preview",
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: { 
+            responseMimeType: "application/json", 
+            responseSchema: schema,
+            thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }
+          }
+        });
+        const data = extractJson(response.text || '{"slos": []}');
+        chunkSlos = Array.isArray(data) ? data : (data.slos || []);
       }
 
       // Deduplicate and add to master list
