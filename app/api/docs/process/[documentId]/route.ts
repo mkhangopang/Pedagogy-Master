@@ -295,27 +295,35 @@ Your task: Extract EVERY Student Learning Outcome (SLO) from the text.
 2. VERBATIM: Copy slo_full_text exactly.
 3. CODES: Extract slo_code (e.g., B09A01). If missing, use null.
 4. GRIDS: If grades are in columns, extract them grade-by-grade.
-5. NO BLOOM: Do NOT classify Bloom Taxonomy levels. Focus only on extraction.
+5. NO BLOOM: Do NOT classify Bloom Taxonomy levels.
 
-### OUTPUT SCHEMA:
+### OUTPUT FORMAT (JSON):
 {
   "slos": [
     {
       "slo_code": "B09A01",
-      "slo_full_text": "Verbatim text",
+      "slo_full_text": "Concept of biology",
       "grade": "09",
       "domain": "A",
-      "domain_name": "Domain Name",
-      "benchmark": "Benchmark text or null",
+      "domain_name": "Introduction to Biology",
       "subject": "Biology",
       "subject_code": "B",
-      "board": "${boardKey}",
-      "is_truncated": false
+      "board": "${boardKey}"
+    },
+    {
+      "slo_code": "B09A02",
+      "slo_full_text": "Point out Quranic instructions to reveal the study of Life",
+      "grade": "09",
+      "domain": "A",
+      "domain_name": "Introduction to Biology",
+      "subject": "Biology",
+      "subject_code": "B",
+      "board": "${boardKey}"
     }
   ]
 }
 
-### TEXT:
+### TEXT TO PROCESS:
 ${processingText}
 `;
 
@@ -456,7 +464,9 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
     const dB = (b.domain || "Z").toUpperCase();
     if (dA !== dB) return dA.localeCompare(dB);
     
-    return (a.slo_code || "").localeCompare(b.slo_code || "");
+    const nA = parseInt((a.slo_code || "").replace(/\D/g, '')) || 0;
+    const nB = parseInt((b.slo_code || "").replace(/\D/g, '')) || 0;
+    return nA - nB;
   });
 
   const lines: string[] = [];
@@ -465,13 +475,6 @@ function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string):
     const codeDisplay = s.slo_code || "GENERAL";
     lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
   });
-
-  lines.push('');
-  
-  // Structured Index for RAG metadata awareness
-  lines.push('<STRUCTURED_INDEX>');
-  lines.push(JSON.stringify(sorted, null, 2));
-  lines.push('</STRUCTURED_INDEX>');
 
   return lines.join('\n');
 }
@@ -617,7 +620,7 @@ export async function POST(
     }
 
     // ── STAGE 2: LINEARIZE (PARSE) ────────────────────────────────────────
-    if (job.step === IngestionStep.LINEARIZE) {
+    if (job.step === IngestionStep.LINEARIZE || job.step === IngestionStep.PARSE) {
       console.log(`[Ingestion] Starting LINEARIZE for ${documentId}`);
       const { data: current } = await adminSupabase.from('documents').select('extracted_text, document_summary').eq('id', documentId).single();
       const rawText = current?.extracted_text || '';
