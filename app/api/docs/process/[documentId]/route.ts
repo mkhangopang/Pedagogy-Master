@@ -613,7 +613,12 @@ function processSlos(slos: any[], boardKey: string, subjectCode: string, declare
     const isMissingDomain = !domainName || domainName === 'N/A' || domainName === 'null';
     
     // Stop GEN- fabrication. Keep null as null.
-    const finalSloCode = normalizedCode || "GENERAL";
+    let finalSloCode = normalizedCode || "GENERAL";
+    
+    // Safety: Strip any AI-invented GEN- prefixes if they leaked through
+    if (typeof finalSloCode === 'string' && finalSloCode.startsWith('GEN-')) {
+      finalSloCode = "GENERAL";
+    }
 
     return {
       ...s,
@@ -713,10 +718,10 @@ async function enrichBloomTaxonomy(documentId: string, supabase: any) {
     const batch = slos.slice(i, i + BATCH_SIZE);
     const prompt = `Classify the following Student Learning Outcomes (SLOs) into Bloom's Taxonomy levels: Remember, Understand, Apply, Analyze, Evaluate, Create.
     
-    Return ONLY a JSON object where keys are the SLO IDs and values are the Bloom levels.
+    Return ONLY a JSON object where the keys are the EXACT UUIDs provided and the values are the Bloom levels.
     
     SLOs:
-    ${batch.map((s: any) => `ID: ${s.id} | TEXT: ${s.slo_full_text}`).join('\n')}
+    ${batch.map((s: any) => `UUID: ${s.id}\nTEXT: ${s.slo_full_text}`).join('\n---\n')}
     `;
 
     try {
@@ -734,16 +739,20 @@ async function enrichBloomTaxonomy(documentId: string, supabase: any) {
       });
 
       const classifications = extractJson(response.text || '{}');
+      console.log(`[Enrichment] Batch ${i / BATCH_SIZE} received ${Object.keys(classifications).length} classifications`);
       
       // Update each SLO in the batch
-      for (const [id, level] of Object.entries(classifications)) {
+      for (let [id, level] of Object.entries(classifications)) {
+        // Clean ID if AI added "UUID: " or similar
+        const cleanId = id.replace(/^UUID:\s*/i, '').trim();
+        
         const validLevels = ['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create'];
-        const finalLevel = validLevels.includes(level as string) ? level : 'Understand';
+        const finalLevel = validLevels.find(l => l.toLowerCase() === (level as string).toLowerCase()) || 'Understand';
         
         await supabase
           .from('slo_database')
           .update({ bloom_level: finalLevel })
-          .eq('id', id);
+          .eq('id', cleanId);
       }
     } catch (err) {
       console.error(`[Enrichment] Failed batch ${i / BATCH_SIZE}:`, err);
@@ -869,7 +878,7 @@ export async function POST(
           slo_full_text: s.slo_full_text,
           domain: s.domain,
           domain_name: s.domain_name,
-          bloom_level: 'Understand',
+          bloom_level: 'Pending',
           subject: s.subject,
           grade_level: s.grade,
           extraction_confidence: s.extraction_confidence,

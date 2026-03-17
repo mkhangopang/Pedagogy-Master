@@ -154,12 +154,13 @@ with (security_invoker = true)
 as
 select 
   d.id, d.name, d.status,
+  (select count(*) from ingestion_jobs where document_id = d.id and status = 'failed') as failure_count,
   (select count(*) from document_chunks where document_id = d.id) as chunk_count,
   (select count(*) from slo_database where document_id = d.id) as slo_count,
   case 
-    when d.status = 'ready' and (select count(*) from document_chunks where document_id = d.id) > 0 then 'HEALTHY'
-    when d.status = 'failed' then 'FAILED'
-    else 'INCOMPLETE'
+    when d.status = 'ready' and (select count(*) from slo_database where document_id = d.id) > 0 then 'HEALTHY'
+    when d.status = 'failed' then 'CRITICAL_FAILURE'
+    else 'IN_PROGRESS'
   end as health_status
 from documents d;
 
