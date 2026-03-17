@@ -25,7 +25,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
-import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { IngestionStep } from '../../../../../types';
 import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 import pdf from 'pdf-parse';
@@ -439,17 +438,13 @@ async function llmExtract(
           type: Type.OBJECT,
           properties: {
             slo_code          : { type: Type.STRING,  nullable: true  },
-            raw_code_as_found : { type: Type.STRING,  nullable: true  },
             slo_full_text     : { type: Type.STRING                   },
             grade             : { type: Type.STRING,  nullable: true  },
             domain            : { type: Type.STRING,  nullable: true  },
             domain_name       : { type: Type.STRING,  nullable: true  },
-            benchmark         : { type: Type.STRING,  nullable: true  },
             subject           : { type: Type.STRING,  nullable: true  },
             subject_code      : { type: Type.STRING,  nullable: true  },
-            board             : { type: Type.STRING,  nullable: true  },
-            is_truncated      : { type: Type.BOOLEAN, nullable: true  },
-            is_orphan_domain  : { type: Type.BOOLEAN, nullable: true  },
+            board             : { type: Type.STRING,  nullable: true  }
           },
           required: ['slo_full_text'],
         },
@@ -563,152 +558,36 @@ function buildExtractionPrompt(
   chunkIndex : number,
   feedbackBlock: string
 ): string {
-  return `You are an elite pedagogical data engineer specializing in Pakistani curriculum extraction for the ${boardName}.
+  return `You are an elite pedagogical data engineer.
+    
+Your task: Extract EVERY Student Learning Outcome (SLO) from the text.
+    
+### RULES:
+1. EXTRACT ALL: Do not skip any learning objective.
+2. VERBATIM: Copy slo_full_text exactly.
+3. CODES: Extract slo_code (e.g., B09A01). If missing, use null.
+4. GRIDS: If grades are in columns, extract them grade-by-grade.
+5. NO BLOOM: Do NOT classify Bloom Taxonomy levels. Focus only on extraction.
 
-Your sole task is to extract Student Learning Outcomes (SLOs) from this ${boardName} ${subjectName} curriculum document with zero hallucination and maximum fidelity.
-
-═══════════════════════════════════════════════════════════
-UNIVERSAL SLO CODE SYSTEM
-═══════════════════════════════════════════════════════════
-
-Code format: [SUBJECT][GRADE][DOMAIN][NUMBER]
-Subject prefix for this document: "${subjectCode}" = ${subjectName}
-
-GRADE CODES (2-digit output):
-  IX→09, X→10, XI→11, XII→12
-
-SLO NUMBER: always 2-digit padded: 1→01, 9→09, 10→10
-
-NORMALIZED FORMAT (no dashes, no brackets):
-  [SLO:${subjectCode}-09-A-01] → ${subjectCode}09A01
-  ${subjectCode}-9-A-1         → ${subjectCode}09A01  (pad both)
-  SL0:${subjectCode}-12-K-03   → ${subjectCode}12K03  (SL0 with zero = OCR)
-  5L0:${subjectCode}-11-B-19   → ${subjectCode}11B19  (5L0 = OCR for SLO)
-  ${subjectCode}IX-A-01        → ${subjectCode}09A01  (Roman numeral grade)
-  ${subjectCode}XII-K-03       → ${subjectCode}12K03  (Roman numeral grade)
-
-═══════════════════════════════════════════════════════════
-OCR CORRECTION — APPLY IN ORDER
-═══════════════════════════════════════════════════════════
-
-1. Strip prefix:    [SLO:  SLO:  SL0:  5L0:  LO:
-2. Strip wrappers:  [ ] ( ) :
-3. Strip separators: all dashes, dots, spaces
-4. Fix l→1: trailing lowercase l or I after digits → 1
-5. Fix O→0: letter O in digit position → 0
-6. Pad grade:  single digit → 2-digit (9→09)
-7. Pad number: single digit → 2-digit (1→01)
-8. Roman grade: IX→09, X→10, XI→11, XII→12
-
-═══════════════════════════════════════════════════════════
-PROGRESSION GRID TABLE HANDLING
-═══════════════════════════════════════════════════════════
-
-Curriculum documents use grade columns: Grade IX | Grade X | Grade XI | Grade XII
-PDF extraction FLATTENS these columns left-to-right.
-You MUST reconstruct which SLO belongs to which grade by:
-1. Looking at the SLO code (most reliable)
-2. Looking at column header proximity in the text
-3. Looking at section headers above (e.g., "Grade – XI")
-
-Extract ALL SLOs from ALL grade columns — never skip a column.
-Where a column shows "N/A" → that domain has no SLOs for that grade.
-
-═══════════════════════════════════════════════════════════
-GRADE & DOMAIN DETECTION PRIORITY
-═══════════════════════════════════════════════════════════
-
-Grade (in priority order):
-1. Explicit in SLO code itself     [SLO:${subjectCode}-11-B-05] → "11"
-2. Section header                  "Grade – XI" → "11"
-3. Benchmark header                "Benchmark 1: Grade XI" → "11"
-4. Chapter header                  "IX Chapter 01" → "09"
-5. Document title context
-6. Cannot determine → null (NEVER guess)
-
-Domain (in priority order):
-1. Explicit in SLO code            [SLO:${subjectCode}-09-H-01] → "H"
-2. DOMAIN heading                  "DOMAIN H: Form and Functions of Plants" → "H"
-3. Benchmark section above SLO
-4. Chapter title matches domain
-5. Cannot determine → null
-
-═══════════════════════════════════════════════════════════
-BENCHMARK RULES
-═══════════════════════════════════════════════════════════
-
-- A benchmark applies to ALL SLOs following it until the NEXT benchmark
-- Copy verbatim: "Benchmark 1: Students should be able to..."
-- If no benchmark precedes an SLO → benchmark: null
-- NEVER invent benchmark text
-
-═══════════════════════════════════════════════════════════
-TRUNCATION — mark is_truncated: true when
-═══════════════════════════════════════════════════════════
-
-- Text ends mid-sentence (no period/complete clause)
-- Ends with a comma
-- Ends with "e.g." "i.e." "such as" with nothing after
-- Ends with opening parenthesis (
-- Fewer than 8 words (likely PDF column break cut-off)
-
-═══════════════════════════════════════════════════════════
-CODELESS SLOs (preambles, aims, introductions)
-═══════════════════════════════════════════════════════════
-
-For SLOs in "After completing this curriculum students will be able to:" sections:
-  slo_code: null
-  raw_code_as_found: "null"
-  is_orphan_domain: true
-  grade: "09-12" if general, or specific grade if context allows
-
-═══════════════════════════════════════════════════════════
-ABSOLUTE PROHIBITIONS
-═══════════════════════════════════════════════════════════
-
-❌ NEVER invent an SLO code not present in the source text
-❌ NEVER invent domain_name — only from document headings
-❌ NEVER invent benchmark text — verbatim or null
-❌ NEVER skip SLOs — extract all, even truncated
-❌ NEVER merge two SLOs into one
-❌ NEVER split one SLO into two
-❌ NEVER alter slo_full_text — copy exactly as written
-❌ NEVER use "N/A" or "Unknown" — use null
-
-═══════════════════════════════════════════════════════════
-OUTPUT — return ONLY valid JSON, no markdown fences
-═══════════════════════════════════════════════════════════
-
+### OUTPUT SCHEMA:
 {
   "slos": [
     {
-      "slo_code": "${subjectCode}09A01",
-      "raw_code_as_found": "[SLO:${subjectCode}-09-A-01]",
-      "slo_full_text": "Exact text as written",
+      "slo_code": "B09A01",
+      "slo_full_text": "Verbatim text",
       "grade": "09",
       "domain": "A",
-      "domain_name": "Domain name from document or null",
-      "benchmark": "Verbatim benchmark or null",
+      "domain_name": "Domain Name",
       "subject": "${subjectName}",
       "subject_code": "${subjectCode}",
-      "board": "${boardKey}",
-      "is_truncated": false,
-      "is_orphan_domain": false
+      "board": "${boardName}"
     }
   ]
 }
 
-Sort output: grade ascending (09→12), then domain (A→Z), then SLO number (01→99).
-Codeless SLOs (slo_code: null) go FIRST within their grade.
-
-### CONTEXT:
-- BOARD: ${boardKey}
-- SUBJECT: ${subjectCode} (${subjectName})
-- CHUNK: ${chunkIndex}
-${feedbackBlock}
-
-### TEXT TO PROCESS:
-${chunkText}`;
+### TEXT:
+${chunkText}
+`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -716,143 +595,28 @@ ${chunkText}`;
 // Generates the clean, structured ledger that gets stored as extracted_text
 // ═══════════════════════════════════════════════════════════════════════
 
-function buildLedgerMarkdown(
-  slos     : RawSLO[],
-  boardKey : string,
-  subjectCode: string
-): string {
-  const board       = PAKISTAN_BOARDS[boardKey] || PAKISTAN_BOARDS.SINDH;
-  const subjectName = SUBJECT_CODES[subjectCode] || 'General';
-
-  // ── Sort: null-code SLOs first, then grade → domain → slo_number ──
+function buildCleanMarkdown(slos: any[], boardKey: string, subjectCode: string): string {
+  // Sort: Grade -> Domain -> SLO Code
   const sorted = [...slos].sort((a, b) => {
-    // Codeless SLOs float to top within their grade bucket
-    if (!a.slo_code && b.slo_code)  return -1;
-    if (a.slo_code  && !b.slo_code) return  1;
-
-    const gA = parseInt(a.grade || '99', 10) || 99;
-    const gB = parseInt(b.grade || '99', 10) || 99;
+    const gA = parseInt(a.grade) || 0;
+    const gB = parseInt(b.grade) || 0;
     if (gA !== gB) return gA - gB;
-
-    const dA = (a.domain || 'ZZ').toUpperCase();
-    const dB = (b.domain || 'ZZ').toUpperCase();
+    
+    const dA = (a.domain || "Z").toUpperCase();
+    const dB = (b.domain || "Z").toUpperCase();
     if (dA !== dB) return dA.localeCompare(dB);
-
-    // Sort by SLO number extracted from the code
-    const numA = parseInt((a.slo_code || '').slice(-2), 10) || 0;
-    const numB = parseInt((b.slo_code || '').slice(-2), 10) || 0;
-    return numA - numB;
+    
+    const nA = parseInt((a.slo_code || "").replace(/\D/g, '')) || 0;
+    const nB = parseInt((b.slo_code || "").replace(/\D/g, '')) || 0;
+    return nA - nB;
   });
 
-  // ── Debug log ──
-  console.log('[Ledger] Sorted SLO order (first 20):',
-    sorted.slice(0, 20).map(s => `${s.grade}-${s.domain}-${s.slo_code}`)
-  );
-
-  // ── Domain stats for structured index ──
-  const domainStats: Record<string, { count: number; name: string | null }> = {};
-  for (const s of sorted) {
-    const key = `${s.grade || 'XX'}-${s.domain || 'X'}`;
-    if (!domainStats[key]) domainStats[key] = { count: 0, name: s.domain_name || null };
-    domainStats[key].count++;
-  }
-
-  // ── Build lines ──
   const lines: string[] = [];
-
-  // Header block
-  lines.push(`Board: ${board.name}`);
-  lines.push(`Subject: ${subjectName}`);
-  lines.push(`Generated: ${new Date().toISOString()}`);
-  lines.push(`Total SLOs: ${sorted.length}`);
-  lines.push('<!-- MASTER_MD_DIALECT: Institutional_Vault_v6 -->');
-  lines.push('');
-
-  // Summary table of contents
-  lines.push('## DOMAIN SUMMARY');
-  lines.push('');
-  const grades = [...new Set(sorted.map(s => s.grade || 'IX-XII'))].sort();
-  for (const grade of grades) {
-    const gradeSlos = sorted.filter(s => s.grade === grade);
-    const domains   = [...new Set(gradeSlos.map(s => s.domain || '?'))].sort();
-    const domainList = domains.map(d => {
-      const dSlos   = gradeSlos.filter(s => s.domain === d);
-      const dName   = dSlos[0]?.domain_name;
-      return dName ? `${d}:${dName}(${dSlos.length})` : `${d}(${dSlos.length})`;
-    }).join(', ');
-    lines.push(`Grade ${grade}: ${domainList}`);
-  }
-  lines.push('');
-
-  // Main ledger body
-  let lastGrade  = '';
-  let lastDomain = '';
-
-  for (const s of sorted) {
-    const currentGrade  = s.grade  || 'IX-XII';
-    const currentDomain = (s.domain || 'GENERAL').toUpperCase();
-
-    // Grade header
-    if (currentGrade !== lastGrade) {
-      lines.push('');
-      lines.push(`# GRADE ${currentGrade}`);
-      lines.push('');
-      lastGrade  = currentGrade;
-      lastDomain = '';
-    }
-
-    // Domain header
-    if (currentDomain !== lastDomain) {
-      const domainName = s.domain_name ? `: ${s.domain_name}` : '';
-      lines.push('');
-      lines.push(`### DOMAIN ${currentDomain}${domainName}`);
-      lines.push('');
-      lastDomain = currentDomain;
-    }
-
-    // SLO line — the core ledger entry
-    if (s.slo_code) {
-      // Coded SLO: "SLO B09A01 Exact text here"
-      const truncFlag = s.is_truncated ? ' [TRUNCATED]' : '';
-      lines.push(`SLO ${s.slo_code} ${s.slo_full_text}${truncFlag}`);
-    } else {
-      // Codeless SLO: "[GENERAL] Exact text here"
-      lines.push(`[GENERAL] ${s.slo_full_text}`);
-    }
-  }
-
-  lines.push('');
-  lines.push('');
-
-  // Structured index block for RAG metadata filtering
-  // Lets the vector retriever filter by grade/domain without parsing text
-  const structuredIndex = {
-    board      : boardKey,
-    subject    : subjectCode,
-    subjectName: subjectName,
-    grades     : grades,
-    domains    : [...new Set(sorted.map(s => s.domain).filter(Boolean))].sort(),
-    totalSlos  : sorted.length,
-    domainMap  : Object.fromEntries(
-      sorted
-        .filter(s => s.domain && s.domain_name)
-        .map(s => [s.domain!, s.domain_name!])
-        .filter((v, i, arr) => arr.findIndex(x => x[0] === v[0]) === i)
-    ),
-    gradeStats : Object.fromEntries(
-      grades.map(g => [
-        g,
-        {
-          count  : sorted.filter(s => s.grade === g).length,
-          domains: [...new Set(sorted.filter(s => s.grade === g).map(s => s.domain).filter(Boolean))].sort(),
-        }
-      ])
-    ),
-  };
-
-  lines.push('<STRUCTURED_INDEX>');
-  lines.push(JSON.stringify(structuredIndex, null, 2));
-  lines.push('</STRUCTURED_INDEX>');
+  
+  sorted.forEach(s => {
+    const codeDisplay = s.slo_code || "GENERAL";
+    lines.push(`SLO ${codeDisplay} ${s.slo_full_text}`);
+  });
 
   return lines.join('\n');
 }
@@ -1055,7 +819,7 @@ export async function POST(
       }
 
       // ── Build the Ledger Markdown ──
-      const ledgerMarkdown = buildLedgerMarkdown(scoredSLOs, boardKey, subjectCode);
+      const ledgerMarkdown = buildCleanMarkdown(scoredSLOs, boardKey, subjectCode);
       console.log(`[Stage 2] Ledger markdown built: ${ledgerMarkdown.length} chars`);
 
       // Persist ledger (or preserve raw text if extraction failed completely)
@@ -1063,64 +827,21 @@ export async function POST(
         await adminSupabase.from('documents').update({
           extracted_text  : ledgerMarkdown,
           document_summary: `Ledger|slos:${scoredSLOs.length}|board:${boardKey}|subject:${subjectCode}`,
+          status          : 'ready',
+          rag_indexed     : false
         }).eq('id', documentId);
         console.log(`[Stage 2] Ledger saved to documents.extracted_text`);
       } else {
         console.warn(`[Stage 2] Zero SLOs — preserving raw text, not overwriting.`);
         await adminSupabase.from('documents').update({
           document_summary: `Ledger|slos:0|raw_preserved|board:${boardKey}|subject:${subjectCode}`,
+          status          : 'ready',
+          rag_indexed     : false
         }).eq('id', documentId);
       }
 
-      await queue.updateProgress(job.id, {
-        step   : IngestionStep.EMBED,
-        progress: 75,
-        message : 'Building Neural Index...',
-      });
-      job = await queue.getJobStatus(documentId);
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // STAGE 3 — ENRICH (Bloom Taxonomy)
-    // ══════════════════════════════════════════════════════════════════
-    if (job.step === IngestionStep.ENRICH) {
-      console.log(`[Stage 3] Skipping ENRICH for ${documentId} (Disabled)`);
-      // For now, progress to EMBED
-      await queue.updateProgress(job.id, {
-        step   : IngestionStep.EMBED,
-        progress: 75,
-        message : 'Building Neural Index...',
-      });
-      job = await queue.getJobStatus(documentId);
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // STAGE 4 — EMBED
-    // ══════════════════════════════════════════════════════════════════
-    if (job.step === IngestionStep.EMBED) {
-      console.log(`[Stage 4] Starting EMBED for ${documentId}`);
-
-      const { data: finalDoc } = await adminSupabase
-        .from('documents')
-        .select('extracted_text')
-        .eq('id', documentId)
-        .single();
-
-      const textToEmbed = finalDoc?.extracted_text || '';
-      if (textToEmbed.length >= 100) {
-        await indexDocumentForRAG(documentId, textToEmbed, adminSupabase, job.id);
-      } else {
-        console.warn(`[Stage 4] Text too short to embed (${textToEmbed.length} chars)`);
-      }
-
       await queue.markComplete(job.id);
-      await adminSupabase.from('documents').update({
-        status          : 'ready',
-        rag_indexed     : true,
-        document_summary: 'Neural grid verified. Ledger active.',
-      }).eq('id', documentId);
-
-      console.log(`[Stage 4] EMBED complete for ${documentId}`);
+      console.log(`[Stage 2] Ingestion complete for ${documentId}`);
     }
 
     return NextResponse.json({ success: true });
