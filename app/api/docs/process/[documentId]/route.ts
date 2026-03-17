@@ -46,8 +46,8 @@ const MAX_OUTPUT_TOKENS = 8192;
 const MAX_TEXT_BYTES    = 1_000_000;
 
 // BUG-3 FIX: Use real model names
-const MODEL_PRIMARY  = 'gemini-1.5-pro-latest';
-const MODEL_FALLBACK = 'gemini-1.5-flash-latest';
+const MODEL_PRIMARY  = 'gemini-3.1-pro-preview';
+const MODEL_FALLBACK = 'gemini-3-flash-preview';
 
 // ═══════════════════════════════════════════════════════════════════════
 // ROMAN NUMERAL → GRADE MAP
@@ -457,7 +457,7 @@ async function llmExtract(
     },
   };
 
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GEMINI_API_KEY || '';
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
   const ai     = new GoogleGenAI({ apiKey });
 
   const allRawSlos: any[]     = [];
@@ -932,7 +932,7 @@ export async function POST(
     // ══════════════════════════════════════════════════════════════════
     // STAGE 2 — LINEARIZE (Extract SLOs → Build Ledger)
     // ══════════════════════════════════════════════════════════════════
-    if (job.step === IngestionStep.LINEARIZE) {
+    if (job.step === IngestionStep.LINEARIZE || job.step === IngestionStep.PARSE) {
       console.log(`[Stage 2] Starting LINEARIZE for ${documentId}`);
 
       const { data: current } = await adminSupabase
@@ -1000,7 +1000,7 @@ export async function POST(
           slo_full_text        : s.slo_full_text,
           domain               : s.domain,
           domain_name          : s.domain_name,
-          bloom_level          : 'Understand',      // Stage 3 will update this
+          bloom_level          : 'N/A',      // Stage 3 will update this
           subject              : s.subject,
           grade_level          : s.grade,
           extraction_confidence: s.extraction_confidence,
@@ -1073,9 +1073,9 @@ export async function POST(
       }
 
       await queue.updateProgress(job.id, {
-        step   : IngestionStep.ENRICH,
-        progress: 60,
-        message : 'Classifying Bloom Taxonomy...',
+        step   : IngestionStep.EMBED,
+        progress: 75,
+        message : 'Building Neural Index...',
       });
       job = await queue.getJobStatus(documentId);
     }
@@ -1084,8 +1084,7 @@ export async function POST(
     // STAGE 3 — ENRICH (Bloom Taxonomy)
     // ══════════════════════════════════════════════════════════════════
     if (job.step === IngestionStep.ENRICH) {
-      console.log(`[Stage 3] Starting ENRICH for ${documentId}`);
-      // TODO: Implement real Bloom classification here
+      console.log(`[Stage 3] Skipping ENRICH for ${documentId} (Disabled)`);
       // For now, progress to EMBED
       await queue.updateProgress(job.id, {
         step   : IngestionStep.EMBED,
