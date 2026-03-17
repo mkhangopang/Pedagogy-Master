@@ -243,7 +243,7 @@ ${testResults.recommendations.map(r => `- ${r}`).join('\n')}
           </div>
           <h2 className="text-2xl font-bold text-slate-200 mb-3">Diagnostic Hub Offline</h2>
           <p className="text-slate-500 max-w-sm mx-auto">
-            Click "Initialize Full Test" to perform an end-to-end check of environment variables, cloud infrastructure, and AI connectivity.
+            Click &quot;Initialize Full Test&quot; to perform an end-to-end check of environment variables, cloud infrastructure, and AI connectivity.
           </p>
         </div>
       )}

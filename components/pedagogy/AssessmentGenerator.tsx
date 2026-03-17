@@ -99,7 +99,7 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cognitive Levels (Bloom's)</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cognitive Levels (Bloom&apos;s)</label>
               <div className="flex flex-wrap gap-2">
                 {bloomOptions.map(l => (
                   <button key={l} onClick={() => toggleBloom(l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${options.bloomLevels.includes(l) ? 'bg-emerald-600 border-emerald-500 text-white shadow-md' : 'bg-white dark:bg-white/5 text-slate-400 border-slate-200 dark:border-white/10'}`}>{l}</button>

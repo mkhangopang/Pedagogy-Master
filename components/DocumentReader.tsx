@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { 
   X, Copy, Check, Search, LayoutList, 
   BrainCircuit, History, RefreshCw, Layers, 
@@ -39,7 +39,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   const [isReindexing, setIsReindexing] = useState(false);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
 
-  const fetchSlos = async () => {
+  const fetchSlos = useCallback(async () => {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -65,7 +65,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeDoc.id]);
 
   const handleReindex = async () => {
     if (jobStatus === 'processing' || jobStatus === 'indexing') {
@@ -100,7 +100,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
   useEffect(() => {
     fetchSlos();
-  }, [activeDoc.id]);
+  }, [activeDoc.id, fetchSlos]);
 
   const handleCopy = (code: string) => {
     navigator.clipboard.writeText(code);
