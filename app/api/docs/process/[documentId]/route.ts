@@ -687,6 +687,7 @@ export async function POST(
       } else {
         const apiKey =
           process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+          process.env.API_KEY ||
           process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
           process.env.GEMINI_API_KEY ||
           process.env.GOOGLE_AI_API_KEY ||
@@ -694,8 +695,8 @@ export async function POST(
 
         if (!apiKey) {
           throw new Error(
-            'API_KEY_MISSING: set NEXT_PUBLIC_GEMINI_API_KEY in the environment.\n' +
-            'Checked: NEXT_PUBLIC_GEMINI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, GEMINI_API_KEY'
+            'API_KEY_MISSING: set NEXT_PUBLIC_GEMINI_API_KEY or API_KEY in the environment.\n' +
+            'Checked: NEXT_PUBLIC_GEMINI_API_KEY, API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, GEMINI_API_KEY'
           );
         }
         console.log(`[Stage 2] API key found (${apiKey.substring(0, 8)}...)`);
