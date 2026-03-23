@@ -131,6 +131,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
+  const isLedger = useMemo(() => extractedText?.trim().startsWith('Board:'), [extractedText]);
+
   const groupedSlos = useMemo(() => {
     const filtered = slos.filter(s => 
       s.slo_code.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -162,8 +164,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             <div className="flex items-center gap-2 mt-1">
               <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded">Surgical Ledger Node</span>
               <span className={`text-[8px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${isWorking ? 'bg-amber-50 text-amber-500 animate-pulse' : 'bg-emerald-50 text-emerald-500'}`}>
-                {isWorking ? 'Grid Processing' : 'Verified Grid'}
+                {isWorking ? 'Grid Syncing...' : 'Verified Grid'}
               </span>
+              {isWorking && <span className="text-[8px] font-black text-indigo-500 uppercase tracking-widest ml-2">{slos.length} Artifacts Found</span>}
             </div>
           </div>
         </div>
@@ -229,6 +232,15 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             </div>
           ) : slos.length > 0 ? (
             <div className="space-y-24">
+              {isWorking && (
+                <div className="bg-amber-500/10 border border-amber-500/20 p-6 rounded-3xl flex items-center justify-between animate-pulse">
+                  <div className="flex items-center gap-4">
+                    <RefreshCw className="w-5 h-5 text-amber-500 animate-spin" />
+                    <p className="text-sm font-bold text-amber-600 uppercase tracking-widest">Neural Grid Syncing: {slos.length} Artifacts Found So Far...</p>
+                  </div>
+                  <div className="text-[10px] font-black text-amber-400 uppercase tracking-[0.2em]">Live Stream Active</div>
+                </div>
+              )}
               {Object.entries(groupedSlos).sort().map(([grade, domains]) => (
                 <div key={grade} className="space-y-12">
                   <h2 className="text-3xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tighter border-b border-indigo-100 dark:border-indigo-900 pb-4">
@@ -284,9 +296,20 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                </h3>
                <p className="text-sm font-medium text-slate-500 max-w-sm mt-4 leading-relaxed italic">
                  {isWorking 
-                   ? 'The neural grid is currently linearizing your document. Click refresh below to check for completion.' 
+                   ? 'The neural grid is currently linearizing your document. Artifacts will appear here as they are decrypted.' 
                    : 'The curriculum ledger for this document is currently empty. This happens if the document was uploaded before the database migration.'}
                </p>
+               
+               {/* Show raw stream preview if available during extraction */}
+               {isWorking && extractedText && !isLedger && (
+                 <div className="mt-16 w-full max-w-2xl bg-white dark:bg-[#080808] p-8 rounded-3xl border dark:border-white/5 text-left opacity-50">
+                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Raw Stream Preview</h4>
+                   <div className="text-sm text-slate-500 font-mono line-clamp-6 whitespace-pre-wrap">
+                     {extractedText}
+                   </div>
+                 </div>
+               )}
+
                <div className="flex gap-4 mt-12">
                  <button 
                    onClick={fetchSlos}

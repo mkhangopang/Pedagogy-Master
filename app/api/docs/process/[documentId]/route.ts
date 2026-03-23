@@ -408,7 +408,11 @@ async function extractSlos(
   boardKey   : string,
   subjectCode: string,
   domainMap  : Record<string, string>,
-  apiKey     : string
+  apiKey     : string,
+  documentId : string,
+  supabase   : any,
+  jobId      : string,
+  queue      : IngestionQueue
 ): Promise<any[]> {
 
   const ai          = new GoogleGenAI({ apiKey });
@@ -419,11 +423,9 @@ async function extractSlos(
   let   offset      = 0;
   let   chunkIndex  = 0;
 
-  // For Math (horizontal table layout), pre-process the full text to linearize
-  // the SLO table before chunking. This converts the multi-column grid into a
-  // vertical list of "CODE text" lines.
   const processedText = isPrimary ? linearizeMathText(text) : text;
-  console.log(`[Extract] isPrimary=${isPrimary} rawLen=${text.length} processedLen=${processedText.length}`);
+  const totalLen      = processedText.length;
+  console.log(`[Extract] isPrimary=${isPrimary} rawLen=${text.length} processedLen=${totalLen}`);
 
   const schema = {
     type      : Type.OBJECT,
@@ -449,34 +451,79 @@ async function extractSlos(
     },
   };
 
-  while (offset < processedText.length) {
+  // Clear existing SLOs for this document before starting fresh extraction
+  await supabase.from('slo_database').delete().eq('document_id', documentId);
+
+  while (offset < totalLen) {
     chunkIndex++;
 
-    let end = Math.min(offset + CHUNK_SIZE, processedText.length);
-    if (end < processedText.length) {
+    let end = Math.min(offset + CHUNK_SIZE, totalLen);
+    if (end < totalLen) {
       const zone = processedText.substring(end - 800, end);
       const nl   = zone.lastIndexOf('\n');
       if (nl !== -1) end = (end - 800) + nl + 1;
     }
 
     const chunk = processedText.substring(offset, end);
-    console.log(`[Extract] Chunk ${chunkIndex}: offset=${offset} len=${chunk.length} totalSoFar=${allSlos.length}`);
+    const progress = Math.round((offset / totalLen) * 50) + 25; // 25% to 75%
+    
+    await queue.updateProgress(jobId, {
+      step: IngestionStep.LINEARIZE,
+      progress,
+      message: `Extracting SLOs (Chunk ${chunkIndex}, ${allSlos.length} found)...`,
+    });
 
     try {
       const prompt    = makePrompt(chunk, subjectName, subjectCode, boardKey, chunkIndex);
       const chunkSlos = await callGemini(ai, prompt, schema);
 
-      let added = 0;
+      const newRecords: any[] = [];
       for (const s of chunkSlos) {
         if (!s.slo_full_text?.trim()) continue;
+        
         const fp = createHash('md5').update(`${s.slo_code ?? 'null'}|${s.slo_full_text}`).digest('hex');
-        if (!seenFp.has(fp)) {
-          seenFp.add(fp);
-          allSlos.push(s);
-          added++;
+        if (seenFp.has(fp)) continue;
+        seenFp.add(fp);
+        
+        // Process the SLO immediately
+        const processed = processSlos([s], boardKey, subjectCode, domainMap)[0];
+        if (!processed) continue;
+
+        allSlos.push(processed);
+        newRecords.push({
+          document_id          : documentId,
+          slo_code             : processed.slo_code,
+          slo_full_text        : processed.slo_full_text,
+          domain               : processed.domain,
+          domain_name          : processed.domain_name,
+          bloom_level          : null,
+          subject              : processed.subject,
+          grade_level          : processed.grade,
+          extraction_confidence: processed.slo_code ? 0.92 : 0.5,
+          page_number          : null,
+          is_truncated         : processed.is_truncated,
+          is_orphan_domain     : processed.is_orphan_domain,
+          raw_code_as_found    : processed.raw_code_as_found,
+          char_offset          : offset,
+          benchmark            : processed.benchmark,
+          board                : processed.board,
+        });
+      }
+
+      if (newRecords.length > 0) {
+        // Incremental save to DB
+        const coded    = newRecords.filter(r => r.slo_code != null);
+        const codeless = newRecords.filter(r => r.slo_code == null);
+        
+        if (coded.length > 0) {
+          await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+        }
+        if (codeless.length > 0) {
+          await supabase.from('slo_database').insert(codeless);
         }
       }
-      console.log(`[Extract] Chunk ${chunkIndex}: +${added} new SLOs (${allSlos.length} total)`);
+
+      console.log(`[Extract] Chunk ${chunkIndex}: +${newRecords.length} new SLOs (${allSlos.length} total)`);
 
     } catch (err: any) {
       console.error(`[Extract] Chunk ${chunkIndex} FAILED:`, err.message);
@@ -484,16 +531,13 @@ async function extractSlos(
 
     const rawNext = end - OVERLAP;
     offset        = Math.max(offset + MIN_ADVANCE, rawNext);
-    if (offset > 900_000) {
-      console.warn('[Extract] Safety cap at 900k chars');
+    if (offset > 1200_000) { // Increased safety cap for large docs
+      console.warn('[Extract] Safety cap at 1.2M chars');
       break;
     }
   }
 
-  console.log(`[Extract] Done. Raw SLOs: ${allSlos.length}`);
-  const processed = processSlos(allSlos, boardKey, subjectCode, domainMap);
-  console.log(`[Extract] After processSlos: ${processed.length}`);
-  return processed;
+  return allSlos;
 }
 
 // ── LEDGER MARKDOWN BUILDER ───────────────────────────────────────────────────
@@ -715,7 +759,7 @@ export async function POST(
         const domainMap = scanDomains(rawText);
         console.log(`[Stage 2] Pre-scanned domains:`, Object.keys(domainMap));
 
-        const slos = await extractSlos(rawText, board, subject, domainMap, apiKey);
+        const slos = await extractSlos(rawText, board, subject, domainMap, apiKey, documentId, supabase, job.id, queue);
 
         console.log(`[Stage 2] === EXTRACTION RESULTS ===`);
         console.log(`[Stage 2] Total SLOs: ${slos.length}`);
@@ -730,47 +774,8 @@ export async function POST(
             document_summary: `slo_extraction_failed|board:${board}|subject:${subject}|raw_len:${rawText.length}`,
           }).eq('id', documentId);
         } else {
-          const records = slos.map((s: any) => ({
-            document_id          : documentId,
-            slo_code             : s.slo_code,
-            slo_full_text        : s.slo_full_text,
-            domain               : s.domain,
-            domain_name          : s.domain_name,
-            bloom_level          : null,
-            subject              : s.subject,
-            grade_level          : s.grade,
-            extraction_confidence: s.slo_code ? 0.92 : 0.5,
-            page_number          : null,
-            is_truncated         : s.is_truncated,
-            is_orphan_domain     : s.is_orphan_domain,
-            raw_code_as_found    : s.raw_code_as_found,
-            char_offset          : 0,
-            benchmark            : s.benchmark,
-            board                : s.board,
-          }));
-
-          const deduped  = dedupe(records);
-          const coded    = deduped.filter(r => r.slo_code != null);
-          const codeless = deduped.filter(r => r.slo_code == null);
-          console.log(`[Stage 2] Deduped: ${deduped.length} (${coded.length} coded, ${codeless.length} codeless)`);
-
-          await supabase.from('slo_database').delete().eq('document_id', documentId);
-
-          if (coded.length > 0) {
-            const { error } = await supabase
-              .from('slo_database')
-              .upsert(coded, { onConflict: 'document_id,slo_code' });
-            if (error) throw new Error(`DB_FAULT (coded upsert): ${error.message}`);
-          }
-          if (codeless.length > 0) {
-            const { error } = await supabase.from('slo_database').insert(codeless);
-            if (error) console.warn(`[Stage 2] codeless insert warning: ${error.message}`);
-          }
-          console.log(`[Stage 2] DB write OK`);
-
           const ledger = buildLedger(slos, board, subject);
-          console.log(`[Stage 2] Ledger built: ${ledger.length} chars`);
-          console.log(`[Stage 2] Ledger preview:\n${ledger.substring(0, 600)}\n...`);
+          console.log(`[Stage 2] Built ledger with ${slos.length} SLOs. Updating document...`);
 
           await supabase.from('documents').update({
             extracted_text  : ledger,
