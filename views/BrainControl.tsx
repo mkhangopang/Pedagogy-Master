@@ -187,7 +187,7 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            <div className="flex items-center justify-between">
               <div>
                  <h3 className="text-xl font-black uppercase tracking-tight dark:text-white">Infrastructure Blueprint SQL</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">v11.0 RALPH FIX EDITION</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">v12.1 FIXED INFRASTRUCTURE EDITION</p>
               </div>
               <div className="flex gap-3">
                 <button onClick={handleCopyBlueprint} className="flex items-center gap-3 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">

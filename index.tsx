@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './app/page';
 
 /**
- * NEURAL INITIALIZATION LAYER (v11.0)
+ * NEURAL INITIALIZATION LAYER (v12.1)
  * Logic: Direct hydration of the root component.
  * Environment bridging is now handled internally by lib/supabase.ts
  */

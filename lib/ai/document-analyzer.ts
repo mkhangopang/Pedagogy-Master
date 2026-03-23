@@ -6,7 +6,7 @@ import { getObjectText } from "../r2";
 import { extractJson } from "./utils";
 
 /**
- * NEURAL DOCUMENT INTELLIGENCE (v12.0)
+ * NEURAL DOCUMENT INTELLIGENCE (v12.1)
  * Generates rich pedagogical metadata for the Supabase Vault.
  */
 export async function analyzeDocumentWithAI(
