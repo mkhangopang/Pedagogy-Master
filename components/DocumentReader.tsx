@@ -67,7 +67,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     }
   }, [activeDoc.id]);
 
-  const handleReindex = async () => {
+  const handleReindex = useCallback(async () => {
     if (jobStatus === 'processing' || jobStatus === 'indexing') {
       alert("A background task is already active for this document.");
       return;
@@ -96,11 +96,34 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     } finally {
       setIsReindexing(false);
     }
-  };
+  }, [activeDoc.id, jobStatus]);
 
   useEffect(() => {
     fetchSlos();
   }, [activeDoc.id, fetchSlos]);
+
+  const isWorking = jobStatus === 'processing' || jobStatus === 'indexing' || jobStatus === 'draft';
+
+  // Automatic polling when processing
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isWorking) {
+      interval = setInterval(() => {
+        fetchSlos();
+      }, 5000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isWorking, fetchSlos]);
+
+  // Auto-trigger extraction if empty and not working
+  useEffect(() => {
+    if (!loading && slos.length === 0 && !isWorking && !isReindexing && jobStatus !== 'failed') {
+      console.log("Auto-triggering extraction for empty ledger...");
+      handleReindex();
+    }
+  }, [loading, slos.length, isWorking, isReindexing, jobStatus, handleReindex]);
 
   const handleCopy = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -126,8 +149,6 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
     return groups;
   }, [slos, searchTerm]);
-
-  const isWorking = jobStatus === 'processing' || jobStatus === 'indexing' || jobStatus === 'draft';
 
   return (
     <div className="fixed inset-0 z-[500] bg-white dark:bg-[#020202] flex flex-col animate-in fade-in duration-300 overflow-hidden text-left">

@@ -678,13 +678,24 @@ export async function POST(
         );
       }
 
+      let skipExtraction = false;
       if (rawText.startsWith('Board:')) {
-        console.warn('[Stage 2] Already a ledger — skipping re-extraction');
-        await queue.updateProgress(job.id, {
-          step: IngestionStep.EMBED, progress: 75, message: 'Indexing ledger...',
-        });
-        job = await queue.getJobStatus(documentId);
-      } else {
+        console.warn('[Stage 2] Already a ledger — checking if SLO database needs population');
+        
+        const { count, error: countErr } = await supabase
+          .from('slo_database')
+          .select('*', { count: 'exact', head: true })
+          .eq('document_id', documentId);
+          
+        if (!countErr && count && count > 0) {
+          console.log(`[Stage 2] SLO database already has ${count} records — skipping re-extraction`);
+          skipExtraction = true;
+        } else {
+          console.log('[Stage 2] SLO database is empty for ledger — triggering extraction from ledger text');
+        }
+      }
+
+      if (!skipExtraction) {
         const apiKey =
           process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
           process.env.API_KEY ||
@@ -770,6 +781,12 @@ export async function POST(
 
         await queue.updateProgress(job.id, {
           step: IngestionStep.EMBED, progress: 75, message: 'Building RAG index...',
+        });
+        job = await queue.getJobStatus(documentId);
+      } else {
+        // Skip extraction but move to next step
+        await queue.updateProgress(job.id, {
+          step: IngestionStep.EMBED, progress: 75, message: 'Indexing ledger...',
         });
         job = await queue.getJobStatus(documentId);
       }

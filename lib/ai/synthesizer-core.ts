@@ -65,7 +65,7 @@ export class SynthesizerCore {
       rpm: 20,
       rpd: 5000,
       tier: 1,
-      enabled: !!process.env.GROK_API_KEY
+      enabled: !!(process.env.GROK_API_KEY || process.env.AI_GATEWAY_API_KEY)
     });
 
     // TIER 2: THE ENGINES (Flash Fallback)
@@ -167,10 +167,14 @@ export class SynthesizerCore {
 
     for (const provider of candidates) {
       try {
-        const apiKey = (provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
+        let apiKey = (provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
           ? (process.env.API_KEY || resolveApiKey()) 
           : process.env[provider.apiKeyEnv];
           
+        if (!apiKey && provider.id === 'grok-2') {
+          apiKey = process.env.AI_GATEWAY_API_KEY;
+        }
+
         if (!apiKey) continue;
 
         if (provider.endpoint === 'native') {
