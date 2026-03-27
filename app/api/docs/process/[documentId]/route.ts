@@ -515,11 +515,15 @@ async function extractSlos(
         const coded    = newRecords.filter(r => r.slo_code != null);
         const codeless = newRecords.filter(r => r.slo_code == null);
         
+        console.log(`[Extract] Saving batch: ${coded.length} coded, ${codeless.length} codeless`);
+
         if (coded.length > 0) {
-          await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+          const { error: e1 } = await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+          if (e1) console.error('[Extract] Upsert error:', e1);
         }
         if (codeless.length > 0) {
-          await supabase.from('slo_database').insert(codeless);
+          const { error: e2 } = await supabase.from('slo_database').insert(codeless);
+          if (e2) console.error('[Extract] Insert error:', e2);
         }
       }
 
@@ -564,28 +568,15 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
       generated_at: new Date().toISOString(),
       version: "2.0.0-universal"
     },
-    curriculum: sorted.reduce((acc: any, s: any) => {
-      const g = s.grade || 'UNASSIGNED';
-      const d = (s.domain || 'GENERAL').toUpperCase();
-      
-      if (!acc[g]) acc[g] = { domains: {} };
-      if (!acc[g].domains[d]) {
-        acc[g].domains[d] = {
-          name: s.domain_name || d,
-          artifacts: []
-        };
-      }
-
-      acc[g].domains[d].artifacts.push({
-        code: s.slo_code,
-        text: s.slo_full_text || s.slo_text,
-        cognitive_level: s.cognitive_level,
-        is_truncated: s.is_truncated,
-        raw_found: s.raw_code_as_found
-      });
-
-      return acc;
-    }, {})
+    curriculum: sorted.map(s => ({
+      code: s.slo_code,
+      text: s.slo_full_text || s.slo_text,
+      grade: s.grade,
+      domain: s.domain,
+      domain_name: s.domain_name,
+      cognitive_level: s.cognitive_level,
+      benchmark: s.benchmark
+    }))
   };
 
   return `\`\`\`json\n${JSON.stringify(ledger, null, 2)}\n\`\`\``;
@@ -685,7 +676,7 @@ export async function POST(
       }
 
       let skipExtraction = false;
-      if (rawText.startsWith('Board:')) {
+      if (rawText.startsWith('Board:') || rawText.startsWith('```json') || rawText.startsWith('{')) {
         console.warn('[Stage 2] Already a ledger — checking if SLO database needs population');
         
         const { count, error: countErr } = await supabase
@@ -783,7 +774,8 @@ export async function POST(
         .single();
 
       const txt = fin?.extracted_text || '';
-      console.log(`[Stage 4] Text to embed: ${txt.length} chars, isLedger: ${txt.startsWith('Board:')}`);
+      const isLedger = txt.startsWith('Board:') || txt.startsWith('```json') || txt.startsWith('{');
+      console.log(`[Stage 4] Text to embed: ${txt.length} chars, isLedger: ${isLedger}`);
 
       if (txt.length >= 100) {
         await indexDocumentForRAG(documentId, txt, supabase, job.id);
@@ -795,7 +787,7 @@ export async function POST(
       await supabase.from('documents').update({
         status          : 'ready',
         rag_indexed     : true,
-        document_summary: txt.startsWith('Board:')
+        document_summary: isLedger
           ? txt.split('\n').slice(0, 4).join(' | ')
           : 'indexed',
       }).eq('id', documentId);

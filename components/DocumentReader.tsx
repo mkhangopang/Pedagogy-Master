@@ -117,24 +117,31 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     };
   }, [isWorking, fetchSlos]);
 
+  const isLedger = useMemo(() => {
+    const t = extractedText?.trim();
+    return t?.startsWith('Board:') || t?.startsWith('```json') || t?.startsWith('{');
+  }, [extractedText]);
+
   // Auto-trigger extraction if empty and not working
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (!loading && slos.length === 0 && !isWorking && !isReindexing && jobStatus !== 'failed' && jobStatus !== 'complete') {
-        console.log("Auto-triggering extraction for empty ledger...");
+      // If we have extracted text but it's NOT a ledger, and we have no SLOs, we should re-index
+      // OR if job is complete/null but slos is still 0 (stuck state)
+      const needsRepair = !loading && slos.length === 0 && !isWorking && !isReindexing && extractedText && (!isLedger || jobStatus === 'complete' || !jobStatus);
+      
+      if (needsRepair) {
+        console.log("Auto-triggering extraction: Empty ledger detected in ready/null state.");
         handleReindex();
       }
     }, 2000); // 2s delay to ensure initial load is stable
     return () => clearTimeout(timer);
-  }, [loading, slos.length, isWorking, isReindexing, jobStatus, handleReindex]);
+  }, [loading, slos.length, isWorking, isReindexing, jobStatus, extractedText, isLedger, handleReindex]);
 
   const handleCopy = (code: string) => {
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
   };
-
-  const isLedger = useMemo(() => extractedText?.trim().startsWith('Board:'), [extractedText]);
 
   const groupedSlos = useMemo(() => {
     const filtered = slos.filter(s => 
@@ -157,25 +164,25 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
 
   return (
     <div className="fixed inset-0 z-[500] bg-white dark:bg-[#020202] flex flex-col animate-in fade-in duration-300 overflow-hidden text-left">
-      <header className="h-20 border-b dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-4 md:px-8 shrink-0 z-50 shadow-sm">
-        <div className="flex items-center gap-3 md:gap-5 min-w-0">
-          <div className="w-8 h-8 md:w-10 md:h-10 bg-indigo-600 rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-xl shrink-0">
-            <LayoutList size={18} className="md:hidden"/>
+      <header className="h-16 md:h-20 border-b dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-4 md:px-8 shrink-0 z-50 shadow-sm">
+        <div className="flex items-center gap-2 md:gap-5 min-w-0">
+          <div className="w-8 h-8 md:w-10 md:h-10 bg-indigo-600 rounded-lg md:rounded-2xl flex items-center justify-center text-white shadow-xl shrink-0">
+            <LayoutList size={16} className="md:hidden"/>
             <LayoutList size={22} className="hidden md:block"/>
           </div>
           <div className="min-w-0">
-            <h2 className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] dark:text-white truncate max-w-[150px] md:max-w-sm">{activeDoc.name}</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-[7px] md:text-[8px] font-bold text-slate-400 uppercase tracking-widest px-1.5 md:px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded">Node</span>
-              <span className={`text-[7px] md:text-[8px] font-bold uppercase tracking-widest px-1.5 md:px-2 py-0.5 rounded ${isWorking ? 'bg-amber-50 text-amber-500 animate-pulse' : 'bg-emerald-50 text-emerald-500'}`}>
-                {isWorking ? 'Syncing...' : 'Verified'}
+            <h2 className="text-[9px] md:text-xs font-black uppercase tracking-[0.1em] md:tracking-[0.2em] dark:text-white truncate max-w-[120px] md:max-w-sm">{activeDoc.name}</h2>
+            <div className="flex items-center gap-1 md:gap-2 mt-0.5 md:mt-1">
+              <span className="text-[6px] md:text-[8px] font-bold text-slate-400 uppercase tracking-widest px-1 md:px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded">Node</span>
+              <span className={`text-[6px] md:text-[8px] font-bold uppercase tracking-widest px-1 md:px-2 py-0.5 rounded ${isWorking ? 'bg-amber-50 text-amber-500 animate-pulse' : 'bg-emerald-50 text-emerald-500'}`}>
+                {isWorking ? 'Syncing' : 'Verified'}
               </span>
-              {isWorking && <span className="text-[7px] md:text-[8px] font-black text-indigo-500 uppercase tracking-widest ml-1 md:ml-2">{slos.length} Found</span>}
+              {isWorking && <span className="text-[6px] md:text-[8px] font-black text-indigo-500 uppercase tracking-widest ml-1">{slos.length} Found</span>}
             </div>
           </div>
         </div>
         
-        <div className="flex items-center gap-2 md:gap-6">
+        <div className="flex items-center gap-1.5 md:gap-6">
           <div className="relative hidden lg:block">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input 
@@ -187,29 +194,29 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             />
           </div>
 
-          <div className="bg-slate-100 dark:bg-white/5 p-1 rounded-xl md:rounded-2xl flex gap-1 border dark:border-white/5 shadow-inner scale-90 md:scale-100">
+          <div className="bg-slate-100 dark:bg-white/5 p-0.5 md:p-1 rounded-lg md:rounded-2xl flex gap-0.5 md:gap-1 border dark:border-white/5 shadow-inner">
              <button 
                onClick={() => setViewMode('ledger')} 
-               className={`flex items-center gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'ledger' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md scale-105' : 'text-slate-500'}`}
+               className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-6 py-1 md:py-2 rounded-md md:rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'ledger' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm md:shadow-md scale-105' : 'text-slate-500'}`}
              >
-               <BookOpen size={12} className="md:hidden"/>
+               <BookOpen size={10} className="md:hidden"/>
                <BookOpen size={14} className="hidden md:block"/>
                <span className="hidden sm:inline">Clean Ledger</span>
                <span className="sm:hidden">Ledger</span>
              </button>
              <button 
                onClick={() => setViewMode('raw')} 
-               className={`flex items-center gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'raw' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-md scale-105' : 'text-slate-500'}`}
+               className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-6 py-1 md:py-2 rounded-md md:rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'raw' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm md:shadow-md scale-105' : 'text-slate-500'}`}
              >
-               <Terminal size={12} className="md:hidden"/>
+               <Terminal size={10} className="md:hidden"/>
                <Terminal size={14} className="hidden md:block"/>
-               <span className="hidden sm:inline">Raw MD</span>
+               <span className="hidden sm:inline">Universal JSON</span>
                <span className="sm:hidden">JSON</span>
              </button>
           </div>
           
-          <button onClick={onClose} className="p-2 md:p-3 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-xl md:rounded-2xl transition-all">
-            <X size={20} className="md:hidden"/>
+          <button onClick={onClose} className="p-1.5 md:p-3 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg md:rounded-2xl transition-all">
+            <X size={18} className="md:hidden"/>
             <X size={24} className="hidden md:block"/>
           </button>
         </div>
@@ -218,28 +225,33 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/20 dark:bg-[#020202]">
         <div className="max-w-6xl mx-auto p-6 md:p-12 lg:p-20">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-60 text-center opacity-40">
-               <RefreshCw size={48} className="animate-spin text-indigo-600 mb-8" />
-               <p className="text-xs font-black uppercase tracking-[0.4em] text-indigo-500">Retrieving Neural Artifacts...</p>
+            <div className="flex flex-col items-center justify-center py-40 md:py-60 text-center opacity-40">
+               <RefreshCw size={32} className="animate-spin text-indigo-600 mb-6 md:mb-8 md:w-12 md:h-12" />
+               <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-indigo-500 px-4">Retrieving Neural Artifacts...</p>
             </div>
           ) : viewMode === 'raw' ? (
-            <div className="bg-white dark:bg-[#080808] p-6 md:p-10 lg:p-20 rounded-3xl md:rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl animate-in slide-in-from-bottom-4 overflow-hidden">
-               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 md:mb-12 gap-4">
+            <div className="bg-white dark:bg-[#080808] p-4 md:p-10 lg:p-20 rounded-2xl md:rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl animate-in slide-in-from-bottom-4 overflow-hidden">
+               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 md:mb-12 gap-4">
                  <div className="flex items-center gap-3 opacity-40">
                    <FileCode size={16} className="text-indigo-500" />
-                   <span className="text-[10px] font-black uppercase tracking-[0.3em]">Universal JSON Schema</span>
+                   <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em]">Universal JSON Schema</span>
                  </div>
                  <button 
-                   onClick={() => handleCopy(extractedText || "")}
-                   className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 transition-all bg-slate-50 dark:bg-white/5 px-4 py-2 rounded-xl"
+                   onClick={() => {
+                     const cleanJson = extractedText?.includes('```json') 
+                       ? extractedText.split('```json')[1].split('```')[0].trim()
+                       : extractedText;
+                     handleCopy(cleanJson || "");
+                   }}
+                   className="w-full sm:w-auto flex items-center justify-center gap-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 transition-all bg-slate-50 dark:bg-white/5 px-4 py-2.5 rounded-xl border dark:border-white/5"
                  >
-                   {copiedCode === extractedText ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                   {copiedCode === extractedText ? 'Copied' : 'Copy JSON'}
+                   {copiedCode === (extractedText?.includes('```json') ? extractedText.split('```json')[1].split('```')[0].trim() : extractedText) ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                   {copiedCode === (extractedText?.includes('```json') ? extractedText.split('```json')[1].split('```')[0].trim() : extractedText) ? 'Copied' : 'Copy JSON'}
                  </button>
                </div>
                <div className="relative group">
                  <div className="absolute -inset-4 bg-indigo-500/5 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                 <pre className="font-mono text-[11px] md:text-sm leading-relaxed overflow-x-auto custom-scrollbar dark:text-slate-300 bg-slate-50 dark:bg-black/20 p-4 md:p-8 rounded-2xl border dark:border-white/5">
+                 <pre className="font-mono text-[10px] md:text-sm leading-relaxed overflow-x-auto custom-scrollbar dark:text-slate-300 bg-slate-50 dark:bg-black/20 p-4 md:p-8 rounded-xl md:rounded-2xl border dark:border-white/5">
                     {extractedText ? (
                       extractedText.includes('```json') 
                         ? extractedText.split('```json')[1].split('```')[0].trim()
