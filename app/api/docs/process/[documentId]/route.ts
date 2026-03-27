@@ -269,6 +269,9 @@ function processSlos(
       grade,
       domain,
       domain_name       : dname,
+      bloom_level       : s.bloom_level || null,
+      cognitive_complexity: s.cognitive_complexity || null,
+      keywords          : Array.isArray(s.keywords) ? s.keywords : [],
       benchmark         : s.benchmark || null,
       subject           : SUBJECTS[subjectCode] || subjectCode,
       subject_code      : subjectCode,
@@ -281,7 +284,7 @@ function processSlos(
   return processed;
 }
 
-// ── EXTRACTION PROMPT ─────────────────────────────────────────────────────────
+// ── EXTRACTION PROMPT (RALPH v3.0 - PEDAGOGY MASTER EDITION) ──────────────────
 function makePrompt(
   chunk: string,
   subject: string,
@@ -289,88 +292,76 @@ function makePrompt(
   board: string,
   chunkN: number
 ): string {
-  // Math (and primary-level subjects) use grades I-VIII (01-08)
-  // Secondary subjects (Biology, Chemistry, Physics) use grades IX-XII (09-12)
   const isPrimary = PRIMARY_SUBJECTS.has(subjectCode);
 
   const gradeSection = isPrimary ? `
 === GRADE SYSTEM (Primary - Grades I to VIII) ===
 This is a PRIMARY curriculum covering Grades I through VIII.
 Grade mapping: I→01, II→02, III→03, IV→04, V→05, VI→06, VII→07, VIII→08
-ALWAYS use 2-digit grade: Grade I → 01, Grade VIII → 08
-SLO code examples for ${subjectCode}:
-  [SLO:${subjectCode}-01-A-01] → ${subjectCode}01A01   (Grade I)
-  [SLO:${subjectCode}-02-A-0l] → ${subjectCode}02A01   (Grade II, OCR: 0l=01)
-  [SLO:${subjectCode}-07-B-12] → ${subjectCode}07B12   (Grade VII)
-  [SLO:${subjectCode}-08-A-16] → ${subjectCode}08A16   (Grade VIII)
-  [SLO:${subjectCode}-0l-A-09] → ${subjectCode}01A09   (OCR: 0l in grade = 01)` : `
+ALWAYS use 2-digit grade: Grade I → 01, Grade VIII → 08` : `
 === GRADE SYSTEM (Secondary - Grades IX to XII) ===
-Grade mapping: IX→09, X→10, XI→11, XII→12, always 2-digit
-SLO code examples for ${subjectCode}:
-  [SLO:${subjectCode}-09-A-01] → ${subjectCode}09A01
-  [SLO:${subjectCode}-09-A-0l] → ${subjectCode}09A01  (l=OCR for 1)
-  [SLO:${subjectCode}-11-B-06] → ${subjectCode}11B06`;
+Grade mapping: IX→09, X→10, XI→11, XII→12, always 2-digit`;
 
-  const mathTableNote = isPrimary ? `
-=== IMPORTANT: HORIZONTAL TABLE LAYOUT ===
-In this curriculum, SLOs are arranged in a HORIZONTAL TABLE with one column per grade.
-When pdf-parse extracts the text, multiple SLO codes appear on the SAME LINE, followed
-by their text on the lines below — all columns merged together. Example:
-  [SLO:${subjectCode}-01-A-0l] [SLO:${subjectCode}-02-A-0l] [SLO:${subjectCode}-03-A-0l]
-  Count objects and  Count numbers up  Count up to 9999
-  numbers to 99...   to 999...         (4-digit numbers)
+  return `IDENTITY: World-Class Pedagogy Master Assistant (RALPH v3.0)
+GOAL: Extract ALL Student Learning Outcomes (SLOs) with surgical precision.
+Board: ${board}  Subject: ${subject} (${subjectCode})  Chunk: ${chunkN}
 
-Each [SLO:${subjectCode}-XX-X-XX] code is a SEPARATE SLO. Extract EACH one.
-For the text: each code gets the text in its corresponding position. If text is
-jumbled/merged from multiple grades, give each code a best-guess text from the merged block.
-Never skip a code — even if the text seems incomplete, extract it.` : '';
-
-  return `Extract ALL Student Learning Outcomes (SLOs) from this ${subject} curriculum text.
-Board: ${board}  Subject prefix: "${subjectCode}"  Chunk: ${chunkN}
 ${gradeSection}
 
 === SLO CODE FORMAT ===
-Pattern: [SUBJECT][GRADE][DOMAIN][NUMBER]  →  no dashes, no brackets
+Pattern: [SUBJECT][GRADE][DOMAIN][NUMBER] (e.g., ${subjectCode}09A01)
 SLO number: always 2-digit (1→01)
-${mathTableNote}
 
-=== OCR FIXES (apply before normalizing) ===
-1. Strip: [SLO:  SLO:  SL0:  5L0:  LO:  SW:
-2. Remove [ ] ( ) :
-3. Remove all dashes and spaces
-4. "0l" or "0L" or "0I" anywhere → "01"  (critical: applies in GRADE and NUMBER positions)
-5. Trailing l or I → 1
-6. O in digit position → 0
-7. Pad grade to 2 digits, pad SLO# to 2 digits
-8. Roman grade: ${isPrimary ? 'I→01 II→02 III→03 IV→04 V→05 VI→06 VII→07 VIII→08' : 'IX→09 X→10 XI→11 XII→12'}
+=== PEDAGOGY ENRICHMENT (RSI PROTOCOL) ===
+For each SLO, determine:
+1. bloom_level: One of [Remember, Understand, Apply, Analyze, Evaluate, Create]
+2. cognitive_complexity: [Low, Medium, High]
+3. keywords: 3-5 key pedagogical terms
+4. domain_name: The descriptive name of the domain (e.g., "Algebra", "Cell Biology")
 
 === DETECTION RULES ===
-- grade: from SLO code > "Grade-${isPrimary ? 'I/II/III...VIII' : 'IX/X/XI/XII'}" header > null (NEVER guess)
-- domain: from SLO code letter > "DOMAIN X: ..." heading > null
-- benchmark: copy verbatim "Benchmark N: ..." or null
-- is_truncated: true if text ends mid-sentence, ends with comma, < 8 words
-- Codeless SLOs: slo_code:null, is_orphan_domain:true
+- grade: from SLO code or "Grade-X" header. NEVER guess.
+- domain: from SLO code letter or "DOMAIN X: ..." heading.
+- benchmark: copy verbatim "Benchmark N: ..." or null.
+- is_truncated: true if text ends mid-sentence or is < 8 words.
 
 === PROHIBITIONS ===
 ❌ Never invent codes  ❌ Never skip SLOs  ❌ Never change slo_full_text
-❌ Never invent domain_name  ❌ Never merge/split SLOs
+❌ Return ONLY raw JSON (no fences, no commentary)
 
-Return ONLY raw JSON (no fences, no commentary):
-{"slos":[{"slo_code":"${subjectCode}${isPrimary ? '01' : '09'}A01","raw_code_as_found":"[SLO:${subjectCode}-${isPrimary ? '01' : '09'}-A-01]","slo_full_text":"Exact text","grade":"${isPrimary ? '01' : '09'}","domain":"A","domain_name":"Domain name or null","benchmark":null,"is_truncated":false,"is_orphan_domain":false}]}
-
-Sort: grade asc → domain asc → SLO# asc. Codeless SLOs first per grade.
+=== RESPONSE SCHEMA ===
+{
+  "slos": [
+    {
+      "slo_code": "...",
+      "raw_code_as_found": "...",
+      "slo_full_text": "...",
+      "grade": "09",
+      "domain": "A",
+      "domain_name": "...",
+      "bloom_level": "...",
+      "cognitive_complexity": "...",
+      "keywords": ["...", "..."],
+      "benchmark": "...",
+      "is_truncated": false,
+      "is_orphan_domain": false
+    }
+  ]
+}
 
 === TEXT ===
 ${chunk}`;
 }
 
-// ── GEMINI CALL ───────────────────────────────────────────────────────────────
+// ── GEMINI CALL (RSI v2.0 - RECURSIVE SELF-IMPROVEMENT) ──────────────────────
 async function callGemini(ai: GoogleGenAI, prompt: string, schema: any): Promise<any[]> {
   const cfg = {
     responseMimeType: 'application/json' as const,
     responseSchema  : schema,
     maxOutputTokens : 8192,
   };
+
+  // RSI ATTEMPT 1: PRIMARY MODEL
   try {
     const r = await ai.models.generateContent({
       model   : MODEL_PRIMARY,
@@ -378,28 +369,44 @@ async function callGemini(ai: GoogleGenAI, prompt: string, schema: any): Promise
       config  : cfg,
     });
     const raw = r.text || '';
-    console.log(`[Gemini] ${MODEL_PRIMARY} responded ${raw.length} chars`);
     const d = safeJson(raw);
     if (Array.isArray(d.slos) && d.slos.length > 0) return d.slos;
-    console.warn(`[Gemini] ${MODEL_PRIMARY} returned 0 SLOs — trying fallback`);
+    
+    // RSI TRIGGER: Zero SLOs but text contains "SLO" or "Grade"
+    const text = prompt.split('=== TEXT ===')[1] || '';
+    const hasSloMarkers = /SLO|Grade|Outcome|Standard/i.test(text);
+    if (hasSloMarkers) {
+      console.warn(`[RSI] ${MODEL_PRIMARY} missed SLOs in text with markers — retrying with DEEP SCAN`);
+      const deepPrompt = `RECURSIVE SELF-IMPROVEMENT (RSI) PROTOCOL ACTIVE.
+The previous extraction attempt returned ZERO results. 
+This text contains curriculum markers. 
+Perform a DEEP SCAN. Extract every single learning outcome, even if the code is missing.
+${prompt}`;
+      
+      const rDeep = await ai.models.generateContent({
+        model   : MODEL_FALLBACK,
+        contents: [{ role: 'user', parts: [{ text: deepPrompt }] }],
+        config  : { ...cfg, maxOutputTokens: 8192 },
+      });
+      const dDeep = safeJson(rDeep.text || '');
+      if (Array.isArray(dDeep.slos) && dDeep.slos.length > 0) return dDeep.slos;
+    }
   } catch (e: any) {
     const isQuota = /429|quota|RESOURCE_EXHAUSTED/i.test(e.message || '');
     if (!isQuota) {
-      console.error(`[Gemini] ${MODEL_PRIMARY} error (non-quota):`, e.message);
+      console.error(`[RSI] ${MODEL_PRIMARY} error:`, e.message);
       throw e;
     }
-    console.warn(`[Gemini] Quota hit on ${MODEL_PRIMARY} → falling back`);
   }
 
-  console.log(`[Gemini] Trying fallback: ${MODEL_FALLBACK}`);
-  const r2 = await ai.models.generateContent({
+  // FALLBACK: LAST RESORT
+  console.log(`[RSI] Trying last resort fallback: ${MODEL_FALLBACK}`);
+  const rFallback = await ai.models.generateContent({
     model   : MODEL_FALLBACK,
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
     config  : { ...cfg, maxOutputTokens: 4096 },
   });
-  const raw2 = r2.text || '';
-  console.log(`[Gemini] ${MODEL_FALLBACK} responded ${raw2.length} chars`);
-  return safeJson(raw2).slos || [];
+  return safeJson(rFallback.text || '').slos || [];
 }
 
 // ── SLIDING WINDOW EXTRACTOR ──────────────────────────────────────────────────
@@ -435,15 +442,18 @@ async function extractSlos(
         items: {
           type      : Type.OBJECT,
           properties: {
-            slo_code         : { type: Type.STRING  },
-            raw_code_as_found: { type: Type.STRING  },
-            slo_full_text    : { type: Type.STRING  },
-            grade            : { type: Type.STRING  },
-            domain           : { type: Type.STRING  },
-            domain_name      : { type: Type.STRING  },
-            benchmark        : { type: Type.STRING  },
-            is_truncated     : { type: Type.BOOLEAN },
-            is_orphan_domain : { type: Type.BOOLEAN },
+            slo_code            : { type: Type.STRING  },
+            raw_code_as_found   : { type: Type.STRING  },
+            slo_full_text       : { type: Type.STRING  },
+            grade               : { type: Type.STRING  },
+            domain              : { type: Type.STRING  },
+            domain_name         : { type: Type.STRING  },
+            bloom_level         : { type: Type.STRING  },
+            cognitive_complexity: { type: Type.STRING  },
+            keywords            : { type: Type.ARRAY, items: { type: Type.STRING } },
+            benchmark           : { type: Type.STRING  },
+            is_truncated        : { type: Type.BOOLEAN },
+            is_orphan_domain    : { type: Type.BOOLEAN },
           },
           required: ['slo_full_text'],
         },
@@ -496,7 +506,9 @@ async function extractSlos(
           slo_full_text        : processed.slo_full_text,
           domain               : processed.domain,
           domain_name          : processed.domain_name,
-          bloom_level          : null,
+          bloom_level          : processed.bloom_level,
+          cognitive_complexity : processed.cognitive_complexity,
+          keywords             : processed.keywords,
           subject              : processed.subject,
           grade_level          : processed.grade,
           extraction_confidence: processed.slo_code ? 0.92 : 0.5,

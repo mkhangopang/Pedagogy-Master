@@ -18,6 +18,8 @@ interface SloRecord {
   slo_code: string;
   slo_full_text: string;
   bloom_level?: string;
+  cognitive_complexity?: string;
+  keywords?: string[];
   created_at: string;
   grade_level?: string;
   domain_tag?: string;
@@ -67,7 +69,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     }
   }, [activeDoc.id]);
 
-  const handleReindex = useCallback(async (isAutoArg: any = false) => {
+  const handleReindex = useCallback(async (isAutoArg: any = false, isDeep: boolean = false) => {
     const isAuto = typeof isAutoArg === 'boolean' ? isAutoArg : false;
     if (jobStatus === 'processing' || jobStatus === 'indexing') {
       if (!isAuto) alert("A background task is already active for this document.");
@@ -79,13 +81,13 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const res = await fetch(`/api/docs/process/${activeDoc.id}`, {
+      const res = await fetch(`/api/docs/process/${activeDoc.id}${isDeep ? '?deep=true' : ''}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
 
       if (res.ok) {
-        if (!isAuto) alert("Re-indexing started. The neural grid is extracting surgical artifacts.");
+        if (!isAuto) alert(isDeep ? "Deep Scan initiated. The neural grid is performing a recursive pedagogical audit." : "Re-indexing started. The neural grid is extracting surgical artifacts.");
         setJobStatus('processing');
       } else {
         const err = await res.json();
@@ -307,7 +309,17 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                                  </button>
                                  <div className="flex flex-wrap gap-2">
                                    <span className="text-[7px] md:text-[8px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-lg border dark:border-white/5">{slo.bloom_level || 'Understand'}</span>
+                                   {slo.cognitive_complexity && (
+                                     <span className="text-[7px] md:text-[8px] font-black uppercase tracking-widest text-amber-500 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-500/20">{slo.cognitive_complexity}</span>
+                                   )}
                                  </div>
+                                 {slo.keywords && slo.keywords.length > 0 && (
+                                   <div className="flex flex-wrap gap-1 opacity-40 group-hover:opacity-100 transition-opacity">
+                                     {slo.keywords.slice(0, 3).map((kw, idx) => (
+                                       <span key={idx} className="text-[6px] md:text-[7px] font-bold text-slate-400 uppercase tracking-tighter bg-slate-50 dark:bg-white/5 px-1.5 py-0.5 rounded-md">#{kw}</span>
+                                     ))}
+                                   </div>
+                                 )}
                                </div>
                                <div className="flex-1 min-w-0 lg:pt-1">
                                   <p className="text-sm md:text-[15px] font-medium text-slate-800 dark:text-slate-200 leading-relaxed selection:bg-indigo-500 selection:text-white" 
@@ -357,7 +369,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                  </button>
                  {!isWorking && (
                    <button 
-                     onClick={handleReindex}
+                     onClick={() => handleReindex(false, false)}
                      disabled={isReindexing}
                      className="flex items-center justify-center gap-3 px-8 md:px-10 py-4 md:py-5 bg-indigo-600 text-white rounded-xl md:rounded-[2rem] font-black text-[10px] md:text-xs uppercase tracking-widest shadow-2xl hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
                    >
