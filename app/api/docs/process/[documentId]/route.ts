@@ -212,7 +212,7 @@ function scanDomains(text: string): Record<string, string> {
 }
 
 // ── SAFE JSON PARSER ──────────────────────────────────────────────────────────
-function safeJson(raw: string): { slos: any[] } {
+function safeJson(raw: string): any {
   if (!raw?.trim()) return { slos: [] };
   const c = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
   try { return JSON.parse(c); } catch {/* */}
@@ -676,7 +676,9 @@ export async function POST(
       }
 
       let skipExtraction = false;
-      if (rawText.startsWith('Board:') || rawText.startsWith('```json') || rawText.startsWith('{')) {
+      const isLedgerText = rawText.startsWith('Board:') || rawText.startsWith('```json') || rawText.startsWith('{');
+      
+      if (isLedgerText) {
         console.warn('[Stage 2] Already a ledger — checking if SLO database needs population');
         
         const { count, error: countErr } = await supabase
@@ -688,7 +690,44 @@ export async function POST(
           console.log(`[Stage 2] SLO database already has ${count} records — skipping re-extraction`);
           skipExtraction = true;
         } else {
-          console.log('[Stage 2] SLO database is empty for ledger — triggering extraction from ledger text');
+          console.log('[Stage 2] SLO database is empty for ledger — attempting to parse and populate from existing JSON');
+          
+          try {
+            const data = safeJson(rawText);
+            const items = data.curriculum || data.slos;
+            if (items && Array.isArray(items) && items.length > 0) {
+              const records = items.map((s: any) => ({
+                document_id: documentId,
+                slo_code: s.slo_code || s.code || null,
+                slo_full_text: s.slo_full_text || s.text || '',
+                grade_level: s.grade || s.grade_level,
+                domain: s.domain,
+                domain_name: s.domain_name,
+                benchmark: s.benchmark,
+                subject: data.metadata?.subject || subject,
+                board: data.metadata?.board || board,
+                extraction_confidence: 1.0,
+                created_at: new Date().toISOString()
+              })).filter((r: any) => r.slo_full_text);
+
+              if (records.length > 0) {
+                const coded = records.filter((r: any) => r.slo_code != null);
+                const codeless = records.filter((r: any) => r.slo_code == null);
+                
+                if (coded.length > 0) {
+                  await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+                }
+                if (codeless.length > 0) {
+                  await supabase.from('slo_database').insert(codeless);
+                }
+                console.log(`[Stage 2] Populated DB with ${records.length} SLOs from existing ledger ✓`);
+                skipExtraction = true;
+              }
+            }
+          } catch (e) {
+            console.error('[Stage 2] Failed to parse existing ledger JSON:', e);
+            // Fall through to AI extraction if parsing fails
+          }
         }
       }
 

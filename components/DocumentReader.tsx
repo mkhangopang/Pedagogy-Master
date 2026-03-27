@@ -67,9 +67,10 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
     }
   }, [activeDoc.id]);
 
-  const handleReindex = useCallback(async () => {
+  const handleReindex = useCallback(async (isAutoArg: any = false) => {
+    const isAuto = typeof isAutoArg === 'boolean' ? isAutoArg : false;
     if (jobStatus === 'processing' || jobStatus === 'indexing') {
-      alert("A background task is already active for this document.");
+      if (!isAuto) alert("A background task is already active for this document.");
       return;
     }
 
@@ -84,15 +85,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       });
 
       if (res.ok) {
-        alert("Re-indexing started. The neural grid is extracting surgical artifacts.");
+        if (!isAuto) alert("Re-indexing started. The neural grid is extracting surgical artifacts.");
         setJobStatus('processing');
-        // Initial wait then start polling implicitly by keeping UI in loading state if desired
       } else {
         const err = await res.json();
-        alert(err.error || "Extraction refused.");
+        if (!isAuto) alert(err.error || "Extraction refused.");
       }
     } catch (e) {
-      alert("Connectivity error.");
+      if (!isAuto) alert("Connectivity error.");
     } finally {
       setIsReindexing(false);
     }
@@ -125,17 +125,21 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   // Auto-trigger extraction if empty and not working
   useEffect(() => {
     const timer = setTimeout(() => {
-      // If we have extracted text but it's NOT a ledger, and we have no SLOs, we should re-index
-      // OR if job is complete/null but slos is still 0 (stuck state)
-      const needsRepair = !loading && slos.length === 0 && !isWorking && !isReindexing && extractedText && (!isLedger || jobStatus === 'complete' || !jobStatus);
+      // If we have no SLOs and we are not working, we should check if we need to start
+      // Case 1: Fresh document (no extractedText, no jobStatus)
+      // Case 2: Stuck document (jobStatus complete/null but slos.length 0)
+      // Case 3: Raw text exists but no SLOs in DB
+      const isFresh = !extractedText && (!jobStatus || jobStatus === 'pending');
+      const isStuck = slos.length === 0 && (jobStatus === 'complete' || !jobStatus);
+      const needsRepair = !loading && !isWorking && !isReindexing && (isFresh || isStuck);
       
       if (needsRepair) {
-        console.log("Auto-triggering extraction: Empty ledger detected in ready/null state.");
-        handleReindex();
+        console.log("Auto-triggering extraction: Empty ledger or fresh document detected.");
+        handleReindex(true);
       }
     }, 2000); // 2s delay to ensure initial load is stable
     return () => clearTimeout(timer);
-  }, [loading, slos.length, isWorking, isReindexing, jobStatus, extractedText, isLedger, handleReindex]);
+  }, [loading, slos.length, isWorking, isReindexing, jobStatus, extractedText, handleReindex]);
 
   const handleCopy = (code: string) => {
     navigator.clipboard.writeText(code);
