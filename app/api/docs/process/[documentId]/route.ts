@@ -540,13 +540,11 @@ async function extractSlos(
   return allSlos;
 }
 
-// ── LEDGER MARKDOWN BUILDER ───────────────────────────────────────────────────
+// ── LEDGER JSON BUILDER ───────────────────────────────────────────────────────
 function buildLedger(slos: any[], boardKey: string, subjectCode: string): string {
   const subjectName = SUBJECTS[subjectCode] || subjectCode;
 
   const sorted = [...slos].sort((a, b) => {
-    if (!a.slo_code && b.slo_code)  return -1;
-    if (a.slo_code  && !b.slo_code) return  1;
     const gA = parseInt(a.grade || '99', 10) || 99;
     const gB = parseInt(b.grade || '99', 10) || 99;
     if (gA !== gB) return gA - gB;
@@ -557,76 +555,40 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
          - (parseInt((b.slo_code || '').slice(-2), 10) || 0);
   });
 
-  const grades = [...new Set(sorted.map(s => s.grade).filter(Boolean))].sort();
-  const lines: string[] = [];
+  const ledger = {
+    metadata: {
+      board: BOARD_NAMES[boardKey] ?? boardKey,
+      subject: subjectName,
+      subject_code: subjectCode,
+      total_artifacts: sorted.length,
+      generated_at: new Date().toISOString(),
+      version: "2.0.0-universal"
+    },
+    curriculum: sorted.reduce((acc: any, s: any) => {
+      const g = s.grade || 'UNASSIGNED';
+      const d = (s.domain || 'GENERAL').toUpperCase();
+      
+      if (!acc[g]) acc[g] = { domains: {} };
+      if (!acc[g].domains[d]) {
+        acc[g].domains[d] = {
+          name: s.domain_name || d,
+          artifacts: []
+        };
+      }
 
-  lines.push(`Board: ${BOARD_NAMES[boardKey] ?? boardKey}`);
-  lines.push(`Subject: ${subjectName}`);
-  lines.push(`SLOs: ${sorted.length}`);
-  lines.push(`Generated: ${new Date().toISOString()}`);
-  lines.push('');
-  lines.push('## SUMMARY');
-  for (const g of grades) {
-    const gs = sorted.filter(s => s.grade === g);
-    const ds = [...new Set(gs.map(s => s.domain).filter(Boolean))].sort();
-    const summary = ds.map(d => {
-      const n  = gs.filter(s => s.domain === d).length;
-      const dn = gs.find(s => s.domain === d)?.domain_name;
-      return dn ? `${d}:${dn}(${n})` : `${d}(${n})`;
-    }).join(', ');
-    // Use Roman numerals for primary subjects in summary (more readable)
-    const gradeLabel = PRIMARY_SUBJECTS.has(subjectCode)
-      ? Object.entries(ROMAN).find(([, v]) => v === g)?.[0] ?? g
-      : g;
-    lines.push(`Grade ${gradeLabel}: ${summary} [${gs.length}]`);
-  }
-  lines.push('');
+      acc[g].domains[d].artifacts.push({
+        code: s.slo_code,
+        text: s.slo_full_text || s.slo_text,
+        cognitive_level: s.cognitive_level,
+        is_truncated: s.is_truncated,
+        raw_found: s.raw_code_as_found
+      });
 
-  let lastGrade = '', lastDomain = '';
-  for (const s of sorted) {
-    const g = s.grade  || 'I-VIII';
-    const d = (s.domain || 'GENERAL').toUpperCase();
+      return acc;
+    }, {})
+  };
 
-    if (g !== lastGrade) {
-      const gradeLabel = PRIMARY_SUBJECTS.has(subjectCode)
-        ? Object.entries(ROMAN).find(([, v]) => v === g)?.[0] ?? g
-        : g;
-      lines.push(''); lines.push(`# GRADE ${gradeLabel}`);
-      lastGrade  = g;
-      lastDomain = '';
-    }
-    if (d !== lastDomain) {
-      const dn = s.domain_name ? `: ${s.domain_name}` : '';
-      lines.push(''); lines.push(`### DOMAIN ${d}${dn}`); lines.push('');
-      lastDomain = d;
-    }
-
-    if (s.slo_code) {
-      lines.push(`SLO ${s.slo_code} ${s.slo_full_text}${s.is_truncated ? ' [TRUNCATED]' : ''}`);
-    } else {
-      lines.push(`[GENERAL] ${s.slo_full_text}`);
-    }
-  }
-
-  lines.push(''); lines.push('');
-  lines.push('<STRUCTURED_INDEX>');
-  lines.push(JSON.stringify({
-    board      : boardKey,
-    subject    : subjectCode,
-    subjectName,
-    grades,
-    domains    : [...new Set(sorted.map(s => s.domain).filter(Boolean))].sort(),
-    totalSlos  : sorted.length,
-    domainNames: Object.fromEntries(
-      sorted
-        .filter(s => s.domain && s.domain_name)
-        .map(s => [s.domain, s.domain_name])
-        .filter((v, i, a) => a.findIndex((x: any) => x[0] === v[0]) === i)
-    ),
-  }, null, 2));
-  lines.push('</STRUCTURED_INDEX>');
-
-  return lines.join('\n');
+  return `\`\`\`json\n${JSON.stringify(ledger, null, 2)}\n\`\`\``;
 }
 
 // ── ROUTE HANDLER ─────────────────────────────────────────────────────────────
