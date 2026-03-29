@@ -16,8 +16,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const MODEL_PRIMARY  = 'gemini-1.5-pro';
-const MODEL_FALLBACK = 'gemini-2.0-flash';
+const MODEL_PRIMARY  = 'gemini-3.1-pro-preview';
+const MODEL_FALLBACK = 'gemini-3-flash-preview';
 
 const CHUNK_SIZE  = 16000;
 const OVERLAP     = 4000;
@@ -128,19 +128,17 @@ function normalizeCode(raw: string): string | null {
   return null;
 }
 
-// ── MATH TABLE LINEARIZER ────────────────────────────────────────────────────
-// The Math curriculum stores SLOs in an 8-column horizontal table (one column per
-// grade). pdf-parse reads left-to-right, producing chunks like:
-//
-//   [SLO:M-01-A-0l] [SLO:M-02-A-0l] [SLO:M-03-A-0l]
-//   Count objects   Count numbers   Count up to 9999
+// ── SLO TABLE LINEARIZER ─────────────────────────────────────────────────────
+// Some curricula store SLOs in horizontal tables (one column per grade).
+// pdf-parse reads left-to-right, producing chunks like:
+//   [SLO:B-09-A-01] [SLO:B-10-A-01] [SLO:B-11-A-01]
+//   Explain cell    Explain tissue   Explain organ
 //
 // This function scans for all SLO codes and attaches the text block that follows
-// the LAST code in each row to all codes in that row, preserving which code it is.
-// The AI then receives a clean list: "CODE: text" per line.
-function linearizeMathText(text: string): string {
-  // Match any Math SLO code variant
-  const codeRe = /\[\s*(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+M\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]/gi;
+// the LAST code in each row to all codes in that row.
+function linearizeSloText(text: string): string {
+  // Match any SLO code variant (M, B, C, P, E, S, etc.)
+  const codeRe = /(?:\[?\s*(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+([A-Z]{1,3})\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
 
   const matches: { start: number; end: number; raw: string }[] = [];
   let m: RegExpExecArray | null;
@@ -148,9 +146,8 @@ function linearizeMathText(text: string): string {
     matches.push({ start: m.index, end: m.index + m[0].length, raw: m[0] });
   }
 
-  if (matches.length === 0) return text; // no math codes found
+  if (matches.length === 0) return text;
 
-  // Group codes that appear on the same line (within 200 chars of each other with no newline between)
   type Group = { codes: string[]; textStart: number };
   const groups: Group[] = [];
   let i = 0;
@@ -158,7 +155,7 @@ function linearizeMathText(text: string): string {
     const group: Group = { codes: [matches[i].raw], textStart: matches[i].end };
     while (
       i + 1 < matches.length &&
-      matches[i + 1].start - matches[i].end < 200 &&
+      matches[i + 1].start - matches[i].end < 250 &&
       !text.slice(matches[i].end, matches[i + 1].start).includes('\n')
     ) {
       i++;
@@ -169,14 +166,8 @@ function linearizeMathText(text: string): string {
     i++;
   }
 
-  // For each group, grab text from after the last code to the start of the next group
   const lines: string[] = [];
   for (let g = 0; g < groups.length; g++) {
-    const textEnd = g + 1 < groups.length ? groups[g + 1].codes[0] === groups[g + 1].codes[0]
-      ? text.indexOf(groups[g + 1].codes[0], groups[g].textStart) ?? text.length
-      : text.length : text.length;
-
-    // Actually find the start of the next group's first code
     let nextGroupStart = text.length;
     if (g + 1 < groups.length) {
       const nextCode = groups[g + 1].codes[0];
@@ -189,8 +180,6 @@ function linearizeMathText(text: string): string {
       .replace(/[\r\n\t ]+/g, ' ')
       .trim();
 
-    // Emit one line per code; all codes in the row share the same text block
-    // (the AI will sort out which text belongs to which grade)
     for (const code of groups[g].codes) {
       lines.push(`${code} ${rawText}`);
     }
@@ -214,10 +203,25 @@ function scanDomains(text: string): Record<string, string> {
 // ── SAFE JSON PARSER ──────────────────────────────────────────────────────────
 function safeJson(raw: string): any {
   if (!raw?.trim()) return { slos: [] };
-  const c = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  
+  // Remove markdown code blocks
+  let c = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  
+  // Handle "Board:" prefix if it's a legacy ledger format
+  if (c.startsWith('Board:')) {
+    const jsonMatch = c.match(/\{[\s\S]*\}/);
+    if (jsonMatch) c = jsonMatch[0];
+  }
+
   try { return JSON.parse(c); } catch {/* */}
-  const m = c.match(/\{[\s\S]*\}/);
-  if (m) try { return JSON.parse(m[0]); } catch {/* */}
+  
+  // Try to find the first { and last }
+  const first = c.indexOf('{');
+  const last = c.lastIndexOf('}');
+  if (first !== -1 && last !== -1 && last > first) {
+    try { return JSON.parse(c.substring(first, last + 1)); } catch {/* */}
+  }
+
   console.error('[safeJson] FAILED to parse:', c.substring(0, 200));
   return { slos: [] };
 }
@@ -290,7 +294,8 @@ function makePrompt(
   subject: string,
   subjectCode: string,
   board: string,
-  chunkN: number
+  chunkN: number,
+  isDeep: boolean = false
 ): string {
   const isPrimary = PRIMARY_SUBJECTS.has(subjectCode);
 
@@ -302,11 +307,26 @@ ALWAYS use 2-digit grade: Grade I → 01, Grade VIII → 08` : `
 === GRADE SYSTEM (Secondary - Grades IX to XII) ===
 Grade mapping: IX→09, X→10, XI→11, XII→12, always 2-digit`;
 
+  const deepInstruction = isDeep ? `
+=== DEEP SCAN MODE (RSI PROTOCOL v3.0) ===
+⚠️ PREVIOUS EXTRACTION ATTEMPT RETURNED 0 RESULTS.
+⚠️ THIS CHUNK CONTAINS SLO MARKERS (SLO, Grade, Outcome, Standard).
+⚠️ YOU MUST BE MORE AGGRESSIVE. LOOK FOR SLOs IN TABLES, LISTS, AND HEADINGS.
+⚠️ EXTRACT EVERY SINGLE SLO, EVEN IF THE CODE IS MISSING OR MALFORMED.` : '';
+
+  const subjectInstruction = subjectCode === 'B' ? `
+=== BIOLOGY SPECIFIC INSTRUCTIONS ===
+- Look for SLOs in the "Student Learning Outcomes" column of tables.
+- Domains are often labeled as "Chapter", "Unit", or "Domain".
+- Cognitive levels are often listed as "K" (Knowledge), "U" (Understanding), "A" (Application).` : '';
+
   return `IDENTITY: World-Class Pedagogy Master Assistant (RALPH v3.0)
 GOAL: Extract ALL Student Learning Outcomes (SLOs) with surgical precision.
 Board: ${board}  Subject: ${subject} (${subjectCode})  Chunk: ${chunkN}
 
 ${gradeSection}
+${deepInstruction}
+${subjectInstruction}
 
 === SLO CODE FORMAT ===
 Pattern: [SUBJECT][GRADE][DOMAIN][NUMBER] (e.g., ${subjectCode}09A01)
@@ -353,16 +373,20 @@ For each SLO, determine:
 ${chunk}`;
 }
 
-// ── GEMINI CALL (RSI v2.0 - RECURSIVE SELF-IMPROVEMENT) ──────────────────────
-async function callGemini(ai: GoogleGenAI, prompt: string, schema: any): Promise<any[]> {
+// ── GEMINI CALL (RSI v3.0 - RECURSIVE SELF-IMPROVEMENT) ──────────────────────
+async function callGemini(ai: GoogleGenAI, text: string, schema: any, subject: string, subjectCode: string, board: string, chunkN: number, isDeep: boolean = false): Promise<any[]> {
   const cfg = {
     responseMimeType: 'application/json' as const,
     responseSchema  : schema,
     maxOutputTokens : 8192,
+    temperature     : 0.1,
   };
+
+  const prompt = makePrompt(text, subject, subjectCode, board, chunkN, isDeep);
 
   // RSI ATTEMPT 1: PRIMARY MODEL
   try {
+    console.log(`[AI] Calling ${MODEL_PRIMARY} (Attempt 1, Deep=${isDeep})...`);
     const r = await ai.models.generateContent({
       model   : MODEL_PRIMARY,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -370,43 +394,41 @@ async function callGemini(ai: GoogleGenAI, prompt: string, schema: any): Promise
     });
     const raw = r.text || '';
     const d = safeJson(raw);
-    if (Array.isArray(d.slos) && d.slos.length > 0) return d.slos;
+    if (Array.isArray(d.slos) && d.slos.length > 0) {
+      console.log(`[AI] ${MODEL_PRIMARY} success: ${d.slos.length} SLOs found.`);
+      return d.slos;
+    }
     
     // RSI TRIGGER: Zero SLOs but text contains "SLO" or "Grade"
-    const text = prompt.split('=== TEXT ===')[1] || '';
-    const hasSloMarkers = /SLO|Grade|Outcome|Standard/i.test(text);
-    if (hasSloMarkers) {
+    const hasSloMarkers = /SLO|Grade|Outcome|Standard|Competency/i.test(text);
+    if (hasSloMarkers && !isDeep) {
       console.warn(`[RSI] ${MODEL_PRIMARY} missed SLOs in text with markers — retrying with DEEP SCAN`);
-      const deepPrompt = `RECURSIVE SELF-IMPROVEMENT (RSI) PROTOCOL ACTIVE.
-The previous extraction attempt returned ZERO results. 
-This text contains curriculum markers. 
-Perform a DEEP SCAN. Extract every single learning outcome, even if the code is missing.
-${prompt}`;
-      
-      const rDeep = await ai.models.generateContent({
-        model   : MODEL_FALLBACK,
-        contents: [{ role: 'user', parts: [{ text: deepPrompt }] }],
-        config  : { ...cfg, maxOutputTokens: 8192 },
-      });
-      const dDeep = safeJson(rDeep.text || '');
-      if (Array.isArray(dDeep.slos) && dDeep.slos.length > 0) return dDeep.slos;
+      return await callGemini(ai, text, schema, subject, subjectCode, board, chunkN, true);
     }
   } catch (e: any) {
     const isQuota = /429|quota|RESOURCE_EXHAUSTED/i.test(e.message || '');
     if (!isQuota) {
       console.error(`[RSI] ${MODEL_PRIMARY} error:`, e.message);
-      throw e;
+    } else {
+      console.warn(`[RSI] ${MODEL_PRIMARY} quota exceeded. Switching to fallback.`);
     }
   }
 
   // FALLBACK: LAST RESORT
   console.log(`[RSI] Trying last resort fallback: ${MODEL_FALLBACK}`);
-  const rFallback = await ai.models.generateContent({
-    model   : MODEL_FALLBACK,
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    config  : { ...cfg, maxOutputTokens: 4096 },
-  });
-  return safeJson(rFallback.text || '').slos || [];
+  try {
+    const rFallback = await ai.models.generateContent({
+      model   : MODEL_FALLBACK,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config  : { ...cfg, maxOutputTokens: 8192 },
+    });
+    const dFallback = safeJson(rFallback.text || '');
+    console.log(`[RSI] Fallback result: ${dFallback.slos?.length || 0} SLOs found.`);
+    return dFallback.slos || [];
+  } catch (e: any) {
+    console.error(`[RSI] Fallback failed:`, e.message);
+    return [];
+  }
 }
 
 // ── SLIDING WINDOW EXTRACTOR ──────────────────────────────────────────────────
@@ -430,9 +452,9 @@ async function extractSlos(
   let   offset      = 0;
   let   chunkIndex  = 0;
 
-  const processedText = isPrimary ? linearizeMathText(text) : text;
+  const processedText = linearizeSloText(text);
   const totalLen      = processedText.length;
-  console.log(`[Extract] isPrimary=${isPrimary} rawLen=${text.length} processedLen=${totalLen}`);
+  console.log(`[Extract] rawLen=${text.length} processedLen=${totalLen}`);
 
   const schema = {
     type      : Type.OBJECT,
@@ -484,8 +506,7 @@ async function extractSlos(
     });
 
     try {
-      const prompt    = makePrompt(chunk, subjectName, subjectCode, boardKey, chunkIndex);
-      const chunkSlos = await callGemini(ai, prompt, schema);
+      const chunkSlos = await callGemini(ai, chunk, schema, subjectName, subjectCode, boardKey, chunkIndex);
 
       const newRecords: any[] = [];
       for (const s of chunkSlos) {
@@ -576,9 +597,9 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
       board: BOARD_NAMES[boardKey] ?? boardKey,
       subject: subjectName,
       subject_code: subjectCode,
-      total_artifacts: sorted.length,
+      total_slos: sorted.length,
       generated_at: new Date().toISOString(),
-      version: "2.0.0-universal"
+      version: "3.0.0 (RALPH + RSI)"
     },
     curriculum: sorted.map(s => ({
       code: s.slo_code,
@@ -586,12 +607,14 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
       grade: s.grade,
       domain: s.domain,
       domain_name: s.domain_name,
-      cognitive_level: s.cognitive_level,
+      bloom_level: s.bloom_level,
+      cognitive_complexity: s.cognitive_complexity,
+      keywords: s.keywords,
       benchmark: s.benchmark
     }))
   };
 
-  return `\`\`\`json\n${JSON.stringify(ledger, null, 2)}\n\`\`\``;
+  return `Board: ${BOARD_NAMES[boardKey] || boardKey}\nSubject: ${subjectName}\n\n\`\`\`json\n${JSON.stringify(ledger, null, 2)}\n\`\`\``;
 }
 
 // ── ROUTE HANDLER ─────────────────────────────────────────────────────────────

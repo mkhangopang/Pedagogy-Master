@@ -288,17 +288,31 @@ USER_QUERY: ${userInput}`;
            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0">
               {/* Print zone - hidden on screen, visible only when printing */}
               <div id="pm-print-zone" className="hidden">
-                <div className="pm-print-header" style={{ display: 'none', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', paddingBottom: '16px', borderBottom: '2px solid #4f46e5' }}>
-                  <div>
-                    <div style={{ fontSize: '20px', fontWeight: 900, textTransform: 'uppercase', color: '#1e3a5f' }}>Pedagogy Master AI</div>
-                    <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{getToolDisplayName(activeTool || 'master_plan')} &bull; {activeDoc ? activeDoc.name : 'General Mode'}</div>
-                  </div>
-                  <div style={{ textAlign: 'right', fontSize: '11px', color: '#94a3b8' }}>
-                    <div style={{ fontWeight: 700, color: '#475569' }}>{user.name}</div>
-                    <div>pedagogy-master.vercel.app</div>
-                  </div>
-                </div>
-                <div dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} />
+                <table className="pm-print-container">
+                  <thead>
+                    <tr>
+                      <td>
+                        <div className="pm-print-header">
+                          <div>
+                            <div style={{ fontSize: '18pt', fontWeight: 900, textTransform: 'uppercase', color: '#1e3a5f' }}>Pedagogy Master AI</div>
+                            <div style={{ fontSize: '10pt', color: '#64748b', marginTop: '2pt' }}>{getToolDisplayName(activeTool || 'master_plan')} &bull; {activeDoc ? activeDoc.name : 'General Mode'}</div>
+                          </div>
+                          <div style={{ textAlign: 'right', fontSize: '9pt', color: '#94a3b8' }}>
+                            <div style={{ fontWeight: 700, color: '#475569' }}>{user.name}</div>
+                            <div>pedagogy-master.vercel.app</div>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>
+                        <div dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
 
               <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none print:rounded-none print:p-0">
