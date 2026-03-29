@@ -19,9 +19,9 @@ export const maxDuration = 300;
 const MODEL_PRIMARY  = 'gemini-3.1-pro-preview';
 const MODEL_FALLBACK = 'gemini-3-flash-preview';
 
-const CHUNK_SIZE  = 16000;
-const OVERLAP     = 4000;
-const MIN_ADVANCE = 8000;
+const CHUNK_SIZE  = 10000;
+const OVERLAP     = 2500;
+const MIN_ADVANCE = 5000;
 
 // ── LOOKUP TABLES ─────────────────────────────────────────────────────────────
 const ROMAN: Record<string, string> = {
@@ -138,6 +138,7 @@ function normalizeCode(raw: string): string | null {
 // the LAST code in each row to all codes in that row.
 function linearizeSloText(text: string): string {
   // Match any SLO code variant (M, B, C, P, E, S, etc.)
+  // Patterns like [SLO: B-09-A-01] or SLO: B-09-A-01 or (SLO: B-09-A-01)
   const codeRe = /(?:\[?\s*(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+([A-Z]{1,3})\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
 
   const matches: { start: number; end: number; raw: string }[] = [];
@@ -148,11 +149,16 @@ function linearizeSloText(text: string): string {
 
   if (matches.length === 0) return text;
 
-  type Group = { codes: string[]; textStart: number };
+  // Group codes that appear on the same line (within 250 chars and no newline)
+  type Group = { codes: string[]; start: number; end: number };
   const groups: Group[] = [];
   let i = 0;
   while (i < matches.length) {
-    const group: Group = { codes: [matches[i].raw], textStart: matches[i].end };
+    const group: Group = { 
+      codes: [matches[i].raw], 
+      start: matches[i].start, 
+      end: matches[i].end 
+    };
     while (
       i + 1 < matches.length &&
       matches[i + 1].start - matches[i].end < 250 &&
@@ -160,32 +166,44 @@ function linearizeSloText(text: string): string {
     ) {
       i++;
       group.codes.push(matches[i].raw);
-      group.textStart = matches[i].end;
+      group.end = matches[i].end;
     }
     groups.push(group);
     i++;
   }
 
-  const lines: string[] = [];
+  let result = "";
+  let lastPos = 0;
+
   for (let g = 0; g < groups.length; g++) {
+    const group = groups[g];
+    
+    // Add text before this group (preserving headers, etc.)
+    result += text.slice(lastPos, group.start);
+    
+    // Determine where the text for this group ends (start of next group or end of text)
     let nextGroupStart = text.length;
     if (g + 1 < groups.length) {
-      const nextCode = groups[g + 1].codes[0];
-      const pos = text.indexOf(nextCode, groups[g].textStart);
-      if (pos !== -1) nextGroupStart = pos;
+      nextGroupStart = groups[g + 1].start;
     }
-
-    const rawText = text
-      .slice(groups[g].textStart, nextGroupStart)
-      .replace(/[\r\n\t ]+/g, ' ')
-      .trim();
-
-    for (const code of groups[g].codes) {
-      lines.push(`${code} ${rawText}`);
+    
+    // Safety: don't take more than 1500 chars for a group text to avoid massive duplication
+    const groupTextEnd = Math.min(nextGroupStart, group.end + 1500);
+    const groupText = text.slice(group.end, groupTextEnd);
+    
+    // Linearize: for each code in the group, append the text block
+    // This helps the AI see "Code: Text" even if the PDF was read left-to-right
+    for (const code of group.codes) {
+      result += `\n${code} ${groupText.replace(/[\r\n\t ]+/g, ' ').trim()}\n`;
     }
+    
+    lastPos = nextGroupStart;
   }
+  
+  // Add any remaining text after the last group
+  result += text.slice(lastPos);
 
-  return lines.join('\n');
+  return result;
 }
 
 // ── DOMAIN SCANNER ────────────────────────────────────────────────────────────
@@ -315,59 +333,32 @@ Grade mapping: IX→09, X→10, XI→11, XII→12, always 2-digit`;
 ⚠️ EXTRACT EVERY SINGLE SLO, EVEN IF THE CODE IS MISSING OR MALFORMED.` : '';
 
   const subjectInstruction = subjectCode === 'B' ? `
-=== BIOLOGY SPECIFIC INSTRUCTIONS ===
-- Look for SLOs in the "Student Learning Outcomes" column of tables.
-- Domains are often labeled as "Chapter", "Unit", or "Domain".
-- Cognitive levels are often listed as "K" (Knowledge), "U" (Understanding), "A" (Application).` : '';
+=== BIOLOGY SPECIFIC ===
+- SLOs in "Student Learning Outcomes" column.
+- Domains: Chapter/Unit/Domain.
+- Cognitive: K (Remember), U (Understand), A (Apply).` : '';
 
-  return `IDENTITY: World-Class Pedagogy Master Assistant (RALPH v3.0)
-GOAL: Extract ALL Student Learning Outcomes (SLOs) with surgical precision.
-Board: ${board}  Subject: ${subject} (${subjectCode})  Chunk: ${chunkN}
+  return `IDENTITY: Pedagogy Master AI (RALPH v3.0)
+GOAL: Extract ALL SLOs from the text below.
+Board: ${board} | Subject: ${subject} | Chunk: ${chunkN}
 
 ${gradeSection}
 ${deepInstruction}
 ${subjectInstruction}
 
-=== SLO CODE FORMAT ===
-Pattern: [SUBJECT][GRADE][DOMAIN][NUMBER] (e.g., ${subjectCode}09A01)
-SLO number: always 2-digit (1→01)
+=== SLO FORMAT ===
+Code: [SUB][GRADE][DOMAIN][NUM] (e.g. ${subjectCode}09A01)
+JSON Fields:
+- slo_code, raw_code_as_found, slo_full_text
+- grade (2-digit), domain (letter), domain_name
+- bloom_level (Remember/Understand/Apply/Analyze/Evaluate/Create)
+- cognitive_complexity (Low/Medium/High)
+- keywords (3-5 terms), benchmark, is_truncated
 
-=== PEDAGOGY ENRICHMENT (RSI PROTOCOL) ===
-For each SLO, determine:
-1. bloom_level: One of [Remember, Understand, Apply, Analyze, Evaluate, Create]
-2. cognitive_complexity: [Low, Medium, High]
-3. keywords: 3-5 key pedagogical terms
-4. domain_name: The descriptive name of the domain (e.g., "Algebra", "Cell Biology")
-
-=== DETECTION RULES ===
-- grade: from SLO code or "Grade-X" header. NEVER guess.
-- domain: from SLO code letter or "DOMAIN X: ..." heading.
-- benchmark: copy verbatim "Benchmark N: ..." or null.
-- is_truncated: true if text ends mid-sentence or is < 8 words.
-
-=== PROHIBITIONS ===
-❌ Never invent codes  ❌ Never skip SLOs  ❌ Never change slo_full_text
-❌ Return ONLY raw JSON (no fences, no commentary)
-
-=== RESPONSE SCHEMA ===
-{
-  "slos": [
-    {
-      "slo_code": "...",
-      "raw_code_as_found": "...",
-      "slo_full_text": "...",
-      "grade": "09",
-      "domain": "A",
-      "domain_name": "...",
-      "bloom_level": "...",
-      "cognitive_complexity": "...",
-      "keywords": ["...", "..."],
-      "benchmark": "...",
-      "is_truncated": false,
-      "is_orphan_domain": false
-    }
-  ]
-}
+=== RULES ===
+- Extract EVERY SLO. If code is missing, leave slo_code null but extract text.
+- Never invent codes. Never skip text.
+- Return ONLY raw JSON.
 
 === TEXT ===
 ${chunk}`;
@@ -407,7 +398,11 @@ async function callGemini(ai: GoogleGenAI, text: string, schema: any, subject: s
     }
   } catch (e: any) {
     const isQuota = /429|quota|RESOURCE_EXHAUSTED/i.test(e.message || '');
-    if (!isQuota) {
+    const isTokenLimit = /limit|token|exceeded/i.test(e.message || '');
+    
+    if (isTokenLimit) {
+      console.error(`[RSI] Token limit exceeded for chunk ${chunkN}. Returning partial results.`);
+    } else if (!isQuota) {
       console.error(`[RSI] ${MODEL_PRIMARY} error:`, e.message);
     } else {
       console.warn(`[RSI] ${MODEL_PRIMARY} quota exceeded. Switching to fallback.`);
