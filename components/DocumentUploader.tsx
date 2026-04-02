@@ -131,6 +131,33 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     }
   }, [docId, isUploading, onComplete]);
 
+  const extractTextFromPDF = async (file: File): Promise<string> => {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      const totalPages = pdf.numPages;
+      
+      for (let i = 1; i <= totalPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => item.str).join(' ');
+        fullText += pageText + '\n';
+        
+        // Update progress between 10% and 20% during local extraction
+        if (i % 5 === 0 || i === totalPages) {
+          const progressPercent = 10 + (i / totalPages) * 10;
+          updateProgress(progressPercent);
+        }
+      }
+      return fullText;
+    } catch (e) {
+      console.error("Local PDF extraction failed:", e);
+      // Fallback to empty string, letting the server try if local fails
+      return "";
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -144,11 +171,21 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error("Identity node unreachable.");
 
-      const handshake = await handshakeWithGateway(file.name, file.type || 'application/pdf', "", session.access_token);
+      // NEW: Extract text client-side
+      let extractedText = "";
+      if (file.type === 'application/pdf') {
+        setStatus('Extracting Text Locally...');
+        updateProgress(10);
+        extractedText = await extractTextFromPDF(file);
+      } else if (file.type === 'text/plain' || file.name.endsWith('.md')) {
+        extractedText = await file.text();
+      }
+
+      const handshake = await handshakeWithGateway(file.name, file.type || 'application/pdf', extractedText, session.access_token);
       const { uploadUrl, documentId } = handshake;
       setDocId(documentId);
       
-      updateProgress(20);
+      updateProgress(25);
       setStatus('Streaming Binary Payload...');
       
       const uploadRes = await fetch(uploadUrl, { 

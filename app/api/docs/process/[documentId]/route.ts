@@ -673,15 +673,23 @@ export async function POST(
         step: IngestionStep.EXTRACT, progress: 10, message: 'Fetching PDF...',
       });
 
-      const r2Path = doc.file_path;
-      if (!r2Path) throw new Error('R2_FAULT: No file_path on document');
+      let text = doc.extracted_text || '';
+      
+      if (!text || text.length < 200) {
+        console.log('[Stage 1] No pre-extracted text found. Falling back to server-side parsing...');
+        const r2Path = doc.file_path;
+        if (!r2Path) throw new Error('R2_FAULT: No file_path on document');
 
-      const buffer = await getObjectBuffer(r2Path);
-      if (!buffer)  throw new Error('R2_FAULT: File unreachable from R2');
+        const buffer = await getObjectBuffer(r2Path);
+        if (!buffer)  throw new Error('R2_FAULT: File unreachable from R2');
 
-      const result = await pdf(buffer);
-      const text   = result.text?.trim() || '';
-      console.log(`[Stage 1] PDF parsed: ${text.length} chars, ${result.numpages} pages`);
+        const result = await pdf(buffer);
+        text = result.text?.trim() || '';
+        console.log(`[Stage 1] PDF parsed: ${text.length} chars, ${result.numpages} pages`);
+      } else {
+        console.log(`[Stage 1] Using pre-extracted text from client: ${text.length} chars`);
+      }
+
       console.log(`[Stage 1] Text sample (first 300 chars):\n${text.substring(0, 300)}`);
 
       if (text.length < 200) throw new Error(
