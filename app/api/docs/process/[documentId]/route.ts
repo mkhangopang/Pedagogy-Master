@@ -587,6 +587,42 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
          - (parseInt((b.slo_code || '').slice(-2), 10) || 0);
   });
 
+  const curriculumMap = new Map<string, Map<string, any>>();
+  
+  for (const s of sorted) {
+    const grade = s.grade || 'Unknown';
+    const domain = s.domain || 'Unknown';
+    const domainName = s.domain_name || 'Unknown Domain';
+    
+    if (!curriculumMap.has(grade)) {
+      curriculumMap.set(grade, new Map());
+    }
+    
+    const gradeMap = curriculumMap.get(grade)!;
+    
+    if (!gradeMap.has(domain)) {
+      gradeMap.set(domain, {
+        domain: domain,
+        domain_name: domainName,
+        slos: []
+      });
+    }
+    
+    gradeMap.get(domain)!.slos.push({
+      code: s.slo_code,
+      text: s.slo_full_text || s.slo_text,
+      bloom_level: s.bloom_level,
+      cognitive_complexity: s.cognitive_complexity,
+      keywords: s.keywords,
+      benchmark: s.benchmark
+    });
+  }
+
+  const curriculum = Array.from(curriculumMap.entries()).map(([grade, domainsMap]) => ({
+    grade,
+    domains: Array.from(domainsMap.values())
+  }));
+
   const ledger = {
     metadata: {
       board: BOARD_NAMES[boardKey] ?? boardKey,
@@ -594,19 +630,9 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
       subject_code: subjectCode,
       total_slos: sorted.length,
       generated_at: new Date().toISOString(),
-      version: "3.0.0 (RALPH + RSI)"
+      version: "3.1.0 (Grade & Domain Wise)"
     },
-    curriculum: sorted.map(s => ({
-      code: s.slo_code,
-      text: s.slo_full_text || s.slo_text,
-      grade: s.grade,
-      domain: s.domain,
-      domain_name: s.domain_name,
-      bloom_level: s.bloom_level,
-      cognitive_complexity: s.cognitive_complexity,
-      keywords: s.keywords,
-      benchmark: s.benchmark
-    }))
+    curriculum
   };
 
   return `Board: ${BOARD_NAMES[boardKey] || boardKey}\nSubject: ${subjectName}\n\n\`\`\`json\n${JSON.stringify(ledger, null, 2)}\n\`\`\``;
@@ -724,8 +750,32 @@ export async function POST(
           
           try {
             const data = safeJson(rawText);
-            const items = data.curriculum || data.slos;
-            if (items && Array.isArray(items) && items.length > 0) {
+            let items: any[] = [];
+            
+            if (data.curriculum && Array.isArray(data.curriculum)) {
+              if (data.curriculum.length > 0 && data.curriculum[0].domains) {
+                // Hierarchical structure
+                for (const g of data.curriculum) {
+                  for (const d of g.domains || []) {
+                    for (const s of d.slos || []) {
+                      items.push({
+                        ...s,
+                        grade: g.grade,
+                        domain: d.domain,
+                        domain_name: d.domain_name
+                      });
+                    }
+                  }
+                }
+              } else {
+                // Flat structure
+                items = data.curriculum;
+              }
+            } else if (data.slos && Array.isArray(data.slos)) {
+              items = data.slos;
+            }
+
+            if (items && items.length > 0) {
               const records = items.map((s: any) => ({
                 document_id: documentId,
                 slo_code: s.slo_code || s.code || null,
