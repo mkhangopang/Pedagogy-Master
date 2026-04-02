@@ -229,6 +229,10 @@ function safeJson(raw: string): any {
   if (c.startsWith('Board:')) {
     const jsonMatch = c.match(/\{[\s\S]*\}/);
     if (jsonMatch) c = jsonMatch[0];
+  } else if (!c.startsWith('{') && c.includes('{')) {
+     // Sometimes the text has garbage before the JSON starts
+     const jsonMatch = c.match(/\{[\s\S]*\}/);
+     if (jsonMatch) c = jsonMatch[0];
   }
 
   try { return JSON.parse(c); } catch {/* */}
@@ -740,7 +744,7 @@ export async function POST(
       }
 
       let skipExtraction = false;
-      const isLedgerText = rawText.startsWith('Board:') || rawText.startsWith('```json') || rawText.startsWith('{');
+      const isLedgerText = rawText.startsWith('Board:') || rawText.startsWith('```json') || rawText.startsWith('{') || rawText.trim().startsWith('{');
       
       if (isLedgerText) {
         console.warn('[Stage 2] Already a ledger — checking if SLO database needs population');
@@ -811,6 +815,8 @@ export async function POST(
                 console.log(`[Stage 2] Populated DB with ${records.length} SLOs from existing ledger ✓`);
                 skipExtraction = true;
               }
+            } else {
+               console.warn('[Stage 2] Parsed JSON but found no items. Falling back to extraction.');
             }
           } catch (e) {
             console.error('[Stage 2] Failed to parse existing ledger JSON:', e);
@@ -901,7 +907,7 @@ export async function POST(
         .single();
 
       const txt = fin?.extracted_text || '';
-      const isLedger = txt.startsWith('Board:') || txt.startsWith('```json') || txt.startsWith('{');
+      const isLedger = txt.startsWith('Board:') || txt.startsWith('```json') || txt.startsWith('{') || txt.trim().startsWith('{');
       console.log(`[Stage 4] Text to embed: ${txt.length} chars, isLedger: ${isLedger}`);
 
       if (txt.length >= 100) {
