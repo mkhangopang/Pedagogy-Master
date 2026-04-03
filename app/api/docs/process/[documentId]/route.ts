@@ -223,6 +223,17 @@ function scanDomains(text: string): Record<string, string> {
 function safeJson(raw: string): any {
   if (!raw?.trim()) return { slos: [] };
   
+  // Try to find <STRUCTURED_INDEX> block first
+  const structuredMatch = raw.match(/<STRUCTURED_INDEX>([\s\S]*?)<\/STRUCTURED_INDEX>/);
+  if (structuredMatch) {
+    try {
+      const slos = JSON.parse(structuredMatch[1].trim());
+      return { slos };
+    } catch (e) {
+      console.error('[safeJson] FAILED to parse STRUCTURED_INDEX:', e);
+    }
+  }
+
   // Remove markdown code blocks
   let c = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
   
@@ -306,6 +317,10 @@ function processSlos(
       is_truncated      : Boolean(s.is_truncated),
       is_orphan_domain  : !domain,
       regex_confidence  : code ? 1.0 : 0.5,
+      teaching_strategies: Array.isArray(s.teaching_strategies) ? s.teaching_strategies : [],
+      assessment_ideas   : Array.isArray(s.assessment_ideas) ? s.assessment_ideas : [],
+      prerequisite_concepts: Array.isArray(s.prerequisite_concepts) ? s.prerequisite_concepts : [],
+      common_misconceptions: Array.isArray(s.common_misconceptions) ? s.common_misconceptions : [],
     });
   }
   return processed;
@@ -519,6 +534,10 @@ async function extractSlos(
             benchmark           : { type: Type.STRING  },
             is_truncated        : { type: Type.BOOLEAN },
             is_orphan_domain    : { type: Type.BOOLEAN },
+            teaching_strategies : { type: Type.ARRAY, items: { type: Type.STRING } },
+            assessment_ideas    : { type: Type.ARRAY, items: { type: Type.STRING } },
+            prerequisite_concepts: { type: Type.ARRAY, items: { type: Type.STRING } },
+            common_misconceptions: { type: Type.ARRAY, items: { type: Type.STRING } },
           },
           required: ['slo_full_text'],
         },
@@ -587,6 +606,10 @@ async function extractSlos(
             char_offset          : i,
             benchmark            : processed.benchmark,
             board                : processed.board,
+            teaching_strategies  : processed.teaching_strategies,
+            assessment_ideas     : processed.assessment_ideas,
+            prerequisite_concepts: processed.prerequisite_concepts,
+            common_misconceptions: processed.common_misconceptions,
           });
         }
 
@@ -663,6 +686,10 @@ async function extractSlos(
             char_offset          : offset,
             benchmark            : processed.benchmark,
             board                : processed.board,
+            teaching_strategies  : processed.teaching_strategies,
+            assessment_ideas     : processed.assessment_ideas,
+            prerequisite_concepts: processed.prerequisite_concepts,
+            common_misconceptions: processed.common_misconceptions,
           });
         }
 
@@ -696,6 +723,7 @@ async function extractSlos(
 
 // ── LEDGER JSON BUILDER ───────────────────────────────────────────────────────
 function buildLedger(slos: any[], boardKey: string, subjectCode: string): string {
+  const boardName = BOARD_NAMES[boardKey] || boardKey;
   const subjectName = SUBJECTS[subjectCode] || subjectCode;
 
   const sorted = [...slos].sort((a, b) => {
@@ -709,55 +737,51 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
          - (parseInt((b.slo_code || '').slice(-2), 10) || 0);
   });
 
-  const curriculumMap = new Map<string, Map<string, any>>();
-  
-  for (const s of sorted) {
-    const grade = s.grade || 'Unknown';
-    const domain = s.domain || 'Unknown';
-    const domainName = s.domain_name || 'Unknown Domain';
-    
-    if (!curriculumMap.has(grade)) {
-      curriculumMap.set(grade, new Map());
+  let md = `# ${boardName} — ${subjectName}\n\n`;
+
+  const grades = [...new Set(sorted.map(s => s.grade || 'Unknown'))];
+
+  for (const grade of grades) {
+    md += `## Grade ${grade}\n\n`;
+    const gradeSlos = sorted.filter(s => (s.grade || 'Unknown') === grade);
+    const domains = [...new Set(gradeSlos.map(s => s.domain || '?'))];
+
+    for (const domain of domains) {
+      const domainSlos = gradeSlos.filter(s => (s.domain || '?') === domain);
+      const domainName = domainSlos[0]?.domain_name || 'Domain';
+      md += `### Domain ${domain}: ${domainName}\n\n`;
+
+      for (const s of domainSlos) {
+        md += `- ${s.slo_code || 'NO_CODE'} — ${s.slo_full_text}\n`;
+      }
+      md += `\n`;
     }
-    
-    const gradeMap = curriculumMap.get(grade)!;
-    
-    if (!gradeMap.has(domain)) {
-      gradeMap.set(domain, {
-        domain: domain,
-        domain_name: domainName,
-        slos: []
-      });
-    }
-    
-    gradeMap.get(domain)!.slos.push({
-      code: s.slo_code,
-      text: s.slo_full_text || s.slo_text,
-      bloom_level: s.bloom_level,
-      cognitive_complexity: s.cognitive_complexity,
-      keywords: s.keywords,
-      benchmark: s.benchmark
-    });
   }
 
-  const curriculum = Array.from(curriculumMap.entries()).map(([grade, domainsMap]) => ({
-    grade,
-    domains: Array.from(domainsMap.values())
+  const structuredIndex = sorted.map(s => ({
+    slo_code: s.slo_code,
+    slo_full_text: s.slo_full_text,
+    subject: s.subject,
+    grade_level: s.grade,
+    bloom_level: s.bloom_level,
+    cognitive_complexity: s.cognitive_complexity,
+    teaching_strategies: s.teaching_strategies || [],
+    assessment_ideas: s.assessment_ideas || [],
+    prerequisite_concepts: s.prerequisite_concepts || [],
+    common_misconceptions: s.common_misconceptions || [],
+    keywords: s.keywords || [],
+    domain: s.domain,
+    domain_name: s.domain_name,
+    is_truncated: s.is_truncated,
+    is_orphan_domain: s.is_orphan_domain,
+    raw_code_as_found: s.raw_code_as_found,
+    benchmark: s.benchmark,
+    board: s.board
   }));
 
-  const ledger = {
-    metadata: {
-      board: BOARD_NAMES[boardKey] ?? boardKey,
-      subject: subjectName,
-      subject_code: subjectCode,
-      total_slos: sorted.length,
-      generated_at: new Date().toISOString(),
-      version: "3.1.0 (Grade & Domain Wise)"
-    },
-    curriculum
-  };
+  md += `<STRUCTURED_INDEX>\n${JSON.stringify(structuredIndex, null, 2)}\n</STRUCTURED_INDEX>`;
 
-  return `Board: ${BOARD_NAMES[boardKey] || boardKey}\nSubject: ${subjectName}\n\n\`\`\`json\n${JSON.stringify(ledger, null, 2)}\n\`\`\``;
+  return md;
 }
 
 // ── ROUTE HANDLER ─────────────────────────────────────────────────────────────
@@ -868,7 +892,7 @@ export async function POST(
       }
 
       let skipExtraction = false;
-      const isLedgerText = rawText.startsWith('Board:') || rawText.startsWith('```json') || rawText.startsWith('{') || rawText.trim().startsWith('{');
+      const isLedgerText = rawText.startsWith('# ') || rawText.startsWith('Board:') || rawText.startsWith('```json') || rawText.startsWith('{') || rawText.trim().startsWith('{');
       
       if (isLedgerText) {
         console.warn('[Stage 2] Already a ledger — checking if SLO database needs population');
@@ -923,7 +947,11 @@ export async function POST(
                 subject: data.metadata?.subject || subject,
                 board: data.metadata?.board || board,
                 extraction_confidence: 1.0,
-                created_at: new Date().toISOString()
+                created_at: new Date().toISOString(),
+                teaching_strategies: s.teaching_strategies || [],
+                assessment_ideas: s.assessment_ideas || [],
+                prerequisite_concepts: s.prerequisite_concepts || [],
+                common_misconceptions: s.common_misconceptions || []
               })).filter((r: any) => r.slo_full_text);
 
               if (records.length > 0) {
@@ -1034,7 +1062,7 @@ export async function POST(
         .single();
 
       const txt = fin?.extracted_text || '';
-      const isLedger = txt.startsWith('Board:') || txt.startsWith('```json') || txt.startsWith('{') || txt.trim().startsWith('{');
+      const isLedger = txt.startsWith('# ') || txt.startsWith('Board:') || txt.startsWith('```json') || txt.startsWith('{') || txt.trim().startsWith('{');
       console.log(`[Stage 4] Text to embed: ${txt.length} chars, isLedger: ${isLedger}`);
 
       if (txt.length >= 100) {
