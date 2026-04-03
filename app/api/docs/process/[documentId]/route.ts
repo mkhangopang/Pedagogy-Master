@@ -312,7 +312,7 @@ function processSlos(
 }
 
 function extractRawSloBlocks(text: string): string[] {
-  const codeRe = /(?:\[?\s*(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+[A-Z]{1,3}\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
+  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?[A-Z]{1,3}\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
   const matches = [];
   let m;
   while ((m = codeRe.exec(text)) !== null) {
@@ -367,12 +367,12 @@ JSON Fields:
 - keywords (3-5 terms), benchmark, is_truncated
 
 === RULES ===
-- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.
+${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you find. Ignore junk text, table of contents, and introductions. FOCUS ONLY ON SLO CODES AND DESCRIPTIONS.' : '- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.'}
 - Format each block into a valid JSON object.
 - Fix any OCR typos in the text.
 - Return ONLY raw JSON.
 
-=== RAW SLO BLOCKS ===
+=== RAW TEXT ===
 ${chunk}`;
 }
 
@@ -395,7 +395,7 @@ async function callAIOrchestrator(apiKey: string, text: string, schema: any, sub
   for (const provider of providers) {
     try {
       console.log(`[AI Orchestrator] Routing to ${provider.name} (${provider.model})...`);
-      const openai = new OpenAI({ apiKey: provider.key, baseURL: provider.url });
+      const openai = new OpenAI({ apiKey: provider.key, baseURL: provider.url, timeout: 15000 });
       const completion = await openai.chat.completions.create({
         model: provider.model,
         messages: [{ role: 'user', content: prompt }],
@@ -526,16 +526,22 @@ async function extractSlos(
     },
   };
 
-  // Clear existing SLOs for this document before starting fresh extraction
-  await supabase.from('slo_database').delete().eq('document_id', documentId);
+  const jobStatus = await queue.getJobStatus(documentId);
+  const startI = jobStatus?.payload?.processedChunks || 0;
+  const startOffset = jobStatus?.payload?.processedOffset || 0;
+
+  if (startI === 0 && startOffset === 0) {
+    // Only clear if starting fresh
+    await supabase.from('slo_database').delete().eq('document_id', documentId);
+  }
 
   const rawBlocks = extractRawSloBlocks(processedText);
 
   if (rawBlocks.length > 0) {
-    console.log(`[Extract] Regex found ${rawBlocks.length} SLO blocks. Bypassing junk text!`);
+    console.log(`[Extract] Regex found ${rawBlocks.length} SLO blocks. Bypassing junk text! Resuming from ${startI}`);
     const BATCH_SIZE = 40;
     
-    for (let i = 0; i < rawBlocks.length; i += BATCH_SIZE) {
+    for (let i = startI; i < rawBlocks.length; i += BATCH_SIZE) {
       chunkIndex++;
       const batch = rawBlocks.slice(i, i + BATCH_SIZE).join('\n\n');
       const progress = Math.round((i / rawBlocks.length) * 50) + 25; // 25% to 75%
@@ -544,6 +550,7 @@ async function extractSlos(
         step: IngestionStep.LINEARIZE,
         progress,
         message: `Formatting SLOs (${i}/${rawBlocks.length})...`,
+        processedChunks: i
       });
 
       try {
@@ -600,8 +607,8 @@ async function extractSlos(
       }
     }
   } else {
-    console.log(`[Extract] No codes found via Regex. Falling back to Deep Scan sliding window...`);
-    let offset = 0;
+    console.log(`[Extract] No codes found via Regex. Falling back to Deep Scan sliding window... Resuming from offset ${startOffset}`);
+    let offset = startOffset;
     while (offset < totalLen) {
       chunkIndex++;
 
@@ -619,6 +626,7 @@ async function extractSlos(
         step: IngestionStep.LINEARIZE,
         progress,
         message: `Extracting SLOs (Chunk ${chunkIndex}, ${allSlos.length} found)...`,
+        processedOffset: offset
       });
 
       try {
@@ -765,6 +773,12 @@ export async function POST(
   if (!job) {
     const id = await queue.enqueue(documentId);
     job = { id, step: IngestionStep.EXTRACT };
+  } else if (job.status === 'processing' && job.updated_at) {
+    const lastUpdate = new Date(job.updated_at).getTime();
+    if (Date.now() - lastUpdate < 60000) {
+      console.log(`[Ingestion] Job is actively processing (updated ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Ignoring duplicate trigger.`);
+      return NextResponse.json({ success: true, message: 'Already processing' });
+    }
   }
   if (job.step === IngestionStep.COMPLETE) {
     return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });

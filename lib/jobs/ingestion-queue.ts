@@ -5,6 +5,8 @@ interface JobProgress {
   step: IngestionStep;
   progress: number;
   message: string;
+  processedChunks?: number;
+  processedOffset?: number;
 }
 
 /**
