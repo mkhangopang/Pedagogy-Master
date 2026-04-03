@@ -91,7 +91,7 @@ function normalizeCode(raw: string): string | null {
     .trim();
 
   // Grade-range codes: M-01-02-A-01 (appears in cross-grade benchmarks) → take first grade
-  const gradeRange = s.match(/^([A-Z]{1,3})-?(\d{2})-(\d{2})-?([A-Z])-?(\d{1,3})$/);
+  const gradeRange = s.match(/^([A-Z]{1,4})-?(\d{2})-(\d{2})-?([A-Z])-?(\d{1,3})$/);
   if (gradeRange) {
     return `${gradeRange[1]}${gradeRange[2]}${gradeRange[4]}${gradeRange[5].padStart(2, '0')}`;
   }
@@ -101,7 +101,7 @@ function normalizeCode(raw: string): string | null {
   // ── OCR fixes (applied before matching) ──────────────────────────────────
   // Fix 0l / 0L / 0I in GRADE position (between subject code and domain letter)
   // e.g. M0LA09 → M01A09,  C0LA03 → C01A03
-  s = s.replace(/([A-Z]{1,3})0[LlIi]([A-Z])/, '$101$2');
+  s = s.replace(/([A-Z]{1,4})0[LlIi]([A-Z])/, '$101$2');
 
   // Fix 0l / 0L / 0I at END of string (SLO number position)
   s = s.replace(/0[LlIi]$/i, '01');
@@ -114,13 +114,13 @@ function normalizeCode(raw: string): string | null {
   s = s.replace(/(\d)O([A-Z\d])/, '$10$2');
 
   // Roman numeral grade embedded in code: MVIIIA01 → M08A01
-  const romMatch = s.match(/^([A-Z]{1,3})(XII|XI|IX|X|VIII|VII|VI|V|IV|III|II)([A-Z])(\d{1,3})$/);
+  const romMatch = s.match(/^([A-Z]{1,4})(XII|XI|IX|X|VIII|VII|VI|V|IV|III|II)([A-Z])(\d{1,3})$/);
   if (romMatch) {
     return `${romMatch[1]}${ROMAN[romMatch[2]] ?? romMatch[2]}${romMatch[3]}${romMatch[4].padStart(2, '0')}`;
   }
 
   // Standard pattern: M01A01 or C09A01
-  const numMatch = s.match(/^([A-Z]{1,3})(\d{1,2})([A-Z])(\d{1,3})$/);
+  const numMatch = s.match(/^([A-Z]{1,4})(\d{1,2})([A-Z])(\d{1,3})$/);
   if (numMatch) {
     const sloNum = numMatch[4].startsWith('00') ? numMatch[4].slice(-2) : numMatch[4].padStart(2, '0');
     return `${numMatch[1]}${numMatch[2].padStart(2, '0')}${numMatch[3]}${sloNum}`;
@@ -140,7 +140,7 @@ function normalizeCode(raw: string): string | null {
 function linearizeSloText(text: string): string {
   // Match any SLO code variant (M, B, C, P, E, S, etc.)
   // Patterns like [SLO: B-09-A-01] or SLO: B-09-A-01 or (SLO: B-09-A-01)
-  const codeRe = /(?:\[?\s*(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+([A-Z]{1,3})\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
+  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?([A-Z]{1,4})\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
 
   const matches: { start: number; end: number; raw: string }[] = [];
   let m: RegExpExecArray | null;
@@ -227,8 +227,9 @@ function safeJson(raw: string): any {
   const structuredMatch = raw.match(/<STRUCTURED_INDEX>([\s\S]*?)<\/STRUCTURED_INDEX>/);
   if (structuredMatch) {
     try {
-      const slos = JSON.parse(structuredMatch[1].trim());
-      return { slos };
+      const parsed = JSON.parse(structuredMatch[1].trim());
+      if (Array.isArray(parsed)) return { slos: parsed };
+      return { slos: [] };
     } catch (e) {
       console.error('[safeJson] FAILED to parse STRUCTURED_INDEX:', e);
     }
@@ -241,13 +242,17 @@ function safeJson(raw: string): any {
   if (c.startsWith('Board:')) {
     const jsonMatch = c.match(/\{[\s\S]*\}/);
     if (jsonMatch) c = jsonMatch[0];
-  } else if (!c.startsWith('{') && c.includes('{')) {
+  } else if (!c.startsWith('{') && !c.startsWith('[') && (c.includes('{') || c.includes('['))) {
      // Sometimes the text has garbage before the JSON starts
-     const jsonMatch = c.match(/\{[\s\S]*\}/);
+     const jsonMatch = c.match(/[\{\[][\s\S]*[\}\]]/);
      if (jsonMatch) c = jsonMatch[0];
   }
 
-  try { return JSON.parse(c); } catch {/* */}
+  try { 
+    const parsed = JSON.parse(c);
+    if (Array.isArray(parsed)) return { slos: parsed };
+    return parsed;
+  } catch {/* */}
   
   // Try to find the first { and last }
   const first = c.indexOf('{');
@@ -327,7 +332,7 @@ function processSlos(
 }
 
 function extractRawSloBlocks(text: string): string[] {
-  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?[A-Z]{1,3}\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
+  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?([A-Z]{1,4})\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
   const matches = [];
   let m;
   while ((m = codeRe.exec(text)) !== null) {
@@ -380,6 +385,10 @@ JSON Fields:
 - bloom_level (Remember/Understand/Apply/Analyze/Evaluate/Create)
 - cognitive_complexity (Low/Medium/High)
 - keywords (3-5 terms), benchmark, is_truncated
+- teaching_strategies (Array of strings)
+- assessment_ideas (Array of strings)
+- prerequisite_concepts (Array of strings)
+- common_misconceptions (Array of strings)
 
 === RULES ===
 ${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you find. Ignore junk text, table of contents, and introductions. FOCUS ONLY ON SLO CODES AND DESCRIPTIONS.' : '- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.'}
@@ -555,6 +564,30 @@ async function extractSlos(
   }
 
   const rawBlocks = extractRawSloBlocks(processedText);
+
+  if (rawBlocks.length === 0) {
+    console.warn('[Extract] Regex found 0 blocks with standard pattern. Trying ultra-permissive fallback...');
+    // Ultra permissive: matches anything that looks like [A-Z]-09-A-01 or similar
+    const fallbackRe = /[A-Z]{1,4}[-\s]*\d{1,2}[-\s]*[A-Z][-\s]*\d{1,3}/gi;
+    let m;
+    const fallbackMatches = [];
+    while ((m = fallbackRe.exec(processedText)) !== null) {
+      fallbackMatches.push({ index: m.index, raw: m[0] });
+    }
+    
+    if (fallbackMatches.length > 0) {
+      console.log(`[Extract] Fallback regex found ${fallbackMatches.length} potential blocks.`);
+      for (let i = 0; i < fallbackMatches.length; i++) {
+        const current = fallbackMatches[i];
+        const next = fallbackMatches[i + 1];
+        const start = current.index;
+        const end = next ? next.index : start + 400;
+        let block = processedText.substring(start, end).trim();
+        if (block.length > 400) block = block.substring(0, 400);
+        rawBlocks.push(block.replace(/[\r\n]+/g, ' '));
+      }
+    }
+  }
 
   if (rawBlocks.length > 0) {
     console.log(`[Extract] Regex found ${rawBlocks.length} SLO blocks. Bypassing junk text! Resuming from ${startI}`);
@@ -1007,12 +1040,13 @@ export async function POST(
         console.log(`[Stage 2] Truncated:`, slos.filter((s: any) => s.is_truncated).length);
 
         if (slos.length === 0) {
-          console.error('[Stage 2] ZERO SLOs — preserving raw text');
+          const regexCount = extractRawSloBlocks(processedText).length;
+          console.error(`[Stage 2] ZERO SLOs — regexCount=${regexCount} rawLen=${rawText.length}`);
           await supabase.from('documents').update({
             status: 'failed',
-            document_summary: `slo_extraction_failed|board:${board}|subject:${subject}|raw_len:${rawText.length}`,
+            document_summary: `slo_extraction_failed|regex:${regexCount}|raw_len:${rawText.length}|board:${board}|subject:${subject}`,
           }).eq('id', documentId);
-          await queue.markFailed(job.id, 'SLO extraction failed. 0 SLOs found.');
+          await queue.markFailed(job.id, `SLO extraction failed. 0 SLOs found (Regex found ${regexCount} blocks).`);
           return NextResponse.json({ error: 'SLO extraction failed' }, { status: 500 });
         } else {
           const ledger = buildLedger(slos, board, subject);

@@ -61,7 +61,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             // Clean extraction of human readable error from messy responses
             let rawErr = data.summary || data.error || 'Extraction Node Fault.';
             let cleanErr = rawErr;
-            if (rawErr.includes('{"error"')) {
+            
+            if (rawErr.startsWith('slo_extraction_failed')) {
+               cleanErr = "Curriculum Extraction Failed. No SLOs were detected in the document. Please ensure the PDF contains clear text and follows a standard curriculum format.";
+            } else if (rawErr.includes('{"error"')) {
                try {
                  const match = rawErr.match(/\{.*\}/);
                  if (match) {

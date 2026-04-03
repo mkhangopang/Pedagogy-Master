@@ -36,18 +36,19 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
     const apiKey = resolveApiKey();
     const ai = new GoogleGenAI({ apiKey });
     
-    const results = await Promise.all(uncachedTexts.map(text => 
-      ai.models.embedContent({
-        model: "gemini-embedding-2-preview",
-        contents: { parts: [{ text }] }
-      })
-    ));
+    // Use embedContentBatch for efficiency
+    const result = await ai.models.embedContent({
+      model: "gemini-embedding-2-preview",
+      contents: uncachedTexts
+    });
 
-    for (let i = 0; i < results.length; i++) {
-      const res = results[i] as any;
+    const rawEmbeddings = result.embeddings || [];
+
+    for (let i = 0; i < rawEmbeddings.length; i++) {
+      const res = rawEmbeddings[i] as any;
       const originalIndex = uncachedIndices[i];
       
-      const rawVector = res.embedding?.values || res.values || (Array.isArray(res) ? res : []);
+      const rawVector = res.values || (Array.isArray(res) ? res : []);
       const numericVector: number[] = rawVector.map((v: any) => typeof v === 'number' ? v : 0);
       
       // Strict 768 Dimensionality
