@@ -133,7 +133,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       // Case 3: Raw text exists but no SLOs in DB
       const isFresh = !extractedText && (!jobStatus || jobStatus === 'pending');
       const isStuck = slos.length === 0 && (jobStatus === 'complete' || !jobStatus);
-      const needsRepair = !loading && !isWorking && !isReindexing && (isFresh || isStuck);
+      const hasFailed = activeDoc?.status === 'failed' || activeDoc?.documentSummary?.includes('slo_extraction_failed');
+      const needsRepair = !loading && !isWorking && !isReindexing && (isFresh || (isStuck && !hasFailed));
       
       if (needsRepair) {
         console.log("Auto-triggering extraction: Empty ledger or fresh document detected.");
@@ -141,7 +142,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       }
     }, 2000); // 2s delay to ensure initial load is stable
     return () => clearTimeout(timer);
-  }, [loading, slos.length, isWorking, isReindexing, jobStatus, extractedText, handleReindex]);
+  }, [loading, slos.length, isWorking, isReindexing, jobStatus, extractedText, handleReindex, activeDoc?.status, activeDoc?.documentSummary]);
 
   const handleCopy = (code: string) => {
     navigator.clipboard.writeText(code);

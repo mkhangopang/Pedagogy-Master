@@ -10,6 +10,7 @@ import { IngestionStep } from '../../../../../types';
 import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 import pdf from 'pdf-parse';
 import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from 'openai';
 import { createHash } from 'crypto';
 
 export const runtime = 'nodejs';
@@ -310,6 +311,27 @@ function processSlos(
   return processed;
 }
 
+function extractRawSloBlocks(text: string): string[] {
+  const codeRe = /(?:\[?\s*(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+[A-Z]{1,3}\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
+  const matches = [];
+  let m;
+  while ((m = codeRe.exec(text)) !== null) {
+    matches.push({ index: m.index, raw: m[0] });
+  }
+  
+  const blocks = [];
+  for (let i = 0; i < matches.length; i++) {
+    const current = matches[i];
+    const next = matches[i + 1];
+    const start = current.index;
+    const end = next ? next.index : start + 400;
+    let block = text.substring(start, end).trim();
+    if (block.length > 400) block = block.substring(0, 400);
+    blocks.push(block.replace(/[\r\n]+/g, ' '));
+  }
+  return blocks;
+}
+
 // ── EXTRACTION PROMPT (RALPH v3.0 - PEDAGOGY MASTER EDITION) ──────────────────
 function makePrompt(
   chunk: string,
@@ -329,26 +351,11 @@ ALWAYS use 2-digit grade: Grade I → 01, Grade VIII → 08` : `
 === GRADE SYSTEM (Secondary - Grades IX to XII) ===
 Grade mapping: IX→09, X→10, XI→11, XII→12, always 2-digit`;
 
-  const deepInstruction = isDeep ? `
-=== DEEP SCAN MODE (RSI PROTOCOL v3.0) ===
-⚠️ PREVIOUS EXTRACTION ATTEMPT RETURNED 0 RESULTS.
-⚠️ THIS CHUNK CONTAINS SLO MARKERS (SLO, Grade, Outcome, Standard).
-⚠️ YOU MUST BE MORE AGGRESSIVE. LOOK FOR SLOs IN TABLES, LISTS, AND HEADINGS.
-⚠️ EXTRACT EVERY SINGLE SLO, EVEN IF THE CODE IS MISSING OR MALFORMED.` : '';
-
-  const subjectInstruction = subjectCode === 'B' ? `
-=== BIOLOGY SPECIFIC ===
-- SLOs in "Student Learning Outcomes" column.
-- Domains: Chapter/Unit/Domain.
-- Cognitive: K (Remember), U (Understand), A (Apply).` : '';
-
-  return `IDENTITY: Pedagogy Master AI (RALPH v3.0)
-GOAL: Extract ALL SLOs from the text below.
+  return `IDENTITY: Pedagogy Master AI (Orchestrator)
+GOAL: Clean and format the following raw SLO blocks into the Universal JSON schema.
 Board: ${board} | Subject: ${subject} | Chunk: ${chunkN}
 
 ${gradeSection}
-${deepInstruction}
-${subjectInstruction}
 
 === SLO FORMAT ===
 Code: [SUB][GRADE][DOMAIN][NUM] (e.g. ${subjectCode}09A01)
@@ -360,16 +367,55 @@ JSON Fields:
 - keywords (3-5 terms), benchmark, is_truncated
 
 === RULES ===
-- Extract EVERY SLO. If code is missing, leave slo_code null but extract text.
-- Never invent codes. Never skip text.
+- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.
+- Format each block into a valid JSON object.
+- Fix any OCR typos in the text.
 - Return ONLY raw JSON.
 
-=== TEXT ===
+=== RAW SLO BLOCKS ===
 ${chunk}`;
 }
 
-// ── GEMINI CALL (RSI v3.0 - RECURSIVE SELF-IMPROVEMENT) ──────────────────────
-async function callGemini(ai: GoogleGenAI, text: string, schema: any, subject: string, subjectCode: string, board: string, chunkN: number, isDeep: boolean = false): Promise<any[]> {
+// ── AI ORCHESTRATOR (Grok, Mistral, OpenAI, Gemini, etc.) ──────────────────────────
+async function callAIOrchestrator(apiKey: string, text: string, schema: any, subject: string, subjectCode: string, board: string, chunkN: number, isDeep: boolean = false, retries: number = 2): Promise<any[]> {
+  const prompt = makePrompt(text, subject, subjectCode, board, chunkN, isDeep);
+
+  // ORCHESTRATION: Build a list of available providers from Vercel Env Vars
+  const providers = [
+    { name: 'AI Gateway', key: process.env.AI_GATEWAY_API_KEY, url: process.env.AI_GATEWAY_URL || 'https://api.openai.com/v1', model: process.env.AI_GATEWAY_MODEL || 'gpt-4o-mini' },
+    { name: 'Groq', key: process.env.GROQ_API_KEY, url: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
+    { name: 'Cerebras', key: process.env.CEREBRAS_API_KEY, url: 'https://api.cerebras.ai/v1', model: 'llama3.1-8b' },
+    { name: 'SambaNova', key: process.env.SAMBANOVA_API_KEY, url: 'https://api.sambanova.ai/v1', model: 'Meta-Llama-3.1-8B-Instruct' },
+    { name: 'Mistral', key: process.env.API_MISTRAL, url: 'https://api.mistral.ai/v1', model: 'mistral-small-latest' },
+    { name: 'DeepSeek', key: process.env.DEEPSEEK_API_KEY, url: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    { name: 'OpenRouter', key: process.env.OPENROUTER_API_KEY, url: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' }
+  ].filter(p => p.key);
+
+  // Try each available provider in sequence
+  for (const provider of providers) {
+    try {
+      console.log(`[AI Orchestrator] Routing to ${provider.name} (${provider.model})...`);
+      const openai = new OpenAI({ apiKey: provider.key, baseURL: provider.url });
+      const completion = await openai.chat.completions.create({
+        model: provider.model,
+        messages: [{ role: 'user', content: prompt }],
+        response_format: { type: 'json_object' }
+      });
+      const d = safeJson(completion.choices[0].message.content || '');
+      if (Array.isArray(d.slos) && d.slos.length > 0) {
+        console.log(`[AI Orchestrator] ${provider.name} success: ${d.slos.length} SLOs found.`);
+        return d.slos;
+      }
+    } catch (e: any) {
+      console.error(`[AI Orchestrator] ${provider.name} routing failed:`, e.message);
+      // Continue to the next provider in the loop
+    }
+  }
+
+  // FALLBACK TO GEMINI
+  if (!apiKey) return [];
+  const ai = new GoogleGenAI({ apiKey });
+  
   const cfg = {
     responseMimeType: 'application/json' as const,
     responseSchema  : schema,
@@ -377,44 +423,39 @@ async function callGemini(ai: GoogleGenAI, text: string, schema: any, subject: s
     temperature     : 0.1,
   };
 
-  const prompt = makePrompt(text, subject, subjectCode, board, chunkN, isDeep);
-
-  // RSI ATTEMPT 1: PRIMARY MODEL
   try {
-    console.log(`[AI] Calling ${MODEL_PRIMARY} (Attempt 1, Deep=${isDeep})...`);
+    console.log(`[AI Orchestrator] Calling Gemini ${MODEL_PRIMARY} (Attempt ${3 - retries})...`);
     const r = await ai.models.generateContent({
       model   : MODEL_PRIMARY,
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       config  : cfg,
     });
-    const raw = r.text || '';
-    const d = safeJson(raw);
+    const d = safeJson(r.text || '');
     if (Array.isArray(d.slos) && d.slos.length > 0) {
-      console.log(`[AI] ${MODEL_PRIMARY} success: ${d.slos.length} SLOs found.`);
+      console.log(`[AI Orchestrator] ${MODEL_PRIMARY} success: ${d.slos.length} SLOs found.`);
       return d.slos;
-    }
-    
-    // RSI TRIGGER: Zero SLOs but text contains "SLO" or "Grade"
-    const hasSloMarkers = /SLO|Grade|Outcome|Standard|Competency/i.test(text);
-    if (hasSloMarkers && !isDeep) {
-      console.warn(`[RSI] ${MODEL_PRIMARY} missed SLOs in text with markers — retrying with DEEP SCAN`);
-      return await callGemini(ai, text, schema, subject, subjectCode, board, chunkN, true);
     }
   } catch (e: any) {
     const isQuota = /429|quota|RESOURCE_EXHAUSTED/i.test(e.message || '');
     const isTokenLimit = /limit|token|exceeded/i.test(e.message || '');
     
     if (isTokenLimit) {
-      console.error(`[RSI] Token limit exceeded for chunk ${chunkN}. Returning partial results.`);
-    } else if (!isQuota) {
-      console.error(`[RSI] ${MODEL_PRIMARY} error:`, e.message);
+      console.error(`[AI Orchestrator] Token limit exceeded for chunk ${chunkN}. Returning partial results.`);
+      return [];
+    } else if (isQuota) {
+      console.warn(`[AI Orchestrator] ${MODEL_PRIMARY} quota exceeded.`);
+      if (retries > 0) {
+        console.log(`[AI Orchestrator] Waiting 10s before retry...`);
+        await new Promise(r => setTimeout(r, 10000));
+        return await callAIOrchestrator(apiKey, text, schema, subject, subjectCode, board, chunkN, isDeep, retries - 1);
+      }
     } else {
-      console.warn(`[RSI] ${MODEL_PRIMARY} quota exceeded. Switching to fallback.`);
+      console.error(`[AI Orchestrator] ${MODEL_PRIMARY} error:`, e.message);
     }
   }
 
   // FALLBACK: LAST RESORT
-  console.log(`[RSI] Trying last resort fallback: ${MODEL_FALLBACK}`);
+  console.log(`[AI Orchestrator] Trying last resort fallback: ${MODEL_FALLBACK}`);
   try {
     const rFallback = await ai.models.generateContent({
       model   : MODEL_FALLBACK,
@@ -422,10 +463,15 @@ async function callGemini(ai: GoogleGenAI, text: string, schema: any, subject: s
       config  : { ...cfg, maxOutputTokens: 8192 },
     });
     const dFallback = safeJson(rFallback.text || '');
-    console.log(`[RSI] Fallback result: ${dFallback.slos?.length || 0} SLOs found.`);
+    console.log(`[AI Orchestrator] Fallback result: ${dFallback.slos?.length || 0} SLOs found.`);
     return dFallback.slos || [];
   } catch (e: any) {
-    console.error(`[RSI] Fallback failed:`, e.message);
+    console.error(`[AI Orchestrator] Fallback failed:`, e.message);
+    if (/429|quota/i.test(e.message) && retries > 0) {
+        console.log(`[AI Orchestrator] Fallback quota exceeded. Waiting 10s...`);
+        await new Promise(r => setTimeout(r, 10000));
+        return await callAIOrchestrator(apiKey, text, schema, subject, subjectCode, board, chunkN, isDeep, retries - 1);
+    }
     return [];
   }
 }
@@ -443,12 +489,10 @@ async function extractSlos(
   queue      : IngestionQueue
 ): Promise<any[]> {
 
-  const ai          = new GoogleGenAI({ apiKey });
   const subjectName = SUBJECTS[subjectCode] || subjectCode;
   const isPrimary   = PRIMARY_SUBJECTS.has(subjectCode);
   const allSlos     : any[] = [];
   const seenFp      = new Set<string>();
-  let   offset      = 0;
   let   chunkIndex  = 0;
 
   const processedText = linearizeSloText(text);
@@ -485,91 +529,157 @@ async function extractSlos(
   // Clear existing SLOs for this document before starting fresh extraction
   await supabase.from('slo_database').delete().eq('document_id', documentId);
 
-  while (offset < totalLen) {
-    chunkIndex++;
+  const rawBlocks = extractRawSloBlocks(processedText);
 
-    let end = Math.min(offset + CHUNK_SIZE, totalLen);
-    if (end < totalLen) {
-      const zone = processedText.substring(end - 800, end);
-      const nl   = zone.lastIndexOf('\n');
-      if (nl !== -1) end = (end - 800) + nl + 1;
-    }
-
-    const chunk = processedText.substring(offset, end);
-    const progress = Math.round((offset / totalLen) * 50) + 25; // 25% to 75%
+  if (rawBlocks.length > 0) {
+    console.log(`[Extract] Regex found ${rawBlocks.length} SLO blocks. Bypassing junk text!`);
+    const BATCH_SIZE = 40;
     
-    await queue.updateProgress(jobId, {
-      step: IngestionStep.LINEARIZE,
-      progress,
-      message: `Extracting SLOs (Chunk ${chunkIndex}, ${allSlos.length} found)...`,
-    });
+    for (let i = 0; i < rawBlocks.length; i += BATCH_SIZE) {
+      chunkIndex++;
+      const batch = rawBlocks.slice(i, i + BATCH_SIZE).join('\n\n');
+      const progress = Math.round((i / rawBlocks.length) * 50) + 25; // 25% to 75%
+      
+      await queue.updateProgress(jobId, {
+        step: IngestionStep.LINEARIZE,
+        progress,
+        message: `Formatting SLOs (${i}/${rawBlocks.length})...`,
+      });
 
-    try {
-      const chunkSlos = await callGemini(ai, chunk, schema, subjectName, subjectCode, boardKey, chunkIndex);
+      try {
+        const chunkSlos = await callAIOrchestrator(apiKey, batch, schema, subjectName, subjectCode, boardKey, chunkIndex);
 
-      const newRecords: any[] = [];
-      for (const s of chunkSlos) {
-        if (!s.slo_full_text?.trim()) continue;
-        
-        const fp = createHash('md5').update(`${s.slo_code ?? 'null'}|${s.slo_full_text}`).digest('hex');
-        if (seenFp.has(fp)) continue;
-        seenFp.add(fp);
-        
-        // Process the SLO immediately
-        const processed = processSlos([s], boardKey, subjectCode, domainMap)[0];
-        if (!processed) continue;
+        const newRecords: any[] = [];
+        for (const s of chunkSlos) {
+          if (!s.slo_full_text?.trim()) continue;
+          
+          const fp = createHash('md5').update(`${s.slo_code ?? 'null'}|${s.slo_full_text}`).digest('hex');
+          if (seenFp.has(fp)) continue;
+          seenFp.add(fp);
+          
+          const processed = processSlos([s], boardKey, subjectCode, domainMap)[0];
+          if (!processed) continue;
 
-        allSlos.push(processed);
-        newRecords.push({
-          document_id          : documentId,
-          slo_code             : processed.slo_code,
-          slo_full_text        : processed.slo_full_text,
-          domain               : processed.domain,
-          domain_name          : processed.domain_name,
-          bloom_level          : processed.bloom_level,
-          cognitive_complexity : processed.cognitive_complexity,
-          keywords             : processed.keywords,
-          subject              : processed.subject,
-          grade_level          : processed.grade,
-          extraction_confidence: processed.slo_code ? 0.92 : 0.5,
-          page_number          : null,
-          is_truncated         : processed.is_truncated,
-          is_orphan_domain     : processed.is_orphan_domain,
-          raw_code_as_found    : processed.raw_code_as_found,
-          char_offset          : offset,
-          benchmark            : processed.benchmark,
-          board                : processed.board,
-        });
-      }
-
-      if (newRecords.length > 0) {
-        // Incremental save to DB
-        const coded    = newRecords.filter(r => r.slo_code != null);
-        const codeless = newRecords.filter(r => r.slo_code == null);
-        
-        console.log(`[Extract] Saving batch: ${coded.length} coded, ${codeless.length} codeless`);
-
-        if (coded.length > 0) {
-          const { error: e1 } = await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
-          if (e1) console.error('[Extract] Upsert error:', e1);
+          allSlos.push(processed);
+          newRecords.push({
+            document_id          : documentId,
+            slo_code             : processed.slo_code,
+            slo_full_text        : processed.slo_full_text,
+            domain               : processed.domain,
+            domain_name          : processed.domain_name,
+            bloom_level          : processed.bloom_level,
+            cognitive_complexity : processed.cognitive_complexity,
+            keywords             : processed.keywords,
+            subject              : processed.subject,
+            grade_level          : processed.grade,
+            extraction_confidence: processed.slo_code ? 0.92 : 0.5,
+            page_number          : null,
+            is_truncated         : processed.is_truncated,
+            is_orphan_domain     : processed.is_orphan_domain,
+            raw_code_as_found    : processed.raw_code_as_found,
+            char_offset          : i,
+            benchmark            : processed.benchmark,
+            board                : processed.board,
+          });
         }
-        if (codeless.length > 0) {
-          const { error: e2 } = await supabase.from('slo_database').insert(codeless);
-          if (e2) console.error('[Extract] Insert error:', e2);
+
+        if (newRecords.length > 0) {
+          const coded    = newRecords.filter(r => r.slo_code != null);
+          const codeless = newRecords.filter(r => r.slo_code == null);
+          
+          if (coded.length > 0) {
+            await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+          }
+          if (codeless.length > 0) {
+            await supabase.from('slo_database').insert(codeless);
+          }
         }
+        console.log(`[Extract] Chunk ${chunkIndex}: +${newRecords.length} new SLOs (${allSlos.length} total)`);
+      } catch (err: any) {
+        console.error(`[Extract] Chunk ${chunkIndex} FAILED:`, err.message);
       }
-
-      console.log(`[Extract] Chunk ${chunkIndex}: +${newRecords.length} new SLOs (${allSlos.length} total)`);
-
-    } catch (err: any) {
-      console.error(`[Extract] Chunk ${chunkIndex} FAILED:`, err.message);
     }
+  } else {
+    console.log(`[Extract] No codes found via Regex. Falling back to Deep Scan sliding window...`);
+    let offset = 0;
+    while (offset < totalLen) {
+      chunkIndex++;
 
-    const rawNext = end - OVERLAP;
-    offset        = Math.max(offset + MIN_ADVANCE, rawNext);
-    if (offset > 1200_000) { // Increased safety cap for large docs
-      console.warn('[Extract] Safety cap at 1.2M chars');
-      break;
+      let end = Math.min(offset + CHUNK_SIZE, totalLen);
+      if (end < totalLen) {
+        const zone = processedText.substring(end - 800, end);
+        const nl   = zone.lastIndexOf('\n');
+        if (nl !== -1) end = (end - 800) + nl + 1;
+      }
+
+      const chunk = processedText.substring(offset, end);
+      const progress = Math.round((offset / totalLen) * 50) + 25; // 25% to 75%
+      
+      await queue.updateProgress(jobId, {
+        step: IngestionStep.LINEARIZE,
+        progress,
+        message: `Extracting SLOs (Chunk ${chunkIndex}, ${allSlos.length} found)...`,
+      });
+
+      try {
+        const chunkSlos = await callAIOrchestrator(apiKey, chunk, schema, subjectName, subjectCode, boardKey, chunkIndex, true);
+
+        const newRecords: any[] = [];
+        for (const s of chunkSlos) {
+          if (!s.slo_full_text?.trim()) continue;
+          
+          const fp = createHash('md5').update(`${s.slo_code ?? 'null'}|${s.slo_full_text}`).digest('hex');
+          if (seenFp.has(fp)) continue;
+          seenFp.add(fp);
+          
+          const processed = processSlos([s], boardKey, subjectCode, domainMap)[0];
+          if (!processed) continue;
+
+          allSlos.push(processed);
+          newRecords.push({
+            document_id          : documentId,
+            slo_code             : processed.slo_code,
+            slo_full_text        : processed.slo_full_text,
+            domain               : processed.domain,
+            domain_name          : processed.domain_name,
+            bloom_level          : processed.bloom_level,
+            cognitive_complexity : processed.cognitive_complexity,
+            keywords             : processed.keywords,
+            subject              : processed.subject,
+            grade_level          : processed.grade,
+            extraction_confidence: processed.slo_code ? 0.92 : 0.5,
+            page_number          : null,
+            is_truncated         : processed.is_truncated,
+            is_orphan_domain     : processed.is_orphan_domain,
+            raw_code_as_found    : processed.raw_code_as_found,
+            char_offset          : offset,
+            benchmark            : processed.benchmark,
+            board                : processed.board,
+          });
+        }
+
+        if (newRecords.length > 0) {
+          const coded    = newRecords.filter(r => r.slo_code != null);
+          const codeless = newRecords.filter(r => r.slo_code == null);
+          
+          if (coded.length > 0) {
+            await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+          }
+          if (codeless.length > 0) {
+            await supabase.from('slo_database').insert(codeless);
+          }
+        }
+        console.log(`[Extract] Chunk ${chunkIndex}: +${newRecords.length} new SLOs (${allSlos.length} total)`);
+      } catch (err: any) {
+        console.error(`[Extract] Chunk ${chunkIndex} FAILED:`, err.message);
+      }
+
+      const rawNext = end - OVERLAP;
+      offset        = Math.max(offset + MIN_ADVANCE, rawNext);
+      if (offset > 1200_000) {
+        console.warn('[Extract] Safety cap at 1.2M chars');
+        break;
+      }
     }
   }
 
@@ -857,8 +967,11 @@ export async function POST(
         if (slos.length === 0) {
           console.error('[Stage 2] ZERO SLOs — preserving raw text');
           await supabase.from('documents').update({
+            status: 'failed',
             document_summary: `slo_extraction_failed|board:${board}|subject:${subject}|raw_len:${rawText.length}`,
           }).eq('id', documentId);
+          await queue.markFailed(job.id, 'SLO extraction failed. 0 SLOs found.');
+          return NextResponse.json({ error: 'SLO extraction failed' }, { status: 500 });
         } else {
           const ledger = buildLedger(slos, board, subject);
           console.log(`[Stage 2] Built ledger with ${slos.length} SLOs. Updating document...`);
