@@ -137,7 +137,7 @@ export async function indexDocumentForRAG(
       }));
 
       console.log(`Inserting batch ${i / BATCH_SIZE + 1} into document_chunks`);
-      const { error: insertError } = await supabase.from('document_chunks').upsert(records, { onConflict: 'document_id,chunk_index' });
+      const { error: insertError } = await supabase.from('document_chunks').insert(records);
       if (insertError) {
         console.error("Insert error:", insertError);
         throw insertError;

@@ -33,13 +33,13 @@ export async function POST(req: NextRequest) {
     // 1. Attempt standard update
     let result = await adminSupabase
       .from('neural_brain')
-      .upsert({
+      .insert({
         id: 'system-brain',
         master_prompt: master_prompt || "",
         blueprint_sql: blueprint_sql || "",
         is_active: true,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' })
+      })
       .select()
       .maybeSingle();
 

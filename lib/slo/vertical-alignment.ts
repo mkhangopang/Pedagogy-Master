@@ -53,7 +53,7 @@ export class VerticalAlignmentEngine {
    * Persists a verified alignment.
    */
   public async linkSLOs(target: string, prereq: string) {
-    await this.supabase.from('vertical_alignment').upsert({
+    await this.supabase.from('vertical_alignment').insert({
       slo_code: target,
       prerequisite_slo: prereq,
       verified: true

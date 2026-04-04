@@ -181,11 +181,11 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (profile) return profile;
-    const { data: newProfile } = await supabase.from('profiles').upsert({
+    const { data: newProfile } = await supabase.from('profiles').insert({
       id: userId, email: email || '', name: email?.split('@')[0] || 'Educator',
       role: isAdminUser ? 'app_admin' : 'teacher', plan: isAdminUser ? 'enterprise' : 'free',
       queries_limit: isAdminUser ? 999999 : 30
-    }, { onConflict: 'id' }).select().single();
+    }).select().single();
     return newProfile;
   } catch (err) { return null; }
 }
