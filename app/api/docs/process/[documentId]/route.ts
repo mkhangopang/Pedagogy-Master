@@ -592,12 +592,26 @@ async function extractSlos(
   if (rawBlocks.length > 0) {
     console.log(`[Extract] Regex found ${rawBlocks.length} SLO blocks. Bypassing junk text! Resuming from ${startI}`);
     const BATCH_SIZE = 40;
+    const CONCURRENCY = 3;
     
-    for (let i = startI; i < rawBlocks.length; i += BATCH_SIZE) {
-      chunkIndex++;
-      const batch = rawBlocks.slice(i, i + BATCH_SIZE).join('\n\n');
-      const progress = Math.round((i / rawBlocks.length) * 50) + 25; // 25% to 75%
+    for (let i = startI; i < rawBlocks.length; i += BATCH_SIZE * CONCURRENCY) {
+      const promises = [];
+      for (let j = 0; j < CONCURRENCY; j++) {
+        const offset = i + (j * BATCH_SIZE);
+        if (offset >= rawBlocks.length) break;
+        
+        const batch = rawBlocks.slice(offset, offset + BATCH_SIZE).join('\n\n');
+        promises.push(
+          callAIOrchestrator(apiKey, batch, schema, subjectName, subjectCode, boardKey, chunkIndex + j + 1)
+            .then(chunkSlos => ({ offset, chunkSlos, cIndex: chunkIndex + j + 1 }))
+            .catch(err => {
+              console.error(`[Extract] Chunk ${chunkIndex + j + 1} FAILED:`, err.message);
+              return { offset, chunkSlos: [], cIndex: chunkIndex + j + 1 };
+            })
+        );
+      }
       
+      const progress = Math.round((i / rawBlocks.length) * 50) + 25; // 25% to 75%
       await queue.updateProgress(jobId, {
         step: IngestionStep.LINEARIZE,
         progress,
@@ -605,9 +619,10 @@ async function extractSlos(
         processedChunks: i
       });
 
-      try {
-        const chunkSlos = await callAIOrchestrator(apiKey, batch, schema, subjectName, subjectCode, boardKey, chunkIndex);
+      const results = await Promise.all(promises);
+      chunkIndex += results.length;
 
+      for (const { chunkSlos, cIndex } of results) {
         const newRecords: any[] = [];
         for (const s of chunkSlos) {
           if (!s.slo_full_text?.trim()) continue;
@@ -636,7 +651,7 @@ async function extractSlos(
             is_truncated         : processed.is_truncated,
             is_orphan_domain     : processed.is_orphan_domain,
             raw_code_as_found    : processed.raw_code_as_found,
-            char_offset          : i,
+            char_offset          : i, // Using base i for simplicity
             benchmark            : processed.benchmark,
             board                : processed.board,
             teaching_strategies  : processed.teaching_strategies,
@@ -657,9 +672,7 @@ async function extractSlos(
             await supabase.from('slo_database').insert(codeless);
           }
         }
-        console.log(`[Extract] Chunk ${chunkIndex}: +${newRecords.length} new SLOs (${allSlos.length} total)`);
-      } catch (err: any) {
-        console.error(`[Extract] Chunk ${chunkIndex} FAILED:`, err.message);
+        console.log(`[Extract] Chunk ${cIndex}: +${newRecords.length} new SLOs (${allSlos.length} total)`);
       }
     }
   } else {

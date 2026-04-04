@@ -26,7 +26,15 @@ export async function GET(
       count: sloRes.data?.length
     });
 
-    if (docRes.error || !docRes.data) {
+    if (docRes.error) {
+      console.error(`[Status API] Document fetch error for ${documentId}:`, docRes.error);
+      if (docRes.error.code === 'PGRST116') {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+      }
+      return NextResponse.json({ error: 'Database error' }, { status: 500 });
+    }
+
+    if (!docRes.data) {
       return NextResponse.json({ error: 'Document not found' }, { status: 404 });
     }
 

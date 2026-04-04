@@ -29,9 +29,12 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     setProgress(value);
   };
 
+  const notFoundCountRef = useRef(0);
+
   useEffect(() => {
     if (docId && isUploading && !isPolling.current) {
       isPolling.current = true;
+      notFoundCountRef.current = 0;
       const poller = setInterval(async () => {
         try {
           const { data: { session } } = await supabase.auth.getSession();
@@ -42,9 +45,17 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           });
           
           if (!res.ok) {
-            if (res.status === 404) throw new Error("Document Node Purged.");
+            if (res.status === 404) {
+              notFoundCountRef.current += 1;
+              if (notFoundCountRef.current > 3) {
+                throw new Error("Document Node Purged.");
+              }
+              console.warn(`Document not found (attempt ${notFoundCountRef.current}/3). Retrying...`);
+            }
             return;
           }
+          
+          notFoundCountRef.current = 0; // Reset on success
 
           const data = await res.json();
           
@@ -138,21 +149,33 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
-      let fullText = '';
       const totalPages = pdf.numPages;
       
-      for (let i = 1; i <= totalPages; i++) {
-        const page = await pdf.getPage(i);
-        const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item: any) => item.str).join(' ');
-        fullText += pageText + '\n';
+      // Extract in batches of 10 pages to avoid memory issues but speed up extraction
+      const batchSize = 10;
+      let fullText = '';
+      
+      for (let i = 1; i <= totalPages; i += batchSize) {
+        const pagePromises = [];
+        const endPage = Math.min(i + batchSize - 1, totalPages);
         
-        // Update progress between 10% and 20% during local extraction
-        if (i % 5 === 0 || i === totalPages) {
-          const progressPercent = 10 + (i / totalPages) * 10;
-          updateProgress(progressPercent);
+        for (let j = i; j <= endPage; j++) {
+          pagePromises.push(
+            pdf.getPage(j).then(page => 
+              page.getTextContent().then(textContent => 
+                textContent.items.map((item: any) => item.str).join(' ')
+              )
+            )
+          );
         }
+        
+        const pageTexts = await Promise.all(pagePromises);
+        fullText += pageTexts.join('\n') + '\n';
+        
+        const progressPercent = 10 + (endPage / totalPages) * 10;
+        updateProgress(progressPercent);
       }
+      
       return fullText;
     } catch (e) {
       console.error("Local PDF extraction failed:", e);
