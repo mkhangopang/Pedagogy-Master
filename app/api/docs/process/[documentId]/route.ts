@@ -666,7 +666,7 @@ async function extractSlos(
           const codeless = newRecords.filter(r => r.slo_code == null);
           
           if (coded.length > 0) {
-            await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+            await supabase.from('slo_database').insert(coded);
           }
           if (codeless.length > 0) {
             await supabase.from('slo_database').insert(codeless);
@@ -744,7 +744,7 @@ async function extractSlos(
           const codeless = newRecords.filter(r => r.slo_code == null);
           
           if (coded.length > 0) {
-            await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+            await supabase.from('slo_database').insert(coded);
           }
           if (codeless.length > 0) {
             await supabase.from('slo_database').insert(codeless);
@@ -1016,7 +1016,7 @@ export async function POST(
                 const codeless = records.filter((r: any) => r.slo_code == null);
                 
                 if (coded.length > 0) {
-                  await supabase.from('slo_database').upsert(coded, { onConflict: 'document_id,slo_code' });
+                  await supabase.from('slo_database').insert(coded);
                 }
                 if (codeless.length > 0) {
                   await supabase.from('slo_database').insert(codeless);
