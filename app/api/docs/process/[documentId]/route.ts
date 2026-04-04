@@ -1040,7 +1040,7 @@ export async function POST(
         console.log(`[Stage 2] Truncated:`, slos.filter((s: any) => s.is_truncated).length);
 
         if (slos.length === 0) {
-          const regexCount = extractRawSloBlocks(processedText).length;
+          const regexCount = extractRawSloBlocks(rawText).length;
           console.error(`[Stage 2] ZERO SLOs — regexCount=${regexCount} rawLen=${rawText.length}`);
           await supabase.from('documents').update({
             status: 'failed',
