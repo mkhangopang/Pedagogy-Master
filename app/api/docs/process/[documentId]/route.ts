@@ -840,18 +840,29 @@ export async function POST(
   const queue    = new IngestionQueue(supabase);
 
   let job = await queue.getJobStatus(documentId).catch(() => null);
+
   if (!job) {
     const id = await queue.enqueue(documentId);
     job = { id, step: IngestionStep.EXTRACT };
+  } else if (job.status === 'complete' || job.step === IngestionStep.COMPLETE) {
+    return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });
   } else if (job.status === 'processing' && job.updated_at) {
     const lastUpdate = new Date(job.updated_at).getTime();
     if (Date.now() - lastUpdate < 60000) {
       console.log(`[Ingestion] Job is actively processing (updated ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Ignoring duplicate trigger.`);
       return NextResponse.json({ success: true, message: 'Already processing' });
     }
-  }
-  if (job.step === IngestionStep.COMPLETE) {
-    return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });
+    // Stale 'processing' job — reset and restart
+    await supabase.from('ingestion_jobs')
+      .update({ status: 'pending', step: 'EXTRACT', message: null })
+      .eq('id', job.id);
+    job = { ...job, step: IngestionStep.EXTRACT };
+  } else if (job.status === 'pending') {
+    // Job exists but never started — reset step and proceed
+    await supabase.from('ingestion_jobs')
+      .update({ status: 'processing', message: null })
+      .eq('id', job.id);
+    job = { ...job, step: IngestionStep.EXTRACT };
   }
 
   console.log(`\n${'='.repeat(60)}`);
@@ -1119,15 +1130,24 @@ export async function POST(
       }
 
       await queue.markComplete(job.id);
-      await supabase.from('documents').update({
-        status          : 'ready',
-        rag_indexed     : true,
-        document_summary: isLedger
-          ? txt.split('\n').slice(0, 4).join(' | ')
-          : 'indexed',
-      }).eq('id', documentId);
+      
+      // Explicit status update with error logging
+      const { error: updateErr } = await supabase
+        .from('documents')
+        .update({
+          status          : 'ready',
+          rag_indexed     : true,
+          document_summary: isLedger
+            ? txt.split('\n').slice(0, 4).join(' | ')
+            : 'indexed',
+        })
+        .eq('id', documentId);
 
-      console.log(`[Stage 4] Complete ✓`);
+      if (updateErr) {
+        console.error('[Stage 4] FAILED to update doc status to ready:', updateErr);
+      } else {
+        console.log('[Stage 4] Document status → ready ✓');
+      }
     }
 
     console.log(`[Ingestion] DONE doc=${documentId}`);
