@@ -212,15 +212,19 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       setDocId(documentId);
       
       updateProgress(25);
-      setStatus('Streaming Binary Payload...');
       
-      const uploadRes = await fetch(uploadUrl, { 
-        method: 'PUT', 
-        body: file, 
-        headers: { 'Content-Type': file.type || 'application/pdf' } 
-      });
-      
-      if (!uploadRes.ok) throw new Error("R2_GATEWAY_REJECTION: Link severed.");
+      if (uploadUrl) {
+        setStatus('Streaming Binary Payload...');
+        const uploadRes = await fetch(uploadUrl, { 
+          method: 'PUT', 
+          body: file, 
+          headers: { 'Content-Type': file.type || 'application/pdf' } 
+        });
+        
+        if (!uploadRes.ok) throw new Error("R2_GATEWAY_REJECTION: Link severed.");
+      } else {
+        setStatus('Binary Payload Skipped (Storage Offline)...');
+      }
 
       updateProgress(40);
       setStatus('Initializing Neural Orchestrator...');

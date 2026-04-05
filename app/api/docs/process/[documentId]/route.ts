@@ -887,14 +887,19 @@ export async function POST(
       if (!text || text.length < 200) {
         console.log('[Stage 1] No pre-extracted text found. Falling back to server-side parsing...');
         const r2Path = doc.file_path;
-        if (!r2Path) throw new Error('R2_FAULT: No file_path on document');
+        if (!r2Path) throw new Error('R2_FAULT: No file_path on document and no pre-extracted text');
 
-        const buffer = await getObjectBuffer(r2Path);
-        if (!buffer)  throw new Error('R2_FAULT: File unreachable from R2');
+        try {
+          const buffer = await getObjectBuffer(r2Path);
+          if (!buffer)  throw new Error('R2_FAULT: File unreachable from R2');
 
-        const result = await pdf(buffer);
-        text = result.text?.trim() || '';
-        console.log(`[Stage 1] PDF parsed: ${text.length} chars, ${result.numpages} pages`);
+          const result = await pdf(buffer);
+          text = result.text?.trim() || '';
+          console.log(`[Stage 1] PDF parsed: ${text.length} chars, ${result.numpages} pages`);
+        } catch (e: any) {
+          console.error('[Stage 1] R2 fetch failed:', e);
+          throw new Error(`R2_FAULT: ${e.message}`);
+        }
       } else {
         console.log(`[Stage 1] Using pre-extracted text from client: ${text.length} chars`);
       }

@@ -27,21 +27,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Metadata missing' }, { status: 400 });
     }
 
-    if (!isR2Configured() || !r2Client) throw new Error("Cloud Storage Node Offline.");
-
     const documentId = crypto.randomUUID();
     const cleanFileName = name.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const r2Key = `raw/${user.id}/${documentId}/${cleanFileName}`;
 
-    // PRE-SIGNED URL GENERATION (Lean Mode)
-    const command = new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: r2Key,
-      ContentType: contentType,
-    });
+    let uploadUrl = null;
+    let r2Key = null;
 
-    // 15-minute validity
-    const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
+    if (isR2Configured() && r2Client) {
+      r2Key = `raw/${user.id}/${documentId}/${cleanFileName}`;
+      const command = new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: r2Key,
+        ContentType: contentType,
+      });
+      uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
+    } else {
+      console.warn("R2 is not configured. Skipping binary upload pre-signed URL generation.");
+    }
 
     const supabase = getSupabaseServerClient(token);
     // De-select old context
