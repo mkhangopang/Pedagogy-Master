@@ -289,11 +289,11 @@ function processSlos(
 ): any[] {
   const processed: any[] = [];
   for (const s of raw) {
-    if (!s.slo_full_text?.trim()) continue;
+    if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
 
     const code = normalizeCode(s.slo_code);
     let grade  = normalizeGrade(s.grade || '');
-    let domain = s.domain?.trim().toUpperCase().match(/^([A-Z])/)?.[1] ?? null;
+    let domain = typeof s.domain === 'string' ? s.domain.trim().toUpperCase().match(/^([A-Z])/)?.[1] ?? null : null;
     let dname  = s.domain_name || null;
 
     if (code) {
@@ -308,7 +308,7 @@ function processSlos(
     processed.push({
       slo_code          : code,
       raw_code_as_found : s.slo_code || 'null',
-      slo_full_text     : s.slo_full_text.trim(),
+      slo_full_text     : typeof s.slo_full_text === 'string' ? s.slo_full_text.trim() : '',
       grade,
       domain,
       domain_name       : dname,
@@ -625,7 +625,7 @@ async function extractSlos(
       for (const { chunkSlos, cIndex } of results) {
         const newRecords: any[] = [];
         for (const s of chunkSlos) {
-          if (!s.slo_full_text?.trim()) continue;
+          if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
           
           const fp = createHash('md5').update(`${s.slo_code ?? 'null'}|${s.slo_full_text}`).digest('hex');
           if (seenFp.has(fp)) continue;
@@ -703,7 +703,7 @@ async function extractSlos(
 
         const newRecords: any[] = [];
         for (const s of chunkSlos) {
-          if (!s.slo_full_text?.trim()) continue;
+          if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
           
           const fp = createHash('md5').update(`${s.slo_code ?? 'null'}|${s.slo_full_text}`).digest('hex');
           if (seenFp.has(fp)) continue;
@@ -798,6 +798,7 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
       md += `### Domain ${domain}: ${domainName}\n\n`;
 
       for (const s of domainSlos) {
+        if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
         md += `- ${s.slo_code || 'NO_CODE'} — ${s.slo_full_text}\n`;
       }
       md += `\n`;
