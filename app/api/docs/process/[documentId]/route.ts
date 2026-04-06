@@ -17,7 +17,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const MODEL_PRIMARY  = 'gemini-3.1-pro-preview';
+const MODEL_PRIMARY  = 'gemini-3-flash-preview';
 const MODEL_FALLBACK = 'gemini-3-flash-preview';
 
 const CHUNK_SIZE  = 10000;
@@ -67,8 +67,9 @@ function detectSubject(t: string): string {
   if (t.includes('urdu'))                                  return 'U';
   return 'B';
 }
-function normalizeGrade(raw: string): string | null {
+function normalizeGrade(raw: any): string | null {
   if (!raw) return null;
+  if (typeof raw !== 'string') raw = String(raw);
   const t = raw.trim().toUpperCase();
   if (ROMAN[t]) return ROMAN[t];
   const n = parseInt(t, 10);
@@ -81,8 +82,9 @@ function normalizeGrade(raw: string): string | null {
 //   Science:  [SLO:C-09-A-02] → C09A02   grades IX-XII (09-12)
 //   OCR:      0l or 0I in any position → 01
 //   SW prefix, SL0/5L0 typos, grade range codes, unpadded grades
-function normalizeCode(raw: string): string | null {
+function normalizeCode(raw: any): string | null {
   if (!raw || raw === 'null') return null;
+  if (typeof raw !== 'string') raw = String(raw);
 
   let s = raw.toUpperCase()
     .replace(/^\[?(?:5L0|SL[O0]|LO|SW)\s*[:\s]*/i, '')
@@ -220,7 +222,11 @@ function scanDomains(text: string): Record<string, string> {
 }
 
 // ── SAFE JSON PARSER ──────────────────────────────────────────────────────────
-function safeJson(raw: string): any {
+function safeJson(raw: any): any {
+  if (typeof raw !== 'string') {
+    if (raw && typeof raw === 'object') return raw;
+    raw = String(raw || '');
+  }
   if (!raw?.trim()) return { slos: [] };
   
   // Try to find <STRUCTURED_INDEX> block first
@@ -381,14 +387,7 @@ ${gradeSection}
 Code: [SUB][GRADE][DOMAIN][NUM] (e.g. ${subjectCode}09A01)
 JSON Fields:
 - slo_code, raw_code_as_found, slo_full_text
-- grade (2-digit), domain (letter), domain_name
-- bloom_level (Remember/Understand/Apply/Analyze/Evaluate/Create)
-- cognitive_complexity (Low/Medium/High)
-- keywords (3-5 terms), benchmark, is_truncated
-- teaching_strategies (Array of strings)
-- assessment_ideas (Array of strings)
-- prerequisite_concepts (Array of strings)
-- common_misconceptions (Array of strings)
+- grade (2-digit), domain (letter), domain_name, subject
 
 === RULES ===
 ${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you find. Ignore junk text, table of contents, and introductions. FOCUS ONLY ON SLO CODES AND DESCRIPTIONS.' : '- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.'}
@@ -537,16 +536,7 @@ async function extractSlos(
             grade               : { type: Type.STRING  },
             domain              : { type: Type.STRING  },
             domain_name         : { type: Type.STRING  },
-            bloom_level         : { type: Type.STRING  },
-            cognitive_complexity: { type: Type.STRING  },
-            keywords            : { type: Type.ARRAY, items: { type: Type.STRING } },
-            benchmark           : { type: Type.STRING  },
-            is_truncated        : { type: Type.BOOLEAN },
-            is_orphan_domain    : { type: Type.BOOLEAN },
-            teaching_strategies : { type: Type.ARRAY, items: { type: Type.STRING } },
-            assessment_ideas    : { type: Type.ARRAY, items: { type: Type.STRING } },
-            prerequisite_concepts: { type: Type.ARRAY, items: { type: Type.STRING } },
-            common_misconceptions: { type: Type.ARRAY, items: { type: Type.STRING } },
+            subject             : { type: Type.STRING  }
           },
           required: ['slo_full_text'],
         },
@@ -805,25 +795,15 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
     }
   }
 
-  const structuredIndex = sorted.map(s => ({
-    slo_code: s.slo_code,
+  const structuredIndex = sorted.map((s, i) => ({
+    id: s.id || createHash('md5').update(`${s.slo_code || i}|${s.slo_full_text}`).digest('hex'),
+    document_id: s.document_id || 'unknown',
+    slo_code: s.slo_code || 'NO_CODE',
     slo_full_text: s.slo_full_text,
-    subject: s.subject,
-    grade_level: s.grade,
-    bloom_level: s.bloom_level,
-    cognitive_complexity: s.cognitive_complexity,
-    teaching_strategies: s.teaching_strategies || [],
-    assessment_ideas: s.assessment_ideas || [],
-    prerequisite_concepts: s.prerequisite_concepts || [],
-    common_misconceptions: s.common_misconceptions || [],
-    keywords: s.keywords || [],
-    domain: s.domain,
-    domain_name: s.domain_name,
-    is_truncated: s.is_truncated,
-    is_orphan_domain: s.is_orphan_domain,
-    raw_code_as_found: s.raw_code_as_found,
-    benchmark: s.benchmark,
-    board: s.board
+    subject: s.subject || subjectName,
+    grade_level: s.grade || '',
+    domain: s.domain || '',
+    domain_name: s.domain_name || ''
   }));
 
   md += `<STRUCTURED_INDEX>\n${JSON.stringify(structuredIndex, null, 2)}\n</STRUCTURED_INDEX>`;
@@ -849,21 +829,23 @@ export async function POST(
     return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });
   } else if (job.status === 'processing' && job.updated_at) {
     const lastUpdate = new Date(job.updated_at).getTime();
-    if (Date.now() - lastUpdate < 60000) {
+    if (Date.now() - lastUpdate < 300000) { // 5 minutes
       console.log(`[Ingestion] Job is actively processing (updated ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Ignoring duplicate trigger.`);
       return NextResponse.json({ success: true, message: 'Already processing' });
     }
-    // Stale 'processing' job — reset and restart
+    // Stale 'processing' job — reset status but keep step and payload to resume
+    console.log(`[Ingestion] Stale job detected. Resuming from step ${job.step}...`);
     await supabase.from('ingestion_jobs')
-      .update({ status: 'pending', step: 'EXTRACT', message: null })
+      .update({ status: 'pending' })
       .eq('id', job.id);
-    job = { ...job, step: IngestionStep.EXTRACT };
+    // Keep job.step as is
   } else if (job.status === 'pending') {
-    // Job exists but never started — reset step and proceed
+    // Job exists but never started or was reset — proceed with current step
     await supabase.from('ingestion_jobs')
       .update({ status: 'processing', message: null })
       .eq('id', job.id);
-    job = { ...job, step: IngestionStep.EXTRACT };
+    // Do not reset step to EXTRACT if it's already LINEARIZE or EMBED
+    if (!job.step) job.step = IngestionStep.EXTRACT;
   }
 
   console.log(`\n${'='.repeat(60)}`);
@@ -1079,12 +1061,16 @@ export async function POST(
           await queue.markFailed(job.id, `SLO extraction failed. 0 SLOs found (Regex found ${regexCount} blocks).`);
           return NextResponse.json({ error: 'SLO extraction failed' }, { status: 500 });
         } else {
-          const ledger = buildLedger(slos, board, subject);
-          console.log(`[Stage 2] Built ledger with ${slos.length} SLOs. Updating document...`);
+          // Fetch all SLOs from DB to ensure we have the complete list if we resumed
+          const { data: allDbSlos } = await supabase.from('slo_database').select('*').eq('document_id', documentId);
+          const fullSloList = (allDbSlos && allDbSlos.length > 0) ? allDbSlos : slos;
+          
+          const ledger = buildLedger(fullSloList, board, subject);
+          console.log(`[Stage 2] Built ledger with ${fullSloList.length} SLOs. Updating document...`);
 
           await supabase.from('documents').update({
             extracted_text  : ledger,
-            document_summary: `ledger|slos:${slos.length}|board:${board}|subject:${subject}`,
+            document_summary: `ledger|slos:${fullSloList.length}|board:${board}|subject:${subject}`,
           }).eq('id', documentId);
           console.log(`[Stage 2] Ledger saved ✓`);
         }
