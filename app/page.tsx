@@ -36,11 +36,12 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [healthStatus, setHealthStatus] = useState({ status: 'checking', message: 'Syncing...' });
   
-  // FIX: Added JSON.stringify to DEFAULT_BLOOM_RULES to match the string type requirement
+  // FIX: Since DEFAULT_BLOOM_RULES is now a string in constants.ts, 
+  // we do NOT need JSON.stringify here anymore.
   const [brain, setBrain] = useState<NeuralBrain>({
     id: 'system-brain', 
     masterPrompt: DEFAULT_MASTER_PROMPT,
-    bloomRules: JSON.stringify(DEFAULT_BLOOM_RULES), 
+    bloomRules: DEFAULT_BLOOM_RULES, 
     version: 1, 
     isActive: true,
     updatedAt: '2024-01-01T00:00:00.000Z'
@@ -106,10 +107,10 @@ export default function App() {
           setBrain({
             id: data.brain.id,
             masterPrompt: data.brain.master_prompt,
-            // FIX: Ensure consistency here as well
+            // FIX: Use the constant directly as a fallback string
             bloomRules: typeof data.brain.bloom_rules === 'string' 
               ? data.brain.bloom_rules 
-              : JSON.stringify(DEFAULT_BLOOM_RULES),
+              : DEFAULT_BLOOM_RULES,
             version: data.brain.version || 1,
             isActive: data.brain.is_active,
             updatedAt: data.brain.updated_at
