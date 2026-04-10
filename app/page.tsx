@@ -9,6 +9,7 @@ import Landing from '../views/Landing';
 import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
+// Import constants
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff, RefreshCw, ArrowRight } from 'lucide-react';
 
@@ -34,9 +35,14 @@ export default function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [healthStatus, setHealthStatus] = useState({ status: 'checking', message: 'Syncing...' });
+  
+  // FIX: Added JSON.stringify to DEFAULT_BLOOM_RULES to match the string type requirement
   const [brain, setBrain] = useState<NeuralBrain>({
-    id: 'system-brain', masterPrompt: DEFAULT_MASTER_PROMPT,
-    bloomRules: DEFAULT_BLOOM_RULES, version: 1, isActive: true,
+    id: 'system-brain', 
+    masterPrompt: DEFAULT_MASTER_PROMPT,
+    bloomRules: JSON.stringify(DEFAULT_BLOOM_RULES), 
+    version: 1, 
+    isActive: true,
     updatedAt: '2024-01-01T00:00:00.000Z'
   });
 
@@ -46,7 +52,6 @@ export default function App() {
   const [isViewHydrated, setIsViewHydrated] = useState(false);
 
   useEffect(() => {
-    // Try cookie first, then localStorage
     const cookies = document.cookie.split('; ');
     const cookie = cookies.find(c => c.startsWith('currentView='));
     let saved = cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
@@ -65,7 +70,6 @@ export default function App() {
     if (isViewHydrated && currentView !== 'login' && currentView !== 'landing') {
       try {
         localStorage.setItem('currentView', currentView);
-        // Set cookie with SameSite=None; Secure
         const expires = new Date();
         expires.setFullYear(expires.getFullYear() + 1);
         document.cookie = `currentView=${encodeURIComponent(currentView)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
@@ -91,7 +95,6 @@ export default function App() {
   const fetchAppData = useCallback(async (userId: string, email?: string, providedSession?: any) => {
     getSupabaseHealth().then(setHealthStatus);
     
-    // 1. Fetch Brain / System Prompt from DB
     const currentSession = providedSession || (await supabase.auth.getSession()).data.session;
     if (currentSession) {
       fetch('/api/brain/get', {
@@ -103,7 +106,10 @@ export default function App() {
           setBrain({
             id: data.brain.id,
             masterPrompt: data.brain.master_prompt,
-            bloomRules: DEFAULT_BLOOM_RULES,
+            // FIX: Ensure consistency here as well
+            bloomRules: typeof data.brain.bloom_rules === 'string' 
+              ? data.brain.bloom_rules 
+              : JSON.stringify(DEFAULT_BLOOM_RULES),
             version: data.brain.version || 1,
             isActive: data.brain.is_active,
             updatedAt: data.brain.updated_at
@@ -113,7 +119,6 @@ export default function App() {
       .catch(e => console.error("Neural Brain Fetch Error:", e));
     }
 
-    // 2. Fetch Profile
     getOrCreateProfile(userId, email).then(profile => {
       if (profile) {
         const mappedProfile: UserProfile = {
@@ -132,7 +137,6 @@ export default function App() {
       }
     });
 
-    // 3. Fetch Documents
     supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => {
         if (data) {
@@ -158,18 +162,14 @@ export default function App() {
 
     const initializeAuth = async () => {
       try {
-        // Ensure we have fresh credentials
         await pulseCredentialsFromServer();
         
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
-          console.log(`📡 [Auth] Event: ${event}`, currentSession ? "Session Active" : "No Session");
-          
           if (currentSession) {
             setSession(currentSession);
             fetchAppData(currentSession.user.id, currentSession.user.email, currentSession);
             setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
           } else if (event === 'SIGNED_OUT') {
-            console.warn("📡 [Auth] Explicit SIGNED_OUT event received");
             setSession(null);
             setCurrentView('landing');
             localStorage.removeItem('currentView');
@@ -181,7 +181,6 @@ export default function App() {
 
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession) {
-          console.log("📡 [Auth] Existing session found via getSession");
           setSession(existingSession);
           fetchAppData(existingSession.user.id, existingSession.user.email, existingSession);
           setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
@@ -189,7 +188,6 @@ export default function App() {
       } catch (err) {
         console.error('📡 [System] Auth initialization failed:', err);
       } finally {
-        // Delay clearing the loader slightly to ensure session state propagates
         setTimeout(() => setIsAuthResolving(false), 300);
       }
     };
