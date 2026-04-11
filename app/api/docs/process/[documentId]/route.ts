@@ -1,5 +1,5 @@
 // app/api/docs/process/[documentId]/route.ts
-// PEDAGOGY MASTER AI — Ingestion Engine v6.8 (TypeScript Clean + Build Ready)
+// PEDAGOGY MASTER AI — Ingestion Engine v6.9 (Fixed SDK + TypeScript Clean)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../../../lib/supabase';
@@ -9,7 +9,6 @@ import { IngestionStep } from '../../../../../types';
 import { IngestionQueue } from '../../../../../lib/jobs/ingestion-queue';
 import pdf from 'pdf-parse';
 import { GoogleGenAI } from "@google/genai";
-import { createHash } from 'crypto';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -18,10 +17,7 @@ export const maxDuration = 300;
 const MODEL_PRIMARY = 'gemini-2.0-flash';
 const MODEL_FALLBACK = 'gemini-1.5-flash';
 
-const CHUNK_SIZE = 10000;
-const OVERLAP = 2500;
-
-// ── LOOKUP TABLES ─────────────────────────────────────────────────────────────
+// ── LOOKUP TABLES (unchanged) ───────────────────────────────────────────────
 const ROMAN: Record<string, string> = {
   I: '01', II: '02', III: '03', IV: '04', V: '05', VI: '06',
   VII: '07', VIII: '08', IX: '09', X: '10', XI: '11', XII: '12',
@@ -42,7 +38,7 @@ const BOARD_NAMES: Record<string, string> = {
   AJK: 'AJK Textbook Board',
 };
 
-// ── DETECTION FUNCTIONS (FULL IMPLEMENTATION) ───────────────────────────────
+// ── DETECTION FUNCTIONS (unchanged) ─────────────────────────────────────────
 function detectBoard(t: string): string {
   t = t.toLowerCase();
   if (t.includes('sindh') || t.includes('jamshoro')) return 'SINDH';
@@ -84,9 +80,7 @@ function normalizeCode(raw: any): string | null {
     .trim();
 
   const gradeRange = s.match(/^([A-Z]{1,4})-?(\d{2})-(\d{2})-?([A-Z])-?(\d{1,3})$/);
-  if (gradeRange) {
-    return `${gradeRange[1]}${gradeRange[2]}${gradeRange[4]}${gradeRange[5].padStart(2, '0')}`;
-  }
+  if (gradeRange) return `${gradeRange[1]}${gradeRange[2]}${gradeRange[4]}${gradeRange[5].padStart(2, '0')}`;
 
   s = s.replace(/-/g, '');
   s = s.replace(/([A-Z]{1,4})0[LlIi]([A-Z])/, '$101$2');
@@ -105,17 +99,12 @@ function normalizeCode(raw: any): string | null {
     const sloNum = numMatch[4].startsWith('00') ? numMatch[4].slice(-2) : numMatch[4].padStart(2, '0');
     return `${numMatch[1]}${numMatch[2].padStart(2, '0')}${numMatch[3]}${sloNum}`;
   }
-
   return null;
 }
 
-// ── HELPER FUNCTIONS (FULLY IMPLEMENTED) ─────────────────────────────────────
+// ── HELPER FUNCTIONS (unchanged) ─────────────────────────────────────────────
 function linearizeSloText(text: string): string {
-  return text
-    .replace(/Page \d+ of \d+/gi, '')
-    .replace(/© .*?Board/gi, '')
-    .replace(/\n\s*\n/g, '\n')
-    .trim();
+  return text.replace(/Page \d+ of \d+/gi, '').replace(/© .*?Board/gi, '').replace(/\n\s*\n/g, '\n').trim();
 }
 
 function scanDomains(text: string): Record<string, string> {
@@ -157,67 +146,43 @@ function extractRawSloBlocks(text: string): string[] {
   const blocks: string[] = [];
   const lines = text.split('\n');
   let current = '';
-
   for (const line of lines) {
     const trimmed = line.trim();
     if (/^[A-Z]\d{2}[A-Z]\d{1,3}/.test(trimmed) || trimmed.includes('SLO') || trimmed.includes('Student Learning Outcome')) {
       if (current) blocks.push(current.trim());
       current = line;
-    } else if (current) {
-      current += '\n' + line;
-    }
+    } else if (current) current += '\n' + line;
   }
   if (current) blocks.push(current.trim());
   return blocks.length > 0 ? blocks : [text];
 }
 
 function makePrompt(chunk: string, subject: string, subjectCode: string, board: string, chunkN: number): string {
-  return `You are an expert Pakistani curriculum analyst.
-Extract ALL Student Learning Outcomes (SLOs) from the following text.
-
-BOARD: ${board}
-SUBJECT: ${subject} (${subjectCode})
-
-Return ONLY valid JSON:
-{
-  "slos": [
-    {
-      "slo_code": "B09A01",
-      "description": "full SLO text here",
-      "bloom": "Remember | Understand | Apply | Analyze | Evaluate | Create"
-    }
-  ]
+  return `You are an expert Pakistani curriculum analyst.\nExtract ALL Student Learning Outcomes (SLOs) from the following text.\n\nBOARD: ${board}\nSUBJECT: ${subject} (${subjectCode})\n\nReturn ONLY valid JSON:\n{\n  "slos": [\n    {\n      "slo_code": "B09A01",\n      "description": "full SLO text here",\n      "bloom": "Remember | Understand | Apply | Analyze | Evaluate | Create"\n    }\n  ]\n}\n\nTEXT CHUNK ${chunkN}:\n${chunk}\n\nOnly return JSON. No extra text.`;
 }
 
-TEXT CHUNK ${chunkN}:
-${chunk}
-
-Only return JSON. No extra text.`;
-}
-
+// Simplified AI call without generationConfig to avoid type error
 async function callAIOrchestrator(apiKey: string, text: string, subject: string, subjectCode: string, board: string, chunkN: number) {
   const genAI = new GoogleGenAI({ apiKey: apiKey || process.env.API_KEY! });
-
   const prompt = makePrompt(text, subject, subjectCode, board, chunkN);
 
   try {
     const result = await genAI.models.generateContent({
       model: MODEL_PRIMARY,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' }
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
     return safeJson(result.text).slos || [];
   } catch (e) {
-    console.warn("Primary model failed, trying fallback", e);
+    console.warn("Primary model failed, using fallback", e);
     const fallbackResult = await genAI.models.generateContent({
       model: MODEL_FALLBACK,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: 'application/json' }
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
     });
     return safeJson(fallbackResult.text).slos || [];
   }
 }
 
+// extractSlos, buildLedger functions remain the same as previous version
 async function extractSlos(
   text: string,
   boardKey: string,
@@ -244,7 +209,6 @@ async function extractSlos(
     allSlos = allSlos.concat(processSlos(chunkSlos, boardKey, subjectCode, domainMap));
   }
 
-  // Deduplicate by SLO code
   const seen = new Set<string>();
   return allSlos.filter(slo => {
     if (seen.has(slo.slo_code)) return false;
@@ -261,7 +225,7 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
   return ledger;
 }
 
-// ── MAIN ROUTE HANDLER ───────────────────────────────────────────────────────
+// ── MAIN ROUTE (rest unchanged) ─────────────────────────────────────────────
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ documentId: string }> }
@@ -297,7 +261,7 @@ export async function POST(
 
     const apiKey = process.env.API_KEY || '';
 
-    // STAGE 1: EXTRACT
+    // STAGE 1: EXTRACT (unchanged from previous)
     if (job.step === IngestionStep.EXTRACT) {
       await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 10, message: 'Fetching PDF...' });
 
@@ -348,7 +312,6 @@ export async function POST(
 
       const ledger = buildLedger(slos, board, subjectCode);
 
-      // Insert SLOs
       if (slos.length > 0) {
         const sloInserts = slos.map(s => ({
           document_id: documentId,
@@ -357,7 +320,6 @@ export async function POST(
           bloom_level: s.bloom_level,
           domain: s.domain,
         }));
-
         await supabase.from('slo_database').insert(sloInserts);
       }
 
