@@ -246,6 +246,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
+        // IMPROVED JOB GUARD (Claude's suggestion + safety)
     job = await queue.getJobStatus(documentId).catch(() => null);
 
     if (!job) {
@@ -253,8 +254,18 @@ export async function POST(
       job = { id, step: IngestionStep.EXTRACT };
     } else if (job.status === 'complete' || job.step === IngestionStep.COMPLETE) {
       return NextResponse.json({ success: true, done: true, progress: 100 });
-    } else if (job.status === 'pending') {
-      await supabase.from('ingestion_jobs').update({ status: 'processing' }).eq('id', job.id);
+    } else if (job.status === 'pending' || job.status === 'processing') {
+      // Reset to processing and continue (fall through)
+      await supabase
+        .from('ingestion_jobs')
+        .update({ 
+          status: 'processing', 
+          message: 'Resuming ingestion...' 
+        })
+        .eq('id', job.id);
+      
+      // If no step is set, default to EXTRACT
+      if (!job.step) job.step = IngestionStep.EXTRACT;
     }
 
     const apiKey = process.env.API_KEY || '';
