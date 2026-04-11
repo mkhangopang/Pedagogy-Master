@@ -1,5 +1,5 @@
 // app/api/docs/process/[documentId]/route.ts
-// PEDAGOGY MASTER AI — Ingestion Engine v6.9 (Fixed SDK + TypeScript Clean)
+// PEDAGOGY MASTER AI — Ingestion Engine v7.0 (Final Build-Ready Version)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../../../lib/supabase';
@@ -17,7 +17,7 @@ export const maxDuration = 300;
 const MODEL_PRIMARY = 'gemini-2.0-flash';
 const MODEL_FALLBACK = 'gemini-1.5-flash';
 
-// ── LOOKUP TABLES (unchanged) ───────────────────────────────────────────────
+// ── LOOKUP TABLES ─────────────────────────────────────────────────────────────
 const ROMAN: Record<string, string> = {
   I: '01', II: '02', III: '03', IV: '04', V: '05', VI: '06',
   VII: '07', VIII: '08', IX: '09', X: '10', XI: '11', XII: '12',
@@ -38,7 +38,7 @@ const BOARD_NAMES: Record<string, string> = {
   AJK: 'AJK Textbook Board',
 };
 
-// ── DETECTION FUNCTIONS (unchanged) ─────────────────────────────────────────
+// ── DETECTION FUNCTIONS ───────────────────────────────────────────────────────
 function detectBoard(t: string): string {
   t = t.toLowerCase();
   if (t.includes('sindh') || t.includes('jamshoro')) return 'SINDH';
@@ -102,7 +102,7 @@ function normalizeCode(raw: any): string | null {
   return null;
 }
 
-// ── HELPER FUNCTIONS (unchanged) ─────────────────────────────────────────────
+// ── HELPER FUNCTIONS ─────────────────────────────────────────────────────────
 function linearizeSloText(text: string): string {
   return text.replace(/Page \d+ of \d+/gi, '').replace(/© .*?Board/gi, '').replace(/\n\s*\n/g, '\n').trim();
 }
@@ -161,7 +161,6 @@ function makePrompt(chunk: string, subject: string, subjectCode: string, board: 
   return `You are an expert Pakistani curriculum analyst.\nExtract ALL Student Learning Outcomes (SLOs) from the following text.\n\nBOARD: ${board}\nSUBJECT: ${subject} (${subjectCode})\n\nReturn ONLY valid JSON:\n{\n  "slos": [\n    {\n      "slo_code": "B09A01",\n      "description": "full SLO text here",\n      "bloom": "Remember | Understand | Apply | Analyze | Evaluate | Create"\n    }\n  ]\n}\n\nTEXT CHUNK ${chunkN}:\n${chunk}\n\nOnly return JSON. No extra text.`;
 }
 
-// Simplified AI call without generationConfig to avoid type error
 async function callAIOrchestrator(apiKey: string, text: string, subject: string, subjectCode: string, board: string, chunkN: number) {
   const genAI = new GoogleGenAI({ apiKey: apiKey || process.env.API_KEY! });
   const prompt = makePrompt(text, subject, subjectCode, board, chunkN);
@@ -182,7 +181,6 @@ async function callAIOrchestrator(apiKey: string, text: string, subject: string,
   }
 }
 
-// extractSlos, buildLedger functions remain the same as previous version
 async function extractSlos(
   text: string,
   boardKey: string,
@@ -225,7 +223,7 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
   return ledger;
 }
 
-// ── MAIN ROUTE (rest unchanged) ─────────────────────────────────────────────
+// ── MAIN ROUTE HANDLER ───────────────────────────────────────────────────────
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ documentId: string }> }
@@ -261,7 +259,7 @@ export async function POST(
 
     const apiKey = process.env.API_KEY || '';
 
-    // STAGE 1: EXTRACT (unchanged from previous)
+    // STAGE 1: EXTRACT
     if (job.step === IngestionStep.EXTRACT) {
       await queue.updateProgress(job.id, { step: IngestionStep.EXTRACT, progress: 10, message: 'Fetching PDF...' });
 
@@ -353,11 +351,19 @@ export async function POST(
 
   } catch (err: any) {
     console.error(`[Ingestion Failure] doc=${documentId}:`, err.message);
-    if (job?.id) await queue.markFailed(job.id, err.message).catch(() => {});
-    await supabase.from('documents')
-      .update({ status: 'failed', document_summary: `error: ${err.message}` })
-      .eq('id', documentId)
-      .catch(() => {});
+
+    if (job?.id) {
+      await queue.markFailed(job.id, err.message).catch(() => {});
+    }
+
+    // Fixed: No .catch() on the query chain
+    try {
+      await supabase.from('documents')
+        .update({ status: 'failed', document_summary: `error: ${err.message}` })
+        .eq('id', documentId);
+    } catch (updateErr) {
+      console.error("Failed to update document status to failed:", updateErr);
+    }
 
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
