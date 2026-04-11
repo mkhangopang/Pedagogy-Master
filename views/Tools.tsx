@@ -207,7 +207,7 @@ USER_QUERY: ${userInput}`;
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
-                {/* Vault Selector Slider */}
+                        {/* Vault Selector Slider */}
         <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="p-8 flex flex-col h-full">
             <div className="flex items-center justify-between mb-8">
@@ -241,15 +241,14 @@ USER_QUERY: ${userInput}`;
                       {doc.name}
                     </p>
                     <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>
-                      {doc.subject || 'Detecting...'} • Grade {doc.gradeLevel || doc.grade_level || 'Auto'}
+                      {doc.subject || 'Detecting...'} • Grade {doc.gradeLevel || 'Auto'}
                     </p>
                   </button>
                 ))
               )}
             </div>
           </div>
-        </div>
-        
+        </div>        
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 mb-12">
           <div className="flex items-center gap-6">
             <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={32} /></div>
