@@ -207,7 +207,7 @@ USER_QUERY: ${userInput}`;
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
-                        {/* Vault Selector Slider */}
+                                {/* Vault Selector Slider - with SLO Count */}
         <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="p-8 flex flex-col h-full">
             <div className="flex items-center justify-between mb-8">
@@ -227,24 +227,28 @@ USER_QUERY: ${userInput}`;
               {localDocs.length === 0 ? (
                 <p className="text-slate-400 text-center py-8">No documents in vault yet. Upload curriculum PDFs first.</p>
               ) : (
-                localDocs.map(doc => (
-                  <button 
-                    key={doc.id} 
-                    onClick={() => toggleDocContext(doc.id)} 
-                    disabled={isSwitchingContext}
-                    className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}
-                  >
-                    <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
-                      Curriculum Node
-                    </span>
-                    <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>
-                      {doc.name}
-                    </p>
-                    <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>
-                      {doc.subject || 'Detecting...'} • Grade {doc.gradeLevel || 'Auto'}
-                    </p>
-                  </button>
-                ))
+                localDocs.map(doc => {
+                  const sloCount = doc.sloCount || 0; // We'll add this later if you want real count from DB
+                  return (
+                    <button 
+                      key={doc.id} 
+                      onClick={() => toggleDocContext(doc.id)} 
+                      disabled={isSwitchingContext}
+                      className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}
+                    >
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
+                        Curriculum Node
+                      </span>
+                      <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>
+                        {doc.name}
+                      </p>
+                      <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>
+                        {doc.subject || 'Detecting...'} • Grade {doc.gradeLevel || 'Auto'}
+                        {sloCount > 0 && ` • ${sloCount} SLOs`}
+                      </p>
+                    </button>
+                  );
+                })
               )}
             </div>
           </div>
