@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const MODEL_PRIMARY = 'gemini-1.5-flash';
+const MODEL_PRIMARY = 'gemini-2.0-flash';
 const MODEL_FALLBACK = 'gemini-1.5-flash';
 
 const CHUNK_SIZE = 10000;
