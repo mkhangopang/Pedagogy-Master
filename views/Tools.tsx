@@ -111,72 +111,94 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   };
 
   const handleGenerate = async (userInput: string, handoffContext?: string) => {
-    if (!userInput.trim() || isGenerating || !canQuery) return;
-    
-    const effectiveTool = activeTool || 'master_plan';
-    setIsGenerating(true);
-    setWorkflowRecommendation(null);
-    const aiMsgId = crypto.randomUUID();
-    
-    setMessages(prev => [...prev, 
-      { id: crypto.randomUUID(), role: 'user', content: userInput, timestamp: new Date().toISOString() },
-      { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date().toISOString() }
-    ]);
+  if (!userInput.trim() || isGenerating || !canQuery) return;
 
-    try {
-      onQuery();
-      if (window.innerWidth < 768) setMobileActiveTab('artifact');
+  const effectiveTool = activeTool || 'master_plan';
+  setIsGenerating(true);
+  setWorkflowRecommendation(null);
+  const aiMsgId = crypto.randomUUID();
 
-      const personaPrompt = `
-[CONTEXT_MODES]
-CURRICULUM_MODE: ${isCurriculumEnabled && activeDoc ? 'ACTIVE' : 'INACTIVE'}
-GLOBAL_RESOURCES_MODE: ${isGlobalEnabled ? 'ACTIVE' : 'INACTIVE'}
-SELECTED_VAULT: ${activeDoc ? activeDoc.name : 'None'}
-EXPERT_MODULE: ${getToolDisplayName(effectiveTool)}
+  setMessages(prev => [...prev, 
+    { id: crypto.randomUUID(), role: 'user', content: userInput, timestamp: new Date().toISOString() },
+    { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date().toISOString() }
+  ]);
 
-[PERSONA_OVERLAY]
-${persona === 'creative' ? '[CREATIVE_MODE: ON] Use highly engaging, active learning strategies.' : persona === 'auditor' ? '[AUDIT_MODE: ON] Focus on standards rigor and alignment.' : '[ARCHITECT_MODE: ON] Focus on structured instructional design.'}
+  try {
+    onQuery();
+    if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
-${handoffContext ? `[WORKFLOW_CONTEXT: Use the following previous synthesis as a base]:\n${handoffContext}` : ''}
+    // === NEW: Fetch real SLOs from selected document ===
+    let sloContext = '';
+    if (isCurriculumEnabled && activeDoc) {
+      const { data: slos } = await supabase
+        .from('slo_database')
+        .select('slo_code, slo_full_text, bloom_level, domain')
+        .eq('document_id', activeDoc.id)
+        .limit(80);   // limit to avoid token overflow
 
-USER_QUERY: ${userInput}`;
-
-      const stream = geminiService.generatePedagogicalToolStream(
-        effectiveTool, 
-        personaPrompt, 
-        { 
-          base64: activeDoc?.base64Data, 
-          mimeType: activeDoc?.mimeType, 
-          filePath: activeDoc?.filePath, 
-          id: activeDoc?.id 
-        }, 
-        brain, 
-        user, 
-        isCurriculumEnabled && activeDoc ? activeDoc.id : undefined 
-      );
-      
-      let fullContent = '';
-      for await (const chunk of stream) {
-        if (chunk) {
-          fullContent += chunk;
-          setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
-          setCanvasContent(fullContent); 
-        }
+      if (slos && slos.length > 0) {
+        sloContext = slos.map(s => 
+          `SLO ${s.slo_code}: ${s.slo_full_text} (Bloom: ${s.bloom_level || 'Remember'})`
+        ).join('\n');
       }
-      
-      await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { 
-        tool: effectiveTool, 
-        document_id: activeDoc?.id, 
-        persona, 
-        isGlobalEnabled 
-      });
-    } catch (err: any) {
-      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m));
-    } finally { 
-      setIsGenerating(false); 
     }
-  };
 
+    const personaPrompt = `
+[INSTITUTION CONTEXT]
+Selected Curriculum: ${activeDoc ? activeDoc.name : 'None'}
+Board: ${activeDoc?.authority || 'Pakistan National Curriculum'}
+Total SLOs in Vault: ${activeDoc ? 'Loaded' : 'None'}
+
+[REAL SLO DATA FROM SELECTED DOCUMENT]
+${sloContext || 'No specific curriculum selected - use general pedagogical best practices.'}
+
+[TOOL MODE]
+Tool: ${getToolDisplayName(effectiveTool)}
+Persona: ${persona}
+
+[USER REQUEST]
+${userInput}
+
+${handoffContext ? `\n[PREVIOUS ARTIFACT FOR CONTINUITY]\n${handoffContext}` : ''}
+
+Rules:
+- Use ONLY the SLOs provided above when relevant.
+- Always reference specific SLO codes (e.g. B09A01).
+- Maintain strict alignment with Bloom's Taxonomy.
+- Output in clean, professional Markdown.
+`;
+
+    const stream = geminiService.generatePedagogicalToolStream(
+      effectiveTool, 
+      personaPrompt, 
+      { id: activeDoc?.id }, 
+      brain, 
+      user, 
+      isCurriculumEnabled && activeDoc ? activeDoc.id : undefined 
+    );
+
+    let fullContent = '';
+    for await (const chunk of stream) {
+      if (chunk) {
+        fullContent += chunk;
+        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
+        setCanvasContent(fullContent);
+      }
+    }
+
+    await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, {
+      tool: effectiveTool,
+      document_id: activeDoc?.id,
+      persona,
+      isGlobalEnabled
+    });
+
+  } catch (err: any) {
+    setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m));
+  } finally {
+    setIsGenerating(false);
+  }
+};
   const handleWorkflowTransition = () => {
     if (!workflowRecommendation || isGenerating) return;
     const previousArtifact = canvasContent.split('--- Workflow Recommendation')[0].trim();
