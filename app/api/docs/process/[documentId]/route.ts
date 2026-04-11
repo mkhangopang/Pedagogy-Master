@@ -1,5 +1,5 @@
 // app/api/docs/process/[documentId]/route.ts
-// PEDAGOGY MASTER AI — Ingestion Engine v7.0 (Final Build-Ready Version)
+// PEDAGOGY MASTER AI — Ingestion Engine v7.1 (Claude Stage 4 Fix + Clean Build)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../../../lib/supabase';
@@ -246,7 +246,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-        // IMPROVED JOB GUARD (Claude's suggestion + safety)
+    // Improved Job Guard (Claude suggestion)
     job = await queue.getJobStatus(documentId).catch(() => null);
 
     if (!job) {
@@ -255,7 +255,6 @@ export async function POST(
     } else if (job.status === 'complete' || job.step === IngestionStep.COMPLETE) {
       return NextResponse.json({ success: true, done: true, progress: 100 });
     } else if (job.status === 'pending' || job.status === 'processing') {
-      // Reset to processing and continue (fall through)
       await supabase
         .from('ingestion_jobs')
         .update({ 
@@ -264,7 +263,6 @@ export async function POST(
         })
         .eq('id', job.id);
       
-      // If no step is set, default to EXTRACT
       if (!job.step) job.step = IngestionStep.EXTRACT;
     }
 
@@ -340,7 +338,7 @@ export async function POST(
       await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Building vector index...' });
     }
 
-    // STAGE 3: EMBED
+    // STAGE 4: EMBED + Claude's recommended error handling
     if (job.step === IngestionStep.EMBED) {
       const { data: fin } = await supabase.from('documents').select('extracted_text').eq('id', documentId).single();
       const txt = fin?.extracted_text || '';
@@ -351,11 +349,19 @@ export async function POST(
 
       await queue.markComplete(job.id);
 
-      await supabase.from('documents').update({
-        status: 'ready',
-        rag_indexed: true,
-        updated_at: new Date().toISOString(),
-      }).eq('id', documentId);
+      // Claude's fix: Proper error handling on final update
+      const { error: dErr } = await supabase
+        .from('documents')
+        .update({
+          status: 'ready',
+          rag_indexed: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', documentId);
+
+      if (dErr) {
+        console.error('[Stage4] Document update failed:', dErr.message);
+      }
     }
 
     return NextResponse.json({ success: true, status: 'ready', progress: 100 });
@@ -367,7 +373,6 @@ export async function POST(
       await queue.markFailed(job.id, err.message).catch(() => {});
     }
 
-    // Fixed: No .catch() on the query chain
     try {
       await supabase.from('documents')
         .update({ status: 'failed', document_summary: `error: ${err.message}` })
