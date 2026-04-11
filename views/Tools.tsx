@@ -207,7 +207,7 @@ USER_QUERY: ${userInput}`;
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
-        {/* Vault Selector Slider */}
+                {/* Vault Selector Slider */}
         <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
           <div className="p-8 flex flex-col h-full">
             <div className="flex items-center justify-between mb-8">
@@ -215,11 +215,17 @@ USER_QUERY: ${userInput}`;
                 <Library size={20} className="text-indigo-600" />
                 <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Vault Selection</h3>
               </div>
-              <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
+              <button 
+                onClick={() => setIsSliderOpen(false)} 
+                className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"
+              >
+                <X size={20}/>
+              </button>
             </div>
+
             <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
               {localDocs.length === 0 ? (
-                <p className="text-slate-400 text-center py-8">No documents in vault yet.</p>
+                <p className="text-slate-400 text-center py-8">No documents in vault yet. Upload curriculum PDFs first.</p>
               ) : (
                 localDocs.map(doc => (
                   <button 
@@ -228,10 +234,14 @@ USER_QUERY: ${userInput}`;
                     disabled={isSwitchingContext}
                     className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}
                   >
-                    <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Curriculum Node</span>
-                    <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
+                      Curriculum Node
+                    </span>
+                    <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>
+                      {doc.name}
+                    </p>
                     <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>
-                      {doc.subject || 'Detecting...'} • Grade {doc.grade_level || 'Auto'}
+                      {doc.subject || 'Detecting...'} • Grade {doc.gradeLevel || doc.grade_level || 'Auto'}
                     </p>
                   </button>
                 ))
