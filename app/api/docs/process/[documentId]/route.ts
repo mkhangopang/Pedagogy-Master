@@ -1,5 +1,5 @@
 // app/api/docs/process/[documentId]/route.ts
-// PEDAGOGY MASTER AI — Ingestion Engine v7.3 (All Claude Logic Gaps Fixed)
+// PEDAGOGY MASTER AI — Ingestion Engine v7.4 (DOK + Claude Gaps Fixed)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient } from '../../../../../lib/supabase';
@@ -13,7 +13,7 @@ import { GoogleGenAI } from "@google/genai";
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const MODEL_PRIMARY = 'gemini-2.0-flash';
+const MODEL_PRIMARY = 'gemini-1.5-flash';
 const MODEL_FALLBACK = 'gemini-1.5-flash';
 
 // ── LOOKUP TABLES ─────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ function detectSubject(t: string): string {
   return 'B';
 }
 
+// ── SLO CODE NORMALIZER ───────────────────────────────────────────────────────
 function normalizeCode(raw: any): string | null {
   if (!raw || raw === 'null') return null;
   let s = String(raw).toUpperCase()
@@ -74,6 +75,7 @@ function normalizeCode(raw: any): string | null {
   if (gradeRange) return `${gradeRange[1]}${gradeRange[2]}${gradeRange[4]}${gradeRange[5].padStart(2, '0')}`;
 
   s = s.replace(/-/g, '');
+
   s = s.replace(/([A-Z]{1,4})0[LlIi]([A-Z])/, '$101$2');
   s = s.replace(/0[LlIi]$/i, '01');
   s = s.replace(/[lI]$/i, '1');
@@ -93,7 +95,7 @@ function normalizeCode(raw: any): string | null {
   return null;
 }
 
-// ── FIXED HELPERS ─────────────────────────────────────────────────────────────
+// ── HELPER FUNCTIONS ──────────────────────────────────────────────────────────
 function linearizeSloText(text: string): string {
   return text
     .replace(/Page \d+ of \d+/gi, '')
@@ -111,26 +113,12 @@ function extractRawSloBlocks(text: string): string[] {
     if (/^[A-Z]\d{2}[A-Z]\d/.test(trimmed) || trimmed.includes('SLO') || trimmed.includes('Student Learning Outcome')) {
       if (current) blocks.push(current.trim());
       current = line;
-    } else if (current) current += '\n' + line;
+    } else if (current) {
+      current += '\n' + line;
+    }
   }
   if (current) blocks.push(current.trim());
   return blocks.length > 0 ? blocks : [text];
-}
-
-function buildLedger(slos: any[], boardKey: string, subjectCode: string): string {
-  let ledger = `# ${BOARD_NAMES[boardKey] || boardKey} - ${subjectCode} SLO Ledger\n\n`;
-  
-  // FIXED: Proper numeric sort that handles 100+
-  const sorted = [...slos].sort((a, b) => {
-    const numA = parseInt(a.slo_code.replace(/\D/g, '')) || 0;
-    const numB = parseInt(b.slo_code.replace(/\D/g, '')) || 0;
-    return numA - numB;
-  });
-
-  sorted.forEach(s => {
-    ledger += `**${s.slo_code}** — ${s.slo_full_text}\nBloom: ${s.bloom_level || 'Remember'}\n\n`;
-  });
-  return ledger;
 }
 
 function safeJson(raw: any): any {
@@ -150,14 +138,56 @@ function processSlos(raw: any[], boardKey: string, subjectCode: string): any[] {
     slo_code: normalizeCode(slo.slo_code || slo.code) || 'UNKNOWN',
     slo_full_text: slo.description || slo.text || slo.slo_full_text || '',
     bloom_level: slo.bloom || slo.bloom_level || 'Remember',
+    dok_level: slo.dok || slo.dok_level || 'DOK 2',        // ← Added DOK
     domain: slo.domain || 'Core',
     board: boardKey,
     subject: subjectCode,
   }));
 }
 
+function buildLedger(slos: any[], boardKey: string, subjectCode: string): string {
+  let ledger = `# ${BOARD_NAMES[boardKey] || boardKey} - ${subjectCode} SLO Ledger\n\n`;
+  
+  const sorted = [...slos].sort((a, b) => {
+    const numA = parseInt(a.slo_code.replace(/\D/g, '')) || 0;
+    const numB = parseInt(b.slo_code.replace(/\D/g, '')) || 0;
+    return numA - numB;
+  });
+
+  sorted.forEach(s => {
+    ledger += `**${s.slo_code}** — ${s.slo_full_text}\n`;
+    ledger += `Bloom: ${s.bloom_level} | DOK: ${s.dok_level}\n\n`;
+  });
+  return ledger;
+}
+
 function makePrompt(chunk: string, subject: string, subjectCode: string, board: string, chunkN: number): string {
-  return `You are an expert Pakistani curriculum analyst.\nExtract ALL Student Learning Outcomes (SLOs) from the following text.\n\nBOARD: ${board}\nSUBJECT: ${subject} (${subjectCode})\n\nReturn ONLY valid JSON:\n{\n  "slos": [\n    {\n      "slo_code": "B09A01",\n      "description": "full SLO text here",\n      "bloom": "Remember | Understand | Apply | Analyze | Evaluate | Create"\n    }\n  ]\n}\n\nTEXT CHUNK ${chunkN}:\n${chunk}\n\nOnly return JSON. No extra text.`;
+  return `You are an expert Pakistani curriculum analyst.
+Extract ALL Student Learning Outcomes (SLOs) from the text below.
+
+BOARD: ${board}
+SUBJECT: ${subject} (${subjectCode})
+
+For each SLO, return valid JSON array with these fields:
+- slo_code (e.g. B09A01)
+- description (full SLO text)
+- bloom (Remember, Understand, Apply, Analyze, Evaluate, Create)
+- dok (DOK 1, DOK 2, DOK 3, or DOK 4)
+
+Return ONLY valid JSON like:
+{
+  "slos": [
+    {
+      "slo_code": "B09A01",
+      "description": "full text here",
+      "bloom": "Understand",
+      "dok": "DOK 2"
+    }
+  ]
+}
+
+TEXT CHUNK ${chunkN}:
+${chunk}`;
 }
 
 async function callAIOrchestrator(apiKey: string, text: string, subject: string, subjectCode: string, board: string, chunkN: number) {
@@ -182,40 +212,6 @@ async function callAIOrchestrator(apiKey: string, text: string, subject: string,
   }
 }
 
-async function extractSlos(
-  text: string,
-  boardKey: string,
-  subjectCode: string,
-  apiKey: string,
-  documentId: string,
-  supabase: any,
-  jobId: string,
-  queue: IngestionQueue
-): Promise<any[]> {
-  const linearized = linearizeSloText(text);
-  const rawBlocks = extractRawSloBlocks(linearized);
-  let allSlos: any[] = [];
-
-  for (let i = 0; i < rawBlocks.length; i++) {
-    await queue.updateProgress(jobId, {
-      step: IngestionStep.LINEARIZE,
-      progress: 30 + Math.floor((i / rawBlocks.length) * 45),
-      message: `Extracting SLOs (${i + 1}/${rawBlocks.length})`
-    });
-
-    const chunkSlos = await callAIOrchestrator(apiKey, rawBlocks[i], subjectCode, subjectCode, boardKey, i + 1);
-    allSlos = allSlos.concat(processSlos(chunkSlos, boardKey, subjectCode));
-  }
-
-  // FIXED: Global deduplication across all chunks
-  const seen = new Set<string>();
-  return allSlos.filter(slo => {
-    if (seen.has(slo.slo_code)) return false;
-    seen.add(slo.slo_code);
-    return true;
-  });
-}
-
 // ── MAIN ROUTE ───────────────────────────────────────────────────────────────
 export async function POST(
   req: NextRequest,
@@ -224,10 +220,10 @@ export async function POST(
   const { documentId } = await props.params;
   const supabase = getSupabaseAdminClient();
   const queue = new IngestionQueue(supabase);
-
   let job: any = null;
 
   try {
+    // Auth Check
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json({ error: 'Authorization header missing' }, { status: 401 });
@@ -239,7 +235,7 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
     }
 
-    // Improved Job Guard
+    // Job Management
     job = await queue.getJobStatus(documentId).catch(() => null);
 
     if (!job) {
@@ -269,6 +265,7 @@ export async function POST(
       if (!text || text.length < 200) {
         const r2Path = docData.file_path;
         if (!r2Path) throw new Error('No file_path in R2');
+
         const buffer = await getObjectBuffer(r2Path);
         if (!buffer) throw new Error('R2 file unreachable');
 
@@ -297,12 +294,11 @@ export async function POST(
 
     // STAGE 2: LINEARIZE + SLO EXTRACTION
     if (job.step === IngestionStep.LINEARIZE) {
-      // FIXED: Always clean previous SLOs for this document
+      // Clear previous SLOs for this document
       await supabase.from('slo_database').delete().eq('document_id', documentId);
 
       const { data: docData } = await supabase.from('documents').select('extracted_text, name').eq('id', documentId).single();
       const rawText = docData?.extracted_text || '';
-
       const board = detectBoard(rawText);
       const subjectCode = detectSubject(rawText);
 
@@ -316,6 +312,7 @@ export async function POST(
           slo_code: s.slo_code,
           slo_full_text: s.slo_full_text,
           bloom_level: s.bloom_level,
+          dok_level: s.dok_level,           // ← Added DOK
           domain: s.domain || 'Core',
         }));
         await supabase.from('slo_database').insert(sloInserts);
@@ -326,7 +323,11 @@ export async function POST(
         status: 'processing',
       }).eq('id', documentId);
 
-      await queue.updateProgress(job.id, { step: IngestionStep.EMBED, progress: 75, message: 'Building vector index...' });
+      await queue.updateProgress(job.id, { 
+        step: IngestionStep.EMBED, 
+        progress: 75, 
+        message: 'Building vector index...' 
+      });
     }
 
     // STAGE 4: EMBED
@@ -340,15 +341,11 @@ export async function POST(
 
       await queue.markComplete(job.id);
 
-      const { error: dErr } = await supabase.from('documents')
-        .update({
-          status: 'ready',
-          rag_indexed: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', documentId);
-
-      if (dErr) console.error('[Stage 4] Document update failed:', dErr.message);
+      await supabase.from('documents').update({
+        status: 'ready',
+        rag_indexed: true,
+        updated_at: new Date().toISOString(),
+      }).eq('id', documentId);
     }
 
     return NextResponse.json({ success: true, status: 'ready', progress: 100 });
@@ -365,9 +362,44 @@ export async function POST(
         .update({ status: 'failed', document_summary: `error: ${err.message}` })
         .eq('id', documentId);
     } catch (updateErr) {
-      console.error("Failed to update document status to failed:", updateErr);
+      console.error("Failed to update document status:", updateErr);
     }
 
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+}
+
+// ── extractSlos Function (with DOK support) ─────────────────────────────────
+async function extractSlos(
+  text: string,
+  boardKey: string,
+  subjectCode: string,
+  apiKey: string,
+  documentId: string,
+  supabase: any,
+  jobId: string,
+  queue: IngestionQueue
+): Promise<any[]> {
+  const linearized = linearizeSloText(text);
+  const rawBlocks = extractRawSloBlocks(linearized);
+  let allSlos: any[] = [];
+
+  for (let i = 0; i < rawBlocks.length; i++) {
+    await queue.updateProgress(jobId, {
+      step: IngestionStep.LINEARIZE,
+      progress: 30 + Math.floor((i / rawBlocks.length) * 45),
+      message: `Extracting SLOs (${i + 1}/${rawBlocks.length})`
+    });
+
+    const chunkSlos = await callAIOrchestrator(apiKey, rawBlocks[i], subjectCode, subjectCode, boardKey, i + 1);
+    allSlos = allSlos.concat(processSlos(chunkSlos, boardKey, subjectCode));
+  }
+
+  // Global deduplication
+  const seen = new Set<string>();
+  return allSlos.filter(slo => {
+    if (seen.has(slo.slo_code)) return false;
+    seen.add(slo.slo_code);
+    return true;
+  });
 }
