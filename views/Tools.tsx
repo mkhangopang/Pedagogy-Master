@@ -161,6 +161,16 @@ User Request: ${userInput}
     }
   };
 
+  // Local Copy
+  const handleRichCopy = async () => {
+    if (!canvasContent) return;
+    const cleanText = canvasContent.split('--- Workflow Recommendation')[0].trim();
+    await navigator.clipboard.writeText(cleanText);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
+
+  // Local Save as Markdown
   const handleSaveMarkdown = () => {
     if (!canvasContent) return;
     const cleanContent = canvasContent.split('--- Workflow Recommendation')[0].trim();
@@ -175,6 +185,9 @@ User Request: ${userInput}
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
   };
 
   const handlePrint = () => window.print();
@@ -186,41 +199,10 @@ User Request: ${userInput}
     { id: 'audit_tagger' as ToolType, name: 'Audit Tagger', icon: SearchCode, desc: 'SLO Logic Mapping', color: 'bg-cyan-600' },
   ];
 
-  // Main Tools Grid (when no tool is active)
+  // Tools Grid (no active tool)
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500">
-        {/* Vault Selector */}
-        <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="p-8 flex flex-col h-full">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-3">
-                <Library size={20} className="text-indigo-600" />
-                <h3 className="font-black text-xs uppercase tracking-widest">Vault Selection</h3>
-              </div>
-              <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto space-y-3">
-              {localDocs.length === 0 ? (
-                <p className="text-slate-400 text-center py-12">No documents yet.<br />Upload curriculum PDFs first.</p>
-              ) : (
-                localDocs.map(doc => (
-                  <button
-                    key={doc.id}
-                    onClick={() => toggleDocContext(doc.id)}
-                    className={`w-full text-left p-5 rounded-2xl border transition-all ${doc.isSelected ? 'bg-indigo-600 text-white' : 'hover:border-indigo-300'}`}
-                  >
-                    <p className="font-bold">{doc.name}</p>
-                    <p className="text-sm opacity-75">{doc.subject} • Grade {doc.gradeLevel || '?'}</p>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
         <div className="flex justify-between items-center mb-12">
           <div>
             <h1 className="text-4xl font-black tracking-tight">Synthesis Hub</h1>
@@ -253,7 +235,7 @@ User Request: ${userInput}
     );
   }
 
-  // When a tool is active - show artifact view with save options
+  // Active Tool View
   return (
     <div className="flex flex-col h-[calc(100vh-120px)] bg-slate-50 dark:bg-slate-950">
       {/* Header */}
@@ -266,24 +248,40 @@ User Request: ${userInput}
         </div>
 
         <div className="flex gap-2">
-          <button onClick={handleRichCopy} className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100">Copy</button>
-          <button onClick={handleSaveMarkdown} className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100 flex items-center gap-1">
+          <button 
+            onClick={handleRichCopy} 
+            className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100 flex items-center gap-1"
+          >
+            <Copy size={16} /> Copy
+          </button>
+
+          <button 
+            onClick={handleSaveMarkdown} 
+            className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100 flex items-center gap-1"
+          >
             <Download size={16} /> Save MD
           </button>
-          <button onClick={handlePrint} className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100 flex items-center gap-1">
+
+          <button 
+            onClick={handlePrint} 
+            className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100 flex items-center gap-1"
+          >
             <Printer size={16} /> PDF
           </button>
         </div>
       </div>
 
-      {/* Content Area */}
+      {/* Content */}
       <div className="flex-1 overflow-auto p-8">
         <div className="max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-3xl p-10 shadow">
           {canvasContent ? (
-            <div dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent) }} className="prose dark:prose-invert max-w-none" />
+            <div 
+              className="prose dark:prose-invert max-w-none" 
+              dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} 
+            />
           ) : (
             <div className="text-center py-20 text-slate-400">
-              Generating content...
+              Generating content with {getToolDisplayName(activeTool)}...
             </div>
           )}
         </div>
