@@ -13,9 +13,8 @@ import { GoogleGenAI } from "@google/genai";
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-const MODEL_PRIMARY = 'gemini-1.5-flash';
-const MODEL_FALLBACK = 'gemini-1.5-flash';
-
+const MODEL_PRIMARY  = 'gemini-2.5-flash';
+const MODEL_FALLBACK = 'gemini-2.0-flash';
 // ── LOOKUP TABLES ─────────────────────────────────────────────────────────────
 const ROMAN: Record<string, string> = {
   I: '01', II: '02', III: '03', IV: '04', V: '05', VI: '06',
