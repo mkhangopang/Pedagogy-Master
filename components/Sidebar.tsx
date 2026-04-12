@@ -56,6 +56,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'chat', label: 'Neural Chat', icon: BrainCircuit },
     { id: 'documents', label: 'Curriculum Vault', icon: FileText },
     { id: 'standards', label: 'Standards Browser', icon: SearchCheck },
     { id: 'tools', label: 'Neural Tools', icon: Wrench },

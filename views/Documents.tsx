@@ -147,8 +147,12 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const handleReprocess = async (id: string) => {
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       onUpdateDocument(id, { status: 'pending', documentSummary: 'Re-triggering ingestion...' });
-      const response = await fetch(`/api/docs/process/${id}`, { method: 'POST' });
+      const response = await fetch(`/api/docs/process/${id}`, { 
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
       if (!response.ok) throw new Error('Failed to start processing');
     } catch (err) {
       console.error("Reprocess failure:", err);
