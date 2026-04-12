@@ -101,30 +101,31 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             
             setStatus(data.summary || 'Unrolling Curriculum Domains...');
 
-            // BUG-U1 & BUG-U2 FIX: Use refs for heartbeat check
-            if (Math.round(progressRef.current) >= 95) {
-              if (Date.now() - lastTriggerRef.current > 30000) {
-                lastTriggerRef.current = Date.now();
-                console.log("Stuck detected. Re-triggering neural orchestrator...");
-                
-                // BUG-U3 FIX: Add AbortController and timeout
-                const triggerController = new AbortController();
-                const triggerTimeout = setTimeout(() => triggerController.abort(), 290000);
+            // STUCK DETECTION: If progress hasn't moved for 30s, re-trigger the orchestrator
+            // This is critical for serverless environments where background tasks might be killed
+            const now = Date.now();
+            const timeSinceLastTrigger = now - lastTriggerRef.current;
+            
+            if (timeSinceLastTrigger > 30000) {
+              lastTriggerRef.current = now;
+              console.log(`[Orchestrator] Heartbeat check: Progress is ${progressRef.current}%. Re-triggering...`);
+              
+              const triggerController = new AbortController();
+              const triggerTimeout = setTimeout(() => triggerController.abort(), 290000);
 
-                fetch(`/api/docs/process/${docId}`, {
-                  method: 'POST',
-                  headers: { 'Authorization': `Bearer ${session.access_token}` },
-                  signal: triggerController.signal
-                }).then(async (res) => {
-                  clearTimeout(triggerTimeout);
-                  if (!res.ok) {
-                    const errData = await res.json().catch(() => ({}));
-                    console.error("Orchestrator Trigger Fault:", errData);
-                  }
-                }).catch(e => {
-                  if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);
-                });
-              }
+              fetch(`/api/docs/process/${docId}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${session.access_token}` },
+                signal: triggerController.signal
+              }).then(async (res) => {
+                clearTimeout(triggerTimeout);
+                if (!res.ok) {
+                  const errData = await res.json().catch(() => ({}));
+                  console.error("Orchestrator Trigger Fault:", errData);
+                }
+              }).catch(e => {
+                if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);
+              });
             }
           }
         } catch (e: any) {
@@ -190,6 +191,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
     setError(null);
     setIsUploading(true);
+    lastTriggerRef.current = Date.now();
     updateProgress(5);
     setStatus('Handshaking with Grid...');
 

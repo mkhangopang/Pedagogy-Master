@@ -825,12 +825,13 @@ export async function POST(
     return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });
   } else if (job.status === 'processing' && job.updated_at) {
     const lastUpdate = new Date(job.updated_at).getTime();
-    if (Date.now() - lastUpdate < 300000) { // 5 minutes
+    // REDUCED: 60 seconds stale timeout for faster resumption in serverless environments
+    if (Date.now() - lastUpdate < 60000) { 
       console.log(`[Ingestion] Job is actively processing (updated ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Ignoring duplicate trigger.`);
       return NextResponse.json({ success: true, message: 'Already processing' });
     }
     // Stale 'processing' job — reset status but keep step and payload to resume
-    console.log(`[Ingestion] Stale job detected. Resuming from step ${job.step}...`);
+    console.log(`[Ingestion] Stale job detected (last update ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Resuming from step ${job.step}...`);
     await supabase.from('ingestion_jobs')
       .update({ status: 'pending' })
       .eq('id', job.id);
@@ -851,9 +852,26 @@ export async function POST(
   // Run the ingestion process in the background to prevent request timeouts
   (async () => {
     try {
-      const { data: doc } = await supabase
-        .from('documents').select('*').eq('id', documentId).single();
-      if (!doc) throw new Error('VAULT_ERROR: Document not found');
+      // FIX: Add retry loop for document fetch to handle Supabase replication lag/race conditions
+      let doc = null;
+      let retries = 0;
+      while (!doc && retries < 5) {
+        const { data, error } = await supabase
+          .from('documents').select('*').eq('id', documentId).single();
+        
+        if (data) {
+          doc = data;
+          break;
+        }
+        
+        console.warn(`[Ingestion] Document ${documentId} not found (attempt ${retries + 1}/5). Retrying in 2s...`);
+        if (error) console.error(`[Ingestion] DB Error during fetch:`, error);
+        
+        retries++;
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      if (!doc) throw new Error('VAULT_ERROR: Document not found in database after multiple attempts. This may be due to replication lag or a failed insert.');
 
       // ════════════════════════════════════════════════════════
       // STAGE 1 — EXTRACT (pdf-parse → raw text)
