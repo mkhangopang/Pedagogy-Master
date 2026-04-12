@@ -5,8 +5,7 @@ import {
   Sparkles, ClipboardCheck, BookOpen, Layers, Loader2,
   FileText, Copy, ArrowRight, PenTool, Compass, SearchCode,
   Zap, ChevronLeft, Library, Crown, Globe2, Globe, Check, X,
-  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck, Printer,
-  Download
+  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck, Printer, Download
 } from 'lucide-react';
 
 import { geminiService } from '../services/geminiService';
@@ -44,11 +43,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [copySuccess, setCopySuccess] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const [workflowRecommendation, setWorkflowRecommendation] = useState<{tool: ToolType, reason: string} | null>(null);
-
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
-  const isPro = user.plan !== SubscriptionPlan.FREE;
 
   // Print styles
   useEffect(() => {
@@ -71,31 +67,25 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     }
   }, [messages, isGenerating]);
 
-  // Local Save as Markdown
-  const handleSaveMarkdown = async () => {
-    if (!canvasContent) return;
-    
-    const cleanContent = canvasContent.split('--- Workflow Recommendation')[0].trim();
-    const toolName = activeTool ? getToolDisplayName(activeTool) : 'Output';
-    const filename = `${toolName.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.md`;
+  const toggleDocContext = async (docId: string) => {
+    const updated = localDocs.map(d => ({
+      ...d,
+      isSelected: d.id === docId ? !d.isSelected : false
+    }));
+    setLocalDocs(updated);
+    setIsSwitchingContext(true);
 
-    const blob = new Blob([cleanContent], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
-  };
-
-  // Local Save as PDF (via Print)
-  const handleSavePDF = () => {
-    window.print();
+    try {
+      await supabase.from('documents').update({ is_selected: false }).eq('user_id', user.id);
+      if (updated.find(d => d.id === docId && d.isSelected)) {
+        await supabase.from('documents').update({ is_selected: true }).eq('id', docId);
+      }
+      setTimeout(() => setIsSliderOpen(false), 300);
+    } catch (e) {
+      console.error('Failed to switch vault context', e);
+    } finally {
+      setIsSwitchingContext(false);
+    }
   };
 
   const handleGenerate = async (userInput: string, handoffContext?: string) => {
@@ -103,7 +93,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
     const effectiveTool = activeTool || 'master_plan';
     setIsGenerating(true);
-    setWorkflowRecommendation(null);
     const aiMsgId = crypto.randomUUID();
 
     setMessages(prev => [...prev,
@@ -115,7 +104,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       onQuery();
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
-      // Real SLO Context Injection
       let sloContext = '';
       if (isCurriculumEnabled && activeDoc?.id) {
         const { data: slos } = await supabase
@@ -138,21 +126,13 @@ Board: ${activeDoc?.authority || 'General Pakistan Curriculum'}
 Subject: ${activeDoc?.subject || 'General'}
 Grade Level: ${activeDoc?.gradeLevel || 'Auto-detected'}
 
-[REAL SLOs FROM SELECTED VAULT]
-${sloContext || 'No specific SLOs selected. Use general best practices.'}
+[REAL SLOs FROM VAULT]
+${sloContext || 'No specific SLOs selected.'}
 
 [TOOL ACTIVATED]
 Active Tool: ${getToolDisplayName(effectiveTool)}
 Persona: ${persona}
-Current User Request: ${userInput}
-
-${handoffContext ? `\n[PREVIOUS OUTPUT FOR CONTINUITY]\n${handoffContext}` : ''}
-
-Instructions:
-- Always reference specific SLO codes when relevant.
-- Use real SLO text from the vault above.
-- Maintain strict Bloom's Taxonomy alignment.
-- Output using the full professional template for the active tool.
+User Request: ${userInput}
 `;
 
       const stream = geminiService.generatePedagogicalToolStream(
@@ -174,92 +154,136 @@ Instructions:
       }
 
     } catch (err: any) {
-      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m));
+      console.error("Generation error:", err);
+      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Error: ${err.message}` } : m));
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const handleRichCopy = async () => {
+  const handleSaveMarkdown = () => {
     if (!canvasContent) return;
-    const cleanText = canvasContent.split('--- Workflow Recommendation')[0].trim();
-    await navigator.clipboard.writeText(cleanText);
-    setCopySuccess(true);
-    setTimeout(() => setCopySuccess(false), 2000);
+    const cleanContent = canvasContent.split('--- Workflow Recommendation')[0].trim();
+    const filename = `${activeTool || 'output'}_${new Date().toISOString().slice(0,10)}.md`;
+
+    const blob = new Blob([cleanContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
+  const handlePrint = () => window.print();
+
   const toolDefinitions = [
-    { id: 'master_plan' as ToolType, name: 'Master Plan', icon: BookOpen, desc: 'Architecture of Instruction', color: 'bg-indigo-600', iconColor: 'text-white' },
-    { id: 'neural_quiz' as ToolType, name: 'Neural Quiz', icon: ClipboardCheck, desc: 'Standards-Aligned Assessment', color: 'bg-emerald-600', iconColor: 'text-white' },
-    { id: 'fidelity_rubric' as ToolType, name: 'Fidelity Rubric', icon: Layers, desc: 'Criterion-Based Assessment', color: 'bg-amber-600', iconColor: 'text-white' },
-    { id: 'audit_tagger' as ToolType, name: 'Audit Tagger', icon: SearchCode, desc: 'SLO Logic Mapping', color: 'bg-cyan-600', iconColor: 'text-white' },
+    { id: 'master_plan' as ToolType, name: 'Master Plan', icon: BookOpen, desc: 'Architecture of Instruction', color: 'bg-indigo-600' },
+    { id: 'neural_quiz' as ToolType, name: 'Neural Quiz', icon: ClipboardCheck, desc: 'Standards-Aligned Assessment', color: 'bg-emerald-600' },
+    { id: 'fidelity_rubric' as ToolType, name: 'Fidelity Rubric', icon: Layers, desc: 'Criterion-Based Assessment', color: 'bg-amber-600' },
+    { id: 'audit_tagger' as ToolType, name: 'Audit Tagger', icon: SearchCode, desc: 'SLO Logic Mapping', color: 'bg-cyan-600' },
   ];
 
-  // Vault Selector Screen
+  // Main Tools Grid (when no tool is active)
   if (!activeTool) {
     return (
-      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
+      <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500">
         {/* Vault Selector */}
         <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
-          {/* ... your existing vault selector code ... */}
+          <div className="p-8 flex flex-col h-full">
+            <div className="flex items-center justify-between mb-8">
+              <div className="flex items-center gap-3">
+                <Library size={20} className="text-indigo-600" />
+                <h3 className="font-black text-xs uppercase tracking-widest">Vault Selection</h3>
+              </div>
+              <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-3">
+              {localDocs.length === 0 ? (
+                <p className="text-slate-400 text-center py-12">No documents yet.<br />Upload curriculum PDFs first.</p>
+              ) : (
+                localDocs.map(doc => (
+                  <button
+                    key={doc.id}
+                    onClick={() => toggleDocContext(doc.id)}
+                    className={`w-full text-left p-5 rounded-2xl border transition-all ${doc.isSelected ? 'bg-indigo-600 text-white' : 'hover:border-indigo-300'}`}
+                  >
+                    <p className="font-bold">{doc.name}</p>
+                    <p className="text-sm opacity-75">{doc.subject} • Grade {doc.gradeLevel || '?'}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
         </div>
 
-        {/* Main Tools Grid - unchanged */}
-        {/* ... your existing grid ... */}
+        <div className="flex justify-between items-center mb-12">
+          <div>
+            <h1 className="text-4xl font-black tracking-tight">Synthesis Hub</h1>
+            <p className="text-slate-500 mt-1">Choose a specialized neural tool</p>
+          </div>
+          <button
+            onClick={() => setIsSliderOpen(true)}
+            className="flex items-center gap-2 px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-2xl hover:border-indigo-400"
+          >
+            <Library size={18} /> Open Vault
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {toolDefinitions.map((tool) => (
+            <button
+              key={tool.id}
+              onClick={() => setActiveTool(tool.id)}
+              className={`p-8 rounded-3xl border hover:border-indigo-500 transition-all group bg-white dark:bg-slate-900`}
+            >
+              <div className={`w-12 h-12 ${tool.color} rounded-2xl flex items-center justify-center mb-6`}>
+                <tool.icon size={28} className="text-white" />
+              </div>
+              <h3 className="text-2xl font-bold mb-2">{tool.name}</h3>
+              <p className="text-slate-600 dark:text-slate-400">{tool.desc}</p>
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
 
-  // Artifact View with Local Save Options
+  // When a tool is active - show artifact view with save options
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden print:h-auto print:overflow-visible">
-      {/* Header with Save Buttons */}
-      <div className="px-8 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
+    <div className="flex flex-col h-[calc(100vh-120px)] bg-slate-50 dark:bg-slate-950">
+      {/* Header */}
+      <div className="border-b p-4 flex justify-between items-center bg-white dark:bg-slate-900">
         <div className="flex items-center gap-3">
-          <FileEdit size={18} className="text-indigo-600" />
-          <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">
-            {activeTool ? getToolDisplayName(activeTool) : 'Neural Artifact'}
-          </span>
+          <button onClick={() => setActiveTool(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
+            ← Back
+          </button>
+          <h2 className="font-bold text-lg">{getToolDisplayName(activeTool!)}</h2>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={handleRichCopy}
-            className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest ${copySuccess ? 'bg-emerald-50 text-emerald-600' : 'hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600'}`}
-          >
-            {copySuccess ? <Check size={14}/> : <Copy size={14}/>} Copy
+        <div className="flex gap-2">
+          <button onClick={handleRichCopy} className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100">Copy</button>
+          <button onClick={handleSaveMarkdown} className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100 flex items-center gap-1">
+            <Download size={16} /> Save MD
           </button>
-
-          <button 
-            onClick={handleSaveMarkdown}
-            className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
-          >
-            <Download size={14}/> Save MD
-          </button>
-
-          <button 
-            onClick={handleSavePDF}
-            className="px-4 py-2 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 rounded-xl transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest"
-          >
-            <Printer size={14}/> Save PDF
+          <button onClick={handlePrint} className="px-4 py-2 text-sm font-medium rounded-xl border hover:bg-slate-100 flex items-center gap-1">
+            <Printer size={16} /> PDF
           </button>
         </div>
       </div>
 
-      {/* Artifact Content */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0">
-        <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none print:rounded-none print:p-0">
+      {/* Content Area */}
+      <div className="flex-1 overflow-auto p-8">
+        <div className="max-w-4xl mx-auto bg-white dark:bg-slate-900 rounded-3xl p-10 shadow">
           {canvasContent ? (
-            <div 
-              className="prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500" 
-              dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent.split('--- Workflow Recommendation')[0].trim()) }} 
-            />
+            <div dangerouslySetInnerHTML={{ __html: markdownToHtml(canvasContent) }} className="prose dark:prose-invert max-w-none" />
           ) : (
-            <div className="flex flex-col items-center justify-center h-full py-40 text-center opacity-30 no-print">
-              <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-8">
-                <FileText size={48} className="text-slate-300" />
-              </div>
-              <h2 className="text-lg font-black text-slate-300 uppercase tracking-widest">Select a tool to begin synthesis</h2>
+            <div className="text-center py-20 text-slate-400">
+              Generating content...
             </div>
           )}
         </div>
