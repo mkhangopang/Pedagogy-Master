@@ -1,3 +1,6 @@
+// app/api/ai/route.ts
+// PEDAGOGY MASTER AI — Main Synthesis Route (v4.0 Tool-Aware)
+
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
 import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
@@ -20,20 +23,38 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const { toolType, userInput, priorityDocumentId, adaptiveContext, history } = body;
-    
+
     const supabase = getSupabaseServerClient(token);
     const { data: profile } = await supabase.from('profiles').select('workspace_name, name').eq('id', user.id).single();
     const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
-    // SECURE BRAIN INJECTION
+    // SECURE BRAIN INJECTION - Prioritize env var then DB
     const { data: brain } = await supabase.from('neural_brain').select('master_prompt').eq('is_active', true).maybeSingle();
-    const activeMasterPrompt = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
+    
+    const activeMasterPrompt = process.env.FOUNDER_MASTER_PROMPT?.trim() 
+      || brain?.master_prompt 
+      || DEFAULT_MASTER_PROMPT;
 
     const routeInfo = toolType ? { tool: toolType as ToolType } : detectToolIntent(userInput || "");
     const effectiveTool = routeInfo.tool;
     const expertTitle = getToolDisplayName(effectiveTool);
 
-    const customContext = `[INSTITUTION: ${brandName}]\n[INSTRUCTION: Format headers for ${brandName} standards.]\n[SPECIALIST: ${expertTitle}]`;
+    // === ENHANCED CONTEXT INJECTION ===
+    let customContext = `[INSTITUTION: ${brandName}]\n[INSTRUCTION: Format headers for ${brandName} standards.]\n[SPECIALIST: ${expertTitle}]`;
+
+    if (adaptiveContext) {
+      customContext += `\n[VAULT CONTEXT]`;
+      if (adaptiveContext.board) customContext += `\nBoard: ${adaptiveContext.board}`;
+      if (adaptiveContext.subject) customContext += `\nSubject: ${adaptiveContext.subject}`;
+      if (adaptiveContext.gradeLevel) customContext += `\nGrade Level: ${adaptiveContext.gradeLevel}`;
+      
+      if (adaptiveContext.selectedSLOs && adaptiveContext.selectedSLOs.length > 0) {
+        customContext += `\n[SELECTED SLOs FROM VAULT]\n${adaptiveContext.selectedSLOs.map((s: any) => 
+          `${s.slo_code}: ${s.slo_full_text} (Bloom: ${s.bloom_level || 'Remember'})`
+        ).join('\n')}`;
+      }
+    }
+
     const systemPrompt = await getFullPrompt(effectiveTool, customContext, activeMasterPrompt);
 
     const { text, provider, metadata } = await generateAIResponse(
@@ -44,7 +65,7 @@ export async function POST(req: NextRequest) {
       adaptiveContext,
       undefined,
       effectiveTool,
-      systemPrompt, 
+      systemPrompt,
       priorityDocumentId
     );
 
@@ -52,16 +73,23 @@ export async function POST(req: NextRequest) {
     return new Response(new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(text));
-        const groundedNote = metadata?.isGrounded ? ` | Standards Anchored: ${metadata.sourceDocument}` : '';
+        
+        const groundedNote = metadata?.isGrounded 
+          ? ` | Standards Anchored: ${metadata.sourceDocument}` 
+          : '';
+
         const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment${groundedNote}`;
+        
         controller.enqueue(encoder.encode(footer));
         controller.close();
       }
-    }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    }), { 
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' } 
+    });
 
   } catch (error: any) {
     console.error("❌ [Synthesis Fault]:", error);
-    return NextResponse.json({ 
+    return NextResponse.json({
       error: "Synthesis grid exception. Verify usage limits.",
       details: error.message
     }, { status: 500 });
