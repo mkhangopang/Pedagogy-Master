@@ -5,7 +5,8 @@ import {
   Sparkles, ClipboardCheck, BookOpen, Layers, Loader2, 
   FileText, Copy, ArrowRight, PenTool, Compass, SearchCode, 
   Zap, ChevronLeft, Library, Crown, Globe2, Globe, Check, X,
-  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck, Printer
+  FileEdit, Search, BookMarked, ArrowRightCircle, ShieldCheck, Printer,
+  BrainCircuit
 } from 'lucide-react';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
