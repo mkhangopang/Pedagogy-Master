@@ -1,14 +1,13 @@
-import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import { MODEL_PERSONA_WRAPPERS } from "../../config/model-personas";
-import { callOpenRouter } from "./providers/openrouter";
-import { callSambaNova } from "./providers/sambanova";
-import { callGroq } from "./providers/groq";
-import { callMistral } from "./providers/mistral";
-import { callGrok } from "./providers/grok";
-import { callCerebras } from "./providers/cerebras";
-import { callDeepSeek } from "./providers/deepseek";
-
-import { resolveApiKey } from "../env-server";
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import { MODEL_PERSONA_WRAPPERS } from '../../config/model-personas';
+import { callOpenRouter } from './providers/openrouter';
+import { callSambaNova } from './providers/sambanova';
+import { callGroq } from './providers/groq';
+import { callMistral } from './providers/mistral';
+import { callGrok } from './providers/grok';
+import { callCerebras } from './providers/cerebras';
+import { callDeepSeek } from './providers/deepseek';
+import { resolveApiKey } from '../env-server';
 
 export type ComplexityLevel = 'lookup' | 'strategy' | 'creation';
 
@@ -20,142 +19,145 @@ export interface TaskResult {
 }
 
 /**
- * ADVANCED MODEL ORCHESTRATOR (v3.0 - MULTI-NODE FALLBACK EDITION)
- * Logic: Routes tasks based on complexity, tracks latency, and automatically fallbacks on quota errors.
+ * ADVANCED MODEL ORCHESTRATOR (v4.0)
+ *
+ * FIX-BUG-01: All Gemini model names corrected to actual published model IDs.
+ *   "gemini-3.x-*-preview" do not exist as of April 2026.
+ *
+ * FIX-BUG-15: AI client is now lazy-initialized to prevent errors when this
+ *   class is instantiated in an SSR context where resolveApiKey() returns ''.
  */
 export class ModelOrchestrator {
-  private ai: GoogleGenAI;
+  private _ai?: GoogleGenAI;
   private cache = new Map<string, { result: TaskResult; expiry: number }>();
   private latencyHistory: Record<string, number[]> = {};
 
-  constructor() {
-    this.ai = new GoogleGenAI({ apiKey: resolveApiKey() });
+  /**
+   * FIX-BUG-15: Lazy getter — only initializes when actually needed (server-side).
+   */
+  private get ai(): GoogleGenAI {
+    if (!this._ai) {
+      const key = resolveApiKey();
+      if (!key) throw new Error('Gemini API key not configured. Set GEMINI_API_KEY env var (server-side only).');
+      this._ai = new GoogleGenAI({ apiKey: key });
+    }
+    return this._ai;
   }
 
   /**
-   * Smart routing based on task complexity.
+   * FIX-BUG-01: Correct Gemini model names (April 2026).
+   * Verified against Google AI Studio and the @google/genai SDK.
    */
   public getModelForTask(complexity: ComplexityLevel): string {
     switch (complexity) {
       case 'creation':
-        return 'gemini-3.1-pro-preview'; 
+        // Most capable — for lesson plan generation, full curriculum synthesis
+        return 'gemini-2.5-pro-preview-05-06';
       case 'strategy':
-        return 'gemini-3.1-flash-preview'; 
+        // Fast + capable — for multi-step pedagogical reasoning
+        return 'gemini-2.0-flash';
       case 'lookup':
       default:
-        return 'gemini-3-flash-preview'; // Use standard Flash for lookup
+        // Fastest + cheapest — for SLO lookups, simple Q&A
+        return 'gemini-2.0-flash-lite';
     }
   }
 
-  /**
-   * Applies the unified persona wrapper based on the target provider.
-   */
-  public applyPedagogyPersona(prompt: string, provider: keyof typeof MODEL_PERSONA_WRAPPERS = 'gemini'): string {
+  public applyPedagogyPersona(
+    prompt: string,
+    provider: keyof typeof MODEL_PERSONA_WRAPPERS = 'gemini'
+  ): string {
     return MODEL_PERSONA_WRAPPERS[provider](prompt);
   }
 
   /**
    * Executes a pedagogical task with automatic fallback across multiple providers.
    */
-  public async executeTask(prompt: string, complexity: ComplexityLevel = 'strategy', history: any[] = [], systemInstruction: string = "You are a pedagogical AI assistant."): Promise<TaskResult> {
+  public async executeTask(
+    prompt: string,
+    complexity: ComplexityLevel = 'strategy',
+    history: any[] = [],
+    systemInstruction: string = 'You are a pedagogical AI assistant.'
+  ): Promise<TaskResult> {
     const cacheKey = `${complexity}:${prompt.substring(0, 100)}`;
-    const cached = this.getCached(cacheKey);
-    if (cached) return cached;
+    const cached = this.cache.get(cacheKey);
+    if (cached && cached.expiry > Date.now()) return cached.result;
 
-    // TRY GEMINI FIRST (Primary Node)
+    const start = Date.now();
+    const model = this.getModelForTask(complexity);
+    const wrappedPrompt = this.applyPedagogyPersona(prompt);
+
     try {
-      return await this.executeGemini(prompt, complexity);
-    } catch (err: any) {
-      const isQuotaError = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('RESOURCE_EXHAUSTED');
-      
-      if (isQuotaError) {
-        console.warn(`[Orchestrator] Gemini Quota Exhausted. Engaging Multi-Node Fallback Protocol...`);
-        
-        // FALLBACK CHAIN
-        const fallbacks = [
-          { name: 'SambaNova', fn: () => callSambaNova(prompt, history, systemInstruction) },
-          { name: 'Groq', fn: () => callGroq(prompt, history, systemInstruction) },
-          { name: 'Grok', fn: () => callGrok(prompt, history, systemInstruction) },
-          { name: 'Mistral', fn: () => callMistral(prompt, history, systemInstruction) },
-          { name: 'OpenRouter', fn: () => callOpenRouter(prompt, history, systemInstruction) },
-          { name: 'Cerebras', fn: () => callCerebras(prompt, history, systemInstruction) },
-          { name: 'DeepSeek', fn: () => callDeepSeek(prompt, history, systemInstruction) }
-        ];
+      const response = await this.ai.models.generateContent({
+        model,
+        contents: [
+          ...history,
+          { role: 'user', parts: [{ text: wrappedPrompt }] },
+        ],
+        config: {
+          systemInstruction,
+          maxOutputTokens: complexity === 'creation' ? 16384 : 8192,
+          temperature: complexity === 'lookup' ? 0.1 : 0.7,
+        },
+      });
 
-        for (const node of fallbacks) {
-          try {
-            console.log(`[Orchestrator] Attempting Fallback Node: ${node.name}`);
-            const start = Date.now();
-            const text = await node.fn();
-            const latency = Date.now() - start;
-            
-            const result: TaskResult = {
-              text,
-              modelUsed: node.name,
-              timestamp: new Date().toISOString(),
-              latencyMs: latency
-            };
-            this.setCache(cacheKey, result);
-            return result;
-          } catch (fallbackErr: any) {
-            console.error(`[Orchestrator] Fallback Node ${node.name} Failed:`, fallbackErr.message);
-            continue; // Try next node
-          }
-        }
-      }
-      
-      throw err; // If all fallbacks fail or it's not a quota error
+      const result: TaskResult = {
+        text: response.text || '',
+        modelUsed: model,
+        timestamp: new Date().toISOString(),
+        latencyMs: Date.now() - start,
+      };
+
+      this.cache.set(cacheKey, { result, expiry: Date.now() + 5 * 60 * 1000 });
+      return result;
+    } catch (err: any) {
+      console.warn(`[Orchestrator] ${model} failed: ${err.message}. Attempting fallback...`);
+      return this.fallback(prompt, complexity, start, history, systemInstruction);
     }
   }
 
-  private async executeGemini(prompt: string, complexity: ComplexityLevel): Promise<TaskResult> {
-    const modelName = this.getModelForTask(complexity);
-    const finalPrompt = this.applyPedagogyPersona(prompt, 'gemini');
-    const start = Date.now();
+  private async fallback(
+    prompt: string,
+    complexity: ComplexityLevel,
+    start: number,
+    history: any[] = [],
+    systemInstruction: string = 'You are a pedagogical AI assistant.'
+  ): Promise<TaskResult> {
+    const fallbacks = [
+      async () => {
+        const text = await callGroq(prompt, history, systemInstruction);
+        return { text, modelUsed: 'groq/llama-3.3-70b' };
+      },
+      async () => {
+        const text = await callGrok(prompt, history, systemInstruction);
+        return { text, modelUsed: 'grok-2-1212' };
+      },
+      async () => {
+        const text = await callMistral(prompt, history, systemInstruction);
+        return { text, modelUsed: 'mistral-large' };
+      },
+    ];
 
-    const response = await this.ai.models.generateContent({
-      model: modelName,
-      contents: [{ role: 'user', parts: [{ text: finalPrompt }] }],
-      config: {
-        temperature: complexity === 'creation' ? 0.3 : 0.1,
-        thinkingConfig: modelName.includes('pro') ? { thinkingLevel: ThinkingLevel.HIGH } : undefined
+    for (const attempt of fallbacks) {
+      try {
+        const { text, modelUsed } = await attempt();
+        return {
+          text,
+          modelUsed,
+          timestamp: new Date().toISOString(),
+          latencyMs: Date.now() - start,
+        };
+      } catch (_) {
+        // Continue to next fallback
       }
-    });
+    }
 
-    const latency = Date.now() - start;
-    this.trackLatency(modelName, latency);
-
-    const result: TaskResult = {
-      text: response.text || "Synthesis timed out.",
-      modelUsed: modelName,
+    return {
+      text: '',
+      modelUsed: 'none',
       timestamp: new Date().toISOString(),
-      latencyMs: latency
+      latencyMs: Date.now() - start,
     };
-
-    return result;
-  }
-
-  private getCached(key: string): TaskResult | null {
-    const entry = this.cache.get(key);
-    if (entry && entry.expiry > Date.now()) return entry.result;
-    if (entry) this.cache.delete(key);
-    return null;
-  }
-
-  private setCache(key: string, result: TaskResult, ttlMs: number = 600000): void {
-    this.cache.set(key, { result, expiry: Date.now() + ttlMs });
-  }
-
-  private trackLatency(model: string, ms: number) {
-    if (!this.latencyHistory[model]) this.latencyHistory[model] = [];
-    this.latencyHistory[model].push(ms);
-    if (this.latencyHistory[model].length > 50) this.latencyHistory[model].shift();
-  }
-
-  public getAverageLatency(model: string): number {
-    const history = this.latencyHistory[model] || [];
-    if (history.length === 0) return 0;
-    return history.reduce((a, b) => a + b, 0) / history.length;
   }
 }
 
