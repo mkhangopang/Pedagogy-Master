@@ -1,9 +1,7 @@
-
 import { SupabaseClient } from '@supabase/supabase-js';
 import { orchestrator } from '@/lib/ai/model-orchestrator';
 import { generateEmbedding } from './embeddings';
 import { extractSLOCodes } from './slo-extractor';
-
 import { extractJson } from '@/lib/ai/utils';
 
 export interface RetrievalFilters {
@@ -36,10 +34,10 @@ export async function hybridSearch(
     const queryEmbedding = await generateEmbedding(query);
 
     const { data, error } = await supabase.rpc('hybrid_search_chunks_v3', {
-      query_text: query,
-      query_embedding: queryEmbedding,
-      match_count: topK,
-      filter_document_ids: filters.documentIds || null
+      query_text         : query,
+      query_embedding    : queryEmbedding,
+      match_count        : topK,
+      filter_document_ids: filters.documentIds?.length ? filters.documentIds : null,
     });
 
     if (error) {
@@ -48,11 +46,11 @@ export async function hybridSearch(
     }
 
     return (data || []).map((item: any) => ({
-      id: item.id,
+      id        : item.id,
       documentId: item.document_id,
-      content: item.chunk_text,
-      metadata: item.metadata,
-      rank: item.combined_score
+      content   : item.chunk_text,
+      metadata  : item.metadata,
+      rank      : item.combined_score,
     }));
   } catch (error) {
     console.error('Hybrid search failed:', error);
@@ -62,32 +60,43 @@ export async function hybridSearch(
 
 /**
  * SLO LOOKUP: Specialized retrieval for specific Student Learning Outcomes.
+ *
+ * FIX-BUG-08: Previously passed an empty array to .in('document_id', []) when
+ *   documentIds was undefined, which returns zero rows. Supabase's IN([]) is a
+ *   no-op — it does not fetch all rows. Fixed to use unconstrained hybrid search
+ *   as the fallback when no documentIds are provided.
  */
 export async function sloLookup(
-  sloCode: string,
-  supabase: SupabaseClient,
+  sloCode   : string,
+  supabase  : SupabaseClient,
   documentIds?: string[]
 ): Promise<RetrievedChunk[]> {
   try {
+    // If no documentIds provided, skip the exact lookup and go straight to semantic search
+    if (!documentIds || documentIds.length === 0) {
+      console.warn(`[sloLookup] No documentIds provided — falling back to hybrid search for "${sloCode}"`);
+      return hybridSearch(`SLO ${sloCode}`, supabase, {}, 3);
+    }
+
     const { data, error } = await supabase
       .from('document_chunks')
       .select('id, document_id, chunk_text, metadata')
       .contains('slo_codes', [sloCode])
-      .in('document_id', documentIds || [])
+      .in('document_id', documentIds)
       .limit(5);
 
     if (error) throw error;
 
     if (data && data.length > 0) {
       return data.map((item: any) => ({
-        id: item.id,
+        id        : item.id,
         documentId: item.document_id,
-        content: item.chunk_text,
-        metadata: item.metadata
+        content   : item.chunk_text,
+        metadata  : item.metadata,
       }));
     }
 
-    // Fallback to hybrid search if no exact code match found
+    // Fallback to hybrid search scoped to the provided documents
     return hybridSearch(`SLO ${sloCode}`, supabase, { documentIds }, 3);
   } catch (error) {
     console.error('SLO lookup failed:', error);
@@ -99,13 +108,13 @@ export async function sloLookup(
  * SMART RETRIEVAL: Automatically chooses the best search strategy based on query intent.
  */
 export async function smartRetrieval(
-  query: string,
+  query  : string,
   supabase: SupabaseClient,
   filters: RetrievalFilters = {},
-  topK: number = 5
+  topK   : number = 5
 ): Promise<RetrievedChunk[]> {
   const targetSLOs = extractSLOCodes(query);
-  
+
   if (targetSLOs.length > 0) {
     return sloLookup(targetSLOs[0].code, supabase, filters.documentIds);
   }
@@ -114,46 +123,39 @@ export async function smartRetrieval(
 }
 
 /**
- * RERANK: Improve retrieval quality by reranking results
- * FIXED: Uses @google/genai and property access for .text
+ * RERANK: Improve retrieval quality by reranking results.
  */
 export async function rerankResults(
-  query: string,
+  query : string,
   chunks: RetrievedChunk[],
-  topK: number = 5
+  topK  : number = 5
 ): Promise<RetrievedChunk[]> {
   if (chunks.length === 0) return [];
 
   try {
     const prompt = `You are a relevance scorer for curriculum documents.
-      
-      QUERY: "${query}"
-      
-      Rate each chunk's relevance to the query on a scale of 0-100.
-      
-      CHUNKS:
-      ${chunks.map((chunk, i) => `[${i}] ${chunk.content.substring(0, 500)}...`).join('\n---\n')}
-      
-      Return ONLY a JSON array of numbers (scores) representing the relevance of each index.
-      Example: [85, 72, 91, 45, 68]`;
+
+QUERY: "${query}"
+
+Rate each chunk's relevance to the query on a scale of 0-100.
+
+CHUNKS:
+${chunks.map((chunk, i) => `[${i}] ${chunk.content.substring(0, 500)}...`).join('\n---\n')}
+
+Return ONLY a JSON array of numbers (scores) representing relevance of each index.
+Example: [85, 72, 91, 45, 68]`;
 
     const result = await orchestrator.executeTask(prompt, 'lookup');
     const scores = extractJson(result.text || '[]');
 
     if (!Array.isArray(scores) || scores.length !== chunks.length) {
-      console.warn('Invalid scores format, using original order');
       return chunks.slice(0, topK);
     }
 
-    const rankedChunks = chunks.map((chunk, i) => ({
-      ...chunk,
-      rank: typeof scores[i] === 'number' ? scores[i] : 0
-    }));
-
-    return rankedChunks
+    return chunks
+      .map((chunk, i) => ({ ...chunk, rank: typeof scores[i] === 'number' ? scores[i] : 0 }))
       .sort((a, b) => (b.rank || 0) - (a.rank || 0))
       .slice(0, topK);
-      
   } catch (error) {
     console.error('Reranking error:', error);
     return chunks.slice(0, topK);
@@ -164,9 +166,9 @@ export async function rerankResults(
  * CONTEXT BUILDER: Constructs a grounded context string for the LLM.
  */
 export async function buildContext(
-  query: string,
-  supabase: SupabaseClient,
-  filters: RetrievalFilters = {},
+  query    : string,
+  supabase : SupabaseClient,
+  filters  : RetrievalFilters = {},
   maxTokens: number = 20000
 ): Promise<string> {
   try {
@@ -196,6 +198,6 @@ ${chunk.content}
     return context || 'Neural vault search returned insufficient results.';
   } catch (error) {
     console.error('Context building error:', error);
-    return 'Grid Error: Unable to retrieve grounded curriculum context.';
+    return 'Error: Unable to retrieve grounded curriculum context.';
   }
 }
