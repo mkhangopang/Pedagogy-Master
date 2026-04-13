@@ -7,6 +7,10 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 export const runtime = 'nodejs'; 
 export const dynamic = 'force-dynamic';
 
+export async function OPTIONS() {
+  return NextResponse.json({ storageActive: isR2Configured() });
+}
+
 /**
  * PRODUCTION UPLOAD GATEWAY (v136.5)
  * Fix: Lean header generation to ensure R2 PutObject stability across all regions.

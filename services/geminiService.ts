@@ -14,18 +14,22 @@ function parseAIError(errorData: any): string {
   const lowerMsg = msg.toLowerCase();
   
   if (lowerMsg.includes('grid_saturated') || lowerMsg.includes('saturated') || lowerMsg.includes('429')) {
-    return "AI Alert: Synthesis grid exception.";
+    return "AI Alert: Synthesis grid saturated. Please wait 60s for neural cooling.";
   }
 
-  if (lowerMsg.includes('grid_fault')) {
-    return "AI Alert: Synthesis grid exception.";
+  if (lowerMsg.includes('grid_fault') || lowerMsg.includes('vault_error')) {
+    return "AI Alert: Neural context node missing. Try re-selecting the document.";
   }
   
   if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('504')) {
-    return "AI Alert: Handshake Interrupted. Retrying...";
+    return "AI Alert: Neural handshake timed out. Retrying connection...";
   }
 
-  return "AI Alert: Synthesis grid exception.";
+  if (lowerMsg.includes('quota') || lowerMsg.includes('exhausted')) {
+    return "AI Alert: Neural quota exhausted for this node. Try again in a few minutes.";
+  }
+
+  return "AI Alert: Synthesis grid exception. Check your connectivity.";
 }
 
 /**

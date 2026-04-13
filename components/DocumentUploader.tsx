@@ -2,12 +2,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loader2, RefreshCw, Clock } from 'lucide-react';
+import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loader2, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import * as pdfjs from 'pdfjs-dist';
 
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://esm.sh/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs`;
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 }
 
 export default function DocumentUploader({ userId, onComplete, onCancel }: any) {
@@ -16,7 +16,19 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const [status, setStatus] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
+  const [mode, setMode] = useState<'upload' | 'manual'>('upload');
+  const [manualText, setManualText] = useState('');
+  const [manualTitle, setManualTitle] = useState('');
   
+  const [isStorageOffline, setIsStorageOffline] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/docs/upload', { method: 'OPTIONS' })
+      .then(res => res.json())
+      .then(data => setIsStorageOffline(!data.storageActive))
+      .catch(() => setIsStorageOffline(true));
+  }, []);
+
   const isPolling = useRef(false);
   // BUG-U1 FIX: Progress ref to avoid stale closure
   const progressRef = useRef(0);
@@ -185,6 +197,52 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
     }
   };
 
+  const handleManualSubmit = async () => {
+    if (!manualText.trim() || !manualTitle.trim()) {
+      setError("Please provide both a title and curriculum text.");
+      return;
+    }
+
+    setError(null);
+    setIsUploading(true);
+    lastTriggerRef.current = Date.now();
+    updateProgress(10);
+    setStatus('Initializing Neural Context...');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("Identity node unreachable.");
+
+      const handshake = await handshakeWithGateway(manualTitle, 'text/plain', manualText, session.access_token);
+      const { documentId } = handshake;
+      setDocId(documentId);
+      
+      updateProgress(40);
+      setStatus('Initializing Neural Orchestrator...');
+      
+      const triggerController = new AbortController();
+      const triggerTimeout = setTimeout(() => triggerController.abort(), 290000);
+
+      fetch(`/api/docs/process/${documentId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+        signal: triggerController.signal
+      }).then(async (res) => {
+        clearTimeout(triggerTimeout);
+        if (!res.ok) {
+           const errData = await res.json().catch(() => ({}));
+           console.error("Orchestrator Trigger Fault:", errData);
+        }
+      }).catch(e => {
+        if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);
+      });
+
+    } catch (err: any) {
+      setError(err.message || "Institutional Sync Failure.");
+      setIsUploading(false);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -305,6 +363,32 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Foundational Curriculum Orchestrator</p>
         </div>
 
+        {!isUploading && !error && (
+          <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-2xl">
+            <button 
+              onClick={() => setMode('upload')}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'upload' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
+            >
+              File Upload
+            </button>
+            <button 
+              onClick={() => setMode('manual')}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'manual' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
+            >
+              Manual Entry
+            </button>
+          </div>
+        )}
+
+        {isStorageOffline && mode === 'upload' && !isUploading && (
+          <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <AlertTriangle size={18} className="text-amber-500 shrink-0" />
+            <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-tight">
+              Cloud Storage Offline: Using local extraction only. For best results, use <button onClick={() => setMode('manual')} className="underline decoration-2">Manual Entry</button>.
+            </p>
+          </div>
+        )}
+
         {error ? (
           <div className="p-8 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-[2rem] space-y-6 animate-in slide-in-from-top-2">
             <div className="flex items-start gap-4 text-rose-600">
@@ -334,6 +418,34 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                <span className="text-[10px] font-black text-slate-400">{Math.round(progress)}%</span>
              </div>
              <p className="text-[9px] text-slate-400 font-medium italic">Establishing neural context nodes. Do not sever the connection.</p>
+          </div>
+        ) : mode === 'manual' ? (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Document Title</label>
+              <input 
+                type="text" 
+                value={manualTitle}
+                onChange={(e) => setManualTitle(e.target.value)}
+                placeholder="e.g. Grade 10 Mathematics - Sindh Board"
+                className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Curriculum Text (Paste Content)</label>
+              <textarea 
+                value={manualText}
+                onChange={(e) => setManualText(e.target.value)}
+                placeholder="Paste the SLOs or curriculum content here..."
+                className="w-full h-48 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none"
+              />
+            </div>
+            <button 
+              onClick={handleManualSubmit}
+              className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-[10px] uppercase tracking-[0.2em] shadow-xl hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center gap-3"
+            >
+              <Zap size={16} /> Sync Manual Asset
+            </button>
           </div>
         ) : (
           <label className="group relative cursor-pointer block">
