@@ -12,11 +12,17 @@ const nextConfig = {
     optimizePackageImports: ['@supabase/supabase-js', 'lucide-react', 'recharts'],
     serverActions: {
       bodySizeLimit: '10mb'
-    }
+    },
+    // FIX-BUG-04: Enable unstable_after so background ingestion tasks
+    // are not killed when the HTTP response is flushed on Vercel.
+    after: true,
   },
   // Build-time diagnostic for CI/CD environments
   webpack: (config, { dev, isServer }) => {
-    if (!isServer) {
+    if (isServer) {
+      // Prevents "Can't resolve 'canvas'" warnings from pdf-parse
+      config.resolve.alias.canvas = false;
+    } else {
       // Logic for client-side bundle verification
       const urlExists = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
       const keyExists = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
