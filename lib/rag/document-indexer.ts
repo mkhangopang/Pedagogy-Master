@@ -110,7 +110,8 @@ export async function indexDocumentForRAG(
         const progressPercent = Math.round(70 + ((i / nodes.length) * 25)); // EMBED step is 70-95%
         await supabase.from('ingestion_jobs').update({ 
           status: 'processing',
-          step: 'embed',
+          step: 'EMBED', // Use uppercase to match enum
+          updated_at: new Date().toISOString(), // CRITICAL: Update timestamp to prevent heartbeat re-trigger
           payload: { 
             processed: i, 
             total: nodes.length, 

@@ -833,13 +833,13 @@ export async function POST(
     // Stale 'processing' job — reset status but keep step and payload to resume
     console.log(`[Ingestion] Stale job detected (last update ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Resuming from step ${job.step}...`);
     await supabase.from('ingestion_jobs')
-      .update({ status: 'pending' })
+      .update({ status: 'pending', updated_at: new Date().toISOString() })
       .eq('id', job.id);
     // Keep job.step as is
   } else if (job.status === 'pending') {
     // Job exists but never started or was reset — proceed with current step
     await supabase.from('ingestion_jobs')
-      .update({ status: 'processing', message: null })
+      .update({ status: 'processing', message: null, updated_at: new Date().toISOString() })
       .eq('id', job.id);
     // Do not reset step to EXTRACT if it's already LINEARIZE or EMBED
     if (!job.step) job.step = IngestionStep.EXTRACT;
@@ -1138,9 +1138,7 @@ export async function POST(
           console.warn(`[Stage 4] Text too short (${txt.length}) — skipping RAG`);
         }
 
-        await queue.markComplete(job.id);
-        
-        // Explicit status update with error logging
+        // Explicit status update BEFORE markComplete to ensure poller sees 'ready'
         const { error: updateErr } = await supabase
           .from('documents')
           .update({
@@ -1157,6 +1155,8 @@ export async function POST(
         } else {
           console.log('[Stage 4] Document status → ready ✓');
         }
+
+        await queue.markComplete(job.id);
       }
 
       console.log(`[Ingestion] DONE doc=${documentId}`);
