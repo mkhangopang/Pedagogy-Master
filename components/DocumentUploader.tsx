@@ -241,7 +241,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
            const errData = await res.json().catch(() => ({}));
            console.error("Orchestrator Trigger Fault:", errData);
            if (res.status >= 500) {
-             setError(errData.error || "Neural Grid Connection Severed.");
+             setError(errData.error || errData.details || "Neural Grid Connection Severed.");
              setIsUploading(false);
            }
         }
@@ -315,7 +315,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
            const errData = await res.json().catch(() => ({}));
            console.error("Orchestrator Trigger Fault:", errData);
            if (res.status >= 500) {
-             setError(errData.error || "Neural Grid Connection Severed.");
+             setError(errData.error || errData.details || "Neural Grid Connection Severed.");
              setIsUploading(false);
            }
         }

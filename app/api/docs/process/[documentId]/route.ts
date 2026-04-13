@@ -813,16 +813,24 @@ export async function POST(
   props: { params: Promise<{ documentId: string }> }
 ) {
   const { documentId } = await props.params;
-  const supabase = getSupabaseAdminClient();
-  const queue    = new IngestionQueue(supabase);
+  const authHeader = req.headers.get('Authorization');
+  const token = authHeader?.split(' ')[1];
 
-  // Check for service role key early
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder')) {
-    console.error('[Ingestion] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing or invalid.');
-    return NextResponse.json({ 
-      error: 'Infrastructure misconfiguration: Service Role Key missing.',
-      details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment.'
-    }, { status: 500 });
+  // Use admin client for initial job check/creation
+  const adminSupabase = getSupabaseAdminClient();
+  const queue         = new IngestionQueue(adminSupabase);
+
+  // Check for service role key - log warning but don't fail hard if we have a user token
+  const hasServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
+  
+  if (!hasServiceKey) {
+    console.warn('[Ingestion] WARNING: SUPABASE_SERVICE_ROLE_KEY is missing. Background task will attempt to use user token.');
+    if (!token) {
+      return NextResponse.json({ 
+        error: 'Infrastructure misconfiguration: Service Role Key missing and no user token provided.',
+        details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment.'
+      }, { status: 500 });
+    }
   }
 
   let job = await queue.getJobStatus(documentId).catch(() => null);
@@ -841,7 +849,7 @@ export async function POST(
     }
     // Stale 'processing' job — reset status but keep step and payload to resume
     console.log(`[Ingestion] Stale job detected (last update ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Resuming from step ${job.step}...`);
-    const { error: resetErr } = await supabase.from('ingestion_jobs')
+    const { error: resetErr } = await adminSupabase.from('ingestion_jobs')
       .update({ status: 'pending', updated_at: new Date().toISOString() })
       .eq('id', job.id);
     
@@ -852,7 +860,7 @@ export async function POST(
     // Keep job.step as is
   } else if (job.status === 'pending') {
     // Job exists but never started or was reset — proceed with current step
-    const { error: startErr } = await supabase.from('ingestion_jobs')
+    const { error: startErr } = await adminSupabase.from('ingestion_jobs')
       .update({ status: 'processing', message: null, updated_at: new Date().toISOString() })
       .eq('id', job.id);
     
@@ -872,6 +880,11 @@ export async function POST(
   // This ensures the process continues even after the response is sent
   after(async () => {
     console.log(`[Ingestion] Background process started for doc=${documentId}`);
+    
+    // Use user-scoped client if possible, fallback to admin
+    const supabase = token ? getSupabaseServerClient(token) : getSupabaseAdminClient();
+    const queue    = new IngestionQueue(supabase);
+
     try {
       // FIX: Add retry loop for document fetch to handle Supabase replication lag/race conditions
       let doc = null;
