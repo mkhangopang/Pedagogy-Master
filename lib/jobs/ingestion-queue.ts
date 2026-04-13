@@ -54,7 +54,7 @@ export class IngestionQueue {
    * Updates the progress of a specific job.
    */
   async updateProgress(jobId: string, progress: JobProgress) {
-    await this.supabase
+    const { error } = await this.supabase
       .from('ingestion_jobs')
       .update({
         step: progress.step,
@@ -63,6 +63,11 @@ export class IngestionQueue {
         updated_at: new Date().toISOString(),
       })
       .eq('id', jobId);
+    
+    if (error) {
+      console.error(`[IngestionQueue] updateProgress FAILED for ${jobId}:`, error);
+      throw new Error(`QUEUE_UPDATE_ERROR: ${error.message}`);
+    }
   }
 
   /**
@@ -70,7 +75,7 @@ export class IngestionQueue {
    * FIX-BUG-03b: Also sets step = COMPLETE so route-level guards work.
    */
   async markComplete(jobId: string) {
-    await this.supabase
+    const { error } = await this.supabase
       .from('ingestion_jobs')
       .update({
         status: JobStatus.COMPLETE,
@@ -79,13 +84,18 @@ export class IngestionQueue {
         updated_at: new Date().toISOString(),
       })
       .eq('id', jobId);
+
+    if (error) {
+      console.error(`[IngestionQueue] markComplete FAILED for ${jobId}:`, error);
+      throw new Error(`QUEUE_COMPLETE_ERROR: ${error.message}`);
+    }
   }
 
   /**
    * Handles failure with error preservation.
    */
   async markFailed(jobId: string, error: string) {
-    await this.supabase
+    const { error: dbError } = await this.supabase
       .from('ingestion_jobs')
       .update({
         status: JobStatus.FAILED,
@@ -93,6 +103,10 @@ export class IngestionQueue {
         updated_at: new Date().toISOString(),
       })
       .eq('id', jobId);
+
+    if (dbError) {
+      console.error(`[IngestionQueue] markFailed FAILED for ${jobId}:`, dbError);
+    }
   }
 
   /**

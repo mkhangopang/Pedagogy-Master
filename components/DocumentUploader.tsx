@@ -134,9 +134,17 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                 if (!res.ok) {
                   const errData = await res.json().catch(() => ({}));
                   console.error("Orchestrator Trigger Fault:", errData);
+                  // Only set error if it's a critical infrastructure failure (500)
+                  if (res.status >= 500) {
+                    setError(errData.error || "Neural Grid Connection Severed.");
+                    setIsUploading(false);
+                  }
                 }
               }).catch(e => {
-                if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);
+                if (e.name !== 'AbortError') {
+                  console.warn("Background trigger warning:", e);
+                  // Don't kill the UI for network blips, the poller will retry
+                }
               });
             }
           }
@@ -232,6 +240,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         if (!res.ok) {
            const errData = await res.json().catch(() => ({}));
            console.error("Orchestrator Trigger Fault:", errData);
+           if (res.status >= 500) {
+             setError(errData.error || "Neural Grid Connection Severed.");
+             setIsUploading(false);
+           }
         }
       }).catch(e => {
         if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);
@@ -302,6 +314,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         if (!res.ok) {
            const errData = await res.json().catch(() => ({}));
            console.error("Orchestrator Trigger Fault:", errData);
+           if (res.status >= 500) {
+             setError(errData.error || "Neural Grid Connection Severed.");
+             setIsUploading(false);
+           }
         }
       }).catch(e => {
         if (e.name !== 'AbortError') console.warn("Background trigger warning:", e);

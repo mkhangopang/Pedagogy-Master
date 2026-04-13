@@ -816,6 +816,15 @@ export async function POST(
   const supabase = getSupabaseAdminClient();
   const queue    = new IngestionQueue(supabase);
 
+  // Check for service role key early
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder')) {
+    console.error('[Ingestion] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing or invalid.');
+    return NextResponse.json({ 
+      error: 'Infrastructure misconfiguration: Service Role Key missing.',
+      details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment.'
+    }, { status: 500 });
+  }
+
   let job = await queue.getJobStatus(documentId).catch(() => null);
 
   if (!job) {
@@ -832,15 +841,25 @@ export async function POST(
     }
     // Stale 'processing' job — reset status but keep step and payload to resume
     console.log(`[Ingestion] Stale job detected (last update ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Resuming from step ${job.step}...`);
-    await supabase.from('ingestion_jobs')
+    const { error: resetErr } = await supabase.from('ingestion_jobs')
       .update({ status: 'pending', updated_at: new Date().toISOString() })
       .eq('id', job.id);
+    
+    if (resetErr) {
+      console.error('[Ingestion] Failed to reset stale job:', resetErr);
+      return NextResponse.json({ error: 'Job reset failed', details: resetErr.message }, { status: 500 });
+    }
     // Keep job.step as is
   } else if (job.status === 'pending') {
     // Job exists but never started or was reset — proceed with current step
-    await supabase.from('ingestion_jobs')
+    const { error: startErr } = await supabase.from('ingestion_jobs')
       .update({ status: 'processing', message: null, updated_at: new Date().toISOString() })
       .eq('id', job.id);
+    
+    if (startErr) {
+      console.error('[Ingestion] Failed to start pending job:', startErr);
+      return NextResponse.json({ error: 'Job start failed', details: startErr.message }, { status: 500 });
+    }
     // Do not reset step to EXTRACT if it's already LINEARIZE or EMBED
     if (!job.step) job.step = IngestionStep.EXTRACT;
   }
@@ -852,6 +871,7 @@ export async function POST(
   // Run the ingestion process in the background using Next.js 15 'after' hook
   // This ensures the process continues even after the response is sent
   after(async () => {
+    console.log(`[Ingestion] Background process started for doc=${documentId}`);
     try {
       // FIX: Add retry loop for document fetch to handle Supabase replication lag/race conditions
       let doc = null;
