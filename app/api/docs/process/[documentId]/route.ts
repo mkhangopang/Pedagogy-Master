@@ -753,6 +753,76 @@ async function extractSlos(
   return allSlos;
 }
 
+// ── ENRICHMENT ENGINE ────────────────────────────────────────────────────────
+async function enrichSlos(documentId: string, supabase: any, apiKey: string, jobId: string, queue: IngestionQueue) {
+  const { data: slos, error } = await supabase.from('slo_database').select('*').eq('document_id', documentId);
+  if (error || !slos || slos.length === 0) {
+    console.warn(`[Enrich] No SLOs found for document ${documentId}`);
+    return;
+  }
+
+  console.log(`[Enrich] Starting enrichment for ${slos.length} SLOs...`);
+
+  const BATCH_SIZE = 15;
+  for (let i = 0; i < slos.length; i += BATCH_SIZE) {
+    const batch = slos.slice(i, i + BATCH_SIZE);
+    const progress = Math.round((i / slos.length) * 10) + 75; // 75% to 85%
+    
+    await queue.updateProgress(jobId, {
+      step: IngestionStep.ENRICH,
+      progress,
+      message: `Enriching SLOs (${i + 1}-${Math.min(i + BATCH_SIZE, slos.length)} of ${slos.length})...`
+    });
+
+    const prompt = `IDENTITY: Pedagogy Master AI (Enrichment Engine)
+GOAL: For each Student Learning Outcome (SLO) below, determine the Bloom's Taxonomy level, Cognitive Complexity, and 3-5 relevant keywords.
+
+SLOs:
+${batch.map((s: any, idx: number) => `${idx + 1}. [CODE: ${s.slo_code || 'NONE'}] ${s.slo_full_text}`).join('\n')}
+
+=== SCHEMA ===
+Return ONLY a JSON object with a field "enrichments" which is an array of objects:
+{
+  "slo_code": string,
+  "bloom_level": "Remembering" | "Understanding" | "Applying" | "Analyzing" | "Evaluating" | "Creating",
+  "cognitive_complexity": "Low" | "Medium" | "High",
+  "keywords": string[]
+}
+
+RULES:
+- Match the slo_code exactly.
+- If no code, use the index (e.g. "INDEX_1").
+- Return ONLY valid JSON.`;
+
+    try {
+      const ai = new GoogleGenAI({ apiKey });
+      const r = await ai.models.generateContent({
+        model: MODEL_PRIMARY,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        config: { responseMimeType: 'application/json' as const }
+      });
+      
+      const data = safeJson(r.text || '');
+      const enrichments = data.enrichments || [];
+      
+      if (Array.isArray(enrichments)) {
+        for (const item of enrichments) {
+          const original = batch.find((s: any) => s.slo_code === item.slo_code);
+          if (original) {
+            await supabase.from('slo_database').update({
+              bloom_level: item.bloom_level,
+              cognitive_complexity: item.cognitive_complexity,
+              keywords: item.keywords
+            }).eq('id', original.id);
+          }
+        }
+      }
+    } catch (e: any) {
+      console.error(`[Enrich] Batch ${i} failed:`, e.message);
+    }
+  }
+}
+
 // ── LEDGER JSON BUILDER ───────────────────────────────────────────────────────
 function buildLedger(slos: any[], boardKey: string, subjectCode: string): string {
   const boardName = BOARD_NAMES[boardKey] || boardKey;
@@ -816,24 +886,28 @@ export async function POST(
   const authHeader = req.headers.get('Authorization');
   const token = authHeader?.split(' ')[1];
 
-  // Use admin client for initial job check/creation
-  const adminSupabase = getSupabaseAdminClient();
-  const queue         = new IngestionQueue(adminSupabase);
-
-  // Check for service role key - log warning but don't fail hard if we have a user token
+  // Check for service role key early
   const hasServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
   
-  if (!hasServiceKey) {
-    console.warn('[Ingestion] WARNING: SUPABASE_SERVICE_ROLE_KEY is missing. Background task will attempt to use user token.');
-    if (!token) {
-      return NextResponse.json({ 
-        error: 'Infrastructure misconfiguration: Service Role Key missing and no user token provided.',
-        details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment.'
-      }, { status: 500 });
-    }
+  // Determine which client to use for the trigger phase
+  const triggerSupabase = hasServiceKey ? getSupabaseAdminClient() : (token ? getSupabaseServerClient(token) : getSupabaseAdminClient());
+  const queue           = new IngestionQueue(triggerSupabase);
+
+  if (!hasServiceKey && !token) {
+    console.error('[Ingestion] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing and no user token provided.');
+    return NextResponse.json({ 
+      error: 'Infrastructure misconfiguration: Service Role Key missing and no user token provided.',
+      details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment or ensure you are logged in.'
+    }, { status: 500 });
   }
 
-  let job = await queue.getJobStatus(documentId).catch(() => null);
+  let job: any;
+  try {
+    job = await queue.getJobStatus(documentId);
+  } catch (e: any) {
+    console.error('[Ingestion] Failed to fetch job status:', e.message);
+    return NextResponse.json({ error: 'Vault access failure', details: e.message }, { status: 500 });
+  }
 
   if (!job) {
     const id = await queue.enqueue(documentId);
@@ -849,7 +923,7 @@ export async function POST(
     }
     // Stale 'processing' job — reset status but keep step and payload to resume
     console.log(`[Ingestion] Stale job detected (last update ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Resuming from step ${job.step}...`);
-    const { error: resetErr } = await adminSupabase.from('ingestion_jobs')
+    const { error: resetErr } = await triggerSupabase.from('ingestion_jobs')
       .update({ status: 'pending', updated_at: new Date().toISOString() })
       .eq('id', job.id);
     
@@ -860,7 +934,7 @@ export async function POST(
     // Keep job.step as is
   } else if (job.status === 'pending') {
     // Job exists but never started or was reset — proceed with current step
-    const { error: startErr } = await adminSupabase.from('ingestion_jobs')
+    const { error: startErr } = await triggerSupabase.from('ingestion_jobs')
       .update({ status: 'processing', message: null, updated_at: new Date().toISOString() })
       .eq('id', job.id);
     
@@ -1126,25 +1200,40 @@ export async function POST(
           }
 
           await queue.updateProgress(job.id, {
-            step: IngestionStep.EMBED, progress: 75, message: 'Building RAG index...',
+            step: IngestionStep.ENRICH, progress: 75, message: 'Enriching SLO metadata...',
           });
           job = await queue.getJobStatus(documentId);
         } else {
           // Skip extraction but move to next step
           await queue.updateProgress(job.id, {
-            step: IngestionStep.EMBED, progress: 75, message: 'Indexing ledger...',
+            step: IngestionStep.ENRICH, progress: 75, message: 'Enriching ledger metadata...',
           });
           job = await queue.getJobStatus(documentId);
         }
       }
 
       // ════════════════════════════════════════════════════════
-      // STAGE 3 — ENRICH: SKIPPED
+      // STAGE 3 — ENRICH (AI → Bloom Levels & Keywords)
       // ════════════════════════════════════════════════════════
       if (job.step === IngestionStep.ENRICH) {
-        console.log(`[Stage 3] Skipped`);
+        console.log(`[Stage 3] START ENRICH`);
+        
+        const apiKey =
+            process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+            process.env.API_KEY ||
+            process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+            process.env.GEMINI_API_KEY ||
+            process.env.GOOGLE_AI_API_KEY ||
+            '';
+
+        if (apiKey) {
+          await enrichSlos(documentId, supabase, apiKey, job.id, queue);
+        } else {
+          console.warn('[Stage 3] Skipping enrichment: No API key found.');
+        }
+
         await queue.updateProgress(job.id, {
-          step: IngestionStep.EMBED, progress: 75, message: 'Building RAG index...',
+          step: IngestionStep.EMBED, progress: 85, message: 'Building RAG index...',
         });
         job = await queue.getJobStatus(documentId);
       }
