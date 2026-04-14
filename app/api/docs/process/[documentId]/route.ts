@@ -3,7 +3,7 @@
 // FIXES: Math (M) curriculum support — horizontal SLO table, grades I-VIII, OCR in grade position
 
 import { NextRequest, NextResponse, after } from 'next/server';
-import { getSupabaseAdminClient } from '../../../../../lib/supabase';
+import { getSupabaseAdminClient, getSupabaseServerClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { IngestionStep } from '../../../../../types';

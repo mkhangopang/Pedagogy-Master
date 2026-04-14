@@ -13,9 +13,6 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb'
     },
-    // FIX-BUG-04: Enable unstable_after so background ingestion tasks
-    // are not killed when the HTTP response is flushed on Vercel.
-    after: true,
   },
   // Build-time diagnostic for CI/CD environments
   webpack: (config, { dev, isServer }) => {
