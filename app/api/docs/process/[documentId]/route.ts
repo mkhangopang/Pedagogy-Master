@@ -18,7 +18,8 @@ export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const MODEL_PRIMARY  = 'gemini-3-flash-preview';
-const MODEL_FALLBACK = 'gemini-3-flash-preview';
+const MODEL_COMPLEX  = 'gemini-3.1-pro-preview';
+const MODEL_LITE     = 'gemini-3.1-flash-lite-preview';
 
 const CHUNK_SIZE  = 10000;
 const OVERLAP     = 2500;
@@ -399,75 +400,107 @@ ${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you
 ${chunk}`;
 }
 
+// ── AI CHAIN ORCHESTRATOR ─────────────────────────────────────────────────────
+/**
+ * Orchestrates a chain of AI models with safe fallbacks.
+ * Tries Gemini models first, then falls back to Groq/OpenAI if needed.
+ */
+async function callAIChain(
+  geminiKey: string,
+  prompt: string,
+  schema?: any,
+  responseMimeType: 'application/json' | 'text/plain' = 'application/json'
+): Promise<any> {
+  const chain = [
+    { provider: 'gemini', model: MODEL_PRIMARY, key: geminiKey },
+    { provider: 'gemini', model: MODEL_COMPLEX, key: geminiKey },
+    { provider: 'gemini', model: MODEL_LITE, key: geminiKey },
+    { provider: 'groq', model: 'llama-3.3-70b-versatile', key: process.env.GROQ_API_KEY },
+    { provider: 'groq', model: 'llama-3.1-8b-instant', key: process.env.GROQ_API_KEY },
+    { provider: 'openai', model: 'gpt-4o-mini', key: process.env.OPENAI_API_KEY },
+  ].filter(link => !!link.key);
+
+  if (chain.length === 0) {
+    throw new Error('ORCHESTRATOR_FAULT: No AI provider keys found in environment.');
+  }
+
+  for (const link of chain) {
+    let attempts = 0;
+    const maxAttempts = 2;
+
+    while (attempts < maxAttempts) {
+      try {
+        console.log(`[AI Chain] Trying ${link.provider}:${link.model} (Attempt ${attempts + 1}/${maxAttempts})`);
+        
+        let textResult = '';
+        if (link.provider === 'gemini') {
+          const ai = new GoogleGenAI({ apiKey: link.key! });
+          const response = await ai.models.generateContent({
+            model: link.model,
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            config: {
+              responseMimeType,
+              responseSchema: schema,
+              temperature: 0.1,
+            }
+          });
+          textResult = response.text || '';
+        } else {
+          const openai = new OpenAI({ 
+            apiKey: link.key!, 
+            baseURL: link.provider === 'groq' ? 'https://api.groq.com/openai/v1' : undefined 
+          });
+          const completion = await openai.chat.completions.create({
+            model: link.model,
+            messages: [{ role: 'user', content: prompt }],
+            response_format: responseMimeType === 'application/json' ? { type: 'json_object' } : undefined
+          });
+          textResult = completion.choices[0].message.content || '';
+        }
+
+        if (responseMimeType === 'application/json') {
+          const parsed = safeJson(textResult);
+          if (parsed && (Object.keys(parsed).length > 0 || Array.isArray(parsed) || parsed.slos || parsed.enrichments)) {
+             return parsed;
+          }
+        } else if (textResult.trim()) {
+          return textResult;
+        }
+        
+        console.warn(`[AI Chain] ${link.model} returned empty/invalid result. Trying next...`);
+        break; 
+
+      } catch (e: any) {
+        attempts++;
+        const isQuota = /429|quota|RESOURCE_EXHAUSTED/i.test(e.message || '');
+        if (isQuota && attempts < maxAttempts) {
+          console.warn(`[AI Chain] ${link.model} quota hit. Retrying in 2s...`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        console.error(`[AI Chain] ${link.model} failed:`, e.message);
+        break; 
+      }
+    }
+  }
+
+  throw new Error('AI_CHAIN_FAILURE: All models in the fallback chain failed to produce a valid response.');
+}
+
 // ── AI ORCHESTRATOR (Grok, Mistral, OpenAI, Gemini, etc.) ──────────────────────────
-async function callAIOrchestrator(apiKey: string, text: string, schema: any, subject: string, subjectCode: string, board: string, chunkN: number, isDeep: boolean = false, retries: number = 1): Promise<any[]> {
+async function callAIOrchestrator(apiKey: string, text: string, schema: any, subject: string, subjectCode: string, board: string, chunkN: number, isDeep: boolean = false): Promise<any[]> {
   const prompt = makePrompt(text, subject, subjectCode, board, chunkN, isDeep);
-
-  // Use Gemini as the primary orchestrator for reliability and speed in this environment
-  if (apiKey) {
-    const ai = new GoogleGenAI({ apiKey });
-    const cfg = {
-      responseMimeType: 'application/json' as const,
-      responseSchema  : schema,
-      maxOutputTokens : 8192,
-      temperature     : 0.1,
-    };
-
-    try {
-      console.log(`[AI Orchestrator] Calling Gemini ${MODEL_PRIMARY} (Attempt ${2 - retries})...`);
-      const r = await ai.models.generateContent({
-        model   : MODEL_PRIMARY,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config  : cfg,
-      });
-      const d = safeJson(r.text || '');
-      if (Array.isArray(d.slos)) {
-        console.log(`[AI Orchestrator] ${MODEL_PRIMARY} success: ${d.slos.length} SLOs found.`);
-        return d.slos;
-      }
-    } catch (e: any) {
-      const isQuota = /429|quota|RESOURCE_EXHAUSTED/i.test(e.message || '');
-      const isTokenLimit = /limit|token|exceeded/i.test(e.message || '');
-      
-      if (isTokenLimit) {
-        console.error(`[AI Orchestrator] Token limit exceeded for chunk ${chunkN}.`);
-        return [];
-      } else if (isQuota && retries > 0) {
-        console.warn(`[AI Orchestrator] ${MODEL_PRIMARY} quota exceeded. Retrying...`);
-        await new Promise(r => setTimeout(r, 2000));
-        return await callAIOrchestrator(apiKey, text, schema, subject, subjectCode, board, chunkN, isDeep, retries - 1);
-      } else {
-        console.error(`[AI Orchestrator] ${MODEL_PRIMARY} error:`, e.message);
-      }
+  try {
+    const data = await callAIChain(apiKey, prompt, schema);
+    if (Array.isArray(data.slos)) {
+      console.log(`[Orchestrator] Success: ${data.slos.length} SLOs found in chunk ${chunkN}`);
+      return data.slos;
     }
+    return [];
+  } catch (e: any) {
+    console.error(`[Orchestrator] Fatal error for chunk ${chunkN}:`, e.message);
+    return [];
   }
-
-  // Fallback to other providers if Gemini fails completely
-  const providers = [
-    { name: 'Groq', key: process.env.GROQ_API_KEY, url: 'https://api.groq.com/openai/v1', model: 'llama-3.1-8b-instant' },
-    { name: 'AI Gateway', key: process.env.AI_GATEWAY_API_KEY, url: process.env.AI_GATEWAY_URL || 'https://api.openai.com/v1', model: process.env.AI_GATEWAY_MODEL || 'gpt-4o-mini' }
-  ].filter(p => p.key);
-
-  for (const provider of providers) {
-    try {
-      console.log(`[AI Orchestrator] Fallback to ${provider.name} (${provider.model})...`);
-      const openai = new OpenAI({ apiKey: provider.key, baseURL: provider.url, timeout: 10000 });
-      const completion = await openai.chat.completions.create({
-        model: provider.model,
-        messages: [{ role: 'user', content: prompt }],
-        response_format: { type: 'json_object' }
-      });
-      const d = safeJson(completion.choices[0].message.content || '');
-      if (Array.isArray(d.slos)) {
-        console.log(`[AI Orchestrator] ${provider.name} success: ${d.slos.length} SLOs found.`);
-        return d.slos;
-      }
-    } catch (e: any) {
-      console.error(`[AI Orchestrator] ${provider.name} failed:`, e.message);
-    }
-  }
-
-  return [];
 }
 
 // ── SLIDING WINDOW EXTRACTOR ──────────────────────────────────────────────────
@@ -795,14 +828,24 @@ RULES:
 - Return ONLY valid JSON.`;
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const r = await ai.models.generateContent({
-        model: MODEL_PRIMARY,
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        config: { responseMimeType: 'application/json' as const }
+      const data = await callAIChain(apiKey, prompt, {
+        type: Type.OBJECT,
+        properties: {
+          enrichments: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                slo_code: { type: Type.STRING },
+                bloom_level: { type: Type.STRING },
+                cognitive_complexity: { type: Type.STRING },
+                keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
+              }
+            }
+          }
+        }
       });
       
-      const data = safeJson(r.text || '');
       const enrichments = data.enrichments || [];
       
       if (Array.isArray(enrichments)) {
