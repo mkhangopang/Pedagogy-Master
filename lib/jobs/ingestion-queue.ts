@@ -115,7 +115,7 @@ export class IngestionQueue {
    * the route to create a new job and re-run ingestion on every heartbeat poll.
    */
   async getJobStatus(documentId: string) {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('ingestion_jobs')
       .select('*')
       .eq('document_id', documentId)
@@ -123,6 +123,10 @@ export class IngestionQueue {
       .limit(1)
       .maybeSingle();
 
+    if (error) {
+      console.error(`[IngestionQueue] getJobStatus FAILED for ${documentId}:`, error);
+      throw new Error(`VAULT_QUERY_ERROR: ${error.message}`);
+    }
     return data;
   }
 }

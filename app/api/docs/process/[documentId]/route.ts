@@ -922,80 +922,113 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
 
 // ── ROUTE HANDLER ─────────────────────────────────────────────────────────────
 export async function POST(
-  req  : NextRequest,
-  props: { params: Promise<{ documentId: string }> }
+  req: NextRequest,
+  context: any
 ) {
-  const { documentId } = await props.params;
-  const authHeader = req.headers.get('Authorization');
-  const token = authHeader?.split(' ')[1];
-
-  // Check for service role key early
-  const hasServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
-  
-  // Determine which client to use for the trigger phase
-  const triggerSupabase = hasServiceKey ? getSupabaseAdminClient() : (token ? getSupabaseServerClient(token) : getSupabaseAdminClient());
-  const queue           = new IngestionQueue(triggerSupabase);
-
-  if (!hasServiceKey && !token) {
-    console.error('[Ingestion] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing and no user token provided.');
-    return NextResponse.json({ 
-      error: 'Infrastructure misconfiguration: Service Role Key missing and no user token provided.',
-      details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment or ensure you are logged in.'
-    }, { status: 500 });
-  }
-
-  let job: any;
   try {
-    job = await queue.getJobStatus(documentId);
-  } catch (e: any) {
-    console.error('[Ingestion] Failed to fetch job status:', e.message);
-    return NextResponse.json({ error: 'Vault access failure', details: e.message }, { status: 500 });
-  }
+    const params = await context?.params;
+    const documentId = params?.documentId;
 
-  if (!job) {
-    const id = await queue.enqueue(documentId);
-    job = { id, step: IngestionStep.EXTRACT };
-  } else if (job.status === 'complete' || job.step === IngestionStep.COMPLETE) {
-    return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });
-  } else if (job.status === 'processing' && job.updated_at) {
-    const lastUpdate = new Date(job.updated_at).getTime();
-    // REDUCED: 60 seconds stale timeout for faster resumption in serverless environments
-    if (Date.now() - lastUpdate < 60000) { 
-      console.log(`[Ingestion] Job is actively processing (updated ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Ignoring duplicate trigger.`);
-      return NextResponse.json({ success: true, message: 'Already processing' });
+    if (!documentId || documentId === 'null' || documentId === 'undefined') {
+      return NextResponse.json({ 
+        error: 'Invalid Document ID', 
+        details: 'The document ID provided is missing or invalid.' 
+      }, { status: 400 });
     }
-    // Stale 'processing' job — reset status but keep step and payload to resume
-    console.log(`[Ingestion] Stale job detected (last update ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Resuming from step ${job.step}...`);
-    const { error: resetErr } = await triggerSupabase.from('ingestion_jobs')
-      .update({ status: 'pending', updated_at: new Date().toISOString() })
-      .eq('id', job.id);
+
+    const authHeader = req.headers.get('Authorization');
+    const token = authHeader?.split(' ')[1];
+
+    // Check for service role key early
+    const hasServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY && 
+                         !process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
     
-    if (resetErr) {
-      console.error('[Ingestion] Failed to reset stale job:', resetErr);
-      return NextResponse.json({ error: 'Job reset failed', details: resetErr.message }, { status: 500 });
-    }
-    // Keep job.step as is
-  } else if (job.status === 'pending') {
-    // Job exists but never started or was reset — proceed with current step
-    const { error: startErr } = await triggerSupabase.from('ingestion_jobs')
-      .update({ status: 'processing', message: null, updated_at: new Date().toISOString() })
-      .eq('id', job.id);
+    // Determine which client to use for the trigger phase
+    // If no service key, we MUST use the user token to act on their behalf
+    const triggerSupabase = hasServiceKey 
+      ? getSupabaseAdminClient() 
+      : (token ? getSupabaseServerClient(token) : getSupabaseAdminClient());
     
-    if (startErr) {
-      console.error('[Ingestion] Failed to start pending job:', startErr);
-      return NextResponse.json({ error: 'Job start failed', details: startErr.message }, { status: 500 });
+    const queue = new IngestionQueue(triggerSupabase);
+
+    if (!hasServiceKey && !token) {
+      console.error('[Ingestion] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing and no user token provided.');
+      return NextResponse.json({ 
+        error: 'Infrastructure misconfiguration: Service Role Key missing and no user token provided.',
+        details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment or ensure you are logged in.'
+      }, { status: 500 });
     }
-    // Do not reset step to EXTRACT if it's already LINEARIZE or EMBED
-    if (!job.step) job.step = IngestionStep.EXTRACT;
-  }
 
-  console.log(`\n${'='.repeat(60)}`);
-  console.log(`[Ingestion] START doc=${documentId} step=${job.step}`);
-  console.log(`${'='.repeat(60)}`);
+    let job: any;
+    try {
+      // Retry job status check to handle potential replication lag
+      let lastErr = null;
+      for (let i = 0; i < 3; i++) {
+        try {
+          job = await queue.getJobStatus(documentId);
+          lastErr = null;
+          break;
+        } catch (e: any) {
+          lastErr = e;
+          console.warn(`[Ingestion] Job status check attempt ${i+1} failed:`, e.message);
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+      if (lastErr) throw lastErr;
+    } catch (e: any) {
+      console.error('[Ingestion] Failed to fetch job status:', e.message);
+      return NextResponse.json({ 
+        error: 'Vault access failure', 
+        details: e.message || 'The database rejected the handshake. Check RLS policies.' 
+      }, { status: 500 });
+    }
 
-  // Run the ingestion process in the background using Next.js 15 'after' hook
-  // This ensures the process continues even after the response is sent
-  after(async () => {
+    if (!job) {
+      try {
+        const id = await queue.enqueue(documentId);
+        job = { id, step: IngestionStep.EXTRACT };
+      } catch (e: any) {
+        console.error('[Ingestion] Failed to enqueue job:', e.message);
+        return NextResponse.json({ 
+          error: 'Job initialization failure', 
+          details: e.message || 'Could not register ingestion job in the vault.' 
+        }, { status: 500 });
+      }
+    } else if (job.status === 'complete' || job.step === IngestionStep.COMPLETE) {
+      return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });
+    } else if (job.status === 'processing' && job.updated_at) {
+      const lastUpdate = new Date(job.updated_at).getTime();
+      if (Date.now() - lastUpdate < 60000) { 
+        console.log(`[Ingestion] Job is actively processing (updated ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Ignoring duplicate trigger.`);
+        return NextResponse.json({ success: true, message: 'Already processing' });
+      }
+      console.log(`[Ingestion] Stale job detected. Resuming from step ${job.step}...`);
+      const { error: resetErr } = await triggerSupabase.from('ingestion_jobs')
+        .update({ status: 'pending', updated_at: new Date().toISOString() })
+        .eq('id', job.id);
+      
+      if (resetErr) {
+        console.error('[Ingestion] Failed to reset stale job:', resetErr);
+        return NextResponse.json({ error: 'Job reset failed', details: resetErr.message }, { status: 500 });
+      }
+    } else if (job.status === 'pending') {
+      const { error: startErr } = await triggerSupabase.from('ingestion_jobs')
+        .update({ status: 'processing', message: null, updated_at: new Date().toISOString() })
+        .eq('id', job.id);
+      
+      if (startErr) {
+        console.error('[Ingestion] Failed to start pending job:', startErr);
+        return NextResponse.json({ error: 'Job start failed', details: startErr.message }, { status: 500 });
+      }
+      if (!job.step) job.step = IngestionStep.EXTRACT;
+    }
+
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`[Ingestion] START doc=${documentId} step=${job.step}`);
+    console.log(`${'='.repeat(60)}`);
+
+    after(async () => {
+      // ... rest of the after hook ...
     console.log(`[Ingestion] Background process started for doc=${documentId}`);
     
     // Use user-scoped client if possible, fallback to admin
@@ -1339,4 +1372,11 @@ export async function POST(
   });
 
   return NextResponse.json({ success: true });
+} catch (fatal: any) {
+  console.error('[Ingestion] FATAL HANDSHAKE ERROR:', fatal);
+  return NextResponse.json({ 
+    error: 'Neural Grid Handshake Failure', 
+    details: fatal.message || String(fatal) 
+  }, { status: 500 });
+}
 }
