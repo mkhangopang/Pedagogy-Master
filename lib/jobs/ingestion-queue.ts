@@ -27,26 +27,27 @@ export class IngestionQueue {
 
   /**
    * Registers (or resets) a job in the persistent store.
-   * Uses upsert to prevent duplicate-job race conditions.
+   * Logic: Uses insert instead of upsert to avoid requiring a unique constraint on document_id.
+   * The route handler already checks for existing jobs before calling this.
    */
   async enqueue(documentId: string): Promise<string> {
     const { data, error } = await this.supabase
       .from('ingestion_jobs')
-      .upsert(
-        {
-          document_id: documentId,
-          step: IngestionStep.EXTRACT,
-          status: JobStatus.PENDING,
-          error_message: null,
-          payload: null,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'document_id' }
-      )
+      .insert({
+        document_id: documentId,
+        step: IngestionStep.EXTRACT,
+        status: JobStatus.PENDING,
+        error_message: null,
+        payload: null,
+        updated_at: new Date().toISOString(),
+      })
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error(`[IngestionQueue] enqueue FAILED for ${documentId}:`, error);
+      throw new Error(`VAULT_ENQUEUE_ERROR: ${error.message}`);
+    }
     return data.id;
   }
 
@@ -59,6 +60,8 @@ export class IngestionQueue {
       .update({
         step: progress.step,
         status: JobStatus.PROCESSING,
+        progress: progress.progress,
+        message: progress.message,
         payload: { ...progress },
         updated_at: new Date().toISOString(),
       })
@@ -80,6 +83,8 @@ export class IngestionQueue {
       .update({
         status: JobStatus.COMPLETE,
         step: IngestionStep.COMPLETE,   // ← was missing; caused step-check to fail
+        progress: 100,
+        message: 'Complete',
         payload: { progress: 100, message: 'Complete' },
         updated_at: new Date().toISOString(),
       })

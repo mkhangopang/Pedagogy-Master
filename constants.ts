@@ -110,15 +110,16 @@ END $$;
 -- by rag_health_report view AND used by IngestionQueue in route.ts.
 -- Without it: (a) view creation fails, (b) the entire ingestion pipeline errors.
 CREATE TABLE IF NOT EXISTS public.ingestion_jobs (
-  id          uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-  document_id uuid REFERENCES public.documents(id) ON DELETE CASCADE,
-  status      text NOT NULL DEFAULT 'pending',   -- pending | running | complete | failed
-  step        text NOT NULL DEFAULT 'EXTRACT',   -- EXTRACT | LINEARIZE | ENRICH | EMBED | COMPLETE
-  progress    int  NOT NULL DEFAULT 0,           -- 0-100
-  message     text,
-  error       text,
-  created_at  timestamp with time zone DEFAULT NOW(),
-  updated_at  timestamp with time zone DEFAULT NOW()
+  id            uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  document_id   uuid REFERENCES public.documents(id) ON DELETE CASCADE,
+  status        text NOT NULL DEFAULT 'pending',   -- pending | processing | complete | failed
+  step          text NOT NULL DEFAULT 'EXTRACT',   -- EXTRACT | LINEARIZE | ENRICH | EMBED | COMPLETE
+  progress      int  NOT NULL DEFAULT 0,           -- 0-100
+  message       text,
+  error_message text,
+  payload       jsonb,
+  created_at    timestamp with time zone DEFAULT NOW(),
+  updated_at    timestamp with time zone DEFAULT NOW()
 );
 
 -- Allow quick lookup by document_id
@@ -127,7 +128,7 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_document_id
 
 -- Permissions for ingestion_jobs
 GRANT ALL ON public.ingestion_jobs TO service_role;
-GRANT SELECT ON public.ingestion_jobs TO authenticated;
+GRANT ALL ON public.ingestion_jobs TO authenticated;
 
 
 -- 4. SLO DATABASE (FIXED SCHEMA)
@@ -428,11 +429,19 @@ CREATE POLICY "Users can delete SLOs for their own documents"
     )
   );
 
--- ingestion_jobs: users can see status of their own jobs
+-- ingestion_jobs: users can manage their own jobs
 DROP POLICY IF EXISTS "Users can view their own ingestion jobs" ON public.ingestion_jobs;
-CREATE POLICY "Users can view their own ingestion jobs"
-  ON public.ingestion_jobs FOR SELECT
+DROP POLICY IF EXISTS "Users can manage their own ingestion jobs" ON public.ingestion_jobs;
+CREATE POLICY "Users can manage their own ingestion jobs"
+  ON public.ingestion_jobs FOR ALL
   USING (
+    EXISTS (
+      SELECT 1 FROM public.documents
+      WHERE documents.id = ingestion_jobs.document_id
+        AND documents.user_id = auth.uid()
+    )
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM public.documents
       WHERE documents.id = ingestion_jobs.document_id

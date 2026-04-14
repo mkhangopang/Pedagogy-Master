@@ -136,7 +136,7 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                   console.error("Orchestrator Trigger Fault:", errData);
                   // Only set error if it's a critical infrastructure failure (500)
                   if (res.status >= 500) {
-                    setError(errData.error || "Neural Grid Connection Severed.");
+                    setError(errData.error || errData.details || "Neural Grid Connection Severed.");
                     setIsUploading(false);
                   }
                 }
