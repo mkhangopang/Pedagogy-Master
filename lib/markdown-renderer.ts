@@ -2,6 +2,7 @@
 // Pure markdown -> HTML converter - no external deps
 // Handles: # headings, **bold**, *italic*, | tables |, - lists, 1. lists,
 //          --- dividers, `inline code`, ```code blocks```
+import katex from 'katex';
 
 export function markdownToHtml(md: string): string {
   if (!md) return '';
@@ -13,6 +14,38 @@ export function markdownToHtml(md: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/___BR_TAG___/g, '<br/>');
+
+  // -- 1.4 Handle Escaped Dollars (Literal $) ---------------------------------
+  // Temporarily hide escaped dollars to avoid triggering math regex
+  html = html.replace(/\\(\$)/g, '___ESC_DOLLAR___');
+
+  // -- 1.5 Math Blocks ($$ ... $$ or \[ ... \]) -------------------------------
+  const renderBlock = (_m: string, math: string) => {
+    try {
+      return `<div style="margin: 1.5rem 0; overflow-x: auto; text-align: center;">${katex.renderToString(math.trim(), { displayMode: true, throwOnError: false })}</div>`;
+    } catch (e) {
+      return `<div style="color: #f43f5e; font-family: monospace; font-size: 12px; margin: 12px 0;">[Math Error: ${math}]</div>`;
+    }
+  };
+  html = html.replace(/\$\$([\s\S]+?)\$\$/g, renderBlock);
+  html = html.replace(/\\\[([\s\S]+?)\\\]/g, renderBlock);
+
+  // -- 1.6 Inline Math ($ ... $ or \( ... \)) ---------------------------------
+  const renderInline = (_m: string, math: string) => {
+    const trimmed = math.trim();
+    // Skip if it looks like money (e.g. $100, $10.50, $100%)
+    if (/^\d+(\.\d+)?%?$/.test(trimmed)) return `$${trimmed}$`;
+    try {
+      return katex.renderToString(trimmed, { displayMode: false, throwOnError: false });
+    } catch (e) {
+      return `<span style="color: #f43f5e; font-family: monospace; font-size: 11px;">[Math Error: ${math}]</span>`;
+    }
+  };
+  html = html.replace(/\$([^\$\n]+?)\$/g, renderInline);
+  html = html.replace(/\\\(([\s\S]+?)\\\)/g, renderInline);
+
+  // -- 1.7 Restore Escaped Dollars --------------------------------------------
+  html = html.replace(/___ESC_DOLLAR___/g, '$');
 
   // -- 2. Code blocks (must come before inline code) -------------------------
   html = html.replace(

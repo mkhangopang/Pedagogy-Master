@@ -84,6 +84,13 @@ ${NAVIGATION_PROTOCOL}
 ${customInstructions}
 
 [OUTPUT_FORMAT_DIRECTIVE]
-Always use clean Markdown with LaTeX for math. Use '--- Workflow Recommendation: [Tool_ID] | [Reason] ---' at the very end.
+Always use clean Markdown. 
+[MATH_STANDARDS]: Use LaTeX for ALL mathematical expressions, including percentages (e.g., $100\%$), complexity notation (e.g., $O(n^2)$), and formulas. 
+- Use $...$ for inline math.
+- Use $$...$$ for block math.
+- Avoid raw dollar signs for currency; use 'USD', 'PKR', or similar.
+- Ensure all LaTeX is valid and professional.
+
+Use '--- Workflow Recommendation: [Tool_ID] | [Reason] ---' at the very end.
 `;
 }

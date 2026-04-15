@@ -1,6 +1,7 @@
 import React from 'react';
 import HydrationBoundary from '../components/HydrationBoundary';
 import './globals.css';
+import 'katex/dist/katex.min.css';
 
 /**
  * RootLayout (v7.0)
