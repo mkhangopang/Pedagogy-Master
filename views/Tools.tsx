@@ -294,7 +294,7 @@ USER_QUERY: ${userInput}`;
               </div>
            </div>
            
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0">
+           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0 print:overflow-visible">
               {/* Print zone - hidden on screen, visible only when printing */}
               <div id="pm-print-zone" className="hidden">
                 <table className="pm-print-container">

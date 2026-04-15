@@ -6,11 +6,13 @@
 export function markdownToHtml(md: string): string {
   if (!md) return '';
 
-  // -- 1. Escape HTML entities ------------------------------------------------
+  // -- 1. Escape HTML entities but preserve <br> ------------------------------
   let html = md
     .replace(/&/g, '&amp;')
+    .replace(/<br\s*\/?>/gi, '___BR_TAG___')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/___BR_TAG___/g, '<br/>');
 
   // -- 2. Code blocks (must come before inline code) -------------------------
   html = html.replace(
