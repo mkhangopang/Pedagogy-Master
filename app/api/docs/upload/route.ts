@@ -31,8 +31,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Metadata missing' }, { status: 400 });
     }
 
+    // FIX-BUG-17: Sanitize name to prevent XSS
+    const safeName = name.replace(/<[^>]*>/g, '').substring(0, 255).trim();
     const documentId = crypto.randomUUID();
-    const cleanFileName = name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const cleanFileName = safeName.replace(/[^a-zA-Z0-9.-]/g, '_');
 
     let uploadUrl = null;
     let r2Key = null;
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest) {
     const { data: docData, error: dbError } = await supabase.from('documents').insert({
       id: documentId,
       user_id: user.id,
-      name: name,
+      name: safeName,
       file_path: r2Key,
       status: 'pending',
       mime_type: contentType,

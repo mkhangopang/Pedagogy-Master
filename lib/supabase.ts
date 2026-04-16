@@ -38,7 +38,6 @@ export const getCredentials = () => {
       win.process?.env,
       win.ai_config,
       (win as any).__NEXT_DATA__?.runtimeConfig,
-      isBrowser ? JSON.parse(localStorage.getItem('sb-infra-cache') || '{}') : null,
       win
     ].filter(Boolean);
 
@@ -55,9 +54,6 @@ export const getCredentials = () => {
   if (finalUrl.startsWith('http') && finalKey.length >= 10) {
     cachedUrl = finalUrl;
     cachedKey = finalKey;
-    if (isBrowser) {
-        try { localStorage.setItem('sb-infra-cache', JSON.stringify({ NEXT_PUBLIC_SUPABASE_URL: finalUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: finalKey })); } catch (e) {}
-    }
   }
 
   return { url: finalUrl, key: finalKey };

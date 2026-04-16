@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import * as pdfjs from 'pdfjs-dist';
 
 if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 }
 
 export default function DocumentUploader({ userId, onComplete, onCancel }: any) {

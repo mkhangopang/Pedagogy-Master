@@ -12,14 +12,16 @@ import pdf from 'pdf-parse';
 import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from 'openai';
 import { createHash } from 'crypto';
+import { resolveApiKey } from '../../../../../lib/env-server';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const MODEL_PRIMARY  = 'gemini-3-flash-preview';
-const MODEL_COMPLEX  = 'gemini-3.1-pro-preview';
-const MODEL_LITE     = 'gemini-3.1-flash-lite-preview';
+const MODEL_PRIMARY  = 'gemini-2.0-flash';
+const MODEL_COMPLEX  = 'gemini-2.5-pro-preview-05-06';
+const MODEL_LITE     = 'gemini-2.0-flash-lite';
+const MODEL_FALLBACK = 'gemini-2.0-flash-lite';
 
 const CHUNK_SIZE  = 10000;
 const OVERLAP     = 2500;
@@ -141,15 +143,13 @@ function normalizeCode(raw: any): string | null {
 // This function scans for all SLO codes and attaches the text block that follows
 // the LAST code in each row to all codes in that row.
 function linearizeSloText(text: string): string {
-  // Match any SLO code variant (M, B, C, P, E, S, etc.)
-  // Patterns like [SLO: B-09-A-01] or SLO: B-09-A-01 or (SLO: B-09-A-01)
   const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?([A-Z]{1,4})\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
 
-  const matches: { start: number; end: number; raw: string }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = codeRe.exec(text)) !== null) {
-    matches.push({ start: m.index, end: m.index + m[0].length, raw: m[0] });
-  }
+  const matches = [...text.matchAll(codeRe)].map(m => ({
+    start: m.index!,
+    end: m.index! + m[0].length,
+    raw: m[0]
+  }));
 
   if (matches.length === 0) return text;
 
@@ -414,7 +414,7 @@ async function callAIChain(
   const chain = [
     { provider: 'gemini', model: MODEL_PRIMARY, key: geminiKey },
     { provider: 'gemini', model: MODEL_COMPLEX, key: geminiKey },
-    { provider: 'gemini', model: MODEL_LITE, key: geminiKey },
+    { provider: 'gemini', model: MODEL_FALLBACK, key: geminiKey },
     { provider: 'groq', model: 'llama-3.3-70b-versatile', key: process.env.GROQ_API_KEY },
     { provider: 'groq', model: 'llama-3.1-8b-instant', key: process.env.GROQ_API_KEY },
     { provider: 'openai', model: 'gpt-4o-mini', key: process.env.OPENAI_API_KEY },
@@ -520,7 +520,6 @@ async function extractSlos(
   const isPrimary   = PRIMARY_SUBJECTS.has(subjectCode);
   const allSlos     : any[] = [];
   const seenFp      = new Set<string>();
-  const seenCodes   = new Set<string>();
   let   chunkIndex  = 0;
 
   const processedText = linearizeSloText(text);
@@ -552,6 +551,17 @@ async function extractSlos(
   const jobStatus = await queue.getJobStatus(documentId);
   const startI = jobStatus?.payload?.processedChunks || 0;
   const startOffset = jobStatus?.payload?.processedOffset || 0;
+
+  // FIX-BUG-07: Hydrate seenCodes from DB to prevent duplicates on job resume
+  const { data: existingSlos } = await supabase
+    .from('slo_database')
+    .select('slo_code')
+    .eq('document_id', documentId)
+    .not('slo_code', 'is', null);
+
+  const seenCodes = new Set<string>(
+    (existingSlos || []).map((r: any) => r.slo_code).filter(Boolean)
+  );
 
   if (startI === 0 && startOffset === 0) {
     // Only clear if starting fresh
@@ -586,8 +596,8 @@ async function extractSlos(
 
   if (rawBlocks.length > 0) {
     console.log(`[Extract] Regex found ${rawBlocks.length} SLO blocks. Bypassing junk text! Resuming from ${startI}`);
-    const BATCH_SIZE = 50;
-    const CONCURRENCY = 8;
+    const BATCH_SIZE = 30; // Reduced batch size for better rate limit handling
+    const CONCURRENCY = 3; // Reduced concurrency to stay within Gemini free tier (60 RPM)
     
     for (let i = startI; i < rawBlocks.length; i += BATCH_SIZE * CONCURRENCY) {
       const promises = [];
@@ -1079,6 +1089,15 @@ export async function POST(
             const result = await pdf(buffer);
             text = result.text?.trim() || '';
             console.log(`[Stage 1] PDF parsed: ${text.length} chars, ${result.numpages} pages`);
+
+            if (text.length < 200) {
+              const isScanned = result.numpages > 0 && text.length < 50 * result.numpages;
+              throw new Error(
+                isScanned
+                  ? `SCANNED_PDF: This appears to be a scanned image PDF with no text layer. Please use a text-based PDF or convert it with OCR first.`
+                  : `PDF_TOO_SHORT: only ${text.length} chars extracted — bad PDF?`
+              );
+            }
           } catch (e: any) {
             console.error('[Stage 1] R2 fetch failed:', e);
             throw new Error(`R2_FAULT: ${e.message}`);
@@ -1223,18 +1242,11 @@ export async function POST(
         }
 
         if (!skipExtraction) {
-          const apiKey =
-            process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
-            process.env.API_KEY ||
-            process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-            process.env.GEMINI_API_KEY ||
-            process.env.GOOGLE_AI_API_KEY ||
-            '';
+          const apiKey = resolveApiKey();
 
           if (!apiKey) {
             throw new Error(
-              'API_KEY_MISSING: set NEXT_PUBLIC_GEMINI_API_KEY or API_KEY in the environment.\n' +
-              'Checked: NEXT_PUBLIC_GEMINI_API_KEY, API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, GEMINI_API_KEY'
+              'API_KEY_MISSING: set GEMINI_API_KEY in the environment.'
             );
           }
           console.log(`[Stage 2] API key found (${apiKey.substring(0, 8)}...)`);
@@ -1294,13 +1306,7 @@ export async function POST(
       if (job.step === IngestionStep.ENRICH) {
         console.log(`[Stage 3] START ENRICH`);
         
-        const apiKey =
-            process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
-            process.env.API_KEY ||
-            process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-            process.env.GEMINI_API_KEY ||
-            process.env.GOOGLE_AI_API_KEY ||
-            '';
+        const apiKey = resolveApiKey();
 
         if (apiKey) {
           await enrichSlos(documentId, supabase, apiKey, job.id, queue);

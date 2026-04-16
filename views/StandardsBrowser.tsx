@@ -1,8 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { UserProfile, Document, SLO } from '../types';
-import { Search, Filter, BookOpen, Target, ArrowRight, Copy, CheckCircle2, AlertTriangle, ChevronRight, BarChart3 } from 'lucide-react';
+import { Search, Filter, BookOpen, Target, ArrowRight, Copy, CheckCircle2, AlertTriangle, ChevronRight, BarChart3, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { parseSLOCode } from '../lib/rag/slo-parser';
 
 interface StandardsBrowserProps {
   user: UserProfile;
@@ -14,14 +16,54 @@ const StandardsBrowser: React.FC<StandardsBrowserProps> = ({ user, documents }) 
   const [selectedGrade, setSelectedGrade] = useState('all');
   const [selectedSubject, setSelectedSubject] = useState('all');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [slos, setSlos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data for standards since we don't have a direct fetch here yet
-  const mockSLOs: SLO[] = [
-    { code: 'B-09-A-01', description: 'Identify the major structures of a typical plant cell.', bloomLevel: 'Remember', grade: '09' },
-    { code: 'B-09-A-02', description: 'Explain the function of mitochondria in cellular respiration.', bloomLevel: 'Understand', grade: '09' },
-    { code: 'B-10-B-05', description: 'Analyze the impact of genetic mutations on protein synthesis.', bloomLevel: 'Analyze', grade: '10' },
-    { code: 'B-12-C-12', description: 'Evaluate the ethical implications of CRISPR technology.', bloomLevel: 'Evaluate', grade: '12' },
-  ];
+  useEffect(() => {
+    const fetchAllSlos = async () => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('slo_database')
+          .select('slo_code, slo_full_text, grade_level, domain, domain_name, subject, bloom_level')
+          .limit(1000);
+        
+        if (error) throw error;
+        setSlos(data || []);
+      } catch (err) {
+        console.error("Failed to fetch SLOs:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllSlos();
+  }, []);
+
+  const sortedSlos = useMemo(() => {
+    const filtered = slos.filter(s => {
+      const matchesSearch = !searchQuery || 
+        s.slo_code?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        s.slo_full_text?.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesGrade = selectedGrade === 'all' || s.grade_level === selectedGrade;
+      const matchesSubject = selectedSubject === 'all' || s.subject === selectedSubject;
+      
+      return matchesSearch && matchesGrade && matchesSubject;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const pa = parseSLOCode(a.slo_code);
+      const pb = parseSLOCode(b.slo_code);
+      
+      if (!pa || !pb) return (a.slo_code || '').localeCompare(b.slo_code || '');
+      
+      if (pa.subject !== pb.subject) return pa.subject.localeCompare(pb.subject);
+      if (pa.grade !== pb.grade) return pa.grade.localeCompare(pb.grade);
+      if (pa.domain !== pb.domain) return pa.domain.localeCompare(pb.domain);
+      return pa.number - pb.number;
+    });
+  }, [slos, searchQuery, selectedGrade, selectedSubject]);
 
   const handleCopy = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -72,38 +114,50 @@ const StandardsBrowser: React.FC<StandardsBrowserProps> = ({ user, documents }) 
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          {mockSLOs.map((slo) => (
-            <div key={slo.code} className="group bg-slate-50 dark:bg-black/20 p-6 rounded-3xl border border-slate-100 dark:border-white/5 hover:border-indigo-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="flex items-start gap-6">
-                <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl flex flex-col items-center justify-center shadow-sm shrink-0">
-                  <span className="text-[8px] font-black text-slate-400 uppercase">Grade</span>
-                  <span className="text-lg font-bold text-indigo-600 leading-none">{slo.grade}</span>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <button 
-                      onClick={() => handleCopy(slo.code)}
-                      className="text-[10px] font-black uppercase tracking-widest px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-md hover:bg-indigo-100 transition-all flex items-center gap-2"
-                    >
-                      {slo.code} {copiedCode === slo.code ? <CheckCircle2 size={10} /> : <Copy size={10} />}
-                    </button>
-                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
-                      slo.bloomLevel === 'Analyze' || slo.bloomLevel === 'Evaluate' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
-                    }`}>
-                      {slo.bloomLevel}
-                    </span>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 opacity-40">
+            <Loader2 size={32} className="animate-spin text-indigo-600 mb-4" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Retrieving Standards...</p>
+          </div>
+        ) : sortedSlos.length > 0 ? (
+          <div className="grid grid-cols-1 gap-4">
+            {sortedSlos.map((slo) => (
+              <div key={slo.slo_code} className="group bg-slate-50 dark:bg-black/20 p-6 rounded-3xl border border-slate-100 dark:border-white/5 hover:border-indigo-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="flex items-start gap-6">
+                  <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl flex flex-col items-center justify-center shadow-sm shrink-0">
+                    <span className="text-[8px] font-black text-slate-400 uppercase">Grade</span>
+                    <span className="text-lg font-bold text-indigo-600 leading-none">{slo.grade_level || '??'}</span>
                   </div>
-                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed">{slo.description}</p>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => handleCopy(slo.slo_code)}
+                        className="text-[10px] font-black uppercase tracking-widest px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-md hover:bg-indigo-100 transition-all flex items-center gap-2"
+                      >
+                        {slo.slo_code} {copiedCode === slo.slo_code ? <CheckCircle2 size={10} /> : <Copy size={10} />}
+                      </button>
+                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
+                        slo.bloom_level === 'Analyze' || slo.bloom_level === 'Evaluate' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
+                      }`}>
+                        {slo.bloom_level || 'Understand'}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed">{slo.slo_full_text}</p>
+                  </div>
                 </div>
+                
+                <button className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2 shrink-0">
+                  View Alignment <ArrowRight size={14} />
+                </button>
               </div>
-              
-              <button className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2 shrink-0">
-                View Alignment <ArrowRight size={14} />
-              </button>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-20 text-center opacity-30">
+            <AlertTriangle size={48} className="mx-auto mb-4 text-slate-300" />
+            <p className="text-xl font-black uppercase tracking-widest text-slate-400">No Standards Found</p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
