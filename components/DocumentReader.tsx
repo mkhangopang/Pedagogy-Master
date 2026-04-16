@@ -156,14 +156,36 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       s.slo_full_text.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
-    const groups: Record<string, Record<string, SloRecord[]>> = {};
-    filtered.forEach(slo => {
-      const grade = slo.grade_level || 'Ungraded';
-      const domain = slo.domain_name || slo.domain_tag || 'Core Curriculum';
+    // WORLD-CLASS SORTING: Subject -> Grade -> Domain -> Number
+    const sorted = [...filtered].sort((a, b) => {
+      const pa = parseSLOCode(a.slo_code);
+      const pb = parseSLOCode(b.slo_code);
       
-      if (!groups[grade]) groups[grade] = {};
-      if (!groups[grade][domain]) groups[grade][domain] = [];
-      groups[grade][domain].push(slo);
+      if (!pa || !pb) return a.slo_code.localeCompare(b.slo_code);
+      
+      // 1. Subject (M, B, S...)
+      if (pa.subject !== pb.subject) return pa.subject.localeCompare(pb.subject);
+      // 2. Grade (09, 10...)
+      if (pa.grade !== pb.grade) return pa.grade.localeCompare(pb.grade);
+      // 3. Domain (A, B...)
+      if (pa.domain !== pb.domain) return pa.domain.localeCompare(pb.domain);
+      // 4. Number (01, 02...)
+      return pa.number - pb.number;
+    });
+
+    const groups: Record<string, Record<string, SloRecord[]>> = {};
+    sorted.forEach(slo => {
+      const pa = parseSLOCode(slo.slo_code);
+      const subject = pa?.subjectFull || '';
+      const grade = slo.grade_level || pa?.grade || 'Ungraded';
+      
+      // Create a composite key to ensure subject-grade grouping
+      const groupKey = subject ? `${subject} - Grade ${grade}` : `Grade ${grade}`;
+      const domain = slo.domain_name || slo.domain_tag || pa?.domain || 'Core Curriculum';
+      
+      if (!groups[groupKey]) groups[groupKey] = {};
+      if (!groups[groupKey][domain]) groups[groupKey][domain] = [];
+      groups[groupKey][domain].push(slo);
     });
 
     return groups;
@@ -245,15 +267,20 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                  </div>
                  <button 
                    onClick={() => {
-                     const cleanJson = extractedText?.includes('```json') 
-                       ? extractedText.split('```json')[1].split('```')[0].trim()
-                       : extractedText;
-                     handleCopy(cleanJson || "");
+                     let cleanJson = "";
+                     if (extractedText) {
+                       cleanJson = extractedText.includes('```json') 
+                         ? extractedText.split('```json')[1].split('```')[0].trim()
+                         : extractedText;
+                     } else if (slos.length > 0) {
+                       cleanJson = JSON.stringify(slos, null, 2);
+                     }
+                     handleCopy(cleanJson);
                    }}
                    className="w-full sm:w-auto flex items-center justify-center gap-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 transition-all bg-slate-50 dark:bg-white/5 px-4 py-2.5 rounded-xl border dark:border-white/5"
                  >
-                   {copiedCode === (extractedText?.includes('```json') ? extractedText.split('```json')[1].split('```')[0].trim() : extractedText) ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                   {copiedCode === (extractedText?.includes('```json') ? extractedText.split('```json')[1].split('```')[0].trim() : extractedText) ? 'Copied' : 'Copy JSON'}
+                   <Copy size={14} />
+                   {copiedCode ? 'Copied' : 'Copy JSON'}
                  </button>
                </div>
                <div className="relative group">
@@ -263,6 +290,8 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                       extractedText.includes('```json') 
                         ? extractedText.split('```json')[1].split('```')[0].trim()
                         : extractedText
+                    ) : slos.length > 0 ? (
+                      JSON.stringify(slos, null, 2)
                     ) : "<!-- Vault Empty -->"}
                  </pre>
                </div>
@@ -278,13 +307,13 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                   <div className="text-[8px] md:text-[10px] font-black text-amber-400 uppercase tracking-[0.2em]">Live Stream Active</div>
                 </div>
               )}
-              {Object.entries(groupedSlos).sort().map(([grade, domains]) => (
-                <div key={grade} className="space-y-8 md:space-y-12">
+              {Object.entries(groupedSlos).sort((a, b) => a[0].localeCompare(b[0])).map(([groupKey, domains]) => (
+                <div key={groupKey} className="space-y-8 md:space-y-12">
                   <h2 className="text-xl md:text-3xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tighter border-b border-indigo-100 dark:border-indigo-900 pb-4">
-                    Grade {grade}
+                    {groupKey}
                   </h2>
-                  {Object.entries(domains).sort().map(([domain, items]) => (
-                    <section key={`${grade}-${domain}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700 md:ml-8">
+                  {Object.entries(domains).sort((a, b) => a[0].localeCompare(b[0])).map(([domain, items]) => (
+                    <section key={`${groupKey}-${domain}`} className="animate-in fade-in slide-in-from-bottom-4 duration-700 md:ml-8">
                        <div className="flex items-center gap-4 md:gap-6 mb-6 md:mb-8">
                           <div className="p-2 md:p-3 bg-indigo-600 text-white rounded-xl md:rounded-2xl shadow-xl shadow-indigo-500/20">
                             <Layers size={18} className="md:hidden"/>
