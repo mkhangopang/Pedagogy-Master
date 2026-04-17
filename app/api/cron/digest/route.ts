@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdminClient } from '../../../lib/supabase';
-import { orchestrator } from '../../../lib/ai/model-orchestrator';
+import { getSupabaseAdminClient } from '../../../../lib/supabase';
+import { orchestrator } from '../../../../lib/ai/model-orchestrator';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
