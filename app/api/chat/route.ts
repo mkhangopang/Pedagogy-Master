@@ -31,6 +31,7 @@ export async function POST(req: NextRequest) {
       .select('workspace_name')
       .eq('id', user.id)
       .single();
+
     const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
     const { data: brain } = await supabase
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
       .select('master_prompt')
       .eq('is_active', true)
       .maybeSingle();
+
     const activeMasterPrompt = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
 
     const routeInfo = detectToolIntent(message);
@@ -76,7 +78,7 @@ export async function POST(req: NextRequest) {
     const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via ${expertTitle} (${provider})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
     const fullResponse = fullText + watermark;
 
-    // True SSE Streaming with word-level chunking
+    // True SSE Streaming (word-level)
     const encoder = new TextEncoder();
     const words = fullResponse.split(' ');
 
@@ -89,7 +91,7 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();
 
-        // Async self-improvement
+        // Async Self-Improvement
         selfImprovementEngine.learn({
           userId: user.id,
           input: message,
