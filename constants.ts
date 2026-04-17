@@ -262,6 +262,25 @@ CREATE TABLE IF NOT EXISTS public.slo_feedback (
 );
 
 
+-- 8.5 IMPROVEMENT SIGNALS (Self-Improvement Engine)
+CREATE TABLE IF NOT EXISTS public.improvement_signals (
+  id               uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id          uuid REFERENCES public.profiles(id),
+  signal_type      text NOT NULL,
+  signal_data      jsonb,
+  tool_type        text,
+  compiled         boolean DEFAULT false,
+  created_at       timestamp with time zone DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.improvement_insights (
+  id               uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  insight_text     text NOT NULL,
+  signals_compiled int DEFAULT 0,
+  timestamp        timestamp with time zone DEFAULT NOW()
+);
+
+
 -- 9. HEALTH VIEWS
 -- LOW-2 FIX: original had no NO_SLOS_EXTRACTED state — a document with
 -- status='ready' but 0 SLOs incorrectly showed as HEALTHY. This hid silent
@@ -368,6 +387,8 @@ GRANT ALL ON public.ai_model_usage           TO authenticated, service_role;
 GRANT ALL ON public.slo_feedback             TO authenticated, service_role;
 GRANT ALL ON public.ingestion_jobs           TO service_role;
 GRANT SELECT ON public.ingestion_jobs        TO authenticated;
+GRANT ALL ON public.improvement_signals      TO authenticated, service_role;
+GRANT ALL ON public.improvement_insights     TO authenticated, service_role;
 
 GRANT SELECT ON public.rag_health_report     TO authenticated, service_role;
 GRANT SELECT ON public.slo_analytics         TO authenticated, service_role;
@@ -379,6 +400,8 @@ ALTER TABLE public.slo_database        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.chunk_slo_mapping   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.slo_feedback        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ingestion_jobs      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.improvement_signals   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.improvement_insights  ENABLE ROW LEVEL SECURITY;
 
 -- slo_database: SELECT (users see only their own documents' SLOs)
 DROP POLICY IF EXISTS "Users can view SLOs for their own documents"  ON public.slo_database;
@@ -455,6 +478,19 @@ CREATE POLICY "Users can manage their own feedback"
   ON public.slo_feedback FOR ALL
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
+
+-- improvement_signals: users manage their own signals
+DROP POLICY IF EXISTS "Users can manage their own signals" ON public.improvement_signals;
+CREATE POLICY "Users can manage their own signals"
+  ON public.improvement_signals FOR ALL
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- improvement_insights: all authenticated users can view insights
+DROP POLICY IF EXISTS "Users can view insights" ON public.improvement_insights;
+CREATE POLICY "Users can view insights"
+  ON public.improvement_insights FOR SELECT
+  USING (auth.uid() IS NOT NULL);
 
 -- chunk_slo_mapping: users see mappings for their documents
 DROP POLICY IF EXISTS "Users can view mappings for their own documents" ON public.chunk_slo_mapping;
