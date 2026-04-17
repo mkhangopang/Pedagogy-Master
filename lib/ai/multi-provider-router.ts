@@ -4,81 +4,88 @@ import { retrieveRelevantChunks } from '../rag/retriever';
 import { extractSLOCodes, normalizeSLO } from '../rag/slo-extractor';
 import { classifyIntent } from './intent-classifier';
 import { kv } from '../kv';
-import { Buffer } from 'buffer';
+import { createHash } from 'crypto';
 
-/**
- * MULTI-STAGE RETRIEVAL CASCADE (v126.1)
- * T1: Redis Cache | T2: Intent Routing | T3: Surgical Match | T4: Semantic Hybrid | T5: Self-Eval Log
- */
 export async function generateAIResponse(
   userPrompt: string,
   history: any[],
   userId: string,
   supabase: SupabaseClient,
   adaptiveContext?: string,
-  overrideDocPart?: any, 
+  overrideDocPart?: any,
   toolType?: string,
   customSystem?: string,
   priorityDocumentId?: string
 ): Promise<{ text: string; provider: string; metadata?: any }> {
-  
+
   const start = Date.now();
-  
-  // 1. INTENT CLASSIFICATION (Gemini 3 Flash)
+
+  // ── 1. QUOTA GUARD ──────────────────────────────────────────────────────────
+  const { data: quotaOk, error: quotaErr } = await supabase.rpc(
+    'increment_query_count',
+    { p_user_id: userId }
+  );
+  if (quotaErr || quotaOk === false) {
+    throw new Error('QUOTA_EXCEEDED: Upgrade your plan to continue generating content.');
+  }
+
+  // ── 2. INTENT CLASSIFICATION ─────────────────────────────────────────────────
   const intentData = await classifyIntent(userPrompt);
 
-  // 2. CACHE LOOKUP (Upstash Redis)
-  const cacheKey = `synth:${Buffer.from(userPrompt).toString('base64').substring(0, 40)}`;
+  // ── 3. CACHE LOOKUP ──────────────────────────────────────────────────────────
+  const cacheKey = `synth:${createHash('sha256').update(userPrompt).digest('hex')}`;
   const cached = await kv.get<string>(cacheKey);
   if (cached) return { text: cached, provider: 'Neural Cache', metadata: { cached: true } };
 
-  // 3. RETRIEVAL CASCADE
-  let vaultContent = "";
+  // ── 4. DOCUMENT RETRIEVAL ────────────────────────────────────────────────────
+  let vaultContent = '';
   let isGrounded = false;
   let topChunkIds: string[] = [];
-  let sourceDocName = "";
-  
-  const { data: activeDocs } = await supabase.from('documents')
-    .select('id, name, authority, subject, grade_level, master_md_dialect')
-    .eq('id', priorityDocumentId || 'dummy_fail');
+  let sourceDocName = '';
 
-  const activeDoc = activeDocs?.[0];
+  if (priorityDocumentId) {
+    const { data: activeDoc } = await supabase
+      .from('documents')
+      .select('id, name, authority, subject, grade_level, master_md_dialect')
+      .eq('id', priorityDocumentId)
+      .single();
 
-  if (activeDoc) {
-    sourceDocName = activeDoc.name;
-    // Stage A: Surgical Code Match (Regex precision)
-    const codes = extractSLOCodes(userPrompt);
-    if (codes.length > 0) {
-      const { data: sloMatch } = await supabase.from('document_chunks')
-        .select('id, chunk_text')
-        .contains('slo_codes', [normalizeSLO(codes[0].code)])
-        .eq('document_id', activeDoc.id)
-        .limit(1);
-      
-      if (sloMatch?.[0]) {
-        vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch[0].chunk_text}`;
-        topChunkIds = [sloMatch[0].id];
-        isGrounded = true;
+    if (activeDoc) {
+      sourceDocName = activeDoc.name;
+
+      const codes = extractSLOCodes(userPrompt);
+      if (codes.length > 0) {
+        const { data: sloMatch } = await supabase
+          .from('document_chunks')
+          .select('id, chunk_text')
+          .contains('slo_codes', [normalizeSLO(codes[0].code)])
+          .eq('document_id', activeDoc.id)
+          .limit(1);
+
+        if (sloMatch?.[0]) {
+          vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch[0].chunk_text}`;
+          topChunkIds = [sloMatch[0].id];
+          isGrounded = true;
+        }
       }
-    }
 
-    // Stage B: Hybrid Semantic (Vector + FTS fallback)
-    if (!isGrounded) {
-      const chunks = await retrieveRelevantChunks({
-        query: userPrompt,
-        documentIds: [activeDoc.id],
-        supabase,
-        matchCount: 8,
-        dialect: activeDoc.master_md_dialect
-      });
-      vaultContent = chunks.map(c => c.chunk_text).join('\n---\n');
-      topChunkIds = chunks.map(c => c.chunk_id);
-      isGrounded = chunks.length > 0;
+      if (!isGrounded) {
+        const chunks = await retrieveRelevantChunks({
+          query: userPrompt,
+          documentIds: [activeDoc.id],
+          supabase,
+          matchCount: 8,
+          dialect: activeDoc.master_md_dialect
+        });
+        vaultContent = chunks.map(c => c.chunk_text).join('\n---\n');
+        topChunkIds = chunks.map(c => c.chunk_id);
+        isGrounded = chunks.length > 0;
+      }
     }
   }
 
-  // 4. NEURAL SYNTHESIS (Complexity-Aware Routing)
-  const systemInstruction = customSystem || "You are the Pedagogy Master AI.";
+  // ── 5. NEURAL SYNTHESIS ───────────────────────────────────────────────────────
+  const systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
   const finalPrompt = `
 <CONTEXT>
 INTENT: ${intentData.intent} | COMPLEXITY: ${intentData.complexity}
@@ -91,24 +98,18 @@ ${vaultContent || '[VAULT_EMPTY: Use General Pedagogical Knowledge]'}
 
 USER_QUERY: "${userPrompt}"`;
 
-  // Add comment above each fix
-  // Fix: Wrapped positional arguments into an options object to resolve the "Expected 1-2 arguments, but got 7" error
-  const result = await synthesize(
-    finalPrompt, 
-    {
-      history: history.slice(-4), 
-      isGrounded, 
-      docParts: [], 
-      suggestedProvider: intentData.suggestedProvider, 
-      systemPrompt: systemInstruction,
-      complexity: intentData.complexity
-    }
-  );
+  const result = await synthesize(finalPrompt, {
+    history: history.slice(-6),
+    isGrounded,
+    docParts: [],
+    suggestedProvider: intentData.suggestedProvider,
+    systemPrompt: systemInstruction,
+    complexity: intentData.complexity
+  });
 
-  // 5. OBSERVABILITY & CACHING
+  // ── 6. OBSERVABILITY & SELECTIVE CACHING ────────────────────────────────────
   const latency = Date.now() - start;
-  
-  // Async log to retrieval_logs for analytics
+
   supabase.from('retrieval_logs').insert({
     user_id: userId,
     query_text: userPrompt,
@@ -118,14 +119,24 @@ USER_QUERY: "${userPrompt}"`;
     provider_used: result.provider
   }).then();
 
-  // Only cache stable, non-creative lookups
-  if (intentData.complexity < 3 && !userPrompt.includes('create')) {
+  const isCacheable = intentData.complexity < 3
+    && intentData.intent === 'lookup'
+    && !userPrompt.includes('create')
+    && !userPrompt.includes('generate');
+
+  if (isCacheable) {
     await kv.set(cacheKey, result.text, 3600);
   }
 
   return {
     text: result.text,
     provider: result.provider,
-    metadata: { isGrounded, sourceDocument: sourceDocName, intent: intentData.intent, latency, chunkCount: topChunkIds.length }
+    metadata: {
+      isGrounded,
+      sourceDocument: sourceDocName,
+      intent: intentData.intent,
+      latency,
+      chunkCount: topChunkIds.length
+    }
   };
 }
