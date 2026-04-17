@@ -33,14 +33,15 @@ export class IngestionQueue {
   async enqueue(documentId: string): Promise<string> {
     const { data, error } = await this.supabase
       .from('ingestion_jobs')
-      .upsert({
+      .insert({
         document_id: documentId,
         step: IngestionStep.EXTRACT,
         status: JobStatus.PENDING,
+        progress: 0,
         error_message: null,
         payload: null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'document_id' })
+      })
       .select()
       .single();
 
