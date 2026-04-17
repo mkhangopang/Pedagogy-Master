@@ -11,13 +11,13 @@ export interface AIProvider {
   thinkingLevel?: ThinkingLevel;
   rpm: number;
   rpd: number;
-  tier: 1 | 2 | 3; 
+  tier: 1 | 2 | 3;
   enabled: boolean;
 }
 
 export class SynthesizerCore {
   private providers: Map<string, AIProvider>;
-  private failedProviders: Map<string, number>;
+  private failedProviders: Map<string, { until: number; retries: number }>;
 
   constructor() {
     this.providers = this.initializeProviders();
@@ -27,15 +27,15 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // TIER 1: THE REASONERS
+    // TIER 1: REASONERS
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 3.1 Pro',
+      name: 'Gemini 2.5 Pro',
       endpoint: 'native',
-      model: 'gemini-3.1-pro-preview',
-      apiKeyEnv: 'API_KEY', // User has API_KEY for Gemini
+      model: 'gemini-2.5-pro-preview-05-06',
+      apiKeyEnv: 'API_KEY',
       maxTokens: 16384,
-      thinkingLevel: ThinkingLevel.HIGH, 
+      thinkingLevel: ThinkingLevel.HIGH,
       rpm: 10,
       rpd: 2000,
       tier: 1,
@@ -68,7 +68,7 @@ export class SynthesizerCore {
       enabled: !!(process.env.GROK_API_KEY || process.env.AI_GATEWAY_API_KEY)
     });
 
-    // TIER 2: THE ENGINES (Flash Fallback)
+    // TIER 2: ENGINES
     providers.set('cerebras', {
       id: 'cerebras',
       name: 'Cerebras (Llama 3.1 70B)',
@@ -84,9 +84,9 @@ export class SynthesizerCore {
 
     providers.set('gemini-flash', {
       id: 'gemini-flash',
-      name: 'Gemini 3 Flash',
+      name: 'Gemini 2.0 Flash',
       endpoint: 'native',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash',
       apiKeyEnv: 'API_KEY',
       maxTokens: 8192,
       rpm: 100,
@@ -100,7 +100,7 @@ export class SynthesizerCore {
       name: 'Mistral Large',
       endpoint: 'https://api.mistral.ai/v1/chat/completions',
       model: 'mistral-large-latest',
-      apiKeyEnv: 'API_MISTRAL', // User has API_MISTRAL
+      apiKeyEnv: 'API_MISTRAL',
       maxTokens: 32768,
       rpm: 20,
       rpd: 5000,
@@ -137,9 +137,6 @@ export class SynthesizerCore {
     return providers;
   }
 
-  /**
-   * RECOVERY PROTOCOL: Clears all blacklisted nodes.
-   */
   public realignGrid() {
     this.failedProviders.clear();
     console.log("⚡ [Grid] All nodes re-initialized for synthesis.");
@@ -153,7 +150,7 @@ export class SynthesizerCore {
 
     // filter and sort candidates by tier
     let candidates = Array.from(this.providers.values())
-      .filter(p => p.enabled && (!this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id) || 0)));
+      .filter(p => p.enabled && (!this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id)?.until || 0)));
 
     candidates.sort((a, b) => {
       const targetTier = complexity >= 3 ? 1 : 2;
@@ -211,7 +208,8 @@ export class SynthesizerCore {
         // Blacklist node for 10 mins if it's a 429
         const msg = e?.message || "Unknown error";
         const cooldown = msg.includes('429') ? 600000 : 60000;
-        this.failedProviders.set(provider.id, Date.now() + cooldown);
+        const currentFails = this.failedProviders.get(provider.id)?.retries || 0;
+        this.failedProviders.set(provider.id, { until: Date.now() + cooldown, retries: currentFails + 1 });
         console.warn(`🔴 [Grid] Node ${provider.name} saturated. Failover initiated. Error: ${msg}`);
       }
     }
@@ -223,7 +221,7 @@ export class SynthesizerCore {
     return Array.from(this.providers.values()).map(p => ({
       id: p.id,
       name: p.name,
-      status: !p.enabled ? 'disabled' : (this.failedProviders.has(p.id) && now < (this.failedProviders.get(p.id) || 0)) ? 'saturated' : 'active',
+      status: !p.enabled ? 'disabled' : (this.failedProviders.has(p.id) && now < (this.failedProviders.get(p.id)?.until || 0)) ? 'saturated' : 'active',
       tier: p.tier
     }));
   }
