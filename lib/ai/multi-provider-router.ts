@@ -20,7 +20,7 @@ export async function generateAIResponse(
 
   const start = Date.now();
 
-  // ── 1. QUOTA GUARD ──────────────────────────────────────────────────────────
+  // 1. Atomic Quota Enforcement
   const { data: quotaOk, error: quotaErr } = await supabase.rpc(
     'increment_query_count',
     { p_user_id: userId }
@@ -29,15 +29,15 @@ export async function generateAIResponse(
     throw new Error('QUOTA_EXCEEDED: Upgrade your plan to continue generating content.');
   }
 
-  // ── 2. INTENT CLASSIFICATION ─────────────────────────────────────────────────
+  // 2. Intent Classification
   const intentData = await classifyIntent(userPrompt);
 
-  // ── 3. CACHE LOOKUP ──────────────────────────────────────────────────────────
+  // 3. Cache Lookup (SHA-256)
   const cacheKey = `synth:${createHash('sha256').update(userPrompt).digest('hex')}`;
   const cached = await kv.get<string>(cacheKey);
   if (cached) return { text: cached, provider: 'Neural Cache', metadata: { cached: true } };
 
-  // ── 4. DOCUMENT RETRIEVAL ────────────────────────────────────────────────────
+  // 4. Document Retrieval (Fixed)
   let vaultContent = '';
   let isGrounded = false;
   let topChunkIds: string[] = [];
@@ -84,7 +84,7 @@ export async function generateAIResponse(
     }
   }
 
-  // ── 5. NEURAL SYNTHESIS ───────────────────────────────────────────────────────
+  // 5. Neural Synthesis
   const systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
   const finalPrompt = `
 <CONTEXT>
@@ -101,15 +101,14 @@ USER_QUERY: "${userPrompt}"`;
   const result = await synthesize(finalPrompt, {
     history: history.slice(-6),
     isGrounded,
-    docParts: [],
     suggestedProvider: intentData.suggestedProvider,
     systemPrompt: systemInstruction,
     complexity: intentData.complexity
   });
 
-  // ── 6. OBSERVABILITY & SELECTIVE CACHING ────────────────────────────────────
   const latency = Date.now() - start;
 
+  // Logging
   supabase.from('retrieval_logs').insert({
     user_id: userId,
     query_text: userPrompt,
@@ -119,10 +118,9 @@ USER_QUERY: "${userPrompt}"`;
     provider_used: result.provider
   }).then();
 
-  const isCacheable = intentData.complexity < 3
-    && intentData.intent === 'lookup'
-    && !userPrompt.includes('create')
-    && !userPrompt.includes('generate');
+  // Selective Caching
+  const isCacheable = intentData.complexity < 3 && intentData.intent === 'lookup' 
+    && !userPrompt.includes('create') && !userPrompt.includes('generate');
 
   if (isCacheable) {
     await kv.set(cacheKey, result.text, 3600);
