@@ -103,13 +103,13 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   const handleGenerate = async (userInput: string, handoffContext?: string) => {
     if (!userInput.trim() || isGenerating || !canQuery) return;
-    
+
     const effectiveTool = activeTool || 'master_plan';
     setIsGenerating(true);
     setWorkflowRecommendation(null);
     const aiMsgId = crypto.randomUUID();
-    
-    setMessages(prev => [...prev, 
+
+    setMessages(prev => [...prev,
       { id: crypto.randomUUID(), role: 'user', content: userInput, timestamp: new Date().toISOString() },
       { id: aiMsgId, role: 'assistant', content: '', timestamp: new Date().toISOString() }
     ]);
@@ -118,40 +118,49 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       onQuery();
       if (window.innerWidth < 768) setMobileActiveTab('artifact');
 
-      const personaPrompt = `
-[CONTEXT_MODES]
-CURRICULUM_MODE: ${isCurriculumEnabled ? 'ACTIVE' : 'INACTIVE'}
-GLOBAL_RESOURCES_MODE: ${isGlobalEnabled ? 'ACTIVE' : 'INACTIVE'}
-EXPERT_MODULE: ${getToolDisplayName(effectiveTool)}
-
-[PERSONA_OVERLAY]
-${persona === 'creative' ? '[CREATIVE_MODE: ON] Use highly engaging, active learning strategies.' : persona === 'auditor' ? '[AUDIT_MODE: ON] Focus on standards rigor.' : ''}
-
-${handoffContext ? `[WORKFLOW_CONTEXT: Use the following previous synthesis as a base]:\n${handoffContext}` : ''}
-
-USER_QUERY: ${userInput}`;
+      // FIX BUG 4: Build persona/mode context as adaptiveContextOverride.
+      // This goes into the system prompt on the server — NOT into the user query.
+      // Keeping userInput clean ensures the RAG embedding query is accurate.
+      const adaptiveContextOverride = [
+        `CURRICULUM_MODE: ${isCurriculumEnabled ? 'ACTIVE' : 'INACTIVE'}`,
+        `GLOBAL_RESOURCES_MODE: ${isGlobalEnabled ? 'ACTIVE' : 'INACTIVE'}`,
+        `EXPERT_MODULE: ${getToolDisplayName(effectiveTool)}`,
+        persona === 'creative' ? 'PERSONA: Use highly engaging, active learning strategies.' : '',
+        persona === 'auditor' ? 'PERSONA: Focus on standards rigor and alignment accuracy.' : '',
+        handoffContext ? `WORKFLOW_CONTEXT: Use the following previous synthesis as a base:\n${handoffContext}` : '',
+      ].filter(Boolean).join('\n');
 
       const stream = geminiService.generatePedagogicalToolStream(
-        effectiveTool, 
-        personaPrompt, 
-        { base64: activeDoc?.base64Data, mimeType: activeDoc?.mimeType, filePath: activeDoc?.filePath, id: activeDoc?.id }, 
-        brain, 
-        user, 
-        isCurriculumEnabled ? activeDoc?.id : undefined 
+        effectiveTool,
+        userInput,              // FIX: clean query only — no wrapping
+        // FIX BUG 9: No base64 — server uses RAG via priorityDocumentId
+        { id: activeDoc?.id },
+        brain,
+        user,
+        isCurriculumEnabled ? activeDoc?.id : undefined,
+        adaptiveContextOverride // FIX: persona context goes here, not in userInput
       );
-      
+
       let fullContent = '';
       for await (const chunk of stream) {
         if (chunk) {
           fullContent += chunk;
           setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
-          setCanvasContent(fullContent); 
+          setCanvasContent(fullContent);
         }
       }
-      await adaptiveService.captureGeneration(user.id, effectiveTool, fullContent, { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled });
+      await adaptiveService.captureGeneration(
+        user.id, effectiveTool, fullContent,
+        { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled }
+      );
+
     } catch (err: any) {
-      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m));
-    } finally { setIsGenerating(false); }
+      setMessages(prev => prev.map(m =>
+        m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m
+      ));
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleWorkflowTransition = () => {
