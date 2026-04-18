@@ -1,259 +1,236 @@
-import { NeuralBrain, UserProfile } from "../types";
-import { adaptiveService } from "./adaptiveService";
-import { supabase } from "../lib/supabase";
+import { GoogleGenAI, ThinkingLevel } from "@google/genai";
+import { resolveApiKey } from '../env-server';
 
-// Local cooldown to prevent hammering the server after a rate limit
-let globalCooldownUntil = 0;
-
-function parseAIError(errorData: any): string {
-  const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
-  
-  if (msg.startsWith('AI Alert:')) return msg;
-
-  const lowerMsg = msg.toLowerCase();
-  
-  if (lowerMsg.includes('grid_saturated') || lowerMsg.includes('saturated') || lowerMsg.includes('429')) {
-    return "AI Alert: Synthesis grid saturated. Please wait 60s for neural cooling.";
-  }
-  if (lowerMsg.includes('grid_fault') || lowerMsg.includes('vault_error')) {
-    return "AI Alert: Neural context node missing. Try re-selecting the document.";
-  }
-  if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('504')) {
-    return "AI Alert: Neural handshake timed out. Retrying connection...";
-  }
-  if (lowerMsg.includes('quota') || lowerMsg.includes('exhausted')) {
-    return "AI Alert: Neural quota exhausted for this node. Try again in a few minutes.";
-  }
-
-  return "AI Alert: Synthesis grid exception. Check your connectivity.";
+export interface AIProvider {
+  id: string;
+  name: string;
+  endpoint: string;
+  model: string;
+  apiKeyEnv: string;
+  maxTokens: number;
+  thinkingLevel?: ThinkingLevel;
+  rpm: number;
+  rpd: number;
+  tier: 1 | 2 | 3;
+  enabled: boolean;
 }
 
-/**
- * GLITCH GUARD (v2.0)
- * Detects if the model is repeating the same character/emoji pattern.
- */
-function isRepeating(text: string, limit: number = 30): boolean {
-  if (text.length < limit) return false;
-  const lastN = text.slice(-limit);
-  return new Set(lastN.split('')).size <= 2;
-}
+export class SynthesizerCore {
+  private providers: Map<string, AIProvider>;
+  private failedProviders: Map<string, { until: number; retries: number }>;
 
-/**
- * SSE PARSER (v1.0)
- *
- * FIX: The previous code yielded raw SSE bytes directly (e.g. `data: {"token":"word "}\n\n`).
- * The Chat and Tools views accumulated those raw bytes into `fullContent` and then
- * rendered the SSE markup as visible text — producing garbage output.
- *
- * This function parses a raw SSE byte stream and yields only the decoded token strings.
- * It buffers partial events across read() calls to handle chunk boundaries correctly.
- */
-async function* parseSSEStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>
-): AsyncGenerator<string> {
-  const decoder = new TextDecoder();
-  let buffer = '';
+  constructor() {
+    this.providers = this.initializeProviders();
+    this.failedProviders = new Map();
+  }
 
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+  private initializeProviders(): Map<string, AIProvider> {
+    const providers = new Map<string, AIProvider>();
 
-      buffer += decoder.decode(value, { stream: true });
+    // TIER 1: REASONERS
+    providers.set('gemini-pro', {
+      id: 'gemini-pro',
+      name: 'Gemini 2.5 Pro',
+      endpoint: 'native',
+      model: 'gemini-2.5-pro-preview-05-06',
+      apiKeyEnv: 'API_KEY',
+      maxTokens: 16384,
+      thinkingLevel: ThinkingLevel.HIGH,
+      rpm: 10,
+      rpd: 2000,
+      tier: 1,
+      enabled: true
+    });
 
-      // SSE events are separated by double newlines
-      const events = buffer.split('\n\n');
-      // Keep the last (possibly incomplete) event in the buffer
-      buffer = events.pop() ?? '';
+    providers.set('sambanova', {
+      id: 'sambanova',
+      name: 'SambaNova (Llama 3.1 405B)',
+      endpoint: 'https://api.sambanova.ai/v1/chat/completions',
+      model: 'Meta-Llama-3.1-405B-Instruct',
+      apiKeyEnv: 'SAMBANOVA_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 1,
+      enabled: true
+    });
 
-      for (const event of events) {
-        const line = event.trim();
-        if (!line || line === 'data: [DONE]') continue;
+    providers.set('grok-2', {
+      id: 'grok-2',
+      name: 'Grok 2 (xAI)',
+      endpoint: 'https://api.x.ai/v1/chat/completions',
+      model: 'grok-2-1212',
+      apiKeyEnv: 'GROK_API_KEY',
+      maxTokens: 32768,
+      rpm: 20,
+      rpd: 5000,
+      tier: 1,
+      enabled: !!(process.env.GROK_API_KEY || process.env.AI_GATEWAY_API_KEY)
+    });
 
-        if (line.startsWith('data: ')) {
-          const jsonStr = line.slice(6); // strip "data: "
-          try {
-            const parsed = JSON.parse(jsonStr);
-            // Our SSE format: { token: "..." }
-            if (parsed?.token !== undefined) {
-              yield String(parsed.token);
-            } else if (typeof parsed === 'string') {
-              yield parsed;
+    // TIER 2: ENGINES
+    providers.set('cerebras', {
+      id: 'cerebras',
+      name: 'Cerebras (Llama 3.1 70B)',
+      endpoint: 'https://api.cerebras.ai/v1/chat/completions',
+      model: 'llama3.1-70b',
+      apiKeyEnv: 'CEREBRAS_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
+    });
+
+    providers.set('gemini-flash', {
+      id: 'gemini-flash',
+      name: 'Gemini 2.0 Flash',
+      endpoint: 'native',
+      model: 'gemini-2.0-flash',
+      apiKeyEnv: 'API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
+    });
+
+    providers.set('mistral-large', {
+      id: 'mistral-large',
+      name: 'Mistral Large',
+      endpoint: 'https://api.mistral.ai/v1/chat/completions',
+      model: 'mistral-large-latest',
+      apiKeyEnv: 'API_MISTRAL',
+      maxTokens: 32768,
+      rpm: 20,
+      rpd: 5000,
+      tier: 2,
+      enabled: true
+    });
+
+    providers.set('deepseek-v3', {
+      id: 'deepseek-v3',
+      name: 'DeepSeek V3',
+      endpoint: 'https://api.deepseek.com/v1/chat/completions',
+      model: 'deepseek-chat',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
+    });
+
+    providers.set('openrouter', {
+      id: 'openrouter',
+      name: 'OpenRouter (Auto-Fallback)',
+      endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+      model: 'openrouter/auto',
+      apiKeyEnv: 'OPENROUTER_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 3,
+      enabled: true
+    });
+
+    return providers;
+  }
+
+  public realignGrid() {
+    this.failedProviders.clear();
+    console.log("⚡ [Grid] All nodes re-initialized for synthesis.");
+  }
+
+  public async synthesize(prompt: string, options: any = {}): Promise<any> {
+    const now = Date.now();
+    const history = options.history || [];
+    const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
+    const complexity = options.complexity || 2; 
+
+    // filter and sort candidates by tier
+    let candidates = Array.from(this.providers.values())
+      .filter(p => p.enabled && (!this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id)?.until || 0)));
+
+    candidates.sort((a, b) => {
+      const targetTier = complexity >= 3 ? 1 : 2;
+      return Math.abs(a.tier - targetTier) - Math.abs(b.tier - targetTier);
+    });
+
+    if (candidates.length === 0) {
+      this.realignGrid();
+      candidates = Array.from(this.providers.values()).filter(p => p.enabled);
+    }
+
+    for (const provider of candidates) {
+      try {
+        let apiKey = (provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
+          ? (process.env.API_KEY || resolveApiKey()) 
+          : process.env[provider.apiKeyEnv];
+          
+        if (!apiKey && provider.id === 'grok-2') {
+          apiKey = process.env.AI_GATEWAY_API_KEY;
+        }
+
+        if (!apiKey) continue;
+
+        if (provider.endpoint === 'native') {
+          const ai = new GoogleGenAI({ apiKey });
+          const res = await ai.models.generateContent({
+            model: provider.model,
+            contents: [
+              ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
+              { role: 'user', parts: [{ text: prompt }] }
+            ],
+            config: { 
+              systemInstruction: systemPrompt,
+              temperature: 0.1,
+              thinkingConfig: provider.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : undefined
             }
-          } catch {
-            // Not JSON — yield the raw data as-is (e.g. error messages)
-            yield jsonStr;
-          }
+          });
+          return { text: res.text, provider: provider.name };
+        } else {
+          // REST Fallback (OpenAI compatible)
+          const res = await fetch(provider.endpoint, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: provider.model,
+              messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
+              temperature: 0.1
+            })
+          });
+          if (!res.ok) throw new Error(`Node_Error_${res.status}`);
+          const data = await res.json();
+          return { text: data.choices[0].message.content, provider: provider.name };
         }
+      } catch (e: any) {
+        // Blacklist node for 10 mins if it's a 429
+        const msg = e?.message || "Unknown error";
+        const cooldown = msg.includes('429') ? 600000 : 60000;
+        const currentFails = this.failedProviders.get(provider.id)?.retries || 0;
+        this.failedProviders.set(provider.id, { until: Date.now() + cooldown, retries: currentFails + 1 });
+        console.warn(`🔴 [Grid] Node ${provider.name} saturated. Failover initiated. Error: ${msg}`);
       }
     }
+    throw new Error("AI Alert: Global Synthesis Failure. All engines saturated.");
+  }
 
-    // Flush any remaining buffer content
-    if (buffer.trim() && buffer.trim() !== 'data: [DONE]') {
-      const line = buffer.trim();
-      if (line.startsWith('data: ')) {
-        const jsonStr = line.slice(6);
-        try {
-          const parsed = JSON.parse(jsonStr);
-          if (parsed?.token !== undefined) yield String(parsed.token);
-        } catch {
-          yield jsonStr;
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
+  public getProviderStatus() {
+    const now = Date.now();
+    return Array.from(this.providers.values()).map(p => ({
+      id: p.id,
+      name: p.name,
+      status: !p.enabled ? 'disabled' : (this.failedProviders.has(p.id) && now < (this.failedProviders.get(p.id)?.until || 0)) ? 'saturated' : 'active',
+      tier: p.tier
+    }));
   }
 }
 
-export const geminiService = {
-  async getAuthToken(): Promise<string | undefined> {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token;
-  },
+let instance: SynthesizerCore | null = null;
+export function getSynthesizer(): SynthesizerCore {
+  if (!instance) instance = new SynthesizerCore();
+  return instance;
+}
 
-  checkCooldown() {
-    const remaining = Math.ceil((globalCooldownUntil - Date.now()) / 1000);
-    return remaining > 0 ? remaining : 0;
-  },
-
-  async *chatWithDocumentStream(
-    message: string,
-    doc: { base64?: string; mimeType?: string; filePath?: string; id?: string },
-    history: { role: 'user' | 'assistant', content: string }[],
-    brain: NeuralBrain,
-    user?: UserProfile,
-    priorityDocumentId?: string
-  ) {
-    const wait = this.checkCooldown();
-    if (wait > 0) {
-      yield `AI Alert: Synthesis cooling down. Retrying in ${wait}s...`;
-      return;
-    }
-
-    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
-    const token = await this.getAuthToken();
-
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          // FIX: Send the clean message as-is — no persona wrapping here.
-          // Persona/context lives in adaptiveContext (server-side) not in the user query.
-          message,
-          history,
-          priorityDocumentId,
-          adaptiveContext
-          // FIX BUG 9: base64 removed — document content comes from RAG, not inline upload
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "AI Alert: Synthesis grid exception." }));
-        // If cooldown needed, set it
-        if (response.status === 429) {
-          globalCooldownUntil = Date.now() + 60000;
-        }
-        yield parseAIError(errorData);
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) return;
-
-      let fullContent = "";
-
-      // FIX: Use SSE parser instead of yielding raw bytes.
-      for await (const token of parseSSEStream(reader)) {
-        fullContent += token;
-
-        if (isRepeating(fullContent)) {
-          yield "\n\n🚨 [Neural Glitch Guard]: Repetitive token loop detected. Synthesis aborted.";
-          return;
-        }
-
-        yield token;
-      }
-
-    } catch (err) {
-      yield `AI Alert: Synthesis grid exception.`;
-    }
-  },
-
-  async *generatePedagogicalToolStream(
-    toolType: string,
-    userInput: string,
-    doc: { base64?: string; mimeType?: string; filePath?: string; id?: string },
-    brain: NeuralBrain,
-    user?: UserProfile,
-    priorityDocumentId?: string,
-    adaptiveContextOverride?: string
-  ) {
-    const wait = this.checkCooldown();
-    if (wait > 0) {
-      yield `AI Alert: System is cooling down. Retry in ${wait}s.`;
-      return;
-    }
-
-    // FIX BUG 4: Build adaptiveContext here (persona, modes, workflow context) so it
-    // stays in the system prompt layer — NOT injected into userInput which
-    // pollutes the RAG embedding query.
-    const baseAdaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
-    const adaptiveContext = adaptiveContextOverride
-      ? `${baseAdaptiveContext}\n${adaptiveContextOverride}`
-      : baseAdaptiveContext;
-
-    const token = await this.getAuthToken();
-
-    try {
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          toolType,
-          // FIX BUG 4: userInput is now the CLEAN user query only.
-          // Persona context goes into adaptiveContext, not here.
-          userInput,
-          // FIX BUG 9: doc.base64 removed — server uses RAG, not inline base64.
-          // Only send the document ID for server-side RAG retrieval.
-          priorityDocumentId,
-          adaptiveContext,
-          history: []
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: "AI Alert: Synthesis grid exception." }));
-        if (response.status === 429) {
-          globalCooldownUntil = Date.now() + 60000;
-        }
-        yield parseAIError(errorData);
-        return;
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) return;
-
-      let fullContent = "";
-
-      // FIX: Parse SSE tokens properly
-      for await (const token of parseSSEStream(reader)) {
-        fullContent += token;
-
-        if (isRepeating(fullContent)) {
-          yield "\n\n🚨 [Neural Glitch Guard]: Recursive pattern detected.";
-          return;
-        }
-
-        yield token;
-      }
-
-    } catch (err) {
-      yield `AI Alert: Synthesis grid exception.`;
-    }
-  }
-};
+export const synthesize = (prompt: string, options: any = {}) => getSynthesizer().synthesize(prompt, options);

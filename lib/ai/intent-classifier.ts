@@ -1,13 +1,5 @@
-/**
- * INTENT CLASSIFIER (v5.0 - RULE-BASED ONLY)
- *
- * FIX: Removed the AI API call inside classifyIntent().
- * The previous version called orchestrator.executeTask() for unrecognized queries,
- * which consumed quota just to classify intent. This is wasteful and causes
- * quota exhaustion when the app is under load. The rule-based classifier below
- * handles ~95% of real-world queries correctly.
- */
-
+import { orchestrator } from "./model-orchestrator";
+import { extractJson } from "./utils";
 import { createHash } from "crypto";
 
 export type QueryIntent = 'lookup' | 'creation' | 'analysis' | 'comparison' | 'general';
@@ -27,7 +19,7 @@ function cacheGet(key: string): IntentResult | null {
   const val = intentCache.get(key);
   if (!val) return null;
   intentCache.delete(key);
-  intentCache.set(key, val); // LRU bump
+  intentCache.set(key, val);
   return val;
 }
 
@@ -38,95 +30,30 @@ function cacheSet(key: string, val: IntentResult) {
   intentCache.set(key, val);
 }
 
-function ruleBasedClassify(query: string): IntentResult {
+function ruleBasedClassify(query: string): IntentResult | null {
   const q = query.toLowerCase();
 
-  // ── CREATION tasks (high complexity, no caching) ──────────────────────────
-  if (/create|generate|write|build|develop|design.*lesson|lesson plan|rubric|quiz|assessment|make a|draft a/i.test(q)) {
-    const isSTEM = /math|science|physics|chemistry|biology|algebra|calculus|geometry|statistics/i.test(q);
-    return {
-      intent: 'creation',
-      complexity: 3,
-      suggestedProvider: 'gemini-pro',
-      isSTEM,
-      requiresGrounding: false
-    };
+  if (/what is|define|explain|describe|tell me about|meaning of/i.test(q) && q.split(' ').length < 15) {
+    return { intent: 'lookup', complexity: 1, suggestedProvider: 'gemini-flash', isSTEM: false, requiresGrounding: true };
+  }
+  if (/slo\s+[a-z0-9]+/i.test(q)) {
+    return { intent: 'lookup', complexity: 1, suggestedProvider: 'gemini-flash', isSTEM: false, requiresGrounding: true };
   }
 
-  // ── ANALYSIS tasks (medium-high complexity) ───────────────────────────────
-  if (/analyze|audit|evaluate|assess|review|examine|inspect|check alignment|coverage|gaps in/i.test(q)) {
-    return {
-      intent: 'analysis',
-      complexity: 3,
-      suggestedProvider: 'gemini-pro',
-      isSTEM: false,
-      requiresGrounding: true
-    };
+  if (/create|generate|write|build|develop|design.*lesson|lesson plan|rubric|quiz|assessment/i.test(q)) {
+    const isSTEM = /math|science|physics|chemistry|biology|algebra|calculus/i.test(q);
+    return { intent: 'creation', complexity: 3, suggestedProvider: 'gemini-pro', isSTEM, requiresGrounding: false };
   }
 
-  // ── SLO-specific lookups ───────────────────────────────────────────────────
-  if (/\bslo\b|\bslos\b|learning objective|curriculum standard|[A-Z]-\d{2}-[A-Z]-\d{2}/i.test(q)) {
-    return {
-      intent: 'lookup',
-      complexity: 2,
-      suggestedProvider: 'gemini-flash',
-      isSTEM: false,
-      requiresGrounding: true
-    };
+  if (/analyze|compare|contrast|evaluate|assess|audit|review/i.test(q)) {
+    return { intent: 'analysis', complexity: 2, suggestedProvider: 'sambanova', isSTEM: false, requiresGrounding: true };
   }
 
-  // ── COMPARISON tasks ──────────────────────────────────────────────────────
-  if (/\bvs\b|versus|difference between|compare|contrast|which is better|distinguish/i.test(q)) {
-    return {
-      intent: 'comparison',
-      complexity: 2,
-      suggestedProvider: 'gemini-flash',
-      isSTEM: false,
-      requiresGrounding: false
-    };
+  if (/vs|versus|difference between|compare/i.test(q)) {
+    return { intent: 'comparison', complexity: 2, suggestedProvider: 'gemini-flash', isSTEM: false, requiresGrounding: false };
   }
 
-  // ── Simple lookups (short definitional / factual queries) ─────────────────
-  if (/what is|what are|define|explain|describe|tell me about|meaning of/i.test(q) && q.split(' ').length < 20) {
-    return {
-      intent: 'lookup',
-      complexity: 1,
-      suggestedProvider: 'gemini-flash',
-      isSTEM: /math|science|physics|chemistry|biology/i.test(q),
-      requiresGrounding: true
-    };
-  }
-
-  // ── Bloom's / DOK tagging ─────────────────────────────────────────────────
-  if (/bloom|dok|depth of knowledge|cognitive level|tag|classify.*slo|slo.*level/i.test(q)) {
-    return {
-      intent: 'analysis',
-      complexity: 2,
-      suggestedProvider: 'gemini-flash',
-      isSTEM: false,
-      requiresGrounding: true
-    };
-  }
-
-  // ── Lesson / teaching strategy queries ───────────────────────────────────
-  if (/how to teach|teaching strategy|instructional|pedagogy|5e model|madeline hunter|ubd|backward design/i.test(q)) {
-    return {
-      intent: 'general',
-      complexity: 2,
-      suggestedProvider: 'gemini-flash',
-      isSTEM: false,
-      requiresGrounding: false
-    };
-  }
-
-  // ── Default fallback (no AI call needed) ─────────────────────────────────
-  return {
-    intent: 'general',
-    complexity: 2,
-    suggestedProvider: 'gemini-flash',
-    isSTEM: false,
-    requiresGrounding: false
-  };
+  return null;
 }
 
 export async function classifyIntent(query: string): Promise<IntentResult> {
@@ -136,8 +63,41 @@ export async function classifyIntent(query: string): Promise<IntentResult> {
   const cached = cacheGet(key);
   if (cached) return cached;
 
-  // Pure rule-based — no AI call, no quota usage
-  const result = ruleBasedClassify(query);
-  cacheSet(key, result);
-  return result;
+  const ruled = ruleBasedClassify(query);
+  if (ruled) {
+    cacheSet(key, ruled);
+    return ruled;
+  }
+
+  try {
+    const prompt = `Classify the pedagogical intent of this user query: "${query}"
+    
+Return ONLY a JSON object with this schema:
+{
+  "intent": "lookup" | "creation" | "analysis" | "comparison" | "general",
+  "complexity": 1 | 2 | 3,
+  "suggestedProvider": "string",
+  "isSTEM": boolean,
+  "requiresGrounding": boolean
+}`;
+
+    const result = await orchestrator.executeTask(prompt, 'lookup');
+    const parsed = extractJson(result.text || '{}');
+    if (parsed?.intent) {
+      cacheSet(key, parsed);
+      return parsed;
+    }
+  } catch (e) {
+    console.warn('[IntentClassifier] AI call failed, using default.');
+  }
+
+  const fallback: IntentResult = {
+    intent: 'general',
+    complexity: 1,
+    suggestedProvider: 'gemini-flash',
+    isSTEM: false,
+    requiresGrounding: true
+  };
+  cacheSet(key, fallback);
+  return fallback;
 }
