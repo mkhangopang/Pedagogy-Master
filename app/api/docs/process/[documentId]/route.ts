@@ -19,7 +19,6 @@ export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
 const MODEL_PRIMARY  = 'gemini-2.0-flash';
-const MODEL_COMPLEX  = 'gemini-2.5-pro-preview-05-06';
 const MODEL_LITE     = 'gemini-2.0-flash-lite';
 const MODEL_FALLBACK = 'gemini-2.0-flash-lite';
 
@@ -68,7 +67,18 @@ function detectSubject(t: string): string {
   if (t.includes('general science'))                       return 'S';
   if (t.includes('english'))                               return 'E';
   if (t.includes('urdu'))                                  return 'U';
-  return 'B';
+  if (t.includes('geography') || t.includes('geographical')) return 'GEO';
+  if (t.includes('economics') || t.includes('economic'))  return 'ECO';
+  if (t.includes('pakistan studies') || t.includes('civics')) return 'PST';
+  if (t.includes('islamiat') || t.includes('islamic'))    return 'ISL';
+  if (t.includes('history') || t.includes('historical'))  return 'HIS';
+
+  // BUG FIX: Previous code defaulted to 'B' (Biology) for everything unrecognized.
+  // This caused SLO codes for Economics, Geography, Islamiat etc. to be
+  // tagged as Biology codes, breaking all lookup and retrieval.
+  // Now we return 'GEN' (General) which is less wrong than 'B'.
+  console.warn(`[detectSubject] Could not identify subject from text sample. Defaulting to GEN.`);
+  return 'GEN';
 }
 function normalizeGrade(raw: any): string | null {
   if (!raw) return null;
@@ -95,7 +105,7 @@ function normalizeCode(raw: any): string | null {
     .replace(/[.\s]/g, '')
     .trim();
 
-  // Grade-range codes: M-01-02-A-01 (appears in cross-grade benchmarks) → take first grade
+  // Grade-range codes: M-01-02-A-01 (cross-grade benchmarks) → take first grade
   const gradeRange = s.match(/^([A-Z]{1,4})-?(\d{2})-(\d{2})-?([A-Z])-?(\d{1,3})$/);
   if (gradeRange) {
     return `${gradeRange[1]}${gradeRange[2]}${gradeRange[4]}${gradeRange[5].padStart(2, '0')}`;
@@ -104,19 +114,24 @@ function normalizeCode(raw: any): string | null {
   s = s.replace(/-/g, ''); // remove all dashes
 
   // ── OCR fixes (applied before matching) ──────────────────────────────────
-  // Fix 0l / 0L / 0I in GRADE position (between subject code and domain letter)
-  // e.g. M0LA09 → M01A09,  C0LA03 → C01A03
-  s = s.replace(/([A-Z]{1,4})0[LlIi]([A-Z])/, '$101$2');
+  // BUG FIX: Added /g flag to ALL replace() calls here.
+  // Without /g, only the FIRST occurrence of each OCR error is fixed.
+  // A string like "CS0LA0I" (two errors) only had the first fixed → "CS01A0I".
+  // The second OCR error "0I" (zero-I = 01) was left unfixed, producing "CS01A0I"
+  // instead of the correct "CS01A01".
+
+  // Fix 0l / 0L / 0I in GRADE position: M0LA09 → M01A09
+  s = s.replace(/([A-Z]{1,4})0[LlIi]([A-Z])/g, '$101$2');
 
   // Fix 0l / 0L / 0I at END of string (SLO number position)
-  s = s.replace(/0[LlIi]$/i, '01');
+  s = s.replace(/0[LlIi]$/ig, '01');
 
-  // Fix trailing l or I (SLO number)
-  s = s.replace(/[lI]$/i, '1');
+  // Fix trailing l or I (SLO number): B09A0l → B09A01
+  s = s.replace(/[lI]$/ig, '1');
 
-  // Fix O in digit positions (e.g. AO1 → A01)
-  s = s.replace(/([A-Z])O(\d)/, '$10$2');
-  s = s.replace(/(\d)O([A-Z\d])/, '$10$2');
+  // Fix O in digit positions: AO1 → A01
+  s = s.replace(/([A-Z])O(\d)/g, '$10$2');
+  s = s.replace(/(\d)O([A-Z\d])/g, '$10$2');
 
   // Roman numeral grade embedded in code: MVIIIA01 → M08A01
   const romMatch = s.match(/^([A-Z]{1,4})(XII|XI|IX|X|VIII|VII|VI|V|IV|III|II)([A-Z])(\d{1,3})$/);
@@ -412,13 +427,19 @@ async function callAIChain(
   responseMimeType: 'application/json' | 'text/plain' = 'application/json'
 ): Promise<any> {
   const chain = [
+    // PRIMARY: Gemini Flash — 60 RPM / 1500 RPD free tier. Best for bulk extraction.
     { provider: 'gemini', model: MODEL_PRIMARY, key: geminiKey },
-    { provider: 'gemini', model: MODEL_COMPLEX, key: geminiKey },
-    { provider: 'gemini', model: MODEL_FALLBACK, key: geminiKey },
+    // FALLBACK 1: Flash Lite — even higher quota, slightly lower quality
+    { provider: 'gemini', model: MODEL_LITE, key: geminiKey },
+    // FALLBACK 2: Groq (Llama 3.3 70B) — very fast, high free quota
     { provider: 'groq', model: 'llama-3.3-70b-versatile', key: process.env.GROQ_API_KEY },
+    // FALLBACK 3: Groq small model
     { provider: 'groq', model: 'llama-3.1-8b-instant', key: process.env.GROQ_API_KEY },
+    // FALLBACK 4: OpenAI mini
     { provider: 'openai', model: 'gpt-4o-mini', key: process.env.OPENAI_API_KEY },
   ].filter(link => !!link.key);
+  // REMOVED: { provider: 'gemini', model: MODEL_COMPLEX, key: geminiKey }
+  // (gemini-2.5-pro-preview has 10 RPM on free tier — not suitable for bulk extraction)
 
   if (chain.length === 0) {
     throw new Error('ORCHESTRATOR_FAULT: No AI provider keys found in environment.');
@@ -568,7 +589,20 @@ async function extractSlos(
     await supabase.from('slo_database').delete().eq('document_id', documentId);
   }
 
-  const rawBlocks = extractRawSloBlocks(processedText);
+  const rawBlocksRaw = extractRawSloBlocks(processedText);
+  // BUG FIX: Deduplicate raw blocks by content hash before sending to AI.
+  // linearizeSloText creates N copies per horizontal row; extractRawSloBlocks
+  // finds all of them. Deduplicating here saves significant API quota.
+  const blockSeen = new Set<string>();
+  const rawBlocks = rawBlocksRaw.filter(block => {
+    const key = createHash('md5').update(block.trim()).digest('hex');
+    if (blockSeen.has(key)) return false;
+    blockSeen.add(key);
+    return true;
+  });
+  if (rawBlocksRaw.length !== rawBlocks.length) {
+    console.log(`[Extract] Deduplicated raw blocks: ${rawBlocksRaw.length} → ${rawBlocks.length}`);
+  }
 
   if (rawBlocks.length === 0) {
     console.warn('[Extract] Regex found 0 blocks with standard pattern. Trying ultra-permissive fallback...');
@@ -798,7 +832,11 @@ async function extractSlos(
 
 // ── ENRICHMENT ENGINE ────────────────────────────────────────────────────────
 async function enrichSlos(documentId: string, supabase: any, apiKey: string, jobId: string, queue: IngestionQueue) {
-  const { data: slos, error } = await supabase.from('slo_database').select('*').eq('document_id', documentId);
+  const { data: slos, error } = await supabase
+    .from('slo_database')
+    .select('*')
+    .eq('document_id', documentId);
+
   if (error || !slos || slos.length === 0) {
     console.warn(`[Enrich] No SLOs found for document ${documentId}`);
     return;
@@ -809,34 +847,43 @@ async function enrichSlos(documentId: string, supabase: any, apiKey: string, job
   const BATCH_SIZE = 15;
   for (let i = 0; i < slos.length; i += BATCH_SIZE) {
     const batch = slos.slice(i, i + BATCH_SIZE);
-    const progress = Math.round((i / slos.length) * 10) + 75; // 75% to 85%
-    
+    const progress = Math.round((i / slos.length) * 10) + 75; // 75% → 85%
+
     await queue.updateProgress(jobId, {
       step: IngestionStep.ENRICH,
       progress,
-      message: `Enriching SLOs (${i + 1}-${Math.min(i + BATCH_SIZE, slos.length)} of ${slos.length})...`
+      message: `Enriching SLOs (${i + 1}–${Math.min(i + BATCH_SIZE, slos.length)} of ${slos.length})...`
     });
 
+    // BUG FIX (S3-Bug2): Use a stable row index for matching, not slo_code.
+    // The previous code told AI to use "INDEX_1" for codeless SLOs, then tried
+    // to find them with `batch.find(s => s.slo_code === "INDEX_1")` — which
+    // never matched because DB rows have `slo_code: null`, not "INDEX_1".
+    // Fix: use the DB row's `id` field as the stable key for round-trip matching.
     const prompt = `IDENTITY: Pedagogy Master AI (Enrichment Engine)
 GOAL: For each Student Learning Outcome (SLO) below, determine the Bloom's Taxonomy level, Cognitive Complexity, and 3-5 relevant keywords.
 
 SLOs:
-${batch.map((s: any, idx: number) => `${idx + 1}. [CODE: ${s.slo_code || 'NONE'}] ${s.slo_full_text}`).join('\n')}
+${batch.map((s: any) => `[ROW_ID: ${s.id}] ${s.slo_full_text}`).join('\n')}
 
 === SCHEMA ===
-Return ONLY a JSON object with a field "enrichments" which is an array of objects:
+Return ONLY a JSON object with a field "enrichments" (array):
 {
-  "slo_code": string,
-  "bloom_level": "Remembering" | "Understanding" | "Applying" | "Analyzing" | "Evaluating" | "Creating",
+  "row_id": "<exact row_id from input>",
+  "bloom_level": "Remember" | "Understand" | "Apply" | "Analyze" | "Evaluate" | "Create",
   "cognitive_complexity": "Low" | "Medium" | "High",
-  "keywords": string[]
+  "keywords": ["keyword1", "keyword2", "keyword3"]
 }
 
 RULES:
-- Match the slo_code exactly.
-- If no code, use the index (e.g. "INDEX_1").
-- Return ONLY valid JSON.`;
+- "row_id" must exactly match the ROW_ID provided in the input.
+- bloom_level MUST be one of: Remember, Understand, Apply, Analyze, Evaluate, Create
+  (NOT "Remembering", "Understanding" etc. — use the BASE form without -ing)
+- Return ONLY valid JSON, no markdown.`;
 
+    // BUG FIX (S3-Bug1): Bloom's levels now use base form ("Remember" not "Remembering").
+    // Previously used "-ing" suffix which mismatched the rest of the app.
+    // BUG FIX (S3-Bug2): Schema now uses row_id (stable) not slo_code (unreliable for nulls).
     try {
       const data = await callAIChain(apiKey, prompt, {
         type: Type.OBJECT,
@@ -846,32 +893,59 @@ RULES:
             items: {
               type: Type.OBJECT,
               properties: {
-                slo_code: { type: Type.STRING },
+                row_id: { type: Type.STRING },
                 bloom_level: { type: Type.STRING },
                 cognitive_complexity: { type: Type.STRING },
                 keywords: { type: Type.ARRAY, items: { type: Type.STRING } }
-              }
+              },
+              required: ['row_id', 'bloom_level']
             }
           }
         }
       });
-      
+
       const enrichments = data.enrichments || [];
-      
-      if (Array.isArray(enrichments)) {
-        for (const item of enrichments) {
-          const original = batch.find((s: any) => s.slo_code === item.slo_code);
-          if (original) {
-            await supabase.from('slo_database').update({
-              bloom_level: item.bloom_level,
-              cognitive_complexity: item.cognitive_complexity,
-              keywords: item.keywords
-            }).eq('id', original.id);
-          }
+
+      if (Array.isArray(enrichments) && enrichments.length > 0) {
+        // BUG FIX (S3-Bug3): Batch all updates for this batch in one pass.
+        // Previous code: 1 DB update per SLO = up to 200 sequential DB calls.
+        // New code: collect all updates, then do them in parallel (max 10 at once).
+        const updates = enrichments
+          .filter((item: any) => item.row_id)
+          .map((item: any) => {
+            // Validate bloom_level — only accept known values
+            const validBlooms = new Set(['Remember', 'Understand', 'Apply', 'Analyze', 'Evaluate', 'Create']);
+            const bloom = validBlooms.has(item.bloom_level) ? item.bloom_level : null;
+
+            // Validate cognitive_complexity
+            const validComplexity = new Set(['Low', 'Medium', 'High']);
+            const complexity = validComplexity.has(item.cognitive_complexity) ? item.cognitive_complexity : null;
+
+            return supabase
+              .from('slo_database')
+              .update({
+                bloom_level: bloom,
+                cognitive_complexity: complexity,
+                keywords: Array.isArray(item.keywords) ? item.keywords.slice(0, 10) : []
+              })
+              .eq('id', item.row_id);
+          });
+
+        // Run up to 10 DB updates concurrently
+        const CONCURRENCY = 10;
+        for (let j = 0; j < updates.length; j += CONCURRENCY) {
+          const batch = updates.slice(j, j + CONCURRENCY);
+          const results = await Promise.allSettled(batch);
+          results.forEach((r, idx) => {
+            if (r.status === 'rejected') {
+              console.error(`[Enrich] Update failed for item ${j + idx}:`, r.reason);
+            }
+          });
         }
+        console.log(`[Enrich] Batch ${Math.ceil(i / BATCH_SIZE) + 1}: enriched ${enrichments.length} SLOs`);
       }
     } catch (e: any) {
-      console.error(`[Enrich] Batch ${i} failed:`, e.message);
+      console.error(`[Enrich] Batch ${Math.ceil(i / BATCH_SIZE) + 1} failed:`, e.message);
     }
   }
 }
