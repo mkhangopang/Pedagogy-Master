@@ -146,9 +146,9 @@ export class SynthesizerCore {
     const now = Date.now();
     const history = options.history || [];
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
-    const complexity = options.complexity || 2; 
+    const complexity = options.complexity || 2;
 
-    // filter and sort candidates by tier
+    // Filter and sort candidates by tier
     let candidates = Array.from(this.providers.values())
       .filter(p => p.enabled && (!this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id)?.until || 0)));
 
@@ -165,9 +165,9 @@ export class SynthesizerCore {
     for (const provider of candidates) {
       try {
         let apiKey = (provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
-          ? (process.env.API_KEY || resolveApiKey()) 
+          ? (process.env.API_KEY || resolveApiKey())
           : process.env[provider.apiKeyEnv];
-          
+
         if (!apiKey && provider.id === 'grok-2') {
           apiKey = process.env.AI_GATEWAY_API_KEY;
         }
@@ -175,44 +175,87 @@ export class SynthesizerCore {
         if (!apiKey) continue;
 
         if (provider.endpoint === 'native') {
+          // Gemini native SDK
           const ai = new GoogleGenAI({ apiKey });
           const res = await ai.models.generateContent({
             model: provider.model,
             contents: [
-              ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
+              // FIX: Always pass conversation history to Gemini
+              ...history.map((h: any) => ({
+                role: h.role === 'user' ? 'user' : 'model',
+                parts: [{ text: h.content }]
+              })),
               { role: 'user', parts: [{ text: prompt }] }
             ],
-            config: { 
+            config: {
               systemInstruction: systemPrompt,
               temperature: 0.1,
-              thinkingConfig: provider.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : undefined
+              thinkingConfig: provider.thinkingLevel
+                ? { thinkingLevel: provider.thinkingLevel }
+                : undefined
             }
           });
           return { text: res.text, provider: provider.name };
+
         } else {
-          // REST Fallback (OpenAI compatible)
+          // FIX: REST providers now properly receive conversation history.
+          // Previously history was silently dropped, causing context loss on failover.
+          const formattedHistory = history.map((h: any) => ({
+            role: h.role === 'user' ? 'user' : 'assistant',
+            content: h.content
+          }));
+
+          const messages = [
+            { role: 'system', content: systemPrompt },
+            ...formattedHistory,
+            { role: 'user', content: prompt }
+          ];
+
+          const requestBody: any = {
+            model: provider.model,
+            messages,
+            temperature: 0.1,
+            max_tokens: provider.maxTokens
+          };
+
+          const headers: Record<string, string> = {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json'
+          };
+
+          // OpenRouter requires extra headers
+          if (provider.id === 'openrouter') {
+            headers['HTTP-Referer'] = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
+            headers['X-Title'] = 'Pedagogy Master AI';
+          }
+
           const res = await fetch(provider.endpoint, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              model: provider.model,
-              messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
-              temperature: 0.1
-            })
+            headers,
+            body: JSON.stringify(requestBody)
           });
-          if (!res.ok) throw new Error(`Node_Error_${res.status}`);
+
+          if (!res.ok) {
+            const errBody = await res.text().catch(() => '');
+            throw new Error(`Node_Error_${res.status}: ${errBody.slice(0, 200)}`);
+          }
+
           const data = await res.json();
-          return { text: data.choices[0].message.content, provider: provider.name };
+          const text = data?.choices?.[0]?.message?.content;
+          if (!text) throw new Error('Empty response from provider');
+          return { text, provider: provider.name };
         }
+
       } catch (e: any) {
-        // Blacklist node for 10 mins if it's a 429
         const msg = e?.message || "Unknown error";
+        // 429 = rate limit → cool off for 10 min; other errors → 1 min
         const cooldown = msg.includes('429') ? 600000 : 60000;
         const currentFails = this.failedProviders.get(provider.id)?.retries || 0;
         this.failedProviders.set(provider.id, { until: Date.now() + cooldown, retries: currentFails + 1 });
         console.warn(`🔴 [Grid] Node ${provider.name} saturated. Failover initiated. Error: ${msg}`);
       }
     }
+
     throw new Error("AI Alert: Global Synthesis Failure. All engines saturated.");
   }
 
@@ -221,7 +264,11 @@ export class SynthesizerCore {
     return Array.from(this.providers.values()).map(p => ({
       id: p.id,
       name: p.name,
-      status: !p.enabled ? 'disabled' : (this.failedProviders.has(p.id) && now < (this.failedProviders.get(p.id)?.until || 0)) ? 'saturated' : 'active',
+      status: !p.enabled
+        ? 'disabled'
+        : (this.failedProviders.has(p.id) && now < (this.failedProviders.get(p.id)?.until || 0))
+          ? 'saturated'
+          : 'active',
       tier: p.tier
     }));
   }
@@ -233,4 +280,5 @@ export function getSynthesizer(): SynthesizerCore {
   return instance;
 }
 
-export const synthesize = (prompt: string, options: any = {}) => getSynthesizer().synthesize(prompt, options);
+export const synthesize = (prompt: string, options: any = {}) =>
+  getSynthesizer().synthesize(prompt, options);
