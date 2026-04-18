@@ -59,19 +59,21 @@ function detectBoard(t: string): string {
 }
 function detectSubject(t: string): string {
   t = t.toLowerCase();
+  
+  if (t.includes('general science'))                       return 'S';
+  if (t.includes('computer science'))                      return 'CS';
+  if (t.includes('pakistan studies') || t.includes('civics')) return 'PST';
+  if (t.includes('islamic studies') || t.includes('islamiat') || t.includes('islamic')) return 'ISL';
+  
+  if (t.includes('mathematics') || /\bmath\b/.test(t))     return 'M';
   if (t.includes('biology'))                               return 'B';
   if (t.includes('chemistry'))                             return 'C';
   if (t.includes('physics'))                               return 'P';
-  if (t.includes('mathematics') || /\bmath\b/.test(t))    return 'M';
-  if (t.includes('computer science'))                      return 'CS';
-  if (t.includes('general science'))                       return 'S';
   if (t.includes('english'))                               return 'E';
   if (t.includes('urdu'))                                  return 'U';
   if (t.includes('geography') || t.includes('geographical')) return 'GEO';
-  if (t.includes('economics') || t.includes('economic'))  return 'ECO';
-  if (t.includes('pakistan studies') || t.includes('civics')) return 'PST';
-  if (t.includes('islamiat') || t.includes('islamic'))    return 'ISL';
-  if (t.includes('history') || t.includes('historical'))  return 'HIS';
+  if (t.includes('economics') || t.includes('economic'))   return 'ECO';
+  if (t.includes('history') || t.includes('historical'))   return 'HIS';
 
   // BUG FIX: Previous code defaulted to 'B' (Biology) for everything unrecognized.
   // This caused SLO codes for Economics, Geography, Islamiat etc. to be
@@ -95,12 +97,12 @@ function normalizeGrade(raw: any): string | null {
 //   Science:  [SLO:C-09-A-02] → C09A02   grades IX-XII (09-12)
 //   OCR:      0l or 0I in any position → 01
 //   SW prefix, SL0/5L0 typos, grade range codes, unpadded grades
-function normalizeCode(raw: any): string | null {
+function normalizeCode(raw: any, subjectCode?: string): string | null {
   if (!raw || raw === 'null') return null;
   if (typeof raw !== 'string') raw = String(raw);
 
   let s = raw.toUpperCase()
-    .replace(/^\[?(?:5L0|SL[O0]|LO|SW)\s*[:\s]*/i, '')
+    .replace(/^\[?(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]*/i, '')
     .replace(/[\[\]():]/g, '')
     .replace(/[.\s]/g, '')
     .trim();
@@ -108,7 +110,7 @@ function normalizeCode(raw: any): string | null {
   // Grade-range codes: M-01-02-A-01 (cross-grade benchmarks) → take first grade
   const gradeRange = s.match(/^([A-Z]{1,4})-?(\d{2})-(\d{2})-?([A-Z])-?(\d{1,3})$/);
   if (gradeRange) {
-    return `${gradeRange[1]}${gradeRange[2]}${gradeRange[4]}${gradeRange[5].padStart(2, '0')}`;
+    s = `${gradeRange[1]}${gradeRange[2]}${gradeRange[4]}${gradeRange[5].padStart(2, '0')}`;
   }
 
   s = s.replace(/-/g, ''); // remove all dashes
@@ -131,19 +133,28 @@ function normalizeCode(raw: any): string | null {
 
   // Fix O in digit positions: AO1 → A01
   s = s.replace(/([A-Z])O(\d)/g, '$10$2');
-  s = s.replace(/(\d)O([A-Z\d])/g, '$10$2');
+  s = s.replace(/(\d)O(\d)/g, '$10$2');
 
   // Roman numeral grade embedded in code: MVIIIA01 → M08A01
   const romMatch = s.match(/^([A-Z]{1,4})(XII|XI|IX|X|VIII|VII|VI|V|IV|III|II)([A-Z])(\d{1,3})$/);
   if (romMatch) {
-    return `${romMatch[1]}${ROMAN[romMatch[2]] ?? romMatch[2]}${romMatch[3]}${romMatch[4].padStart(2, '0')}`;
+    s = `${romMatch[1]}${ROMAN[romMatch[2]] ?? romMatch[2]}${romMatch[3]}${romMatch[4].padStart(2, '0')}`;
   }
 
   // Standard pattern: M01A01 or C09A01
   const numMatch = s.match(/^([A-Z]{1,4})(\d{1,2})([A-Z])(\d{1,3})$/);
   if (numMatch) {
     const sloNum = numMatch[4].startsWith('00') ? numMatch[4].slice(-2) : numMatch[4].padStart(2, '0');
-    return `${numMatch[1]}${numMatch[2].padStart(2, '0')}${numMatch[3]}${sloNum}`;
+    s = `${numMatch[1]}${numMatch[2].padStart(2, '0')}${numMatch[3]}${sloNum}`;
+    
+    // ENFORCE SUBJECT CODE: If the extracted subject part doesn't match the actual subjectCode, override it.
+    // E.g. AI gives "O04A26" but subjectCode is "S" -> change to "S04A26"
+    // E.g. AI gives "M04B05" but subjectCode is "S" -> change to "S04B05"
+    if (subjectCode && numMatch[1] !== subjectCode) {
+      s = `${subjectCode}${s.substring(numMatch[1].length)}`;
+    }
+    
+    return s;
   }
 
   return null;
@@ -232,7 +243,12 @@ function scanDomains(text: string): Record<string, string> {
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const l = m[1].toUpperCase();
-    if (!map[l]) map[l] = m[2].trim().replace(/\s+/g, ' ');
+    if (!map[l]) {
+      let rawName = m[2].trim().replace(/\s+/g, ' ');
+      // Clean up common bleeding text from tables
+      rawName = rawName.split(/Grade\s*[-–]?\s*[IVX]+/i)[0].trim();
+      map[l] = rawName;
+    }
   }
   return map;
 }
@@ -313,7 +329,7 @@ function processSlos(
   for (const s of raw) {
     if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
 
-    const code = normalizeCode(s.slo_code);
+    const code = normalizeCode(s.slo_code, subjectCode);
     let grade  = normalizeGrade(s.grade || '');
     let domain = typeof s.domain === 'string' ? s.domain.trim().toUpperCase().match(/^([A-Z])/)?.[1] ?? null : null;
     let dname  = s.domain_name || null;
