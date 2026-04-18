@@ -13,13 +13,33 @@ export async function generateEmbedding(text: string): Promise<number[]> {
   return results[0];
 }
 
+/**
+ * STAGE 4 BUG FIX: Batch embedding API call was broken.
+ *
+ * The previous code called:
+ *   ai.models.embedContent({ model, contents: uncachedTexts })
+ *
+ * The Gemini @google/genai SDK's embedContent method expects:
+ *   - Single input: { model, contents: string | Part | Content }
+ *   - Batch input: { model, requests: [{ model, contents: ... }] } via batchEmbedContents
+ *
+ * Passing an array of raw strings to `contents` causes the API to either error out
+ * or treat the array as a single malformed Content object, silently returning empty
+ * embeddings. The catch block then returns all-zero vectors, making vector search
+ * completely non-functional (every chunk has the same [0,0,0...] embedding).
+ *
+ * FIX: Use individual embedContent calls per text, with a small delay between
+ * calls to respect the free tier rate limit (1500 req/min = 25 req/sec).
+ * For batch sizes > 1, we process them sequentially with minimal delay.
+ */
 export async function generateEmbeddingsBatch(texts: string[]): Promise<number[][]> {
   const start = performance.now();
   const sanitizedTexts = texts.map(t => sanitizeText(t));
-  const finalResults: number[][] = new Array(texts.length).fill(null);
+  const finalResults: (number[] | null)[] = new Array(texts.length).fill(null);
   const uncachedIndices: number[] = [];
   const uncachedTexts: string[] = [];
 
+  // Check cache first
   for (let i = 0; i < sanitizedTexts.length; i++) {
     const cached = await embeddingCache.get(sanitizedTexts[i]);
     if (cached && Array.isArray(cached) && typeof cached[0] === 'number') {
@@ -38,40 +58,75 @@ export async function generateEmbeddingsBatch(texts: string[]): Promise<number[]
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // FIX-BUG-01: Correct embedding model — "gemini-embedding-2-preview" does not exist.
-    // "text-embedding-004" is the stable, production Gemini embedding model (768 dims).
-    const result = await ai.models.embedContent({
-      model: 'text-embedding-004',
-      contents: uncachedTexts,
-    });
-
-    const rawEmbeddings = result.embeddings || [];
-
-    for (let i = 0; i < rawEmbeddings.length; i++) {
-      const res = rawEmbeddings[i] as any;
+    // Process each text individually to avoid the batch API format issue.
+    // text-embedding-004 free tier: 1500 req/min = 25/sec. We throttle to 20/sec (50ms gap).
+    for (let i = 0; i < uncachedTexts.length; i++) {
+      const text = uncachedTexts[i];
       const originalIndex = uncachedIndices[i];
 
-      const rawVector = res.values || (Array.isArray(res) ? res : []);
-      const numericVector: number[] = rawVector.map((v: any) =>
-        typeof v === 'number' ? v : 0
-      );
+      try {
+        // FIX: Use single-text embedContent call which is well-supported
+        const result = await ai.models.embedContent({
+          model: 'text-embedding-004',
+          contents: text, // Single string — the stable API signature
+        });
 
-      // text-embedding-004 produces 768-dimensional vectors
-      let finalVector = numericVector.slice(0, 768);
-      while (finalVector.length < 768) finalVector.push(0);
+        // The single-call response uses result.embedding (singular), not result.embeddings
+        const embedding = (result as any).embedding || (result as any).embeddings?.[0];
+        const rawVector = embedding?.values || (Array.isArray(embedding) ? embedding : []);
 
-      finalResults[originalIndex] = finalVector;
-      // FIX: Use the correct index for uncachedTexts
-      embeddingCache.set(uncachedTexts[i], finalVector).catch(() => {});
+        const numericVector: number[] = rawVector.map((v: any) =>
+          typeof v === 'number' ? v : 0
+        );
+
+        // text-embedding-004 produces 768-dimensional vectors
+        let finalVector = numericVector.slice(0, 768);
+        while (finalVector.length < 768) finalVector.push(0);
+
+        finalResults[originalIndex] = finalVector;
+        embeddingCache.set(text, finalVector).catch(() => {});
+
+        // Throttle to stay within free tier limits (50ms = ~20 req/sec)
+        if (i < uncachedTexts.length - 1) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+
+      } catch (singleErr: any) {
+        const isRateLimit = /429|quota|RESOURCE_EXHAUSTED/i.test(singleErr.message || '');
+        if (isRateLimit) {
+          console.warn(`[Embeddings] Rate limit hit at index ${i}. Waiting 10s...`);
+          await new Promise(r => setTimeout(r, 10000));
+          // Retry once
+          try {
+            const retryResult = await ai.models.embedContent({
+              model: 'text-embedding-004',
+              contents: text,
+            });
+            const embedding = (retryResult as any).embedding || (retryResult as any).embeddings?.[0];
+            const rawVector = embedding?.values || [];
+            const finalVector = rawVector.map((v: any) => typeof v === 'number' ? v : 0).slice(0, 768);
+            while (finalVector.length < 768) finalVector.push(0);
+            finalResults[originalIndex] = finalVector;
+            embeddingCache.set(text, finalVector).catch(() => {});
+          } catch (retryErr) {
+            console.error(`[Embeddings] Retry failed for index ${i}:`, retryErr);
+            finalResults[originalIndex] = new Array(768).fill(0);
+          }
+        } else {
+          console.error(`[Embeddings] Error for text at index ${i}:`, singleErr.message);
+          finalResults[originalIndex] = new Array(768).fill(0);
+        }
+      }
     }
 
     performanceMonitor.track('embedding_batch_api_call', performance.now() - start, {
       count: uncachedTexts.length,
     });
+
     return finalResults.map(r => r || new Array(768).fill(0));
+
   } catch (error) {
     console.error('❌ [Embedding Fault]:', error);
-    // Return zero vectors as fallback so indexing doesn't crash entirely
     return finalResults.map(r => r || new Array(768).fill(0));
   }
 }
