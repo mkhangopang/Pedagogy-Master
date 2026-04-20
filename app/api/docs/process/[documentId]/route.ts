@@ -13,6 +13,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from 'openai';
 import { createHash } from 'crypto';
 import { resolveApiKey } from '../../../../../lib/env-server';
+import { extractSLOsFromPDFBuffer, likelyHasMultiGradeTable } from '../../../../../lib/slo/table-extractor';
+import { saveExtractionPattern, getBestMatchingPattern, buildPatternAwarePrompt, type ExtractionPattern } from '../../../../../lib/slo/pattern-trainer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -318,6 +320,48 @@ function dedupe(records: any[]): any[] {
   }).filter(Boolean);
 }
 
+// ── NON-SLO FILTER ───────────────────────────────────────────────────────────
+/**
+ * Prevents administrative text and glossary entries from becoming SLOs.
+ */
+function isLikelyNonSLO(text: string): boolean {
+  if (!text || text.trim().length < 12) return true;
+
+  const t = text.toLowerCase().trim();
+
+  // Administrative/committee patterns
+  if (/\b(committee|review committee)\s+shall/.test(t)) return true;
+  if (/\b(directorate|government of sindh|school education)\b/.test(t)) return true;
+  if (/(textbook\s+(should|development|writing|evaluation))/.test(t)) return true;
+
+  // Document structure text
+  if (/^(note:|s\.\s*no\.|ethical and social|theme no\.)/.test(t)) return true;
+  if (/^\d+\s*\|\s*p\s*a\s*g\s*e/.test(t)) return true;
+  if (/(approaches\s+to\s+teaching|methods and strategies)/.test(t)) return true;
+
+  // Glossary entries (Term: Definition pattern)
+  if (/^[a-z][a-z\s]{2,30}:\s+[A-Z]/.test(text)) return true;
+  if (/^(apposition|appropriate|aspect|aside|authentic|autonomy|brainstorm|benchmark|chronological|coherence|cohesion|competency|comprehension|context|curriculum|deductive|descriptive|discourse):/.test(t)) return true;
+
+  // Benchmark header rows (not SLOs themselves)
+  if (/^benchmark:\s+/.test(t)) return true;
+
+  // Must have at least one Bloom's-level action verb
+  const bloomVerbs = [
+    'identify','recognize','read','write','use','demonstrate','apply','analyze',
+    'evaluate','create','describe','explain','express','develop','articulate',
+    'comprehend','locate','compare','contrast','predict','summarize','retell',
+    'recite','match','listen','speak','compose','revise','edit','construct',
+    'infer','deduce','guess','find','select','choose','arrange','trace','copy',
+    'fill','hold','enjoy','repeat','show','talk','share','take','produce',
+    'respond','practice','participate','pronounce','name','distinguish',
+    'interpret','transform','change','gather','locate','relate','seek',
+    'connect','integrate','organize','classify','categorize','discuss'
+  ];
+
+  return !bloomVerbs.some(v => t.includes(v));
+}
+
 // ── PROCESS RAW SLOs ──────────────────────────────────────────────────────────
 function processSlos(
   raw: any[],
@@ -328,6 +372,11 @@ function processSlos(
   const processed: any[] = [];
   for (const s of raw) {
     if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
+
+    if (isLikelyNonSLO(s.slo_full_text)) {
+      console.log(`[Filter] Skipped non-SLO: "${s.slo_full_text.substring(0, 60)}"`);
+      continue;
+    }
 
     const code = normalizeCode(s.slo_code, subjectCode);
     let grade  = normalizeGrade(s.grade || '');
@@ -397,7 +446,8 @@ function makePrompt(
   subjectCode: string,
   board: string,
   chunkN: number,
-  isDeep: boolean = false
+  isDeep: boolean = false,
+  pattern: ExtractionPattern | null = null
 ): string {
   const isPrimary = PRIMARY_SUBJECTS.has(subjectCode);
 
@@ -409,11 +459,24 @@ ALWAYS use 2-digit grade: Grade I → 01, Grade VIII → 08` : `
 === GRADE SYSTEM (Secondary - Grades IX to XII) ===
 Grade mapping: IX→09, X→10, XI→11, XII→12, always 2-digit`;
 
+  const patternContext = pattern ? `
+=== LEARNED PATTERN FROM PREVIOUS SUCCESSFUL EXTRACTION ===
+Board: ${pattern.board} | Subject: ${pattern.subject} | Grade Range: ${pattern.grade_range}
+SLO Format: ${pattern.slo_format}
+Column Structure: ${pattern.column_structure}
+Domain Map: ${JSON.stringify(pattern.competency_domain_map)}
+Sample Codes: ${pattern.sample_codes.join(', ')}
+
+IMPORTANT: This document follows the above pattern. Apply it when extracting SLOs.
+Skip these sections (not SLOs): ${pattern.non_slo_sections.join(', ')}
+` : '';
+
   return `IDENTITY: Pedagogy Master AI (Orchestrator)
 GOAL: Clean and format the following raw SLO blocks into the Universal JSON schema.
 Board: ${board} | Subject: ${subject} | Chunk: ${chunkN}
 
 ${gradeSection}
+${patternContext}
 
 === SLO FORMAT ===
 Code: [SUB][GRADE][DOMAIN][NUM] (e.g. ${subjectCode}09A01)
@@ -525,8 +588,8 @@ async function callAIChain(
 }
 
 // ── AI ORCHESTRATOR (Grok, Mistral, OpenAI, Gemini, etc.) ──────────────────────────
-async function callAIOrchestrator(apiKey: string, text: string, schema: any, subject: string, subjectCode: string, board: string, chunkN: number, isDeep: boolean = false): Promise<any[]> {
-  const prompt = makePrompt(text, subject, subjectCode, board, chunkN, isDeep);
+async function callAIOrchestrator(apiKey: string, text: string, schema: any, subject: string, subjectCode: string, board: string, chunkN: number, isDeep: boolean = false, pattern: ExtractionPattern | null = null): Promise<any[]> {
+  const prompt = makePrompt(text, subject, subjectCode, board, chunkN, isDeep, pattern);
   try {
     const data = await callAIChain(apiKey, prompt, schema);
     if (Array.isArray(data.slos)) {
@@ -558,6 +621,12 @@ async function extractSlos(
   const allSlos     : any[] = [];
   const seenFp      = new Set<string>();
   let   chunkIndex  = 0;
+
+  // Pattern Memory: Try to find a matching pattern for this board + subject
+  const pattern = await getBestMatchingPattern(supabase, boardKey, subjectName);
+  if (pattern) {
+    console.log(`[Extract] Using pattern memory for ${boardKey}/${subjectName} to guide extraction.`);
+  }
 
   const processedText = linearizeSloText(text);
   const totalLen      = processedText.length;
@@ -657,7 +726,7 @@ async function extractSlos(
         
         const batch = rawBlocks.slice(offset, offset + BATCH_SIZE).join('\n\n');
         promises.push(
-          callAIOrchestrator(apiKey, batch, schema, subjectName, subjectCode, boardKey, chunkIndex + j + 1)
+          callAIOrchestrator(apiKey, batch, schema, subjectName, subjectCode, boardKey, chunkIndex + j + 1, false, pattern)
             .then(chunkSlos => ({ offset, chunkSlos, cIndex: chunkIndex + j + 1 }))
             .catch(err => {
               console.error(`[Extract] Chunk ${chunkIndex + j + 1} FAILED:`, err.message);
@@ -767,7 +836,7 @@ async function extractSlos(
       });
 
       try {
-        const chunkSlos = await callAIOrchestrator(apiKey, chunk, schema, subjectName, subjectCode, boardKey, chunkIndex, true);
+        const chunkSlos = await callAIOrchestrator(apiKey, chunk, schema, subjectName, subjectCode, boardKey, chunkIndex, true, pattern);
 
         const newRecords: any[] = [];
         for (const s of chunkSlos) {
@@ -841,6 +910,11 @@ async function extractSlos(
         break;
       }
     }
+  }
+
+  // Save successful pattern for future learning
+  if (allSlos.length >= 5) {
+    await saveExtractionPattern(supabase, text, allSlos, boardKey, subjectName);
   }
 
   return allSlos;
@@ -1166,6 +1240,7 @@ export async function POST(
         });
 
         let text = doc.extracted_text || '';
+        let pdfBuffer: Buffer | null = null;
         
         if (!text || text.length < 200) {
           console.log('[Stage 1] No pre-extracted text found. Falling back to server-side parsing...');
@@ -1173,15 +1248,16 @@ export async function POST(
           if (!r2Path) throw new Error('R2_FAULT: No file_path on document and no pre-extracted text');
 
           try {
-            const buffer = await getObjectBuffer(r2Path);
-            if (!buffer)  throw new Error('R2_FAULT: File unreachable from R2');
+            pdfBuffer = await getObjectBuffer(r2Path);
+            if (!pdfBuffer)  throw new Error('R2_FAULT: File unreachable from R2');
 
-            const result = await pdf(buffer);
+            const result = await pdf(pdfBuffer);
             text = result.text?.trim() || '';
-            console.log(`[Stage 1] PDF parsed: ${text.length} chars, ${result.numpages} pages`);
+            const numPages = result.numpages || (result as any).numPages || 0;
+            console.log(`[Stage 1] PDF parsed: ${text.length} chars, ${numPages} pages`);
 
             if (text.length < 200) {
-              const isScanned = result.numpages > 0 && text.length < 50 * result.numpages;
+              const isScanned = numPages > 0 && text.length < 50 * numPages;
               throw new Error(
                 isScanned
                   ? `SCANNED_PDF: This appears to be a scanned image PDF with no text layer. Please use a text-based PDF or convert it with OCR first.`
@@ -1208,9 +1284,65 @@ export async function POST(
         const pages   = Math.ceil(text.length / 2000);
         console.log(`[Stage 1] Detected: board=${board} subject=${subject} isPrimary=${PRIMARY_SUBJECTS.has(subject)} ~${pages} pages`);
 
+        let docSummary = `raw|board:${board}|subject:${subject}|len:${text.length}`;
+
+        // ── TABLE-AWARE EXTRACTION ───────────────────────────────────────────
+        // Pakistan curriculum PDFs often use horizontal tables for multi-grade SLOs.
+        // If detected, we use a specialized Python extractor to maintain column logic.
+        if (likelyHasMultiGradeTable(text)) {
+           console.log('[Stage 1] Likely multi-grade table detected. Running table-aware extractor...');
+           if (!pdfBuffer) {
+              const r2Path = doc.file_path;
+              if (r2Path) {
+                try { pdfBuffer = await getObjectBuffer(r2Path); } catch (_) {}
+              }
+           }
+           
+           if (pdfBuffer) {
+              const tableSlos = await extractSLOsFromPDFBuffer(pdfBuffer, subject);
+              if (tableSlos.length > 0) {
+                console.log(`[Stage 1] Table extractor found ${tableSlos.length} SLOs. Populating database...`);
+                
+                const records = tableSlos.map(s => ({
+                  document_id: documentId,
+                  slo_code: s.slo_code,
+                  slo_full_text: s.slo_full_text,
+                  grade_level: s.grade_level,
+                  domain: s.domain,
+                  domain_name: s.domain_name,
+                  subject: s.subject || SUBJECTS[subject] || subject,
+                  board: board,
+                  extraction_confidence: 1.0,
+                  page_number: s.page,
+                  created_at: new Date().toISOString()
+                }));
+
+                // Clear any partial extraction if we're doing table-aware fresh
+                await supabase.from('slo_database').delete().eq('document_id', documentId);
+
+                // Insert in batches
+                const BATCH_SIZE = 100;
+                for (let i = 0; i < records.length; i += BATCH_SIZE) {
+                  const batch = records.slice(i, i + BATCH_SIZE);
+                  const { error } = await supabase.from('slo_database').insert(batch);
+                  if (error) console.error('[Stage 1] Table insert error:', error.message);
+                }
+
+                // Build ledger and update text to skip Stage 2 re-extraction
+                const ledger = buildLedger(records, board, subject);
+                text = ledger;
+                docSummary = `ledger|slos:${records.length}|board:${board}|subject:${subject}|table_aware:true`;
+                console.log('[Stage 1] Table-extracted ledger built. Stage 2 will skip re-extraction.');
+
+                // Save pattern memory
+                await saveExtractionPattern(supabase, text, records, board, SUBJECTS[subject] || subject);
+              }
+           }
+        }
+
         await supabase.from('documents').update({
           extracted_text  : text,
-          document_summary: `raw|board:${board}|subject:${subject}|len:${text.length}`,
+          document_summary: docSummary,
           status          : 'processing',
         }).eq('id', documentId);
 
@@ -1344,7 +1476,74 @@ export async function POST(
           const domainMap = scanDomains(rawText);
           console.log(`[Stage 2] Pre-scanned domains:`, Object.keys(domainMap));
 
-          const slos = await extractSlos(rawText, board, subject, domainMap, apiKey, documentId, supabase, job.id, queue);
+          // ── STAGE 2: NEW TABLE-AWARE PATH ──────────────────────────────────────────
+          // Step 1: Try pdfplumber table detection first (handles multi-grade column tables)
+          let slos: any[] = [];
+          let usedTablePath = false;
+
+          if (likelyHasMultiGradeTable(rawText)) {
+            console.log('[Stage 2] Multi-grade table structure detected. Attempting pdfplumber extraction...');
+            try {
+              const pdfBuffer = await getObjectBuffer(doc.file_path);
+              if (pdfBuffer) {
+                const tableResults = await extractSLOsFromPDFBuffer(pdfBuffer, subject);
+                if (tableResults.length > 0) {
+                  console.log(`[Stage 2] Table extraction success: ${tableResults.length} SLOs`);
+                  usedTablePath = true;
+
+                  // Write to slo_database
+                  const records = tableResults.map(s => ({
+                    document_id: documentId,
+                    slo_code: s.slo_code,
+                    slo_full_text: s.slo_full_text,
+                    domain: s.domain,
+                    domain_name: s.domain_name,
+                    bloom_level: null,
+                    cognitive_complexity: null,
+                    keywords: [],
+                    subject: s.subject || SUBJECTS[subject] || subject,
+                    grade_level: s.grade_level,
+                    extraction_confidence: 0.95,
+                    page_number: s.page,
+                    is_truncated: false,
+                    is_orphan_domain: false,
+                    raw_code_as_found: s.raw_slo_num,
+                    char_offset: 0,
+                    benchmark: null,
+                    board: board,
+                    teaching_strategies: [],
+                    assessment_ideas: [],
+                    prerequisite_concepts: [],
+                    common_misconceptions: [],
+                    created_at: new Date().toISOString()
+                  }));
+
+                  // Clear current and insert in batches of 50
+                  await supabase.from('slo_database').delete().eq('document_id', documentId);
+                  for (let i = 0; i < records.length; i += 50) {
+                    const batch = records.slice(i, i + 50);
+                    const { error } = await supabase.from('slo_database').insert(batch);
+                    if (error) console.error(`[Stage 2] Table insert error batch ${i}:`, error.message);
+                  }
+
+                  // Convert to internal format for ledger building
+                  slos = records.map(r => ({
+                    ...r,
+                    grade: r.grade_level,
+                    regex_confidence: 0.95
+                  }));
+                }
+              }
+            } catch (e: any) {
+              console.error('[Stage 2] Table extraction failed, falling back to regex:', e.message);
+            }
+          }
+
+          // Step 2: Fallback to legacy regex path if table extraction didn't work
+          if (!usedTablePath || slos.length === 0) {
+            console.log('[Stage 2] Using legacy regex extraction path...');
+            slos = await extractSlos(rawText, board, subject, domainMap, apiKey, documentId, supabase, job.id, queue);
+          }
 
           console.log(`[Stage 2] === EXTRACTION RESULTS ===`);
           console.log(`[Stage 2] Total SLOs: ${slos.length}`);

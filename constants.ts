@@ -506,6 +506,76 @@ CREATE POLICY "Users can view mappings for their own documents"
   );
 
 
+-- 15. SLO EXTRACTION PATTERNS (MEMORY TRAINER)
+CREATE TABLE IF NOT EXISTS public.extraction_patterns (
+  id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+  board                 text NOT NULL,
+  subject               text NOT NULL,
+  grade_range           text NOT NULL,
+  slo_format            text NOT NULL DEFAULT 'unknown',
+  column_structure      text NOT NULL DEFAULT 'single',
+  competency_domain_map jsonb NOT NULL DEFAULT '{"1":"A","2":"B","3":"C","4":"D"}',
+  grade_section_headers jsonb NOT NULL DEFAULT '[]',
+  non_slo_sections      jsonb NOT NULL DEFAULT '[]',
+  sample_codes          text[] NOT NULL DEFAULT '{}',
+  total_slos_extracted  int NOT NULL DEFAULT 0,
+  extraction_accuracy   float NOT NULL DEFAULT 0.9 CHECK (extraction_accuracy BETWEEN 0 AND 1),
+  created_at            timestamp with time zone DEFAULT NOW(),
+  updated_at            timestamp with time zone DEFAULT NOW(),
+  UNIQUE(board, subject, grade_range)
+);
+
+CREATE INDEX IF NOT EXISTS idx_extraction_patterns_board_subject 
+  ON public.extraction_patterns(board, subject);
+CREATE INDEX IF NOT EXISTS idx_extraction_patterns_accuracy 
+  ON public.extraction_patterns(extraction_accuracy DESC);
+
+ALTER TABLE public.extraction_patterns ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_role_all" ON public.extraction_patterns;
+CREATE POLICY "service_role_all" ON public.extraction_patterns
+  FOR ALL USING (true); -- service_role bypasses by default, but keeping for clarity
+
+DROP POLICY IF EXISTS "authenticated_read" ON public.extraction_patterns;
+CREATE POLICY "authenticated_read" ON public.extraction_patterns
+  FOR SELECT USING (auth.role() = 'authenticated');
+
+GRANT ALL ON public.extraction_patterns TO service_role;
+GRANT SELECT ON public.extraction_patterns TO authenticated;
+
+-- Seed initial known patterns
+INSERT INTO public.extraction_patterns (
+  board, subject, grade_range, slo_format, column_structure,
+  competency_domain_map, non_slo_sections, sample_codes,
+  total_slos_extracted, extraction_accuracy
+) VALUES (
+  'SINDH', 'English', 'K-VIII',
+  'competency.benchmark.slo',
+  'K|I|II',
+  '{"1":"A","2":"B","3":"C","4":"D"}',
+  '["Preamble","Section 1","Section 4","Section 5","Section 6","Section 7","Section 8","Glossary","Acknowledgement","Minutes of meeting"]',
+  ARRAY['EKA01','E01A01','E02A01','E03A01','E04A01'],
+  170, 0.95
+) ON CONFLICT (board, subject, grade_range) DO UPDATE SET
+  extraction_accuracy = EXCLUDED.extraction_accuracy,
+  sample_codes = EXCLUDED.sample_codes,
+  updated_at = NOW();
+
+INSERT INTO public.extraction_patterns (
+  board, subject, grade_range, slo_format, column_structure,
+  competency_domain_map, non_slo_sections, sample_codes,
+  total_slos_extracted, extraction_accuracy
+) VALUES (
+  'SINDH', 'Biology', 'IX-XII',
+  'bracket_code',
+  'single',
+  '{"A":"A","B":"B","C":"C","D":"D"}',
+  '["Preamble","Introduction","Assessment","Teacher Training","Glossary"]',
+  ARRAY['B09A01','B09A02','B09B01','B10A01','B11A01'],
+  150, 0.92
+) ON CONFLICT (board, subject, grade_range) DO UPDATE SET
+  updated_at = NOW();
+
 -- 14. FORCE RELOAD
 SELECT reload_schema_cache();
 `;
