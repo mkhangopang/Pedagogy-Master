@@ -6,7 +6,7 @@ import {
   ShieldCheck, Zap, Globe, FileJson, 
   BarChart3, Target, Lock, Cpu, 
   ArrowRight, Download, Server, CheckCircle2,
-  AlertTriangle, Network, Scale, Code2, Key, Webhook, Box, Copy, Check, Eye, X, FileText, Activity, Layers, Rocket, Loader2, RefreshCcw
+  AlertTriangle, Network, Scale, Code2, Key, Webhook, Box, Copy, Check, Eye, X, FileText, Activity, Layers, Rocket, Loader2, RefreshCcw, Trash2
 } from 'lucide-react';
 import { UserProfile } from '../types';
 import { supabase } from '../lib/supabase';
@@ -19,6 +19,8 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
   const [report, setReport] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [isGarbageCollecting, setIsGarbageCollecting] = useState(false);
+  const [gcMessage, setGcMessage] = useState<string | null>(null);
   const [auditStep, setAuditStep] = useState('');
   const [showReportModal, setShowReportModal] = useState(false);
 
@@ -82,6 +84,32 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
     }
   };
 
+  const runGarbageCollection = async () => {
+    if (!confirm('This will permanently delete corrupted and failed documents to reclaim database space. Proceed?')) return;
+    
+    setIsGarbageCollecting(true);
+    setGcMessage(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/admin/garbage-collect', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGcMessage(data.message + (data.reclaimed_docs > 0 ? ` (${data.reclaimed_docs} docs reclaimed)` : ''));
+        setTimeout(() => setGcMessage(null), 5000);
+      } else {
+        alert(data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Garbage collection failed.');
+    } finally {
+      setIsGarbageCollecting(false);
+    }
+  };
+
   const generateWhitepaper = () => {
     if (!report) return;
     const roadmapText = report.roadmap?.map((item: string) => `- ${item}`).join('\n') || '';
@@ -133,6 +161,15 @@ STATUS: ${report.benchmarks?.infrastructure_health}
           <p className="text-slate-500 mt-1 font-medium italic text-sm">Real-time pedagogical fidelity and infrastructure benchmarks.</p>
         </div>
         <div className="flex gap-3">
+          <button 
+            onClick={runGarbageCollection}
+            disabled={isGarbageCollecting}
+            className="flex items-center gap-3 px-6 py-4 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/30 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:opacity-90 transition-all active:scale-95 disabled:opacity-50"
+          >
+            {isGarbageCollecting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+            <span className="hidden md:inline">Garbage Collect</span>
+          </button>
+          {gcMessage && <div className="absolute top-20 right-4 p-4 bg-emerald-500 text-white rounded-xl shadow-xl z-50 text-sm font-bold animate-in fade-in">{gcMessage}</div>}
           <button 
             onClick={() => setShowReportModal(true)}
             className="flex items-center gap-3 px-6 py-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all active:scale-95"

@@ -52,67 +52,93 @@ const Documents: React.FC<DocumentsProps> = ({
 
   const processingIds = documents
     .filter(d => d.status === 'processing' || d.status === 'pending')
-    .map(d => d.id)
-    .join(',');
+    .map(d => d.id);
+    
+  const [ingestionProgressMap, setIngestionProgressMap] = useState<Record<string, any>>({});
 
   useEffect(() => {
-    const idsToTrack = processingIds.split(',').filter(Boolean);
-    if (idsToTrack.length === 0) {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-      return;
-    }
-
-    const pollStatus = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('documents')
-          .select('id, status, document_summary, difficulty_level, rag_indexed, error_message, extracted_text')
-          .in('id', idsToTrack);
-
-        if (error) throw error;
-        if (data) {
-          data.forEach(updated => {
-            const current = documents.find(d => d.id === updated.id);
-            // Enhanced comparison check
-            const hasChanged = current && (
-              updated.status !== current.status || 
-              updated.document_summary !== current.documentSummary ||
-              updated.error_message !== current.errorMessage
-            );
-
-            if (hasChanged) {
-              onUpdateDocument(updated.id, { 
-                status: updated.status as any,
-                documentSummary: updated.document_summary,
-                difficultyLevel: updated.difficulty_level,
-                geminiProcessed: updated.rag_indexed,
-                extractedText: updated.extracted_text,
-                errorMessage: updated.error_message
-              });
-            }
-          });
-        }
-      } catch (e) {
-        console.error("Polling sync fault:", e);
-      }
-    };
-
-    pollStatus();
+    // We only need to subscribe if we have processing documents
+    // Actually, we can just keep the subscription active for any changes to our documents.
+    // However, since we might want specific updates from ingestion_jobs:
     
-    if (!pollingRef.current) {
-      pollingRef.current = setInterval(pollStatus, 3000);
+    // 1. We keep the fallback polling to update the whole UI because Edge Functions might update the documents table silently, and we don't have realtime enabled on documents by default in this script snippet.
+    const idsToTrack = processingIds;
+    if (idsToTrack.length > 0 && !pollingRef.current) {
+      const pollStatus = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('documents')
+            .select('id, status, document_summary, difficulty_level, rag_indexed, error_message, extracted_text')
+            .in('id', idsToTrack);
+
+          if (error) throw error;
+          if (data) {
+            data.forEach(updated => {
+              const current = documents.find(d => d.id === updated.id);
+              const hasChanged = current && (
+                updated.status !== current.status || 
+                updated.document_summary !== current.documentSummary ||
+                updated.error_message !== current.errorMessage
+              );
+
+              if (hasChanged) {
+                onUpdateDocument(updated.id, { 
+                  status: updated.status as any,
+                  documentSummary: updated.document_summary,
+                  difficultyLevel: updated.difficulty_level,
+                  geminiProcessed: updated.rag_indexed,
+                  extractedText: updated.extracted_text,
+                  errorMessage: updated.error_message
+                });
+              }
+            });
+          }
+        } catch (e) {
+          console.error("Polling sync fault:", e);
+        }
+      };
+
+      pollingRef.current = setInterval(pollStatus, 5000); // Slow down polling to 5s since we have realtime
+    } else if (idsToTrack.length === 0 && pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
     }
+
+    // 2. Setup Supabase Realtime for granular progress bars
+    // We listen to the `ingestion_jobs` table to get exact progress blocks.
+    const channel = supabase.channel('realtime-ingestion-jobs')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'ingestion_jobs'
+        },
+        (payload) => {
+          const newRow = payload.new as any;
+          if (newRow && newRow.document_id) {
+            // Update realtime progress state
+            setIngestionProgressMap(prev => ({
+              ...prev,
+              [newRow.document_id]: {
+                step: newRow.step,
+                progress: newRow.progress,
+                message: newRow.message
+              }
+            }));
+          }
+        }
+      )
+      .subscribe();
 
     return () => {
+      supabase.removeChannel(channel);
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
         pollingRef.current = null;
       }
     };
-  }, [processingIds, documents, onUpdateDocument]);
+  }, [processingIds.join(','), documents, onUpdateDocument]);
 
   const handleDelete = async (id: string) => {
     if (window.confirm('PURGE RECORD: Are you sure you want to permanently remove this asset from the library?')) {
@@ -251,18 +277,48 @@ const Documents: React.FC<DocumentsProps> = ({
                   </div>
                </div>
                
-               <div className="space-y-4">
+              <div className="space-y-4">
                  <h3 className="font-bold text-slate-900 dark:text-white truncate text-lg uppercase tracking-tight">{doc.name}</h3>
                  <div className="flex flex-wrap gap-2">
                     {isReady && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Standard Anchored</span>}
                     {isProcessing && <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
                     {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
                   </div>
-                 <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed italic">
-                   {isFailed ? (doc.documentSummary || "Critical fault during extraction. Remove this item and try again.") : (doc.documentSummary || "Master MD extraction in progress...")}
-                 </p>
+
+                 {/* Realtime Progress UI for processing documents */}
+                 {isProcessing && ingestionProgressMap[doc.id] && (
+                   <div className="mt-4 pt-4 border-t border-slate-100 dark:border-white/5">
+                     <div className="flex justify-between items-center mb-2">
+                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                         {ingestionProgressMap[doc.id].step || 'Processing'}
+                       </span>
+                       <span className="text-[10px] font-bold text-indigo-500">
+                         {ingestionProgressMap[doc.id].progress}%
+                       </span>
+                     </div>
+                     <div className="w-full h-1.5 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                       <div 
+                         className="h-full bg-indigo-500 rounded-full transition-all duration-500 ease-out" 
+                         style={{ width: `${ingestionProgressMap[doc.id].progress || 5}%` }}
+                       />
+                     </div>
+                     <p className="text-[10px] text-slate-400 italic mt-2 line-clamp-1">
+                       {ingestionProgressMap[doc.id].message || 'Waking neural node...'}
+                     </p>
+                   </div>
+                 )}
+
+                 {/* Default status message for non-processing docs, or processing docs without realtime data yet */}
+                 {!(isProcessing && ingestionProgressMap[doc.id]) && (
+                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed italic mt-2">
+                     {isFailed ? (doc.documentSummary || "Critical fault during extraction. Remove this item and try again.") : 
+                      isProcessing ? (doc.documentSummary || "Master MD extraction in progress...") :
+                      (doc.documentSummary || "Ready for Synthesis")}
+                   </p>
+                 )}
+
                  {isFailed && isAdmin && (
-                   <p className="text-[9px] font-bold text-rose-500 bg-rose-50 p-2 rounded-xl border border-rose-100 mt-2">
+                   <p className="text-[9px] font-bold text-rose-500 bg-rose-50 p-2 rounded-xl border border-rose-100 mt-2 line-clamp-2">
                      <b>DIAGNOSTIC:</b> {doc.errorMessage || "Unknown Neural Bottleneck"}
                    </p>
                  )}

@@ -576,6 +576,10 @@ INSERT INTO public.extraction_patterns (
 ) ON CONFLICT (board, subject, grade_range) DO UPDATE SET
   updated_at = NOW();
 
+-- 16. REALTIME ENABLEMENT
+-- Enable Supabase Realtime for ingestion_jobs to stream progress to the frontend
+ALTER PUBLICATION supabase_realtime ADD TABLE public.ingestion_jobs;
+
 -- 14. FORCE RELOAD
 SELECT reload_schema_cache();
 `;
