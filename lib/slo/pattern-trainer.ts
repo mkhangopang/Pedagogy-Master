@@ -85,18 +85,31 @@ export async function saveExtractionPattern(
   const sloFormat = detectSLOFormat(rawText);
   const columnStructure = detectColumnStructure(rawText);
 
-  // Build the competency→domain map from the extracted data
+  // Build the competency→domain map from the extracted data.
+  // BUG-03 FIX: The previous else branch was completely empty — it matched codes
+  // but never wrote anything to compDomainMap. Now we infer the domain letter
+  // from the SLO code pattern [SUBJECT][GRADE][DOMAIN_LETTER][SEQ], e.g. "E07B03"
+  // → domain "B". We use a running numeric key ("1", "2", ...) as the competency.
   const compDomainMap: Record<string, string> = {};
+  const domainOrder: string[] = []; // tracks insertion order for stable numeric keys
+
   for (const slo of extractedSlos) {
     if (slo.competency && slo.domain) {
-      compDomainMap[slo.competency] = slo.domain;
+      compDomainMap[String(slo.competency)] = String(slo.domain).toUpperCase();
     } else if (slo.slo_code) {
-       // Infer from code if competency field not directly present
-       const compMatch = slo.slo_code.match(/^[A-Z]{1,3}\d{2}([A-Z])\d{2}$/);
-       if (compMatch) {
-         // This is a mapping from digit to letter, but here we just store something useful
-         // If we have competency digit, we map it to the domain letter
-       }
+      // Infer domain letter from standard code format: [A-Z]{1,3}[GRADE_2D][DOMAIN_LETTER][SEQ_2D]
+      const compMatch = slo.slo_code.match(/^[A-Z]{1,3}\d{2}([A-Z])\d{2}/);
+      if (compMatch) {
+        const domainLetter = compMatch[1];
+        if (!domainOrder.includes(domainLetter)) {
+          domainOrder.push(domainLetter);
+        }
+        // Map numeric competency index (1-based) → domain letter
+        const compKey = String(domainOrder.indexOf(domainLetter) + 1);
+        if (!compDomainMap[compKey]) {
+          compDomainMap[compKey] = domainLetter;
+        }
+      }
     }
   }
 
