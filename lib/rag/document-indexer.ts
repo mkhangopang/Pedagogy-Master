@@ -125,20 +125,35 @@ export async function indexDocumentForRAG(
       console.log(`Processing batch ${i / BATCH_SIZE + 1} of ${Math.ceil(nodes.length / BATCH_SIZE)}`);
       const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
       console.log(`Embeddings generated for batch ${i / BATCH_SIZE + 1}`);
-      
-      const records = batch.map((node, j) => ({
-        document_id: documentId,
-        chunk_text: node.text,
-        embedding: embeddings[j],
-        slo_codes: node.metadata.slo_codes,
-        semantic_fingerprint: node.fingerprint,
-        token_count: node.metadata.tokens,
-        chunk_index: i + j,
-        metadata: node.metadata
-      }));
+
+      // BUG-01 FIX: Skip records whose embedding is null (API failure).
+      // NEVER insert null/zero vectors — they corrupt semantic search.
+      // BUG-09 FIX: Use upsert on semantic_fingerprint to prevent duplicates
+      // if ingestion is retried or concurrent.
+      const records = batch
+        .map((node, j) => {
+          const vec = embeddings[j];
+          if (!vec) {
+            console.warn(`[Indexer] Skipping chunk ${i + j} — embedding returned null (API failure). Will retry on next ingestion.`);
+            return null;
+          }
+          return {
+            document_id: documentId,
+            chunk_text: node.text,
+            embedding: vec,
+            slo_codes: node.metadata.slo_codes,
+            semantic_fingerprint: node.fingerprint,
+            token_count: node.metadata.tokens,
+            chunk_index: i + j,
+            metadata: node.metadata,
+          };
+        })
+        .filter(Boolean) as any[];
 
       console.log(`Inserting batch ${i / BATCH_SIZE + 1} into document_chunks`);
-      const { error: insertError } = await supabase.from('document_chunks').insert(records);
+      const { error: insertError } = await supabase
+        .from('document_chunks')
+        .upsert(records, { onConflict: 'semantic_fingerprint', ignoreDuplicates: true });
       if (insertError) {
         console.error("Insert error:", insertError);
         throw insertError;
