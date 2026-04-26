@@ -352,9 +352,13 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         throw new Error(errorMessage);
       }
       return await res.json();
-    } catch (e) {
-      console.error("Handshake fetch error:", e);
-      throw e;
+    } catch (err: any) {
+      console.error("Handshake fetch error:", err);
+      let msg = err.message || "Institutional Sync Failure.";
+      if (msg === 'Failed to fetch') {
+        msg = "Unable to reach the synthesis grid. This usually means the server is starting up or your internet connection was interrupted. Please wait 10 seconds and try again.";
+      }
+      throw new Error(msg);
     }
   }
 

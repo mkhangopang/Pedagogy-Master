@@ -33,6 +33,7 @@ export const getCredentials = () => {
 
   // TIER 2: Aggressive Discovery
   if (!isValid(url) || !isValid(key)) {
+    console.warn("⚠️ [Supabase] Primary credentials missing. Running discovery protocol...");
     const sources = [
       win.env,
       win.process?.env,

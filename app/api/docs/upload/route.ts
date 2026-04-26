@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
+import { supabase as anonClient, getSupabaseServerClient, isSupabaseConfigured } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -17,12 +17,21 @@ export async function OPTIONS() {
  */
 export async function POST(req: NextRequest) {
   try {
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ 
+        error: 'Institutional Infrastructure Node Missing (Supabase Keys). Please contact the Grid Admin.' 
+      }, { status: 503 });
+    }
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
     if (!token) return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
 
-    const { data: { user } } = await anonClient.auth.getUser(token);
-    if (!user) return NextResponse.json({ error: 'Invalid Identity' }, { status: 401 });
+    const { data: { user }, error: authError } = await anonClient.auth.getUser(token).catch(err => ({ data: { user: null }, error: err }));
+    
+    if (authError || !user) {
+      console.error("❌ [Upload Auth Failure]:", authError);
+      return NextResponse.json({ error: 'Identity node validation failed. Please sign in again.' }, { status: 401 });
+    }
 
     const body = await req.json();
     const { name, contentType, extractedText } = body;
