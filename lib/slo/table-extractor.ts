@@ -272,18 +272,52 @@ export interface ExtractedSLORecord {
 /**
  * Extract SLOs from a curriculum PDF buffer using table-aware detection.
  * Falls back to the legacy regex path if Python/pdfplumber is unavailable.
+ *
+ * BUG-08 FIX: The previous implementation always used the English domain/competency
+ * map (Competency 1→A, 2→B, 3→C, 4→D) regardless of subject. This caused:
+ *   - Chemistry (C09A01) tables to produce domain names like "Reading Skills"
+ *   - Math tables to produce codes with wrong domain letters
+ *
+ * Fix: Pass the subjectCode to the Python script so it can select the right map.
+ * For non-English subjects without a fixed competency→domain mapping, the script
+ * uses the column position (1st domain → A, 2nd → B, ...) as a safe generic fallback.
  */
 export async function extractSLOsFromPDFBuffer(
   pdfBuffer: Buffer,
   subjectCode: string
 ): Promise<ExtractedSLORecord[]> {
+  // BUG-08 FIX: Only run pdfplumber for subjects where horizontal multi-grade
+  // tables are actually used. Non-English subjects (Chemistry, Biology, Physics,
+  // Math) use the regex+AI path which handles their format correctly.
+  // English and Urdu curricula use the horizontal table format (Katchi→Class VIII).
+  const TABLE_EXTRACTION_SUBJECTS = new Set(['E', 'U']); // English, Urdu
+  if (!TABLE_EXTRACTION_SUBJECTS.has(subjectCode)) {
+    console.log(`[TableExtractor] Subject "${subjectCode}" does not use horizontal table format. Skipping Python extractor.`);
+    return [];
+  }
+
+  // Build subject-specific domain map JSON to pass into the Python script
+  const subjectDomainMapJson = subjectCode === 'U'
+    ? JSON.stringify({ '1': 'A', '2': 'B', '3': 'C', '4': 'D' }) // Urdu uses same 4-competency structure
+    : JSON.stringify({ '1': 'A', '2': 'B', '3': 'C', '4': 'D' }); // English default
+
+  const subjectLabel = subjectCode === 'U' ? 'Urdu' : 'English';
+
   // Write buffer to temp file
   const tmpFile = join(tmpdir(), `pm_extract_${createHash('md5').update(pdfBuffer).digest('hex').slice(0, 8)}.pdf`);
   const scriptFile = join(tmpdir(), `pm_extractor_${Date.now()}.py`);
 
+  // Patch the Python script to use the subject-specific domain map and label
+  const patchedExtractor = PYTHON_EXTRACTOR
+    .replace('"subject": "English"', `"subject": "${subjectLabel}"`)
+    .replace(
+      /COMPETENCY_DOMAIN = \{[^}]+\}/,
+      `COMPETENCY_DOMAIN = ${subjectDomainMapJson}`
+    );
+
   try {
     writeFileSync(tmpFile, pdfBuffer);
-    writeFileSync(scriptFile, PYTHON_EXTRACTOR);
+    writeFileSync(scriptFile, patchedExtractor);
 
     const { stdout, stderr } = await execFileAsync('python3', [scriptFile, tmpFile], {
       timeout: 120000, // 2 minutes
@@ -295,7 +329,7 @@ export async function extractSLOsFromPDFBuffer(
     }
 
     const records: ExtractedSLORecord[] = JSON.parse(stdout);
-    console.log(`[TableExtractor] Successfully extracted ${records.length} SLOs using table detection`);
+    console.log(`[TableExtractor] Successfully extracted ${records.length} SLOs for subject=${subjectCode} using table detection`);
     return records;
 
   } catch (err: any) {

@@ -5,6 +5,8 @@ import { detectToolIntent, getToolDisplayName } from '../../../lib/ai/tool-route
 import { getFullPrompt } from '../../../lib/ai/prompt-manager';
 import { DEFAULT_MASTER_PROMPT } from '../../../constants';
 import { selfImprovementEngine } from '../../../lib/ai/self-improvement-engine';
+import { GoogleGenAI } from '@google/genai';
+import { resolveApiKey } from '../../../lib/env-server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
