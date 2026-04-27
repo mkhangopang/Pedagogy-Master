@@ -490,8 +490,10 @@ JSON Fields:
 === RULES ===
 ${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you find. Ignore junk text, table of contents, and introductions. FOCUS ONLY ON SLO CODES AND DESCRIPTIONS.' : '- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.'}
 - DANGER: Do NOT invent, rewrite, or paraphrase. The "slo_full_text" must exactly represent the document content.
+- CLEANUP: Strictly REMOVE document artifacts like "Sindh Curriculum for Physics", page numbers (e.g., "54"), or "Grade IX Grade X" headers from the SLO text.
+- MATH: Normalize math symbols. If you see Unicode artifacts like "푉", "푝", "푞", convert them to their logical letters "V", "p", "q".
 - If a block is not an SLO (administrative text or glossary), omit it from JSON.
-- Fix manifest OCR typos (e.g. "teh" -> "the", "0l" -> "01") but keep terminology identical.
+- Fix manifest OCR typos but keep terminology identical.
 - Return ONLY raw JSON in the specified schema.
 
 === RAW TEXT ===

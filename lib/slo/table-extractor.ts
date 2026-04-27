@@ -287,15 +287,14 @@ export async function extractSLOsFromPDFBuffer(
   pdfBuffer: Buffer,
   subjectCode: string
 ): Promise<ExtractedSLORecord[]> {
-  // BUG-08 FIX: Only run pdfplumber for subjects where horizontal multi-grade
-  // tables are actually used. Primary subjects (M, S, E, U) all use this format.
-  const TABLE_EXTRACTION_SUBJECTS = new Set(['E', 'U', 'M', 'S']); // English, Urdu, Math, Science
+  // Primary subjects and Sciences use horizontal table formats in Pakistan curricula.
+  const TABLE_EXTRACTION_SUBJECTS = new Set(['E', 'U', 'M', 'S', 'P', 'C', 'B']); 
   if (!TABLE_EXTRACTION_SUBJECTS.has(subjectCode)) {
-    console.log(`[TableExtractor] Subject "${subjectCode}" does not use horizontal table format. Skipping Python extractor.`);
+    console.log(`[TableExtractor] Subject "${subjectCode}" does not use horizontal table format. Skipping.`);
     return [];
   }
 
-  // Build subject-specific domain map JSON to pass into the Python script
+  // Build subject-specific domain map
   let subjectDomainMap: Record<string, string> = { '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
   let subjectDomainNames: Record<string, string> = ENGLISH_DOMAIN_NAMES;
   let subjectLabel = 'English';
@@ -305,18 +304,31 @@ export async function extractSLOsFromPDFBuffer(
   } else if (subjectCode === 'M') {
     subjectLabel = 'Mathematics';
     subjectDomainNames = {
-      'A': 'Numbers and Operations',
-      'B': 'Algebra',
-      'C': 'Measurement and Geometry',
-      'D': 'Information Handling'
+      'A': 'Numbers and Operations', 'B': 'Algebra', 'C': 'Measurement and Geometry', 'D': 'Information Handling'
     };
   } else if (subjectCode === 'S') {
     subjectLabel = 'General Science';
     subjectDomainMap = { '1': 'A', '2': 'B', '3': 'C' };
+    subjectDomainNames = { 'A': 'Life Science', 'B': 'Physical Science', 'C': 'Earth and Space Science' };
+  } else if (subjectCode === 'P') {
+    subjectLabel = 'Physics';
     subjectDomainNames = {
-      'A': 'Life Science',
-      'B': 'Physical Science',
-      'C': 'Earth and Space Science'
+      'A': 'Nature of Science', 'B': 'Measurement', 'C': 'Mechanics', 'D': 'Heat & Thermodynamics',
+      'E': 'Waves', 'F': 'Electricity and Magnetism', 'G': 'Digital Electronics', 'H': 'Modern Physics',
+      'I': 'Earth Space Science', 'J': 'Medical Physics'
+    };
+  } else if (subjectCode === 'C') {
+    subjectLabel = 'Chemistry';
+    subjectDomainNames = {
+      'A': 'Atomic Structure', 'B': 'Chemical Bonding', 'C': 'States of Matter', 'D': 'Chemical Thermodynamics',
+      'E': 'Chemical Equilibrium', 'F': 'Acids, Bases and Salts', 'G': 'Chemical Kinetics', 'H': 'Solutions',
+      'I': 'Electrochemistry', 'J': 'S & p Block Elements', 'K': 'd & f Block Elements'
+    };
+  } else if (subjectCode === 'B') {
+    subjectLabel = 'Biology';
+    subjectDomainNames = {
+      'A': 'Cell Biology', 'B': 'Genetics', 'C': 'Evolution', 'D': 'Ecology', 'E': 'Human Physiology',
+      'F': 'Plant Physiology', 'G': 'Microbiology', 'H': 'Biotechnology'
     };
   }
 
