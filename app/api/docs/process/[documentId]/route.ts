@@ -219,8 +219,8 @@ function linearizeSloText(text: string): string {
       nextGroupStart = groups[g + 1].start;
     }
     
-    // Safety: don't take more than 1500 chars for a group text to avoid massive duplication
-    const groupTextEnd = Math.min(nextGroupStart, group.end + 1500);
+    // Safety: don't take more than 3000 chars for a group text to avoid massive duplication
+    const groupTextEnd = Math.min(nextGroupStart, group.end + 3000);
     const groupText = text.slice(group.end, groupTextEnd);
     
     // Linearize: for each code in the group, append the text block
@@ -356,7 +356,8 @@ function isLikelyNonSLO(text: string): boolean {
     'fill','hold','enjoy','repeat','show','talk','share','take','produce',
     'respond','practice','participate','pronounce','name','distinguish',
     'interpret','transform','change','gather','locate','relate','seek',
-    'connect','integrate','organize','classify','categorize','discuss'
+    'connect','integrate','organize','classify','categorize','discuss',
+    'solve', 'calculate', 'simplify', 'estimate', 'measure', 'round', 'factor', 'expand'
   ];
 
   return !bloomVerbs.some(v => t.includes(v));
@@ -419,7 +420,8 @@ function processSlos(
 }
 
 function extractRawSloBlocks(text: string): string[] {
-  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?([A-Z]{1,4})\s*[-\s]*\d{1,2}\s*[-\s]*[A-Z]\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
+  // Enhanced Regex: Handles [SLO:M-09-A-01], SLO M-09-A-01, M09A01, M-09-01, etc.
+  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?([A-Z]{1,4})\s*[-\s]*(\d{1,2}|I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)\s*[-\s]*([A-Z])\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
   const matches = [];
   let m;
   while ((m = codeRe.exec(text)) !== null) {
@@ -481,14 +483,16 @@ ${patternContext}
 === SLO FORMAT ===
 Code: [SUB][GRADE][DOMAIN][NUM] (e.g. ${subjectCode}09A01)
 JSON Fields:
-- slo_code, raw_code_as_found, slo_full_text
-- grade (2-digit), domain (letter), domain_name, subject
+- slo_code: Canonical 6-char code
+- raw_code_as_found: The exact code/number from the text
+- slo_full_text: The complete, accurate description text
 
 === RULES ===
 ${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you find. Ignore junk text, table of contents, and introductions. FOCUS ONLY ON SLO CODES AND DESCRIPTIONS.' : '- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.'}
-- Format each block into a valid JSON object.
-- Fix any OCR typos in the text.
-- Return ONLY raw JSON.
+- DANGER: Do NOT invent, rewrite, or paraphrase. The "slo_full_text" must exactly represent the document content.
+- If a block is not an SLO (administrative text or glossary), omit it from JSON.
+- Fix manifest OCR typos (e.g. "teh" -> "the", "0l" -> "01") but keep terminology identical.
+- Return ONLY raw JSON in the specified schema.
 
 === RAW TEXT ===
 ${chunk}`;
@@ -1242,11 +1246,14 @@ export async function POST(
         let text = doc.extracted_text || '';
         let pdfBuffer: Buffer | null = null;
         
-        if (!text || text.length < 200) {
-          console.log('[Stage 1] No pre-extracted text found. Falling back to server-side parsing...');
-          const r2Path = doc.file_path;
-          if (!r2Path) throw new Error('R2_FAULT: No file_path on document and no pre-extracted text');
-
+      if (!text || text.length < 200 || (doc.mime_type === 'application/pdf' && doc.file_path)) {
+        console.log(`[Stage 1] Condition met for server-side re-extraction (PDF=${doc.mime_type === 'application/pdf'}, hasPath=${!!doc.file_path}, textLen=${text.length})`);
+        const r2Path = doc.file_path;
+        if (!r2Path) {
+          if (!text || text.length < 200) throw new Error('R2_FAULT: No file_path on document and no pre-extracted text');
+          // If no R2 but we have some text, we have to stick with it
+          console.warn('[Stage 1] No binary available, continuing with limited client-side text.');
+        } else {
           try {
             pdfBuffer = await getObjectBuffer(r2Path);
             if (!pdfBuffer)  throw new Error('R2_FAULT: File unreachable from R2');
@@ -1268,9 +1275,10 @@ export async function POST(
             console.error('[Stage 1] R2 fetch failed:', e);
             throw new Error(`R2_FAULT: ${e.message}`);
           }
-        } else {
-          console.log(`[Stage 1] Using pre-extracted text from client: ${text.length} chars`);
         }
+      } else {
+        console.log(`[Stage 1] Using pre-extracted text from client: ${text.length} chars`);
+      }
 
         console.log(`[Stage 1] Text sample (first 300 chars):\n${text.substring(0, 300)}`);
 

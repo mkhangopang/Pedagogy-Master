@@ -119,7 +119,8 @@ def is_non_slo(text):
                    'infer', 'deduce', 'guess', 'find', 'select', 'choose', 'arrange',
                    'trace', 'copy', 'fill', 'hold', 'enjoy', 'repeat', 'show', 'talk',
                    'share', 'take', 'produce', 'respond', 'practice', 'participate',
-                   'pronounce', 'name', 'distinguish', 'interpret', 'transform', 'change']
+                   'pronounce', 'name', 'distinguish', 'interpret', 'transform', 'change',
+                   'solve', 'calculate', 'simplify', 'estimate', 'measure', 'round', 'factor', 'expand']
     has_verb = any(v in t for v in bloom_verbs)
     return not has_verb
 
@@ -287,21 +288,40 @@ export async function extractSLOsFromPDFBuffer(
   subjectCode: string
 ): Promise<ExtractedSLORecord[]> {
   // BUG-08 FIX: Only run pdfplumber for subjects where horizontal multi-grade
-  // tables are actually used. Non-English subjects (Chemistry, Biology, Physics,
-  // Math) use the regex+AI path which handles their format correctly.
-  // English and Urdu curricula use the horizontal table format (Katchi→Class VIII).
-  const TABLE_EXTRACTION_SUBJECTS = new Set(['E', 'U']); // English, Urdu
+  // tables are actually used. Primary subjects (M, S, E, U) all use this format.
+  const TABLE_EXTRACTION_SUBJECTS = new Set(['E', 'U', 'M', 'S']); // English, Urdu, Math, Science
   if (!TABLE_EXTRACTION_SUBJECTS.has(subjectCode)) {
     console.log(`[TableExtractor] Subject "${subjectCode}" does not use horizontal table format. Skipping Python extractor.`);
     return [];
   }
 
   // Build subject-specific domain map JSON to pass into the Python script
-  const subjectDomainMapJson = subjectCode === 'U'
-    ? JSON.stringify({ '1': 'A', '2': 'B', '3': 'C', '4': 'D' }) // Urdu uses same 4-competency structure
-    : JSON.stringify({ '1': 'A', '2': 'B', '3': 'C', '4': 'D' }); // English default
+  let subjectDomainMap: Record<string, string> = { '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
+  let subjectDomainNames: Record<string, string> = ENGLISH_DOMAIN_NAMES;
+  let subjectLabel = 'English';
 
-  const subjectLabel = subjectCode === 'U' ? 'Urdu' : 'English';
+  if (subjectCode === 'U') {
+    subjectLabel = 'Urdu';
+  } else if (subjectCode === 'M') {
+    subjectLabel = 'Mathematics';
+    subjectDomainNames = {
+      'A': 'Numbers and Operations',
+      'B': 'Algebra',
+      'C': 'Measurement and Geometry',
+      'D': 'Information Handling'
+    };
+  } else if (subjectCode === 'S') {
+    subjectLabel = 'General Science';
+    subjectDomainMap = { '1': 'A', '2': 'B', '3': 'C' };
+    subjectDomainNames = {
+      'A': 'Life Science',
+      'B': 'Physical Science',
+      'C': 'Earth and Space Science'
+    };
+  }
+
+  const subjectDomainMapJson = JSON.stringify(subjectDomainMap);
+  const subjectDomainNamesJson = JSON.stringify(subjectDomainNames);
 
   // Write buffer to temp file
   const tmpFile = join(tmpdir(), `pm_extract_${createHash('md5').update(pdfBuffer).digest('hex').slice(0, 8)}.pdf`);
@@ -313,6 +333,10 @@ export async function extractSLOsFromPDFBuffer(
     .replace(
       /COMPETENCY_DOMAIN = \{[^}]+\}/,
       `COMPETENCY_DOMAIN = ${subjectDomainMapJson}`
+    )
+    .replace(
+      /DOMAIN_NAMES = \{[^}]+\}/,
+      `DOMAIN_NAMES = ${subjectDomainNamesJson}`
     );
 
   try {
@@ -350,9 +374,12 @@ export async function extractSLOsFromPDFBuffer(
 export function likelyHasMultiGradeTable(extractedText: string): boolean {
   const patterns = [
     /Class\s+(I{1,3}|IV|VI{0,3}|IX|X{0,3})\b/i,
+    /Grade\s+(I{1,3}|IV|VI{0,3}|IX|X{0,3})\b/i,
     /Katchi/i,
     /Class\s+\d\s/i,
+    /Grade\s+\d\s/i,
     /\bK-II\b|\bIII-V\b|\bVI-VIII\b/i,
+    /\bI-VIII\b|\bIX-XII\b/i,
   ];
   let matches = 0;
   for (const p of patterns) {
