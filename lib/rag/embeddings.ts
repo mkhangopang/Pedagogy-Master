@@ -8,121 +8,125 @@ function sanitizeText(text: string): string {
   return text.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ').replace(/\s+/g, ' ').trim() || ' ';
 }
 
-/**
- * FIX-CRITICAL-02: Zero-vector poisoning eliminated.
- *
- * The previous code returned new Array(768).fill(0) on ANY API failure.
- * Zero-vectors sit at the mathematical origin and match EVERYTHING in cosine
- * similarity, silently poisoning all semantic search results.
- *
- * New behaviour:
- *   1. Retry up to 3 times with exponential back-off.
- *   2. On permanent failure, return null for that index.
- *   3. Callers MUST check for null and skip insertion.
- *   4. NEVER insert zero-vectors into pgvector.
- */
+// BUG-01 FIX: Sentinel value used to mark indices where embedding failed.
+// These indices are EXCLUDED from insertion — never written as zero-vectors to pgvector.
+const EMBEDDING_FAILED = Symbol('EMBEDDING_FAILED');
+
 export class EmbeddingError extends Error {
-  constructor(message: string, public failedCount: number) {
+  constructor(message: string, public readonly failedCount: number) {
     super(message);
     this.name = 'EmbeddingError';
   }
 }
 
-async function callEmbeddingAPI(ai: GoogleGenAI, texts: string[]): Promise<number[][]> {
+async function callEmbeddingAPI(
+  ai: GoogleGenAI,
+  texts: string[],
+  attempt: number
+): Promise<number[][]> {
   const result = await ai.models.embedContent({
     model: 'text-embedding-004',
     contents: texts,
   });
 
-  const raw = result.embeddings || [];
-  if (raw.length !== texts.length) {
-    throw new Error(`[Embedding] Got ${raw.length} vectors for ${texts.length} texts`);
+  const rawEmbeddings = result.embeddings || [];
+  if (rawEmbeddings.length !== texts.length) {
+    throw new Error(
+      `[Embedding] API returned ${rawEmbeddings.length} vectors for ${texts.length} texts (attempt ${attempt})`
+    );
   }
 
-  return raw.map((res: any) => {
-    const v: number[] = (res.values ?? (Array.isArray(res) ? res : [])).map(
-      (x: any) => (typeof x === 'number' ? x : 0)
-    );
-    const vec = v.slice(0, 768);
-    while (vec.length < 768) vec.push(0);
-    return vec;
+  return rawEmbeddings.map((res: any) => {
+    const rawVector = res.values || (Array.isArray(res) ? res : []);
+    const numericVector: number[] = rawVector.map((v: any) => (typeof v === 'number' ? v : 0));
+    let finalVector = numericVector.slice(0, 768);
+    while (finalVector.length < 768) finalVector.push(0);
+    return finalVector;
   });
 }
 
-/**
- * Returns (number[] | null)[] — null means embedding failed for that slot.
- * Caller must filter nulls before DB insertion.
- */
 export async function generateEmbeddingsBatch(
   texts: string[],
+  /** When true, throws EmbeddingError instead of silently skipping failed items. */
   strict = false
 ): Promise<(number[] | null)[]> {
   const start = performance.now();
-  const sanitized = texts.map(t => sanitizeText(t));
-  const results: (number[] | null)[] = new Array(texts.length).fill(null);
-  const uncachedIdx: number[] = [];
-  const uncachedTxt: string[] = [];
+  const sanitizedTexts = texts.map(t => sanitizeText(t));
+  const finalResults: (number[] | null)[] = new Array(texts.length).fill(null);
+  const uncachedIndices: number[] = [];
+  const uncachedTexts: string[] = [];
 
-  for (let i = 0; i < sanitized.length; i++) {
-    const cached = await embeddingCache.get(sanitized[i]);
+  for (let i = 0; i < sanitizedTexts.length; i++) {
+    const cached = await embeddingCache.get(sanitizedTexts[i]);
     if (cached && Array.isArray(cached) && typeof cached[0] === 'number') {
-      results[i] = cached;
+      finalResults[i] = cached;
     } else {
-      uncachedIdx.push(i);
-      uncachedTxt.push(sanitized[i]);
+      uncachedIndices.push(i);
+      uncachedTexts.push(sanitizedTexts[i]);
     }
   }
 
-  if (uncachedTxt.length === 0) return results;
+  if (uncachedTexts.length === 0) return finalResults;
 
   const apiKey = resolveApiKey();
-  if (!apiKey) throw new EmbeddingError('GEMINI_API_KEY not configured', uncachedTxt.length);
+  if (!apiKey) throw new Error('GEMINI_API_KEY not configured (server-side only)');
 
   const ai = new GoogleGenAI({ apiKey });
+
+  // BUG-01 FIX: Retry up to 3 times before giving up on a batch.
+  // On permanent failure, we mark indices as null (caller must skip insertion).
+  // We NEVER write zero-vectors — they poison all semantic search results.
   const MAX_ATTEMPTS = 3;
-  let lastErr: Error | null = null;
+  let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const vectors = await callEmbeddingAPI(ai, uncachedTxt);
+      const vectors = await callEmbeddingAPI(ai, uncachedTexts, attempt);
 
       for (let i = 0; i < vectors.length; i++) {
-        results[uncachedIdx[i]] = vectors[i];
-        embeddingCache.set(uncachedTxt[i], vectors[i]).catch(() => {});
+        const originalIndex = uncachedIndices[i];
+        finalResults[originalIndex] = vectors[i];
+        embeddingCache.set(uncachedTexts[i], vectors[i]).catch(() => {});
       }
 
       performanceMonitor.track('embedding_batch_api_call', performance.now() - start, {
-        count: uncachedTxt.length,
+        count: uncachedTexts.length,
         attempts: attempt,
       });
-      return results;
+
+      return finalResults;
     } catch (e: any) {
-      lastErr = e;
+      lastError = e;
       const isQuota = /429|RESOURCE_EXHAUSTED|quota/i.test(e.message || '');
-      console.error(`[Embedding] Attempt ${attempt}/${MAX_ATTEMPTS} failed: ${e.message}`);
+      console.error(`❌ [Embedding] Attempt ${attempt}/${MAX_ATTEMPTS} failed: ${e.message}`);
+
       if (attempt < MAX_ATTEMPTS) {
-        await new Promise(r => setTimeout(r, (isQuota ? 5000 : 1000) * attempt));
+        const delay = isQuota ? 5000 * attempt : 1000 * attempt;
+        console.warn(`[Embedding] Retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
       }
     }
   }
 
-  // All retries exhausted — null slots remain null (NOT zero-vectors)
-  const failedCount = uncachedTxt.length;
-  console.error(`[Embedding] Permanent failure for ${failedCount} texts after ${MAX_ATTEMPTS} attempts.`);
+  // All retries exhausted — do NOT return zero-vectors.
+  const failedCount = uncachedTexts.length;
+  console.error(`❌ [Embedding] Permanent failure for ${failedCount} texts after ${MAX_ATTEMPTS} attempts. Returning null for affected indices.`);
 
   if (strict) {
     throw new EmbeddingError(
-      `Embedding API failed after ${MAX_ATTEMPTS} attempts: ${lastErr?.message}`,
+      `Embedding API failed after ${MAX_ATTEMPTS} attempts: ${lastError?.message}`,
       failedCount
     );
   }
 
-  return results; // null for all failed slots
+  // Non-strict: return null for failed indices so caller can skip them
+  return finalResults; // uncached indices remain null
 }
 
+/** Convenience wrapper that returns a single vector or throws. */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const res = await generateEmbeddingsBatch([text], true);
-  const vec = res[0];
+  const results = await generateEmbeddingsBatch([text], true);
+  const vec = results[0];
   if (!vec) throw new EmbeddingError('Embedding failed for single text', 1);
   return vec;
 }
