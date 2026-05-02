@@ -33,10 +33,11 @@ const Documents: React.FC<DocumentsProps> = ({
   const [readingDoc, setReadingDoc] = useState<Document | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
-  // FOUNDER/ADMIN CHECK (Direct link to Vercel Env)
-  const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  const isAdmin = userProfile.role === UserRole.APP_ADMIN || (userProfile.email && adminEmails.includes(userProfile.email.toLowerCase()));
+  // FIX-08: Admin check now uses ONLY server-verified profile.role.
+  // NEXT_PUBLIC_ADMIN_EMAILS was a security leak — any user could read all admin
+  // email addresses from the client bundle in DevTools. The APP_ADMIN role is
+  // set server-side via a Supabase RLS-protected DB column, not an env var.
+  const isAdmin = userProfile.role === UserRole.APP_ADMIN;
   
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
   
@@ -328,9 +329,42 @@ const Documents: React.FC<DocumentsProps> = ({
         })}
 
         {documents.length === 0 && (
-          <div className="col-span-full py-40 text-center border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[4rem] opacity-30">
-            <FileText size={64} className="mx-auto mb-6 text-slate-300" />
-            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Library Empty</p>
+          <div className="col-span-full flex flex-col items-center justify-center py-24 px-8 text-center border-2 border-dashed border-slate-200 dark:border-white/10 rounded-3xl bg-gradient-to-b from-transparent to-indigo-50/30 dark:to-indigo-950/10">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900/40 dark:to-purple-900/40 flex items-center justify-center mb-6 shadow-inner">
+              <FileText size={36} className="text-indigo-500 dark:text-indigo-400" />
+            </div>
+            <h3 className="text-2xl font-black tracking-tight text-slate-800 dark:text-white mb-2">
+              Your Curriculum Library is Empty
+            </h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm max-w-md mb-6 leading-relaxed">
+              Upload any Sindh Board, Punjab Board, FBISE, or KPK curriculum PDF.
+              Pedagogy Master will automatically extract all SLOs, build a searchable
+              knowledge base, and make them available for lesson planning and assessment generation.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 mb-8">
+              <button
+                onClick={() => setShowUploader(true)}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+              >
+                <Upload size={16} />
+                Upload Curriculum PDF
+              </button>
+              <a
+                href="https://docs.pedagogy-master.com/sample-curriculum"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 text-sm font-bold rounded-xl transition-all hover:border-indigo-300"
+              >
+                <BookOpen size={16} />
+                Try a Sample Document
+              </a>
+            </div>
+            <div className="flex gap-6 text-xs text-slate-400 dark:text-slate-500">
+              <span>✓ PDF text extraction</span>
+              <span>✓ AI SLO identification</span>
+              <span>✓ Bloom's taxonomy tagging</span>
+              <span>✓ Semantic search</span>
+            </div>
           </div>
         )}
       </div>
