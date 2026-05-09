@@ -2,7 +2,7 @@
 // PEDAGOGY MASTER AI — Ingestion Engine v6.3
 // FIXES: Math (M) curriculum support — horizontal SLO table, grades I-VIII, OCR in grade position
 
-import { NextRequest, NextResponse, after } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient, getSupabaseServerClient } from '../../../../../lib/supabase';
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
@@ -486,6 +486,10 @@ JSON Fields:
 - slo_code: Canonical 6-char code
 - raw_code_as_found: The exact code/number from the text
 - slo_full_text: The complete, accurate description text
+- grade: The grade of the SLO, always a 2-digit number (e.g. 09, 10, etc.)
+- domain: The single alphabetical character representing the domain
+- domain_name: The name of the domain
+- subject: The name of the subject
 
 === RULES ===
 ${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you find. Ignore junk text, table of contents, and introductions. FOCUS ONLY ON SLO CODES AND DESCRIPTIONS.' : '- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.'}
@@ -1207,13 +1211,11 @@ export async function POST(
     console.log(`[Ingestion] START doc=${documentId} step=${job.step}`);
     console.log(`${'='.repeat(60)}`);
 
-    after(async () => {
-      // ... rest of the after hook ...
     console.log(`[Ingestion] Background process started for doc=${documentId}`);
     
     // Use user-scoped client if possible, fallback to admin
     const supabase = token ? getSupabaseServerClient(token) : getSupabaseAdminClient();
-    const queue    = new IngestionQueue(supabase);
+    // queue is already defined above
 
     try {
       // FIX: Add retry loop for document fetch to handle Supabase replication lag/race conditions
@@ -1674,7 +1676,6 @@ export async function POST(
           .eq('id', documentId);
       } catch (_) {}
     }
-  });
 
   return NextResponse.json({ success: true });
 } catch (fatal: any) {
