@@ -22,18 +22,18 @@ export function detectToolIntent(userQuery: string): ToolRoute {
     },
     neural_quiz: {
       score: 0,
-      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'crq', 'formative', 'summative', 'check for understanding', 'answer key'],
-      phrases: ['generate questions', 'make a quiz', 'test items', 'standards-aligned quiz']
+      keywords: ['quiz', 'test', 'question', 'assessment', 'mcq', 'exam', 'crq', 'formative', 'summative', 'check for understanding', 'answer key', 'evaluating learning', 'standardized', 'multiple choice'],
+      phrases: ['generate questions', 'make a quiz', 'test items', 'standards-aligned quiz', 'create a test', 'knowledge check']
     },
     fidelity_rubric: {
       score: 0,
-      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'descriptor', 'performance task', 'success criteria', 'marking', 'criterion'],
-      phrases: ['create a rubric', 'grade this', 'analytical rubric', 'fidelity rubric']
+      keywords: ['rubric', 'scoring', 'grading', 'criteria', 'descriptor', 'performance task', 'success criteria', 'marking', 'criterion', 'evaluation grid'],
+      phrases: ['create a rubric', 'grade this', 'analytical rubric', 'fidelity rubric', 'performance scoring']
     },
     audit_tagger: {
       score: 0,
-      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'audit', 'mapping', 'gap analysis', 'tagger', 'logic mapping'],
-      phrases: ['tag this', 'align to standards', 'audit report', 'curriculum analysis']
+      keywords: ['analyze', 'bloom', 'slo', 'curriculum', 'cognitive', 'dok', 'audit', 'mapping', 'gap analysis', 'tagger', 'logic mapping', 'standard alignment', 'taxonomy'],
+      phrases: ['tag this', 'align to standards', 'audit report', 'curriculum analysis', 'verify alignment']
     }
   };
 

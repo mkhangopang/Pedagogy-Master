@@ -20,6 +20,7 @@ export const resolveApiKey = (): string => {
   // Server-only resolution — priority order (all are private, non-NEXT_PUBLIC_)
   return (
     process.env.GEMINI_API_KEY ||
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
     process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
     process.env.API_KEY ||
     ''

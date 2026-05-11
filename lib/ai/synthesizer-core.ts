@@ -30,11 +30,24 @@ export class SynthesizerCore {
     // TIER 1: REASONERS
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 2.5 Pro',
+      name: 'Gemini 1.5 Pro',
       endpoint: 'native',
-      model: 'gemini-2.5-pro-preview-05-06',
-      apiKeyEnv: 'API_KEY',
+      model: 'gemini-1.5-pro',
+      apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 16384,
+      rpm: 10,
+      rpd: 2000,
+      tier: 1,
+      enabled: true // Always enabled, uses NEXT_PUBLIC_GEMINI_API_KEY fallback
+    });
+
+    providers.set('gemini-thinking', {
+      id: 'gemini-thinking',
+      name: 'Gemini 2.0 Thinking',
+      endpoint: 'native',
+      model: 'gemini-2.0-flash-thinking-exp-01-21',
+      apiKeyEnv: 'GEMINI_API_KEY',
+      maxTokens: 32768,
       thinkingLevel: ThinkingLevel.HIGH,
       rpm: 10,
       rpd: 2000,
@@ -52,7 +65,7 @@ export class SynthesizerCore {
       rpm: 100,
       rpd: 10000,
       tier: 1,
-      enabled: true
+      enabled: !!process.env.SAMBANOVA_API_KEY
     });
 
     providers.set('grok-2', {
@@ -79,7 +92,7 @@ export class SynthesizerCore {
       rpm: 100,
       rpd: 10000,
       tier: 2,
-      enabled: true
+      enabled: !!process.env.CEREBRAS_API_KEY
     });
 
     providers.set('gemini-flash', {
@@ -87,7 +100,7 @@ export class SynthesizerCore {
       name: 'Gemini 2.0 Flash',
       endpoint: 'native',
       model: 'gemini-2.0-flash',
-      apiKeyEnv: 'API_KEY',
+      apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 8192,
       rpm: 100,
       rpd: 10000,
@@ -105,7 +118,7 @@ export class SynthesizerCore {
       rpm: 20,
       rpd: 5000,
       tier: 2,
-      enabled: true
+      enabled: !!process.env.API_MISTRAL
     });
 
     providers.set('deepseek-v3', {
@@ -118,7 +131,7 @@ export class SynthesizerCore {
       rpm: 100,
       rpd: 10000,
       tier: 2,
-      enabled: true
+      enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
     providers.set('openrouter', {
@@ -131,7 +144,7 @@ export class SynthesizerCore {
       rpm: 100,
       rpd: 10000,
       tier: 3,
-      enabled: true
+      enabled: !!process.env.OPENROUTER_API_KEY
     });
 
     return providers;
@@ -164,8 +177,8 @@ export class SynthesizerCore {
 
     for (const provider of candidates) {
       try {
-        let apiKey = (provider.apiKeyEnv === 'NEXT_PUBLIC_GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
-          ? (process.env.API_KEY || resolveApiKey()) 
+        let apiKey = (provider.apiKeyEnv === 'GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
+          ? resolveApiKey() 
           : process.env[provider.apiKeyEnv];
           
         if (!apiKey && provider.id === 'grok-2') {
@@ -191,12 +204,18 @@ export class SynthesizerCore {
           return { text: res.text, provider: provider.name };
         } else {
           // REST Fallback (OpenAI compatible)
+          const messages = [
+            { role: 'system', content: systemPrompt },
+            ...history.map((h: any) => ({ role: h.role, content: h.content })),
+            { role: 'user', content: prompt }
+          ];
+
           const res = await fetch(provider.endpoint, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
               model: provider.model,
-              messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
+              messages,
               temperature: 0.1
             })
           });
