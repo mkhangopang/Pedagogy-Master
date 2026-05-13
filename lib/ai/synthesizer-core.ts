@@ -27,25 +27,25 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // TIER 1: REASONERS
+    // TIER 1: HIGH-CAPACITY REASONERS
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 1.5 Pro',
+      name: 'Gemini 3.1 Pro',
       endpoint: 'native',
-      model: 'gemini-1.5-pro',
+      model: 'gemini-3.1-pro-preview',
       apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 16384,
+      maxTokens: 32768,
       rpm: 10,
       rpd: 2000,
       tier: 1,
-      enabled: true // Always enabled, uses NEXT_PUBLIC_GEMINI_API_KEY fallback
+      enabled: true
     });
 
     providers.set('gemini-thinking', {
       id: 'gemini-thinking',
-      name: 'Gemini 2.0 Thinking',
+      name: 'Gemini 3 Thinking',
       endpoint: 'native',
-      model: 'gemini-2.0-flash-thinking-exp-01-21',
+      model: 'gemini-3-flash-preview',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 32768,
       thinkingLevel: ThinkingLevel.HIGH,
@@ -81,7 +81,33 @@ export class SynthesizerCore {
       enabled: !!(process.env.GROK_API_KEY || process.env.AI_GATEWAY_API_KEY)
     });
 
-    // TIER 2: ENGINES
+    // TIER 2: HIGH-SPEED ENGINES
+    providers.set('gemini-flash', {
+      id: 'gemini-flash',
+      name: 'Gemini 3 Flash',
+      endpoint: 'native',
+      model: 'gemini-3-flash-preview',
+      apiKeyEnv: 'GEMINI_API_KEY',
+      maxTokens: 16384,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
+    });
+
+    providers.set('gemini-flash-lite', {
+      id: 'gemini-flash-lite',
+      name: 'Gemini 3.1 Flash Lite',
+      endpoint: 'native',
+      model: 'gemini-3.1-flash-lite',
+      apiKeyEnv: 'GEMINI_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: true
+    });
+
     providers.set('cerebras', {
       id: 'cerebras',
       name: 'Cerebras (Llama 3.1 70B)',
@@ -93,19 +119,6 @@ export class SynthesizerCore {
       rpd: 10000,
       tier: 2,
       enabled: !!process.env.CEREBRAS_API_KEY
-    });
-
-    providers.set('gemini-flash', {
-      id: 'gemini-flash',
-      name: 'Gemini 2.0 Flash',
-      endpoint: 'native',
-      model: 'gemini-2.0-flash',
-      apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 8192,
-      rpm: 100,
-      rpd: 10000,
-      tier: 2,
-      enabled: true
     });
 
     providers.set('mistral-large', {

@@ -48,16 +48,34 @@ export async function POST(req: NextRequest) {
       priorityDocumentId
     );
 
+    const groundedNote = metadata?.isGrounded ? ` | Standards Anchored: ${metadata.sourceDocument}` : '';
+    const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment${groundedNote}`;
+    const fullResponse = text + footer;
+
     const encoder = new TextEncoder();
-    return new Response(new ReadableStream({
-      start(controller) {
-        controller.enqueue(encoder.encode(text));
-        const groundedNote = metadata?.isGrounded ? ` | Standards Anchored: ${metadata.sourceDocument}` : '';
-        const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment${groundedNote}`;
-        controller.enqueue(encoder.encode(footer));
+    const words = fullResponse.split(' ');
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        for (const word of words) {
+          const payload = JSON.stringify({ token: word + ' ' });
+          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          // Artificial delay for pedagogical smoothing
+          await new Promise(r => setTimeout(r, 5));
+        }
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();
       }
-    }), { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no'
+      }
+    });
 
   } catch (error: any) {
     console.error("❌ [Synthesis Fault]:", error);
