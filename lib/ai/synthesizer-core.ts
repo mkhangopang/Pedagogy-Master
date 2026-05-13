@@ -19,23 +19,26 @@ export class SynthesizerCore {
   private providers: Map<string, AIProvider>;
   private failedProviders: Map<string, { until: number; retries: number }>;
 
+  private selectionIndices: Map<number, number> = new Map();
+
   constructor() {
     this.providers = this.initializeProviders();
     this.failedProviders = new Map();
+    [1, 2, 3].forEach(t => this.selectionIndices.set(t, 0));
   }
 
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // TIER 1: HIGH-CAPACITY REASONERS
+    // TIER 1: HIGH-CAPACITY REASONERS (World-Class Pedagogy)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 3.1 Pro',
+      name: 'Gemini 1.5 Pro',
       endpoint: 'native',
-      model: 'gemini-3.1-pro-preview',
+      model: 'gemini-1.5-pro',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 32768,
-      rpm: 10,
+      rpm: 5,
       rpd: 2000,
       tier: 1,
       enabled: true
@@ -43,9 +46,9 @@ export class SynthesizerCore {
 
     providers.set('gemini-thinking', {
       id: 'gemini-thinking',
-      name: 'Gemini 3 Thinking',
+      name: 'Thinking Grid (Gemini 2.0)',
       endpoint: 'native',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash-thinking-exp-01-21',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 32768,
       thinkingLevel: ThinkingLevel.HIGH,
@@ -68,49 +71,49 @@ export class SynthesizerCore {
       enabled: !!process.env.SAMBANOVA_API_KEY
     });
 
-    providers.set('grok-2', {
-      id: 'grok-2',
-      name: 'Grok 2 (xAI)',
-      endpoint: 'https://api.x.ai/v1/chat/completions',
-      model: 'grok-2-1212',
-      apiKeyEnv: 'GROK_API_KEY',
-      maxTokens: 32768,
-      rpm: 20,
-      rpd: 5000,
+    providers.set('groq-r1', {
+      id: 'groq-r1',
+      name: 'Groq (DeepSeek R1)',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      model: 'deepseek-r1-distill-llama-70b',
+      apiKeyEnv: 'GROQ_API_KEY',
+      maxTokens: 8192,
+      rpm: 30,
+      rpd: 14400,
       tier: 1,
-      enabled: !!(process.env.GROK_API_KEY || process.env.AI_GATEWAY_API_KEY)
+      enabled: !!process.env.GROQ_API_KEY
     });
 
-    // TIER 2: HIGH-SPEED ENGINES
+    // TIER 2: HIGH-SPEED PRODUCTION ENGINES
     providers.set('gemini-flash', {
       id: 'gemini-flash',
-      name: 'Gemini 3 Flash',
+      name: 'Gemini 2.0 Flash',
       endpoint: 'native',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 16384,
-      rpm: 100,
-      rpd: 10000,
+      rpm: 15,
+      rpd: 1500,
       tier: 2,
       enabled: true
     });
 
-    providers.set('gemini-flash-lite', {
-      id: 'gemini-flash-lite',
-      name: 'Gemini 3.1 Flash Lite',
-      endpoint: 'native',
-      model: 'gemini-3.1-flash-lite',
-      apiKeyEnv: 'GEMINI_API_KEY',
+    providers.set('groq-llama', {
+      id: 'groq-llama',
+      name: 'Groq (Llama 3.3 70B)',
+      endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+      model: 'llama-3.3-70b-versatile',
+      apiKeyEnv: 'GROQ_API_KEY',
       maxTokens: 8192,
-      rpm: 100,
-      rpd: 10000,
+      rpm: 30,
+      rpd: 14400,
       tier: 2,
-      enabled: true
+      enabled: !!process.env.GROQ_API_KEY
     });
 
     providers.set('cerebras', {
       id: 'cerebras',
-      name: 'Cerebras (Llama 3.1 70B)',
+      name: 'Cerebras Ultra-Fast',
       endpoint: 'https://api.cerebras.ai/v1/chat/completions',
       model: 'llama3.1-70b',
       apiKeyEnv: 'CEREBRAS_API_KEY',
@@ -121,29 +124,56 @@ export class SynthesizerCore {
       enabled: !!process.env.CEREBRAS_API_KEY
     });
 
-    providers.set('mistral-large', {
-      id: 'mistral-large',
-      name: 'Mistral Large',
+    providers.set('together', {
+      id: 'together',
+      name: 'Together AI (Llama 3.1)',
+      endpoint: 'https://api.together.xyz/v1/chat/completions',
+      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+      apiKeyEnv: 'TOGETHER_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 2,
+      enabled: !!process.env.TOGETHER_API_KEY
+    });
+
+    // TIER 3: UTILITY & FALLBACK NODES
+    providers.set('gemini-flash-lite', {
+      id: 'gemini-flash-lite',
+      name: 'Gemini 1.5 Flash-Lite',
+      endpoint: 'native',
+      model: 'gemini-1.5-flash-lite',
+      apiKeyEnv: 'GEMINI_API_KEY',
+      maxTokens: 8192,
+      rpm: 100,
+      rpd: 10000,
+      tier: 3,
+      enabled: true
+    });
+
+    providers.set('mistral-free', {
+      id: 'mistral-free',
+      name: 'Mistral Pixtral',
       endpoint: 'https://api.mistral.ai/v1/chat/completions',
       model: 'mistral-large-latest',
       apiKeyEnv: 'API_MISTRAL',
-      maxTokens: 32768,
+      maxTokens: 8192,
       rpm: 20,
       rpd: 5000,
-      tier: 2,
+      tier: 3,
       enabled: !!process.env.API_MISTRAL
     });
 
-    providers.set('deepseek-v3', {
-      id: 'deepseek-v3',
-      name: 'DeepSeek V3',
+    providers.set('deepseek-chat', {
+      id: 'deepseek-chat',
+      name: 'DeepSeek Chat',
       endpoint: 'https://api.deepseek.com/v1/chat/completions',
       model: 'deepseek-chat',
       apiKeyEnv: 'DEEPSEEK_API_KEY',
       maxTokens: 8192,
       rpm: 100,
       rpd: 10000,
-      tier: 2,
+      tier: 3,
       enabled: !!process.env.DEEPSEEK_API_KEY
     });
 
@@ -165,6 +195,7 @@ export class SynthesizerCore {
 
   public realignGrid() {
     this.failedProviders.clear();
+    [1, 2, 3].forEach(t => this.selectionIndices.set(t, 0));
     console.log("⚡ [Grid] All nodes re-initialized for synthesis.");
   }
 
@@ -174,28 +205,43 @@ export class SynthesizerCore {
     const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
     const complexity = options.complexity || 2; 
 
-    // filter and sort candidates by tier
-    let candidates = Array.from(this.providers.values())
-      .filter(p => p.enabled && (!this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id)?.until || 0)));
-
-    candidates.sort((a, b) => {
-      const targetTier = complexity >= 3 ? 1 : 2;
-      return Math.abs(a.tier - targetTier) - Math.abs(b.tier - targetTier);
-    });
+    const targetTier = complexity >= 3 ? 1 : (complexity === 1 ? 3 : 2);
+    
+    // Get all enabled providers
+    const allEnabled = Array.from(this.providers.values()).filter(p => p.enabled);
+    
+    // Filter out failed ones and sort with round-robin priority
+    const candidates = allEnabled
+      .filter(p => !this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id)?.until || 0))
+      .sort((a, b) => {
+        const scoreA = Math.abs(a.tier - targetTier);
+        const scoreB = Math.abs(b.tier - targetTier);
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        
+        // Round robin within same tier
+        const idxA = allEnabled.indexOf(a);
+        const idxB = allEnabled.indexOf(b);
+        const offset = this.selectionIndices.get(a.tier) || 0;
+        return ((idxA + offset) % allEnabled.length) - ((idxB + offset) % allEnabled.length);
+      });
 
     if (candidates.length === 0) {
+      console.warn("⚠️ [Grid] All nodes temporarily saturated. Emergency realignment.");
       this.realignGrid();
-      candidates = Array.from(this.providers.values()).filter(p => p.enabled);
+      return this.synthesize(prompt, options);
     }
 
     for (const provider of candidates) {
+      // Rotate selection for next call
+      this.selectionIndices.set(provider.tier, (this.selectionIndices.get(provider.tier) || 0) + 1);
+
       try {
         let apiKey = (provider.apiKeyEnv === 'GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
           ? resolveApiKey() 
           : process.env[provider.apiKeyEnv];
           
-        if (!apiKey && provider.id === 'grok-2') {
-          apiKey = process.env.AI_GATEWAY_API_KEY;
+        if (!apiKey && provider.id.includes('groq')) {
+          apiKey = process.env.GROK_API_KEY || process.env.API_KEY;
         }
 
         if (!apiKey) continue;
