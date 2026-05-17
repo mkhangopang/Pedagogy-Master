@@ -51,36 +51,66 @@ export async function* generateAIResponseStream(
           .select('id, chunk_text')
           .contains('slo_codes', [normalizeSLO(codes[0].code)])
           .eq('document_id', activeDoc.id)
-          .limit(1);
+          .limit(3);
 
-        if (sloMatch?.[0]) {
-          vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch[0].chunk_text}`;
-          topChunkIds = [sloMatch[0].id];
-          isGrounded = true;
+        if (sloMatch && sloMatch.length > 0) {
+          vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
+          topChunkIds = sloMatch.map(s=>s.id);
+          // Don't set isGrounded=true yet so we ALSO pull semantic chunks
         }
       }
 
-      if (!isGrounded) {
-        const chunks = await retrieveRelevantChunks({
-          query: userPrompt,
-          documentIds: [activeDoc.id],
-          supabase,
-          matchCount: 8,
-          dialect: activeDoc.master_md_dialect
-        });
-        vaultContent = chunks.map(c => c.chunk_text).join('\n---\n');
-        topChunkIds = chunks.map(c => c.chunk_id);
-        isGrounded = chunks.length > 0;
+      const augmentedQuery = `${userPrompt} ${activeDoc.subject || ''} ${activeDoc.name || ''}`.trim();
+      let chunks = await retrieveRelevantChunks({
+        query: augmentedQuery,
+        documentIds: [activeDoc.id],
+        supabase,
+        matchCount: 8,
+        dialect: activeDoc.master_md_dialect
+      });
+      
+      // Fallback: If no semantic matches, just grab the first few chunks of the document
+      if (chunks.length === 0) {
+        const { data: genericChunks } = await supabase
+            .from('document_chunks')
+            .select('id, chunk_text')
+            .eq('document_id', activeDoc.id)
+            .order('chunk_index', { ascending: true })
+            .limit(8);
+            
+        if (genericChunks && genericChunks.length > 0) {
+            chunks = genericChunks.map(c => ({
+                chunk_id: c.id,
+                document_id: activeDoc.id,
+                chunk_text: c.chunk_text,
+                slo_codes: [],
+                metadata: {},
+                combined_score: 1.0
+            }));
+        }
       }
+      
+      // Filter out chunks that were already included via SLO match to avoid duplication
+      const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
+      vaultContent += newChunks.map(c => c.chunk_text).join('\n---\n');
+      topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
+      isGrounded = topChunkIds.length > 0;
     }
   }
 
   // 4. Neural Synthesis Stream
   const systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
+  let docContext = '';
+  if (priorityDocumentId) {
+    const { data: activeDoc } = await supabase.from('documents').select('name, subject, grade_level').eq('id', priorityDocumentId).single();
+    if (activeDoc) docContext = `[DOCUMENT SELECTED: ${activeDoc.name} | SUBJECT: ${activeDoc.subject || 'General'} | GRADE: ${activeDoc.grade_level || 'General'}]`;
+  }
+
   const finalPrompt = `
 <CONTEXT>
 INTENT: ${intentData.intent} | COMPLEXITY: ${intentData.complexity}
 ${adaptiveContext || ''}
+${docContext}
 </CONTEXT>
 
 <AUTHORITATIVE_VAULT>
@@ -156,36 +186,64 @@ export async function generateAIResponse(
           .select('id, chunk_text')
           .contains('slo_codes', [normalizeSLO(codes[0].code)])
           .eq('document_id', activeDoc.id)
-          .limit(1);
+          .limit(3);
 
-        if (sloMatch?.[0]) {
-          vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch[0].chunk_text}`;
-          topChunkIds = [sloMatch[0].id];
-          isGrounded = true;
+        if (sloMatch && sloMatch.length > 0) {
+          vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
+          topChunkIds = sloMatch.map(s=>s.id);
         }
       }
 
-      if (!isGrounded) {
-        const chunks = await retrieveRelevantChunks({
-          query: userPrompt,
-          documentIds: [activeDoc.id],
-          supabase,
-          matchCount: 8,
-          dialect: activeDoc.master_md_dialect
-        });
-        vaultContent = chunks.map(c => c.chunk_text).join('\n---\n');
-        topChunkIds = chunks.map(c => c.chunk_id);
-        isGrounded = chunks.length > 0;
+      const augmentedQuery = `${userPrompt} ${activeDoc.subject || ''} ${activeDoc.name || ''}`.trim();
+      let chunks = await retrieveRelevantChunks({
+        query: augmentedQuery,
+        documentIds: [activeDoc.id],
+        supabase,
+        matchCount: 8,
+        dialect: activeDoc.master_md_dialect
+      });
+
+      // Fallback: If no semantic matches, just grab the first few chunks of the document
+      if (chunks.length === 0) {
+        const { data: genericChunks } = await supabase
+            .from('document_chunks')
+            .select('id, chunk_text')
+            .eq('document_id', activeDoc.id)
+            .order('chunk_index', { ascending: true })
+            .limit(8);
+            
+        if (genericChunks && genericChunks.length > 0) {
+            chunks = genericChunks.map(c => ({
+                chunk_id: c.id,
+                document_id: activeDoc.id,
+                chunk_text: c.chunk_text,
+                slo_codes: [],
+                metadata: {},
+                combined_score: 1.0
+            }));
+        }
       }
+
+      const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
+      vaultContent += newChunks.map(c => c.chunk_text).join('\n---\n');
+      topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
+      isGrounded = topChunkIds.length > 0;
     }
   }
 
   // 5. Neural Synthesis
   const systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
+  let docContext = '';
+  if (priorityDocumentId) {
+    const { data: activeDoc } = await supabase.from('documents').select('name, subject, grade_level').eq('id', priorityDocumentId).single();
+    if (activeDoc) docContext = `[DOCUMENT SELECTED: ${activeDoc.name} | SUBJECT: ${activeDoc.subject || 'General'} | GRADE: ${activeDoc.grade_level || 'General'}]`;
+  }
+
   const finalPrompt = `
 <CONTEXT>
 INTENT: ${intentData.intent} | COMPLEXITY: ${intentData.complexity}
 ${adaptiveContext || ''}
+${docContext}
 </CONTEXT>
 
 <AUTHORITATIVE_VAULT>
