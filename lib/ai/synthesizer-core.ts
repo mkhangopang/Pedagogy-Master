@@ -1,5 +1,5 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import { resolveApiKey } from '../env-server';
+import { getAllGeminiKeys, resolveApiKey } from '../env-server';
 
 export interface AIProvider {
   id: string;
@@ -29,19 +29,23 @@ export class SynthesizerCore {
 
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
+    const geminiKeys = getAllGeminiKeys();
 
     // TIER 1: HIGH-CAPACITY REASONERS (World-Class Pedagogy)
-    providers.set('gemini-pro', {
-      id: 'gemini-pro',
-      name: 'Gemini 1.5 Pro',
-      endpoint: 'native',
-      model: 'gemini-1.5-pro',
-      apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 32768,
-      rpm: 5,
-      rpd: 2000,
-      tier: 1,
-      enabled: true
+    // Register multiple Gemini Pro instances if keys available
+    geminiKeys.forEach((key, idx) => {
+      providers.set(`gemini-pro-${idx}`, {
+        id: `gemini-pro-${idx}`,
+        name: `Gemini 1.5 Pro (Node ${idx + 1})`,
+        endpoint: 'native',
+        model: 'gemini-1.5-pro',
+        apiKeyEnv: `CUSTOM_KEY_${idx}`, // Marker for using idx-based key
+        maxTokens: 32768,
+        rpm: 5,
+        rpd: 2000,
+        tier: 1,
+        enabled: true
+      });
     });
 
     providers.set('gemini-thinking', {
@@ -85,17 +89,19 @@ export class SynthesizerCore {
     });
 
     // TIER 2: HIGH-SPEED PRODUCTION ENGINES
-    providers.set('gemini-flash', {
-      id: 'gemini-flash',
-      name: 'Gemini 2.0 Flash',
-      endpoint: 'native',
-      model: 'gemini-2.0-flash',
-      apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 16384,
-      rpm: 15,
-      rpd: 1500,
-      tier: 2,
-      enabled: true
+    geminiKeys.forEach((key, idx) => {
+      providers.set(`gemini-flash-${idx}`, {
+        id: `gemini-flash-${idx}`,
+        name: `Gemini 2.0 Flash (Node ${idx + 1})`,
+        endpoint: 'native',
+        model: 'gemini-2.0-flash',
+        apiKeyEnv: `CUSTOM_KEY_${idx}`, 
+        maxTokens: 16384,
+        rpm: 15,
+        rpd: 1500,
+        tier: 2,
+        enabled: true
+      });
     });
 
     providers.set('groq-llama', {
@@ -138,17 +144,19 @@ export class SynthesizerCore {
     });
 
     // TIER 3: UTILITY & FALLBACK NODES
-    providers.set('gemini-flash-lite', {
-      id: 'gemini-flash-lite',
-      name: 'Gemini 1.5 Flash-Lite',
-      endpoint: 'native',
-      model: 'gemini-1.5-flash-lite',
-      apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 8192,
-      rpm: 100,
-      rpd: 10000,
-      tier: 3,
-      enabled: true
+    geminiKeys.forEach((key, idx) => {
+      providers.set(`gemini-flash-lite-${idx}`, {
+        id: `gemini-flash-lite-${idx}`,
+        name: `Gemini 1.5 Flash-Lite (Node ${idx + 1})`,
+        endpoint: 'native',
+        model: 'gemini-1.5-flash-lite',
+        apiKeyEnv: `CUSTOM_KEY_${idx}`,
+        maxTokens: 8192,
+        rpm: 100,
+        rpd: 10000,
+        tier: 3,
+        enabled: true
+      });
     });
 
     providers.set('mistral-free', {
@@ -199,6 +207,96 @@ export class SynthesizerCore {
     console.log("⚡ [Grid] All nodes re-initialized for synthesis.");
   }
 
+  public async *synthesizeStream(prompt: string, options: any = {}): AsyncGenerator<string> {
+    const now = Date.now();
+    const history = options.history || [];
+    const systemPrompt = options.systemPrompt || "You are a world-class pedagogy master.";
+    const complexity = options.complexity || 2; 
+
+    const targetTier = complexity >= 3 ? 1 : (complexity === 1 ? 3 : 2);
+    const allEnabled = Array.from(this.providers.values()).filter(p => p.enabled);
+    
+    const candidates = allEnabled
+      .filter(p => !this.failedProviders.has(p.id) || now > (this.failedProviders.get(p.id)?.until || 0))
+      .sort((a, b) => {
+        const scoreA = Math.abs(a.tier - targetTier);
+        const scoreB = Math.abs(b.tier - targetTier);
+        if (scoreA !== scoreB) return scoreA - scoreB;
+        const idxA = allEnabled.indexOf(a);
+        const idxB = allEnabled.indexOf(b);
+        const offset = this.selectionIndices.get(a.tier) || 0;
+        return ((idxA + offset) % allEnabled.length) - ((idxB + offset) % allEnabled.length);
+      });
+
+    if (candidates.length === 0) {
+      yield "AI Alert: Synthesis grid saturated. Emergency realignment initiated...";
+      this.realignGrid();
+      // Non-recursive yield for safety in stream
+      return;
+    }
+
+    for (const provider of candidates) {
+      this.selectionIndices.set(provider.tier, (this.selectionIndices.get(provider.tier) || 0) + 1);
+
+      try {
+        let apiKey: string | undefined;
+        if (provider.apiKeyEnv.startsWith('CUSTOM_KEY_')) {
+          const idx = parseInt(provider.apiKeyEnv.split('_')[2], 10);
+          apiKey = getAllGeminiKeys()[idx];
+        } else if (provider.apiKeyEnv === 'GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY') {
+          apiKey = resolveApiKey();
+        } else {
+          apiKey = process.env[provider.apiKeyEnv];
+        }
+        if (!apiKey) continue;
+
+        if (provider.endpoint === 'native') {
+          const ai = new GoogleGenAI({ apiKey });
+          const feedbackStream = await ai.models.generateContentStream({
+            model: provider.model,
+            contents: [
+              ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
+              { role: 'user', parts: [{ text: prompt }] }
+            ],
+            config: { 
+              systemInstruction: systemPrompt,
+              temperature: 0.1,
+              maxOutputTokens: provider.maxTokens,
+              thinkingConfig: provider.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : undefined
+            }
+          });
+          for await (const chunk of feedbackStream) {
+             const text = chunk.text;
+             if (text) yield text;
+          }
+          return;
+        } else {
+          // REST Fallback (Non-streaming for now to keep it simple, but we yield in one block)
+          const messages = [
+            { role: 'system', content: systemPrompt },
+            ...history.map((h: any) => ({ role: h.role, content: h.content })),
+            { role: 'user', content: prompt }
+          ];
+
+          const res = await fetch(provider.endpoint, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: provider.model, messages, temperature: 0.1, stream: false })
+          });
+          if (!res.ok) throw new Error(`Node_Error_${res.status}`);
+          const data = await res.json();
+          yield data.choices[0].message.content;
+          return;
+        }
+      } catch (e: any) {
+        const msg = e?.message || "Unknown error";
+        const cooldown = msg.includes('429') ? 600000 : 60000;
+        this.failedProviders.set(provider.id, { until: Date.now() + cooldown, retries: 0 });
+        console.warn(`🔴 [Grid Stream] Node ${provider.name} saturated. Redirecting... Error: ${msg}`);
+      }
+    }
+  }
+
   public async synthesize(prompt: string, options: any = {}): Promise<any> {
     const now = Date.now();
     const history = options.history || [];
@@ -236,9 +334,16 @@ export class SynthesizerCore {
       this.selectionIndices.set(provider.tier, (this.selectionIndices.get(provider.tier) || 0) + 1);
 
       try {
-        let apiKey = (provider.apiKeyEnv === 'GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY')
-          ? resolveApiKey() 
-          : process.env[provider.apiKeyEnv];
+        let apiKey: string | undefined;
+        
+        if (provider.apiKeyEnv.startsWith('CUSTOM_KEY_')) {
+          const idx = parseInt(provider.apiKeyEnv.split('_')[2], 10);
+          apiKey = getAllGeminiKeys()[idx];
+        } else if (provider.apiKeyEnv === 'GEMINI_API_KEY' || provider.apiKeyEnv === 'API_KEY') {
+          apiKey = resolveApiKey();
+        } else {
+          apiKey = process.env[provider.apiKeyEnv];
+        }
           
         if (!apiKey && provider.id.includes('groq')) {
           apiKey = process.env.GROK_API_KEY || process.env.API_KEY;
@@ -257,6 +362,7 @@ export class SynthesizerCore {
             config: { 
               systemInstruction: systemPrompt,
               temperature: 0.1,
+              maxOutputTokens: provider.maxTokens,
               thinkingConfig: provider.thinkingLevel ? { thinkingLevel: provider.thinkingLevel } : undefined
             }
           });
@@ -312,3 +418,4 @@ export function getSynthesizer(): SynthesizerCore {
 }
 
 export const synthesize = (prompt: string, options: any = {}) => getSynthesizer().synthesize(prompt, options);
+export const synthesizeStream = (prompt: string, options: any = {}) => getSynthesizer().synthesizeStream(prompt, options);

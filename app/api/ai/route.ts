@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
-import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
+import { generateAIResponseStream } from '../../../lib/ai/multi-provider-router';
 import { detectToolIntent, ToolType, getToolDisplayName } from '../../../lib/ai/tool-router';
 import { getFullPrompt } from '../../../lib/ai/prompt-manager';
 import { DEFAULT_MASTER_PROMPT } from '../../../constants';
@@ -25,7 +25,6 @@ export async function POST(req: NextRequest) {
     const { data: profile } = await supabase.from('profiles').select('workspace_name, name').eq('id', user.id).single();
     const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
-    // SECURE BRAIN INJECTION
     const { data: brain } = await supabase.from('neural_brain').select('master_prompt').eq('is_active', true).maybeSingle();
     const activeMasterPrompt = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
 
@@ -36,7 +35,7 @@ export async function POST(req: NextRequest) {
     const customContext = `[INSTITUTION: ${brandName}]\n[INSTRUCTION: Format headers for ${brandName} standards.]\n[SPECIALIST: ${expertTitle}]`;
     const systemPrompt = await getFullPrompt(effectiveTool, customContext, activeMasterPrompt);
 
-    const { text, provider, metadata } = await generateAIResponse(
+    const stream = generateAIResponseStream(
       userInput || "",
       history || [],
       user.id,
@@ -48,27 +47,30 @@ export async function POST(req: NextRequest) {
       priorityDocumentId
     );
 
-    const groundedNote = metadata?.isGrounded ? ` | Standards Anchored: ${metadata.sourceDocument}` : '';
-    const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment${groundedNote}`;
-    const fullResponse = text + footer;
-
     const encoder = new TextEncoder();
-    const words = fullResponse.split(' ');
-
-    const stream = new ReadableStream({
+    const responseStream = new ReadableStream({
       async start(controller) {
-        for (const word of words) {
-          const payload = JSON.stringify({ token: word + ' ' });
-          controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
-          // Artificial delay for pedagogical smoothing
-          await new Promise(r => setTimeout(r, 5));
+        try {
+          for await (const token of stream) {
+            const payload = JSON.stringify({ token });
+            controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
+          }
+          
+          const groundedNote = ` | Standards Anchored: ${priorityDocumentId ? 'YES' : 'NO'}`;
+          const footer = `\n\n---\n### 🏛️ ${brandName} | Institutional Artifact\n**Expert Node:** ${expertTitle}\n**Neural Status:** ✅ Verified Alignment${groundedNote}`;
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: footer })}\n\n`));
+          
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        } catch (err: any) {
+          console.error("Stream Error:", err);
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`));
+        } finally {
+          controller.close();
         }
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
       }
     });
 
-    return new Response(stream, {
+    return new Response(responseStream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',

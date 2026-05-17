@@ -89,71 +89,88 @@ export async function indexDocumentForRAG(
       }
     }
 
+    if (nodes.length === 0) {
+      console.warn("[Indexer] No nodes found to index.");
+      return { success: true, count: 0 };
+    }
+
+    const { data: existingChunks } = await supabase
+      .from('document_chunks')
+      .select('chunk_index')
+      .eq('document_id', documentId);
+    
+    const indexedIndices = new Set(existingChunks?.map(c => c.chunk_index) || []);
+
     const BATCH_SIZE = 50; 
     for (let i = 0; i < nodes.length; i += BATCH_SIZE) {
       const batch = nodes.slice(i, i + BATCH_SIZE);
       
-      // Check if this batch was already processed (idempotency)
-      const { data: existing } = await supabase
-        .from('document_chunks')
-        .select('chunk_index')
-        .eq('document_id', documentId)
-        .gte('chunk_index', i)
-        .lt('chunk_index', i + BATCH_SIZE);
+      // Filter out nodes that are already indexed
+      const freshBatch = batch.map((node, idx) => ({ node, originalIndex: i + idx }))
+                            .filter(item => !indexedIndices.has(item.originalIndex));
       
-      if (existing && existing.length === batch.length) {
-        console.log(`Batch ${i / BATCH_SIZE + 1} already indexed. Skipping.`);
+      if (freshBatch.length === 0) {
+        console.log(`Batch ${Math.ceil(i / BATCH_SIZE) + 1} already fully indexed. Skipping.`);
+        if (jobId) {
+          const progressPercent = Math.round(85 + ((i + batch.length) / nodes.length) * 14);
+          await supabase.from('ingestion_jobs').update({ progress: progressPercent }).eq('id', jobId);
+        }
         continue;
       }
 
-      if (jobId && nodes.length > 0) {
-        const progressPercent = Math.round(70 + ((i / nodes.length) * 25)); // EMBED step is 70-95%
+      if (jobId) {
+        // RAG step is 85-99% (scaled by nodes processed)
+        const progressPercent = Math.round(85 + ((i / nodes.length) * 14)); 
         await supabase.from('ingestion_jobs').update({ 
           status: 'processing',
-          step: 'EMBED', // Use uppercase to match enum
-          updated_at: new Date().toISOString(), // CRITICAL: Update timestamp to prevent heartbeat re-trigger
+          step: 'EMBED', 
+          updated_at: new Date().toISOString(), 
           payload: { 
             processed: i, 
             total: nodes.length, 
             status: 'generating_vectors',
             progress: progressPercent,
-            message: `Vectorizing batch ${Math.ceil(i / BATCH_SIZE) + 1} of ${Math.ceil(nodes.length / BATCH_SIZE)}...`
+            message: `Vectorizing fresh items in batch ${Math.ceil(i / BATCH_SIZE) + 1}... (${freshBatch.length} new)`
           } 
         }).eq('id', jobId);
       }
 
-      console.log(`Processing batch ${i / BATCH_SIZE + 1} of ${Math.ceil(nodes.length / BATCH_SIZE)}`);
-      const embeddings = await generateEmbeddingsBatch(batch.map(n => n.text));
-      console.log(`Embeddings generated for batch ${i / BATCH_SIZE + 1}`);
+      console.log(`Processing ${freshBatch.length} new nodes in batch ${Math.ceil(i / BATCH_SIZE) + 1}`);
+      const embeddings = await generateEmbeddingsBatch(freshBatch.map(item => item.node.text));
       
-      const records = batch.map((node, j) => {
+      const records = freshBatch.map((item, j) => {
         const vec = embeddings[j];
-        if (!vec) return null; // EXCLUDE failed embeddings
+        if (!vec) return null;
 
         return {
           document_id: documentId,
-          chunk_text: node.text,
+          chunk_text: item.node.text,
           embedding: vec,
-          slo_codes: node.metadata.slo_codes,
-          semantic_fingerprint: node.fingerprint,
-          token_count: node.metadata.tokens,
-          chunk_index: i + j,
-          metadata: node.metadata
+          slo_codes: item.node.metadata.slo_codes,
+          semantic_fingerprint: item.node.fingerprint,
+          token_count: item.node.metadata.tokens,
+          chunk_index: item.originalIndex,
+          metadata: item.node.metadata
         };
       }).filter((r): r is NonNullable<typeof r> => r !== null);
 
       if (records.length === 0) {
-        console.warn(`[Indexer] Batch ${i / BATCH_SIZE + 1} produced zero valid embeddings. Skipping insertion.`);
+        console.warn(`[Indexer] Batch ${Math.ceil(i / BATCH_SIZE) + 1} produced zero valid embeddings. Skipping insertion.`);
         continue;
       }
 
-      console.log(`Inserting batch ${i / BATCH_SIZE + 1} into document_chunks`);
+      console.log(`Inserting ${records.length} records for batch ${Math.ceil(i / BATCH_SIZE) + 1}`);
       const { error: insertError } = await supabase.from('document_chunks').insert(records);
       if (insertError) {
         console.error("Insert error:", insertError);
-        throw insertError;
+        // If it's a duplicate key error despite our check, it might be a race condition.
+        // We'll log it and continue if it's a duplicate, otherwise throw.
+        if (insertError.code === '23505') {
+           console.warn("Race condition: Duplicate key detected during insert. Skipping record.");
+        } else {
+           throw insertError;
+        }
       }
-      console.log(`Batch ${i / BATCH_SIZE + 1} inserted successfully`);
     }
 
     return { success: true, count: nodes.length };

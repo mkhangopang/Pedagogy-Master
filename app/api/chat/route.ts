@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
-import { generateAIResponse } from '../../../lib/ai/multi-provider-router';
+import { generateAIResponse, generateAIResponseStream } from '../../../lib/ai/multi-provider-router';
 import { detectToolIntent, getToolDisplayName } from '../../../lib/ai/tool-router';
 import { getFullPrompt } from '../../../lib/ai/prompt-manager';
 import { DEFAULT_MASTER_PROMPT } from '../../../constants';
@@ -49,11 +49,8 @@ export async function POST(req: NextRequest) {
     const customContext = `[CHAT_MODE: ACTIVE]\n[INSTITUTION: ${brandName}]\n[ROLE: Pedagogical Consultant]`;
     const assembledSystemPrompt = await getFullPrompt(routeInfo.tool, customContext, activeMasterPrompt);
 
-    let fullText = '';
-    let provider = 'Unknown';
-
     try {
-      const result = await generateAIResponse(
+      const stream = generateAIResponseStream(
         message,
         history,
         user.id,
@@ -64,8 +61,49 @@ export async function POST(req: NextRequest) {
         assembledSystemPrompt,
         priorityDocumentId
       );
-      fullText = result.text;
-      provider = result.provider;
+
+      const encoder = new TextEncoder();
+      const responseStream = new ReadableStream({
+        async start(controller) {
+          try {
+            let fullCollectedText = '';
+            for await (const token of stream) {
+              fullCollectedText += token;
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token })}\n\n`));
+            }
+            
+            const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
+            const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via ${expertTitle}*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: watermark })}\n\n`));
+            
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+
+            // Async Self-Improvement
+            selfImprovementEngine.learn({
+              userId: user.id,
+              input: message,
+              output: fullCollectedText,
+              tool: routeInfo.tool,
+              supabase
+            }).catch(() => {});
+          } catch (err: any) {
+             console.error("Chat Stream Error:", err);
+             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`));
+          } finally {
+            controller.close();
+          }
+        }
+      });
+
+      return new Response(responseStream, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no'
+        }
+      });
+
     } catch (err: any) {
       if (err.message?.includes('QUOTA_EXCEEDED')) {
         return NextResponse.json({
@@ -75,43 +113,6 @@ export async function POST(req: NextRequest) {
       }
       throw err;
     }
-
-    const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
-    const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via ${expertTitle} (${provider})*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
-    const fullResponse = fullText + watermark;
-
-    // True SSE Streaming (word-level)
-    const encoder = new TextEncoder();
-    const words = fullResponse.split(' ');
-
-    const stream = new ReadableStream({
-      async start(controller) {
-        for (const word of words) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: word + ' ' })}\n\n`));
-          await new Promise(r => setTimeout(r, 8));
-        }
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
-
-        // Async Self-Improvement
-        selfImprovementEngine.learn({
-          userId: user.id,
-          input: message,
-          output: fullText,
-          tool: routeInfo.tool,
-          supabase
-        }).catch(() => {});
-      }
-    });
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no'
-      }
-    });
 
   } catch (error: any) {
     console.error("❌ Conversational Node Error:", error);

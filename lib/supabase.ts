@@ -181,7 +181,7 @@ export async function getOrCreateProfile(userId: string, email?: string) {
     const { data: newProfile } = await supabase.from('profiles').insert({
       id: userId, email: email || '', name: email?.split('@')[0] || 'Educator',
       role: isAdminUser ? 'app_admin' : 'teacher', plan: isAdminUser ? 'enterprise' : 'free',
-      queries_limit: isAdminUser ? 999999 : 30
+      queries_limit: isAdminUser ? 999999 : 5000
     }).select().single();
     return newProfile;
   } catch (err) { return null; }
