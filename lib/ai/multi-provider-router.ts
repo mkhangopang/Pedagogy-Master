@@ -45,15 +45,17 @@ export async function* generateAIResponseStream(
 
     if (activeDoc) {
       const codes = extractSLOCodes(userPrompt);
+      let sloMatch: any[] = [];
       if (codes.length > 0) {
-        const { data: sloMatch } = await supabase
+        const { data } = await supabase
           .from('document_chunks')
           .select('id, chunk_text')
           .contains('slo_codes', [normalizeSLO(codes[0].code)])
           .eq('document_id', activeDoc.id)
           .limit(3);
+        sloMatch = data || [];
 
-        if (sloMatch && sloMatch.length > 0) {
+        if (sloMatch.length > 0) {
           vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
           topChunkIds = sloMatch.map(s=>s.id);
           // Don't set isGrounded=true yet so we ALSO pull semantic chunks
@@ -92,29 +94,58 @@ export async function* generateAIResponseStream(
       
       // Filter out chunks that were already included via SLO match to avoid duplication
       const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
-      vaultContent += newChunks.map(c => c.chunk_text).join('\n---\n');
+      
+      let formattedVault = vaultContent;
+      if (sloMatch && sloMatch.length > 0) {
+        // Vault already has SURGICAL_VAULT_EXTRACT header from sloMatch block
+      } else {
+        formattedVault = '### AUTHORITATIVE_CURRICULUM_VAULT\n';
+      }
+
+      newChunks.forEach((c, idx) => {
+        formattedVault += `\n[CHUNK_ID: ${c.chunk_id}]\n${c.chunk_text}\n---\n`;
+      });
+
+      vaultContent = formattedVault;
       topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
       isGrounded = topChunkIds.length > 0;
     }
   }
 
   // 4. Neural Synthesis Stream
-  const systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
+  let systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
   let docContext = '';
   if (priorityDocumentId) {
     const { data: activeDoc } = await supabase.from('documents').select('name, subject, grade_level').eq('id', priorityDocumentId).single();
-    if (activeDoc) docContext = `[DOCUMENT SELECTED: ${activeDoc.name} | SUBJECT: ${activeDoc.subject || 'General'} | GRADE: ${activeDoc.grade_level || 'General'}]`;
+    if (activeDoc) {
+      docContext = `[DOCUMENT SELECTED: ${activeDoc.name} | SUBJECT: ${activeDoc.subject || 'General'} | GRADE: ${activeDoc.grade_level || 'General'}]`;
+      // CRITICAL: Force strict grounding in system prompt
+      systemInstruction = `STRICT GROUNDING MODE ACTIVE.
+You are generating content for the curriculum: ${activeDoc.name}.
+RULES:
+1. ONLY use information found in the <AUTHORITATIVE_VAULT> provided in the user message.
+2. If the user asks for something NOT covered in the vault, explicitly state: "This standard/topic is not found in the selected curriculum (${activeDoc.name})."
+3. DO NOT use external pedagogical knowledge or general world knowledge if it contradicts or isn't supported by the provided vault fragments.
+4. When possible, cite the [CHUNK_ID] used.
+
+${systemInstruction}`;
+    }
   }
 
   const finalPrompt = `
+<GROUNDING_STATUS>
+IS_GROUNDED: ${isGrounded ? 'YES' : 'NO'}
+VAULT_SOURCE: ${priorityDocumentId || 'NONE'}
+${docContext}
+</GROUNDING_STATUS>
+
 <CONTEXT>
 INTENT: ${intentData.intent} | COMPLEXITY: ${intentData.complexity}
 ${adaptiveContext || ''}
-${docContext}
 </CONTEXT>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: Use General Pedagogical Knowledge]'}
+${vaultContent || '[VAULT_EMPTY: No specific standard found. Do not synthesize curriculum-specific data.]'}
 </AUTHORITATIVE_VAULT>
 
 USER_QUERY: "${userPrompt}"`;
@@ -180,15 +211,17 @@ export async function generateAIResponse(
       sourceDocName = activeDoc.name;
 
       const codes = extractSLOCodes(userPrompt);
+      let sloMatch: any[] = [];
       if (codes.length > 0) {
-        const { data: sloMatch } = await supabase
+        const { data } = await supabase
           .from('document_chunks')
           .select('id, chunk_text')
           .contains('slo_codes', [normalizeSLO(codes[0].code)])
           .eq('document_id', activeDoc.id)
           .limit(3);
+        sloMatch = data || [];
 
-        if (sloMatch && sloMatch.length > 0) {
+        if (sloMatch.length > 0) {
           vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
           topChunkIds = sloMatch.map(s=>s.id);
         }
@@ -225,29 +258,58 @@ export async function generateAIResponse(
       }
 
       const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
-      vaultContent += newChunks.map(c => c.chunk_text).join('\n---\n');
+      
+      let formattedVault = vaultContent;
+      if (sloMatch && sloMatch.length > 0) {
+        // Already has header
+      } else {
+        formattedVault = '### AUTHORITATIVE_CURRICULUM_VAULT\n';
+      }
+
+      newChunks.forEach((c) => {
+        formattedVault += `\n[CHUNK_ID: ${c.chunk_id}]\n${c.chunk_text}\n---\n`;
+      });
+
+      vaultContent = formattedVault;
       topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
       isGrounded = topChunkIds.length > 0;
     }
   }
 
   // 5. Neural Synthesis
-  const systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
+  let systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
   let docContext = '';
   if (priorityDocumentId) {
     const { data: activeDoc } = await supabase.from('documents').select('name, subject, grade_level').eq('id', priorityDocumentId).single();
-    if (activeDoc) docContext = `[DOCUMENT SELECTED: ${activeDoc.name} | SUBJECT: ${activeDoc.subject || 'General'} | GRADE: ${activeDoc.grade_level || 'General'}]`;
+    if (activeDoc) {
+      docContext = `[DOCUMENT SELECTED: ${activeDoc.name} | SUBJECT: ${activeDoc.subject || 'General'} | GRADE: ${activeDoc.grade_level || 'General'}]`;
+      // CRITICAL: Force strict grounding in system prompt
+      systemInstruction = `STRICT GROUNDING MODE ACTIVE.
+You are generating content for the curriculum: ${activeDoc.name}.
+RULES:
+1. ONLY use information found in the <AUTHORITATIVE_VAULT> provided in the user message.
+2. If the user asks for something NOT covered in the vault, explicitly state: "This standard/topic is not found in the selected curriculum (${activeDoc.name})."
+3. DO NOT use external pedagogical knowledge or general world knowledge if it contradicts or isn't supported by the provided vault fragments.
+4. When possible, cite the [CHUNK_ID] used.
+
+${systemInstruction}`;
+    }
   }
 
   const finalPrompt = `
+<GROUNDING_STATUS>
+IS_GROUNDED: ${isGrounded ? 'YES' : 'NO'}
+VAULT_SOURCE: ${priorityDocumentId || 'NONE'}
+${docContext}
+</GROUNDING_STATUS>
+
 <CONTEXT>
 INTENT: ${intentData.intent} | COMPLEXITY: ${intentData.complexity}
 ${adaptiveContext || ''}
-${docContext}
 </CONTEXT>
 
 <AUTHORITATIVE_VAULT>
-${vaultContent || '[VAULT_EMPTY: Use General Pedagogical Knowledge]'}
+${vaultContent || '[VAULT_EMPTY: No specific standard found. Do not synthesize curriculum-specific data.]'}
 </AUTHORITATIVE_VAULT>
 
 USER_QUERY: "${userPrompt}"`;
