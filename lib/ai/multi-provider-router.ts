@@ -93,7 +93,7 @@ export async function* generateAIResponseStream(
       query: augmentedQuery,
       documentIds: effectiveDocumentIds,
       supabase,
-      matchCount: 10,
+      matchCount: 15,
       dialect: priorityDocumentId ? (await supabase.from('documents').select('master_md_dialect').eq('id', priorityDocumentId).single()).data?.master_md_dialect : undefined
     });
     
@@ -137,15 +137,17 @@ export async function* generateAIResponseStream(
   let docContext = '';
   if (priorityDocumentId) {
     docContext = `[DOCUMENT SELECTED: ${sourceDocName || 'Specific Curriculum'}]`;
-    // CRITICAL: Force strict grounding in system prompt
-    systemInstruction = `STRICT_GROUNDING_ENFORCED.
+    // RELAXED GROUNDING: Highly encourage vault use, but allow fallback with clear labeling
+    systemInstruction = `GROUNDED_RESPONSE_ENFORCED.
 You are generating content FOR THE SELECTED CURRICULUM: ${sourceDocName || 'Specific Curriculum'}.
 GROUNDING RULES:
-1. ONLY use information found in the <AUTHORITATIVE_VAULT> provided below.
-2. IF THE <AUTHORITATIVE_VAULT> DOES NOT CONTAIN THE REQUESTED TOPIC OR IS EMPTY, YOU MUST REFUSE TO PROVIDE GENERIC INFORMATION.
-3. INSTEAD, OUTPUT: "CORE_FAILURE: The requested topic/standard is not found in the selected curriculum. Please select a different curriculum or ensure this document is fully indexed."
-4. NEVER provide "suggested frameworks" or "general chemistry knowledge" if the specific SLOs are missing. Refuse immediately.
-5. CITE [CHUNK_ID] when using specific data.
+1. PRIMARY_SOURCE: Use the <AUTHORITATIVE_VAULT> below for all specific standards and SLOs.
+2. CITATION: CITE [CHUNK_ID] when using specific data from the vault.
+3. HANDLING_MISSING_DATA: If the <AUTHORITATIVE_VAULT> does not contain the specific topic requested:
+   a. First, state clearly that the specific curriculum standard was not found in the selected document.
+   b. Then, provide a response based on "General Pedagogical Best Practices" to be helpful.
+   c. If you provide general information, you MUST prefix those sections with [GENERAL_PEDAGOGY].
+4. NEVER pretend generic information is from the specific curriculum.
 
 ${systemInstruction}`;
   } else {
@@ -173,12 +175,6 @@ ${vaultContent || '[VAULT_EMPTY: NO CLASSIFIED CONTENT EXTRACTED. REFUSE REQUEST
 </AUTHORITATIVE_VAULT>
 
 USER_QUERY: "${userPrompt}"`;
-
-  // HARD ENFORCEMENT: If document prioritized but no grounding found, return fail early
-  if (priorityDocumentId && !isGrounded) {
-    yield `CORE_FAILURE: The requested topic/standard is not found in the selected curriculum (${sourceDocName || 'Selected Document'}). Please select a different curriculum or ensure this document is fully indexed.`;
-    return;
-  }
 
   const stream = synthesizeStream(finalPrompt, {
     history: history.slice(-6),
@@ -284,7 +280,7 @@ export async function generateAIResponse(
       query: augmentedQuery,
       documentIds: effectiveDocumentIds,
       supabase,
-      matchCount: 10,
+      matchCount: 15,
       dialect: priorityDocumentId ? (await supabase.from('documents').select('master_md_dialect').eq('id', priorityDocumentId).single()).data?.master_md_dialect : undefined
     });
     
@@ -326,15 +322,17 @@ export async function generateAIResponse(
   let docContext = '';
   if (priorityDocumentId) {
     docContext = `[DOCUMENT SELECTED: ${sourceDocName || 'Specific Curriculum'}]`;
-    // CRITICAL: Force strict grounding in system prompt
-    systemInstruction = `STRICT_GROUNDING_ENFORCED.
+    // RELAXED GROUNDING: Highly encourage vault use, but allow fallback with clear labeling
+    systemInstruction = `GROUNDED_RESPONSE_ENFORCED.
 You are generating content FOR THE SELECTED CURRICULUM: ${sourceDocName || 'Specific Curriculum'}.
 GROUNDING RULES:
-1. ONLY use information found in the <AUTHORITATIVE_VAULT> provided below.
-2. IF THE <AUTHORITATIVE_VAULT> DOES NOT CONTAIN THE REQUESTED TOPIC OR IS EMPTY, YOU MUST REFUSE TO PROVIDE GENERIC INFORMATION.
-3. INSTEAD, OUTPUT: "CORE_FAILURE: The requested topic/standard is not found in the selected curriculum. Please select a different curriculum or ensure this document is fully indexed."
-4. NEVER provide "suggested frameworks" or "general chemistry knowledge" if the specific SLOs are missing. Refuse immediately.
-5. CITE [CHUNK_ID] when using specific data.
+1. PRIMARY_SOURCE: Use the <AUTHORITATIVE_VAULT> below for all specific standards and SLOs.
+2. CITATION: CITE [CHUNK_ID] when using specific data from the vault.
+3. HANDLING_MISSING_DATA: If the <AUTHORITATIVE_VAULT> does not contain the specific topic requested:
+   a. First, state clearly that the specific curriculum standard was not found in the selected document.
+   b. Then, provide a response based on "General Pedagogical Best Practices" to be helpful.
+   c. If you provide general information, you MUST prefix those sections with [GENERAL_PEDAGOGY].
+4. NEVER pretend generic information is from the specific curriculum.
 
 ${systemInstruction}`;
   } else {
@@ -362,15 +360,6 @@ ${vaultContent || '[VAULT_EMPTY: NO CLASSIFIED CONTENT EXTRACTED. REFUSE REQUEST
 </AUTHORITATIVE_VAULT>
 
 USER_QUERY: "${userPrompt}"`;
-
-  // HARD ENFORCEMENT: If document prioritized but no grounding found, return fail early
-  if (priorityDocumentId && !isGrounded) {
-    return { 
-      text: `CORE_FAILURE: The requested topic/standard is not found in the selected curriculum (${sourceDocName || 'Selected Document'}). Please select a different curriculum or ensure this document is fully indexed.`, 
-      provider: 'Neural Safety Node',
-      metadata: { isGrounded: false, sourceDocument: sourceDocName }
-    };
-  }
 
   const result = await synthesize(finalPrompt, {
     history: history.slice(-6),
