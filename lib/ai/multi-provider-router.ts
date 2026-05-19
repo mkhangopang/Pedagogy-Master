@@ -150,6 +150,12 @@ ${vaultContent || '[VAULT_EMPTY: NO CLASSIFIED CONTENT EXTRACTED. REFUSE REQUEST
 
 USER_QUERY: "${userPrompt}"`;
 
+  // HARD ENFORCEMENT: If document prioritized but no grounding found, return fail early
+  if (priorityDocumentId && !isGrounded) {
+    yield `CORE_FAILURE: The requested topic/standard is not found in the selected curriculum (${sourceDocName || 'Selected Document'}). Please select a different curriculum or ensure this document is fully indexed.`;
+    return;
+  }
+
   const stream = synthesizeStream(finalPrompt, {
     history: history.slice(-6),
     isGrounded,
@@ -312,6 +318,15 @@ ${vaultContent || '[VAULT_EMPTY: NO CLASSIFIED CONTENT EXTRACTED. REFUSE REQUEST
 </AUTHORITATIVE_VAULT>
 
 USER_QUERY: "${userPrompt}"`;
+
+  // HARD ENFORCEMENT: If document prioritized but no grounding found, return fail early
+  if (priorityDocumentId && !isGrounded) {
+    return { 
+      text: `CORE_FAILURE: The requested topic/standard is not found in the selected curriculum (${sourceDocName || 'Selected Document'}). Please select a different curriculum or ensure this document is fully indexed.`, 
+      provider: 'Neural Safety Node',
+      metadata: { isGrounded: false, sourceDocument: sourceDocName }
+    };
+  }
 
   const result = await synthesize(finalPrompt, {
     history: history.slice(-6),

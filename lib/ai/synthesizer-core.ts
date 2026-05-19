@@ -346,7 +346,7 @@ export class SynthesizerCore {
         }
           
         if (!apiKey && provider.id.includes('groq')) {
-          apiKey = process.env.GROK_API_KEY || process.env.API_KEY;
+          apiKey = process.env.GROQ_API_KEY || process.env.API_KEY;
         }
 
         if (!apiKey) continue;

@@ -42,7 +42,7 @@ function ruleBasedClassify(query: string): IntentResult | null {
 
   if (/create|generate|write|build|develop|design.*lesson|lesson plan|rubric|quiz|assessment/i.test(q)) {
     const isSTEM = /math|science|physics|chemistry|biology|algebra|calculus/i.test(q);
-    return { intent: 'creation', complexity: 3, suggestedProvider: 'gemini-pro', isSTEM, requiresGrounding: false };
+    return { intent: 'creation', complexity: 3, suggestedProvider: 'gemini-pro', isSTEM, requiresGrounding: true };
   }
 
   if (/analyze|compare|contrast|evaluate|assess|audit|review/i.test(q)) {

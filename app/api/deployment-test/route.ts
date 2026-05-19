@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { supabase } from '../../../lib/supabase';
+import { resolveApiKey } from '../../../lib/env-server';
 import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 
@@ -76,7 +77,7 @@ export async function GET(request: NextRequest) {
       results.push({ name: 'Supabase Data Plane', status: 'fail', message: e.message });
     }
 
-    if (!apiKey) {
+    if (!apiKey && !resolveApiKey()) {
       results.push({
         name: 'Gemini AI Synthesis Engine',
         status: 'fail',
@@ -84,14 +85,15 @@ export async function GET(request: NextRequest) {
       });
     } else {
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const key = apiKey || resolveApiKey();
+        const ai = new GoogleGenAI({ apiKey: key });
         const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-2.0-flash',
           contents: [{ role: 'user', parts: [{ text: 'Ping connectivity test' }] }]
         });
         results.push({
           name: 'Gemini AI Synthesis Engine',
-          status: response.text ? 'pass' : 'warning',
+          status: response.response.text() ? 'pass' : 'warning',
           message: 'AI Handshake successful.'
         });
       } catch (e: any) {
