@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
         });
         results.push({
           name: 'Gemini AI Synthesis Engine',
-          status: response.response.text() ? 'pass' : 'warning',
+          status: response.text ? 'pass' : 'warning',
           message: 'AI Handshake successful.'
         });
       } catch (e: any) {

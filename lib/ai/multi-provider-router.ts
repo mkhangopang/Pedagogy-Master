@@ -36,98 +36,122 @@ export async function* generateAIResponseStream(
   let isGrounded = false;
   let topChunkIds: string[] = [];
   let sourceDocName = '';
+  let effectiveDocumentIds: string[] = [];
 
   if (priorityDocumentId) {
-    const { data: activeDoc } = await supabase
+    effectiveDocumentIds = [priorityDocumentId];
+  } else {
+    // If no priority doc, search across all "ready" documents the user has access to (plus public ones)
+    const { data: availableDocs } = await supabase
       .from('documents')
-      .select('id, name, authority, subject, grade_level, master_md_dialect')
-      .eq('id', priorityDocumentId)
-      .single();
+      .select('id')
+      .eq('status', 'ready')
+      .or(`user_id.eq.${userId},is_public.eq.true`)
+      .limit(20);
+    
+    if (availableDocs && availableDocs.length > 0) {
+      effectiveDocumentIds = availableDocs.map(d => d.id);
+    }
+  }
 
-    if (activeDoc) {
-      sourceDocName = activeDoc.name;
-      const codes = extractSLOCodes(userPrompt);
-      let sloMatch: any[] = [];
-      if (codes.length > 0) {
-        const { data } = await supabase
-          .from('document_chunks')
-          .select('id, chunk_text')
-          .contains('slo_codes', [normalizeSLO(codes[0].code)])
-          .eq('document_id', activeDoc.id)
-          .limit(3);
-        sloMatch = data || [];
-
-        if (sloMatch.length > 0) {
-          vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
-          topChunkIds = sloMatch.map(s=>s.id);
-        }
-      }
-
-      const augmentedQuery = `${userPrompt} ${activeDoc.subject || ''} ${activeDoc.name || ''}`.trim();
-      let chunks = await retrieveRelevantChunks({
-        query: augmentedQuery,
-        documentIds: [activeDoc.id],
-        supabase,
-        matchCount: 8,
-        dialect: activeDoc.master_md_dialect
-      });
+  if (effectiveDocumentIds.length > 0) {
+    // If it's a single priority doc, we get its name for context
+    if (priorityDocumentId) {
+      const { data: activeDoc } = await supabase
+        .from('documents')
+        .select('name, authority, subject, grade_level, master_md_dialect')
+        .eq('id', priorityDocumentId)
+        .single();
       
-      // Fallback: If no semantic matches, just grab the first few chunks of the document
-      if (chunks.length === 0) {
-        const { data: genericChunks } = await supabase
+      if (activeDoc) {
+        sourceDocName = activeDoc.name;
+        
+        // SLO Surgical Extraction (Priority Doc Only)
+        const codes = extractSLOCodes(userPrompt);
+        if (codes.length > 0) {
+          const { data: sloMatch } = await supabase
             .from('document_chunks')
             .select('id, chunk_text')
-            .eq('document_id', activeDoc.id)
-            .order('chunk_index', { ascending: true })
-            .limit(10); // Slightly more for better coverage
-            
-        if (genericChunks && genericChunks.length > 0) {
-            chunks = genericChunks.map(c => ({
-                chunk_id: c.id,
-                document_id: activeDoc.id,
-                chunk_text: c.chunk_text,
-                slo_codes: [],
-                metadata: {},
-                combined_score: 1.0
-            }));
+            .contains('slo_codes', [normalizeSLO(codes[0].code)])
+            .eq('document_id', priorityDocumentId)
+            .limit(3);
+          
+          if (sloMatch && sloMatch.length > 0) {
+            vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
+            topChunkIds = sloMatch.map(s=>s.id);
+          }
         }
       }
+    }
+
+    const { data: firstDoc } = priorityDocumentId 
+      ? { data: null } 
+      : await supabase.from('documents').select('master_md_dialect').in('id', effectiveDocumentIds).limit(1).maybeSingle();
+
+    const augmentedQuery = sourceDocName ? `${userPrompt} ${sourceDocName}` : userPrompt;
+    let chunks = await retrieveRelevantChunks({
+      query: augmentedQuery,
+      documentIds: effectiveDocumentIds,
+      supabase,
+      matchCount: 10,
+      dialect: priorityDocumentId ? (await supabase.from('documents').select('master_md_dialect').eq('id', priorityDocumentId).single()).data?.master_md_dialect : undefined
+    });
+    
+    // Fallback: If no semantic matches and single doc, just grab the first few chunks
+    if (chunks.length === 0 && priorityDocumentId) {
+      const { data: genericChunks } = await supabase
+          .from('document_chunks')
+          .select('id, chunk_text')
+          .eq('document_id', priorityDocumentId)
+          .order('chunk_index', { ascending: true })
+          .limit(10);
+          
+      if (genericChunks && genericChunks.length > 0) {
+          chunks = genericChunks.map(c => ({
+              chunk_id: c.id,
+              document_id: priorityDocumentId,
+              chunk_text: c.chunk_text,
+              slo_codes: [],
+              metadata: {},
+              combined_score: 1.0
+          }));
+      }
+    }
+    
+    const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
+    if (newChunks.length > 0 || topChunkIds.length > 0) {
+      let formattedVault = vaultContent || '### AUTHORITATIVE_CURRICULUM_VAULT\n';
       
-      const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
-      if (newChunks.length > 0 || (sloMatch && sloMatch.length > 0)) {
-        let formattedVault = vaultContent;
-        if (sloMatch && sloMatch.length === 0) {
-          formattedVault = '### AUTHORITATIVE_CURRICULUM_VAULT\n';
-        }
+      newChunks.forEach((c) => {
+        formattedVault += `\n[CHUNK_ID: ${c.chunk_id}]\n${c.chunk_text}\n---\n`;
+      });
 
-        newChunks.forEach((c) => {
-          formattedVault += `\n[CHUNK_ID: ${c.chunk_id}]\n${c.chunk_text}\n---\n`;
-        });
-
-        vaultContent = formattedVault;
-        topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
-        isGrounded = topChunkIds.length > 0;
-      } else {
-        vaultContent = ''; // Keep it truly empty if nothing found
-      }
+      vaultContent = formattedVault;
+      topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
+      isGrounded = topChunkIds.length > 0;
     }
   }
 
   // 4. Neural Synthesis Stream
   let systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
   let docContext = '';
-  if (priorityDocumentId && sourceDocName) {
-    // Note: reused sourceDocName from snippet above
-    docContext = `[DOCUMENT SELECTED: ${sourceDocName}]`;
+  if (priorityDocumentId) {
+    docContext = `[DOCUMENT SELECTED: ${sourceDocName || 'Specific Curriculum'}]`;
     // CRITICAL: Force strict grounding in system prompt
     systemInstruction = `STRICT_GROUNDING_ENFORCED.
-You are generating content for the curriculum: ${sourceDocName}.
+You are generating content FOR THE SELECTED CURRICULUM: ${sourceDocName || 'Specific Curriculum'}.
 GROUNDING RULES:
 1. ONLY use information found in the <AUTHORITATIVE_VAULT> provided below.
-2. IF THE <AUTHORITATIVE_VAULT> IS EMPTY OR DOES NOT CONTAIN THE REQUESTED TOPIC, YOU MUST REFUSE TO PROVIDE GENERIC INFORMATION.
-3. INSTEAD, OUTPUT: "CORE_FAILURE: The requested topic/standard is not found in the selected curriculum (${sourceDocName}). Please select a different curriculum or re-sync this document."
-4. DO NOT provide "general frameworks" or "suggested frameworks" if the vault is empty.
+2. IF THE <AUTHORITATIVE_VAULT> DOES NOT CONTAIN THE REQUESTED TOPIC OR IS EMPTY, YOU MUST REFUSE TO PROVIDE GENERIC INFORMATION.
+3. INSTEAD, OUTPUT: "CORE_FAILURE: The requested topic/standard is not found in the selected curriculum. Please select a different curriculum or ensure this document is fully indexed."
+4. NEVER provide "suggested frameworks" or "general chemistry knowledge" if the specific SLOs are missing. Refuse immediately.
 5. CITE [CHUNK_ID] when using specific data.
+
+${systemInstruction}`;
+  } else {
+    systemInstruction = `You are the Pedagogy Master AI. 
+Provide pedagogical support using the available curriculum context. 
+If information is missing from the vault, you may use your general pedagogical knowledge but CLEARLY state that it is not grounded in a specific institutional curriculum.
 
 ${systemInstruction}`;
   }
@@ -205,98 +229,118 @@ export async function generateAIResponse(
   let isGrounded = false;
   let topChunkIds: string[] = [];
   let sourceDocName = '';
+  let effectiveDocumentIds: string[] = [];
 
   if (priorityDocumentId) {
-    const { data: activeDoc } = await supabase
+    effectiveDocumentIds = [priorityDocumentId];
+  } else {
+    // Search across user's documents + public documents
+    const { data: availableDocs } = await supabase
       .from('documents')
-      .select('id, name, authority, subject, grade_level, master_md_dialect')
-      .eq('id', priorityDocumentId)
-      .single();
+      .select('id')
+      .eq('status', 'ready')
+      .or(`user_id.eq.${userId},is_public.eq.true`)
+      .limit(15);
+    
+    if (availableDocs && availableDocs.length > 0) {
+      effectiveDocumentIds = availableDocs.map(d => d.id);
+    }
+  }
 
-    if (activeDoc) {
-      sourceDocName = activeDoc.name;
-
-      const codes = extractSLOCodes(userPrompt);
-      let sloMatch: any[] = [];
-      if (codes.length > 0) {
-        const { data } = await supabase
-          .from('document_chunks')
-          .select('id, chunk_text')
-          .contains('slo_codes', [normalizeSLO(codes[0].code)])
-          .eq('document_id', activeDoc.id)
-          .limit(3);
-        sloMatch = data || [];
-
-        if (sloMatch.length > 0) {
-          vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
-          topChunkIds = sloMatch.map(s=>s.id);
-        }
-      }
-
-      const augmentedQuery = `${userPrompt} ${activeDoc.subject || ''} ${activeDoc.name || ''}`.trim();
-      let chunks = await retrieveRelevantChunks({
-        query: augmentedQuery,
-        documentIds: [activeDoc.id],
-        supabase,
-        matchCount: 8,
-        dialect: activeDoc.master_md_dialect
-      });
-
-      // Fallback: If no semantic matches, just grab the first few chunks of the document
-      if (chunks.length === 0) {
-        const { data: genericChunks } = await supabase
+  if (effectiveDocumentIds.length > 0) {
+    if (priorityDocumentId) {
+      const { data: activeDoc } = await supabase
+        .from('documents')
+        .select('name, authority, subject, grade_level, master_md_dialect')
+        .eq('id', priorityDocumentId)
+        .single();
+      
+      if (activeDoc) {
+        sourceDocName = activeDoc.name;
+        // SLO Surgical Extraction (Priority Doc Only)
+        const codes = extractSLOCodes(userPrompt);
+        if (codes.length > 0) {
+          const { data: sloMatch } = await supabase
             .from('document_chunks')
             .select('id, chunk_text')
-            .eq('document_id', activeDoc.id)
-            .order('chunk_index', { ascending: true })
-            .limit(10);
-            
-        if (genericChunks && genericChunks.length > 0) {
-            chunks = genericChunks.map(c => ({
-                chunk_id: c.id,
-                document_id: activeDoc.id,
-                chunk_text: c.chunk_text,
-                slo_codes: [],
-                metadata: {},
-                combined_score: 1.0
-            }));
+            .contains('slo_codes', [normalizeSLO(codes[0].code)])
+            .eq('document_id', priorityDocumentId)
+            .limit(3);
+          
+          if (sloMatch && sloMatch.length > 0) {
+            vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
+            topChunkIds = sloMatch.map(s=>s.id);
+          }
         }
       }
+    }
 
-      const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
-      if (newChunks.length > 0 || (sloMatch && sloMatch.length > 0)) {
-        let formattedVault = vaultContent;
-        if (sloMatch && sloMatch.length === 0) {
-          formattedVault = '### AUTHORITATIVE_CURRICULUM_VAULT\n';
-        }
+    const { data: firstDoc } = priorityDocumentId 
+      ? { data: null } 
+      : await supabase.from('documents').select('master_md_dialect').in('id', effectiveDocumentIds).limit(1).maybeSingle();
 
-        newChunks.forEach((c) => {
-          formattedVault += `\n[CHUNK_ID: ${c.chunk_id}]\n${c.chunk_text}\n---\n`;
-        });
-
-        vaultContent = formattedVault;
-        topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
-        isGrounded = topChunkIds.length > 0;
-      } else {
-        vaultContent = '';
+    const augmentedQuery = sourceDocName ? `${userPrompt} ${sourceDocName}` : userPrompt;
+    let chunks = await retrieveRelevantChunks({
+      query: augmentedQuery,
+      documentIds: effectiveDocumentIds,
+      supabase,
+      matchCount: 10,
+      dialect: priorityDocumentId ? (await supabase.from('documents').select('master_md_dialect').eq('id', priorityDocumentId).single()).data?.master_md_dialect : undefined
+    });
+    
+    // Fallback: If no semantic matches and single doc
+    if (chunks.length === 0 && priorityDocumentId) {
+      const { data: genericChunks } = await supabase
+          .from('document_chunks')
+          .select('id, chunk_text')
+          .eq('document_id', priorityDocumentId)
+          .order('chunk_index', { ascending: true })
+          .limit(10);
+          
+      if (genericChunks && genericChunks.length > 0) {
+          chunks = genericChunks.map(c => ({
+              chunk_id: c.id,
+              document_id: priorityDocumentId,
+              chunk_text: c.chunk_text,
+              slo_codes: [],
+              metadata: {},
+              combined_score: 1.0
+          }));
       }
+    }
+    
+    const newChunks = chunks.filter(c => !topChunkIds.includes(c.chunk_id));
+    if (newChunks.length > 0 || topChunkIds.length > 0) {
+      let formattedVault = vaultContent || '### AUTHORITATIVE_CURRICULUM_VAULT\n';
+      newChunks.forEach((c) => {
+        formattedVault += `\n[CHUNK_ID: ${c.chunk_id}]\n${c.chunk_text}\n---\n`;
+      });
+      vaultContent = formattedVault;
+      topChunkIds = [...topChunkIds, ...newChunks.map(c => c.chunk_id)];
+      isGrounded = topChunkIds.length > 0;
     }
   }
 
   // 5. Neural Synthesis
   let systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
   let docContext = '';
-  if (priorityDocumentId && sourceDocName) {
-    docContext = `[DOCUMENT SELECTED: ${sourceDocName}]`;
+  if (priorityDocumentId) {
+    docContext = `[DOCUMENT SELECTED: ${sourceDocName || 'Specific Curriculum'}]`;
     // CRITICAL: Force strict grounding in system prompt
     systemInstruction = `STRICT_GROUNDING_ENFORCED.
-You are generating content for the curriculum: ${sourceDocName}.
+You are generating content FOR THE SELECTED CURRICULUM: ${sourceDocName || 'Specific Curriculum'}.
 GROUNDING RULES:
 1. ONLY use information found in the <AUTHORITATIVE_VAULT> provided below.
-2. IF THE <AUTHORITATIVE_VAULT> IS EMPTY OR DOES NOT CONTAIN THE REQUESTED TOPIC, YOU MUST REFUSE TO PROVIDE GENERIC INFORMATION.
-3. INSTEAD, OUTPUT: "CORE_FAILURE: The requested topic/standard is not found in the selected curriculum (${sourceDocName}). Please select a different curriculum or re-sync this document."
-4. DO NOT provide "general frameworks" or "suggested frameworks" if the vault is empty.
+2. IF THE <AUTHORITATIVE_VAULT> DOES NOT CONTAIN THE REQUESTED TOPIC OR IS EMPTY, YOU MUST REFUSE TO PROVIDE GENERIC INFORMATION.
+3. INSTEAD, OUTPUT: "CORE_FAILURE: The requested topic/standard is not found in the selected curriculum. Please select a different curriculum or ensure this document is fully indexed."
+4. NEVER provide "suggested frameworks" or "general chemistry knowledge" if the specific SLOs are missing. Refuse immediately.
 5. CITE [CHUNK_ID] when using specific data.
+
+${systemInstruction}`;
+  } else {
+    systemInstruction = `You are the Pedagogy Master AI. 
+Provide pedagogical support using the available curriculum context. 
+If information is missing from the vault, you may use your general pedagogical knowledge but CLEARLY state that it is not grounded in a specific institutional curriculum.
 
 ${systemInstruction}`;
   }

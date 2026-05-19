@@ -36,10 +36,13 @@ export async function indexDocumentForRAG(
       // Track hierarchical context
       if (line.match(/^Board:|^Subject:/i)) {
         currentSubject = line.split(':')[1]?.trim() || currentSubject;
-      } else if (line.startsWith('# GRADE')) {
-        currentGrade = line.replace('# GRADE', '').trim();
-      } else if (line.startsWith('### DOMAIN')) {
-        currentDomain = line.replace('### DOMAIN', '').trim();
+      } else if (line.startsWith('# ')) {
+        // Root title often contains Board/Subject
+        currentSubject = line.replace('# ', '').trim();
+      } else if (line.toUpperCase().startsWith('## GRADE')) {
+        currentGrade = line.replace(/##\s+grade/i, '').trim();
+      } else if (line.toUpperCase().startsWith('### DOMAIN')) {
+        currentDomain = line.replace(/###\s+domain/i, '').trim();
       }
 
       const foundCodes = extractSLOCodes(line);
