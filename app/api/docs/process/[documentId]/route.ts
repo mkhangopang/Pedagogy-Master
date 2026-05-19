@@ -125,13 +125,13 @@ function normalizeCode(raw: any, subjectCode?: string): string | null {
   // instead of the correct "CS01A01".
 
   // Fix 0l / 0L / 0I in GRADE position: M0LA09 → M01A09
-  s = s.replace(/([A-Z]{1,4})0[LlIi]([A-Z])/g, '$101$2');
+  s = s.replace(/([A-Z]{1,4})0[LI]([A-Z])/g, '$101$2');
 
   // Fix 0l / 0L / 0I at END of string (SLO number position)
-  s = s.replace(/0[LlIi]$/ig, '01');
+  s = s.replace(/0[LI]$/g, '01');
 
   // Fix trailing l or I (SLO number): B09A0l → B09A01
-  s = s.replace(/[lI]$/ig, '1');
+  s = s.replace(/[LI]$/g, '1');
 
   // Fix O in digit positions: AO1 → A01
   s = s.replace(/([A-Z])O(\d)/g, '$10$2');
