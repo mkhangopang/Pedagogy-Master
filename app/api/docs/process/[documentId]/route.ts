@@ -1055,30 +1055,37 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
   const boardName = BOARD_NAMES[boardKey] || boardKey;
   const subjectName = SUBJECTS[subjectCode] || subjectCode;
 
-  const sorted = [...slos].sort((a, b) => {
-    const gA = parseInt(a.grade || '99', 10) || 99;
-    const gB = parseInt(b.grade || '99', 10) || 99;
+  // Preserve the physical sequence of document ingestion with an original_index field
+  const slosWithIndex = slos.map((s, i) => ({ ...s, original_index: i }));
+
+  const sorted = [...slosWithIndex].sort((a, b) => {
+    const gA = parseInt(a.grade || a.grade_level || '99', 10) || 99;
+    const gB = parseInt(b.grade || b.grade_level || '99', 10) || 99;
     if (gA !== gB) return gA - gB;
-    const dA = (a.domain || 'ZZ').toUpperCase();
-    const dB = (b.domain || 'ZZ').toUpperCase();
-    if (dA !== dB) return dA.localeCompare(dB);
-    return (parseInt((a.slo_code || '').slice(-2), 10) || 0)
-         - (parseInt((b.slo_code || '').slice(-2), 10) || 0);
+    return a.original_index - b.original_index;
   });
 
   let md = `# ${boardName} — ${subjectName}\n\n`;
 
-  const grades = [...new Set(sorted.map(s => s.grade || 'Unknown'))];
+  const grades = [...new Set(sorted.map(s => s.grade || s.grade_level || 'Unknown'))];
 
   for (const grade of grades) {
-    md += `## Grade ${grade}\n\n`;
-    const gradeSlos = sorted.filter(s => (s.grade || 'Unknown') === grade);
+    if (grade === 'Unknown' || !grade) {
+      md += `## General Objectives\n\n`;
+    } else {
+      md += `## Grade ${grade}\n\n`;
+    }
+    const gradeSlos = sorted.filter(s => (s.grade || s.grade_level || 'Unknown') === grade);
     const domains = [...new Set(gradeSlos.map(s => s.domain || '?'))];
 
     for (const domain of domains) {
       const domainSlos = gradeSlos.filter(s => (s.domain || '?') === domain);
       const domainName = domainSlos[0]?.domain_name || 'Domain';
-      md += `### Domain ${domain}: ${domainName}\n\n`;
+      if (domain === '?' || !domain) {
+        md += `### ${domainName || 'General'}\n\n`;
+      } else {
+        md += `### Domain ${domain}: ${domainName}\n\n`;
+      }
 
       for (const s of domainSlos) {
         if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
@@ -1094,7 +1101,7 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
     slo_code: s.slo_code || 'NO_CODE',
     slo_full_text: s.slo_full_text,
     subject: s.subject || subjectName,
-    grade_level: s.grade || '',
+    grade_level: s.grade || s.grade_level || '',
     domain: s.domain || '',
     domain_name: s.domain_name || ''
   }));
