@@ -44,8 +44,38 @@ export async function retrieveRelevantChunks({
       dialect_filter: dialect || null
     });
 
-    // RECOVERY LOGIC: If dialect filter is too strict and yields 0 results, 
-    // fallback to broader search to prevent 0% grounding.
+    // TIER 2: SLO CODE TEXT FALLBACK
+    // When semantic search produces no/low results, or if hybrid chunks are empty,
+    // look for direct substring matches for SLO-style codes to survive bare code queries.
+    let textFallbackChunks: any[] = [];
+    const sloCodePattern = /\b([A-Z]{1,3})(\d{2})([A-Z])[-]?(\d{1,4})\b/i;
+    const sloMatch = query.match(sloCodePattern);
+    if (sloMatch) {
+      const sloCode = sloMatch[0].toUpperCase();
+      const normalizedSlo = normalizeSLO(sloCode);
+      const { data: textMatches } = await supabase
+        .from('document_chunks')
+        .select('id, document_id, chunk_text, slo_codes, metadata')
+        .in('document_id', documentIds)
+        .or(`chunk_text.ilike.%${sloCode}%,chunk_text.ilike.%${normalizedSlo}%`)
+        .limit(matchCount);
+      if (textMatches && textMatches.length > 0) {
+        textFallbackChunks = textMatches.map(c => ({
+          id: c.id,
+          document_id: c.document_id,
+          chunk_text: c.chunk_text,
+          slo_codes: c.slo_codes || [],
+          metadata: c.metadata || {},
+          combined_score: 0.95
+        }));
+      }
+    }
+
+    if (textFallbackChunks.length > 0) {
+      return textFallbackChunks;
+    }
+
+    // TIER 3: RECOVERY LOGIC (v4 Broader Search)
     if (rpcError || !hybridChunks || hybridChunks.length === 0) {
       if (rpcError) console.warn('⚠️ hybrid_search_chunks_v6 RPC error, engaging fallback.');
       
