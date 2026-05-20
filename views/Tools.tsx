@@ -165,7 +165,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   const handleWorkflowTransition = () => {
     if (!workflowRecommendation || isGenerating) return;
-    const previousArtifact = canvasContent.split('--- Workflow Recommendation')[0].trim();
+    const rawArtifact = canvasContent.split('--- Workflow Recommendation')[0].trim();
+    const MAX_HANDOFF_CHARS = 8000; // safe limit of ~2000 tokens
+    const previousArtifact = rawArtifact.length > MAX_HANDOFF_CHARS
+      ? rawArtifact.slice(0, MAX_HANDOFF_CHARS) + '\n\n[...truncated for context efficiency...]'
+      : rawArtifact;
     const toolName = getToolDisplayName(workflowRecommendation.tool);
     setActiveTool(workflowRecommendation.tool);
     handleGenerate(`Based on the previous ${getToolDisplayName(activeTool)}, synthesize a ${toolName}.`, previousArtifact);
@@ -243,6 +247,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 onViewChange?.('chat');
               } else {
                 setActiveTool(tool.id as ToolType);
+                setMessages([]);
+                setCanvasContent('');
+                setWorkflowRecommendation(null);
               }
             }} className={`p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl`}>
               <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center ${tool.iconColor} shadow-lg`}><tool.icon size={28} /></div>

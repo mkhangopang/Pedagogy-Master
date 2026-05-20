@@ -10,9 +10,10 @@ interface AssessmentGeneratorProps {
   isLoading: boolean;
   result: Assessment | null;
   userPlan?: SubscriptionPlan;
+  onSave?: (assessment: Assessment) => void;
 }
 
-export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGenerate, isLoading, result, userPlan }) => {
+export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGenerate, isLoading, result, userPlan, onSave }) => {
   const [options, setOptions] = useState<AssessmentOptions>({
     type: 'formative',
     format: 'MCQ',
@@ -33,6 +34,16 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
     }));
   };
 
+  const isCorrect = (opt: string, correct: string): boolean => {
+    if (!correct) return false;
+    const cleanOpt = opt.replace(/^[A-D][).\s]+/, '').trim().toLowerCase();
+    const cleanCorrect = correct.replace(/^[A-D][).\s]+/, '').trim().toLowerCase();
+    return opt.trim().toLowerCase().startsWith(correct.trim().toLowerCase()) ||
+      cleanOpt === cleanCorrect ||
+      cleanOpt.includes(cleanCorrect) ||
+      opt.trim().charAt(0).toLowerCase() === correct.trim().charAt(0).toLowerCase();
+  };
+
   const exportToLMS = (platform: 'google' | 'kahoot') => {
     if (!result) return;
     
@@ -47,15 +58,18 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
       a.click();
     } else {
       // Kahoot-friendly spreadsheet JSON
-      const kahootData = result.questions.map(q => ({
-        question: q.question,
-        answer1: q.options?.[0] || '',
-        answer2: q.options?.[1] || '',
-        answer3: q.options?.[2] || '',
-        answer4: q.options?.[3] || '',
-        timeLimit: 20,
-        correctAnswer: 1 // Logic to match index
-      }));
+      const kahootData = result.questions.map(q => {
+        const correctIndex = q.options?.findIndex(opt => isCorrect(opt, q.correctAnswer)) ?? 0;
+        return {
+          question: q.question,
+          answer1: q.options?.[0] || '',
+          answer2: q.options?.[1] || '',
+          answer3: q.options?.[2] || '',
+          answer4: q.options?.[3] || '',
+          timeLimit: 20,
+          correctAnswer: correctIndex >= 0 ? correctIndex + 1 : 1
+        };
+      });
       const blob = new Blob([JSON.stringify(kahootData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -125,7 +139,15 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{idx + 1}. {q.question}</p>
                     <span className="shrink-0 px-2 py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-lg text-[9px] font-black uppercase">{q.bloomLevel}</span>
                   </div>
-                  {q.options && <div className="grid grid-cols-1 gap-2 pl-4">{q.options.map((opt, i) => (<div key={i} className={`text-xs p-2 rounded-xl border ${opt.startsWith(q.correctAnswer) || opt.includes(`) ${q.correctAnswer}`) ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 font-bold' : 'border-slate-200 dark:border-white/10 text-slate-500'}`}>{opt}</div>))}</div>}
+                  {q.options && (
+                    <div className="grid grid-cols-1 gap-2 pl-4">
+                      {q.options.map((opt, i) => (
+                        <div key={i} className={`text-xs p-2 rounded-xl border ${isCorrect(opt, q.correctAnswer) ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 font-bold' : 'border-slate-200 dark:border-white/10 text-slate-500'}`}>
+                          {opt}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -139,7 +161,12 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
                 </div>
               </div>
             ) : (
-              <button className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"><Save size={16} /> Save to History</button>
+              <button 
+                onClick={() => result && onSave?.(result)}
+                className="w-full py-3 bg-emerald-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
+              >
+                <Save size={16} /> Save to History
+              </button>
             )}
           </div>
         )}

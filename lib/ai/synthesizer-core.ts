@@ -33,27 +33,27 @@ export class SynthesizerCore {
     // TIER 1: HIGH-CAPACITY REASONERS (World-Class Pedagogy)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 1.5 Pro',
+      name: 'Gemini 2.0 Pro',
       endpoint: 'native',
-      model: 'gemini-1.5-pro',
+      model: 'gemini-2.0-pro-exp',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 32768,
-      rpm: 5,
-      rpd: 2000,
+      rpm: 1000,
+      rpd: 50000,
       tier: 1,
       enabled: true
     });
 
     providers.set('gemini-thinking', {
       id: 'gemini-thinking',
-      name: 'Thinking Grid (Gemini 2.0)',
+      name: 'Thinking Grid (Gemini 2.5)',
       endpoint: 'native',
-      model: 'gemini-2.0-flash-thinking-exp-01-21',
+      model: 'gemini-2.5-flash-preview-05-20',
       apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 32768,
+      maxTokens: 65536,
       thinkingLevel: ThinkingLevel.HIGH,
-      rpm: 10,
-      rpd: 2000,
+      rpm: 1000,
+      rpd: 50000,
       tier: 1,
       enabled: true
     });

@@ -39,6 +39,25 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [diffLoading, setDiffLoading] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState<Assessment | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
+  const [assessmentSavedId, setAssessmentSavedId] = useState<string | null>(null);
+
+  const handleSaveAssessment = async (assessment: Assessment) => {
+    try {
+      const id = await adaptiveService.captureGeneration(
+        user.id, 
+        'assessment', 
+        JSON.stringify(assessment), 
+        { type: 'assessment_generator', title: assessment.title }
+      );
+      await adaptiveService.captureEvent(user.id, id, 'accept');
+      setAssessmentSavedId(id);
+      setTimeout(() => {
+        setAssessmentSavedId(null);
+      }, 3000);
+    } catch (e) {
+      console.error('Save failed:', e);
+    }
+  };
 
   const [showSidebar, setShowSidebar] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -342,7 +361,17 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
 
                 {activeTool === 'assessment' && (
                   <div className="max-w-3xl mx-auto mt-6 px-4 md:px-12 animate-in slide-in-from-bottom-4">
-                     <AssessmentGenerator onGenerate={handleAssessment} isLoading={assessmentLoading} result={assessmentResult} />
+                     <AssessmentGenerator 
+                       onGenerate={handleAssessment} 
+                       isLoading={assessmentLoading} 
+                       result={assessmentResult}
+                       onSave={handleSaveAssessment}
+                     />
+                     {assessmentSavedId && (
+                       <div className="mt-2 text-center text-xs font-bold text-emerald-600 animate-pulse bg-emerald-50 dark:bg-emerald-950/20 py-2 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
+                         ✓ Saved to history successfully!
+                       </div>
+                     )}
                   </div>
                 )}
               </div>

@@ -68,12 +68,20 @@ export async function POST(req: NextRequest) {
           try {
             let fullCollectedText = '';
             for await (const token of stream) {
+              if (typeof token === 'string' && token.startsWith('QUOTA_EXCEEDED')) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                  error: 'Monthly query limit reached. Please upgrade your plan.',
+                  code: 'QUOTA_EXCEEDED'
+                })}\n\n`));
+                controller.close();
+                return;
+              }
               fullCollectedText += token;
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token })}\n\n`));
             }
             
             const appUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://pedagogy-master.vercel.app';
-            const watermark = `\n\n---\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via ${expertTitle}*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})`;
+            const watermark = `\n\n\n---\n\n### 🏛️ ${brandName} Institutional Intelligence Hub\n*Synthesized via ${expertTitle}*\n\n✅ Verified alignment match. [Build your own verified curriculum assets here](${appUrl})\n`;
             controller.enqueue(encoder.encode(`data: ${JSON.stringify({ token: watermark })}\n\n`));
             
             controller.enqueue(encoder.encode('data: [DONE]\n\n'));
