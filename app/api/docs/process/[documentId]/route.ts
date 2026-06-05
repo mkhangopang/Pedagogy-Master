@@ -374,8 +374,15 @@ function processSlos(
   for (const s of raw) {
     if (typeof s.slo_full_text !== 'string' || !s.slo_full_text.trim()) continue;
 
-    if (isLikelyNonSLO(s.slo_full_text)) {
-      console.log(`[Filter] Skipped non-SLO: "${s.slo_full_text.substring(0, 60)}"`);
+    // Strip leading bracket/punctuation artifacts like "]", "]" with space, etc.
+    let cleanedText = s.slo_full_text.trim()
+      .replace(/^[\s\]\)\.\,\-\/\:\|]+/g, '')
+      .trim();
+
+    if (!cleanedText) continue;
+
+    if (isLikelyNonSLO(cleanedText)) {
+      console.log(`[Filter] Skipped non-SLO: "${cleanedText.substring(0, 60)}"`);
       continue;
     }
 
@@ -396,7 +403,7 @@ function processSlos(
     processed.push({
       slo_code          : code,
       raw_code_as_found : s.slo_code || 'null',
-      slo_full_text     : typeof s.slo_full_text === 'string' ? s.slo_full_text.trim() : '',
+      slo_full_text     : cleanedText,
       grade,
       domain,
       domain_name       : dname,
