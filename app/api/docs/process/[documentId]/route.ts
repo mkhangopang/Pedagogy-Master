@@ -1066,9 +1066,86 @@ function buildLedger(slos: any[], boardKey: string, subjectCode: string): string
   const slosWithIndex = slos.map((s, i) => ({ ...s, original_index: i }));
 
   const sorted = [...slosWithIndex].sort((a, b) => {
-    const gA = parseInt(a.grade || a.grade_level || '99', 10) || 99;
-    const gB = parseInt(b.grade || b.grade_level || '99', 10) || 99;
+    // 1. Grade level as number
+    let gA = 99;
+    const rawGradeA = a.grade || a.grade_level;
+    if (rawGradeA) {
+      const uA = rawGradeA.toString().toUpperCase();
+      if (uA === 'K' || uA === 'KG') {
+        gA = 0;
+      } else {
+        const parsed = parseInt(uA.replace(/\D/g, ''), 10);
+        if (!isNaN(parsed)) gA = parsed;
+      }
+    }
+
+    let gB = 99;
+    const rawGradeB = b.grade || b.grade_level;
+    if (rawGradeB) {
+      const uB = rawGradeB.toString().toUpperCase();
+      if (uB === 'K' || uB === 'KG') {
+        gB = 0;
+      } else {
+        const parsed = parseInt(uB.replace(/\D/g, ''), 10);
+        if (!isNaN(parsed)) gB = parsed;
+      }
+    }
+
     if (gA !== gB) return gA - gB;
+
+    // 2. Domain letter as string (A-Z)
+    let domA = 'Z';
+    if (a.domain && typeof a.domain === 'string') {
+      domA = a.domain.toUpperCase().trim();
+    }
+    let domB = 'Z';
+    if (b.domain && typeof b.domain === 'string') {
+      domB = b.domain.toUpperCase().trim();
+    }
+    
+    if (domA !== domB) return domA.localeCompare(domB);
+
+    // 3. Extract the SLO index number from the slo_code
+    let numA = 0;
+    if (a.slo_code && typeof a.slo_code === 'string') {
+      const lastDigits = a.slo_code.match(/(\d+)(?:\D*)$/);
+      if (lastDigits) {
+        numA = parseInt(lastDigits[1], 10) || 0;
+      }
+    }
+    let numB = 0;
+    if (b.slo_code && typeof b.slo_code === 'string') {
+      const lastDigits = b.slo_code.match(/(\d+)(?:\D*)$/);
+      if (lastDigits) {
+        numB = parseInt(lastDigits[1], 10) || 0;
+      }
+    }
+    
+    if (numA !== numB) return numA - numB;
+
+    // 4. Raw SLO number sequence (e.g. "1.1.2" -> 2)
+    let rawSeqA = 0;
+    if (a.raw_slo_num && typeof a.raw_slo_num === 'string') {
+      const parts = a.raw_slo_num.split('.');
+      const lastPart = parts[parts.length - 1];
+      if (lastPart) rawSeqA = parseInt(lastPart.replace(/\D/g, ''), 10) || 0;
+    }
+    let rawSeqB = 0;
+    if (b.raw_slo_num && typeof b.raw_slo_num === 'string') {
+      const parts = b.raw_slo_num.split('.');
+      const lastPart = parts[parts.length - 1];
+      if (lastPart) rawSeqB = parseInt(lastPart.replace(/\D/g, ''), 10) || 0;
+    }
+    
+    if (rawSeqA !== rawSeqB) return rawSeqA - rawSeqB;
+
+    // 5. Page number fallback
+    const pageA = parseInt(a.page || a.page_number || '0', 10) || 0;
+    const pageB = parseInt(b.page || b.page_number || '0', 10) || 0;
+    
+    if (pageA !== pageB) return pageA - pageB;
+
+    // 6. Original index fallback
     return a.original_index - b.original_index;
   });
 
