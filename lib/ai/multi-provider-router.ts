@@ -69,16 +69,97 @@ export async function* generateAIResponseStream(
         // SLO Surgical Extraction (Priority Doc Only)
         const codes = extractSLOCodes(userPrompt);
         if (codes.length > 0) {
-          const { data: sloMatch } = await supabase
-            .from('document_chunks')
-            .select('id, chunk_text')
-            .contains('slo_codes', [normalizeSLO(codes[0].code)])
-            .eq('document_id', priorityDocumentId)
-            .limit(3);
+          const normPromptCode = normalizeSLO(codes[0].code);
+          console.log(`[Router] SLO Code detected in prompt: ${codes[0].code} -> Normalized: ${normPromptCode}`);
           
-          if (sloMatch && sloMatch.length > 0) {
-            vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
-            topChunkIds = sloMatch.map(s=>s.id);
+          // 1. Try to find the exact SLO from slo_database
+          const { data: slos } = await supabase
+            .from('slo_database')
+            .select('*')
+            .eq('document_id', priorityDocumentId);
+          
+          const matchedSlo = slos?.find(s => {
+            if (!s.slo_code) return false;
+            return normalizeSLO(s.slo_code) === normPromptCode;
+          });
+          
+          if (matchedSlo) {
+            console.log(`[Router] Found matching SLO in slo_database: ${matchedSlo.slo_code}`);
+            isGrounded = true;
+            vaultContent = `### SURGICAL_VAULT_EXTRACT
+[OFFICIAL_SLO_RECORD: ${matchedSlo.slo_code}]
+Code: ${matchedSlo.slo_code}
+Grade: ${matchedSlo.grade_level || 'N/A'}
+Domain: ${matchedSlo.domain_name || matchedSlo.domain || 'N/A'}
+Standard/Full Text: ${matchedSlo.slo_full_text}
+Cognitive Complexity: ${matchedSlo.cognitive_complexity || 'N/A'}
+Teaching Strategies: ${matchedSlo.teaching_strategies?.join(', ') || 'N/A'}
+Assessment Ideas: ${matchedSlo.assessment_ideas?.join(', ') || 'N/A'}
+Prerequisites: ${matchedSlo.prerequisite_concepts?.join(', ') || 'N/A'}
+Misconceptions: ${matchedSlo.common_misconceptions?.join(', ') || 'N/A'}
+
+`;
+            
+            // 2. Fetch associated chunks from chunk_slo_mapping junction table
+            const { data: mappings } = await supabase
+              .from('chunk_slo_mapping')
+              .select('chunk_id')
+              .eq('slo_id', matchedSlo.id);
+            
+            if (mappings && mappings.length > 0) {
+              const chunkIds = mappings.map(m => m.chunk_id);
+              const { data: chunksFromMapping } = await supabase
+                .from('document_chunks')
+                .select('id, chunk_text')
+                .in('id', chunkIds);
+              
+              if (chunksFromMapping && chunksFromMapping.length > 0) {
+                vaultContent += `### ASSOCIATED_CURRICULUM_CHUNKS\n`;
+                chunksFromMapping.forEach(c => {
+                  vaultContent += `[CHUNK_ID: ${c.id}]\n${c.chunk_text}\n---\n`;
+                });
+                topChunkIds = chunksFromMapping.map(c => c.id);
+              }
+            }
+            
+            // 3. Secondary check: Direct slo_codes containment in document_chunks
+            const { data: directChunks } = await supabase
+              .from('document_chunks')
+              .select('id, chunk_text')
+              .contains('slo_codes', [normPromptCode])
+              .eq('document_id', priorityDocumentId)
+              .limit(3);
+            
+            if (directChunks && directChunks.length > 0) {
+              let addedDirectHeader = false;
+              directChunks.forEach(c => {
+                if (!topChunkIds.includes(c.id)) {
+                  if (!addedDirectHeader) {
+                    vaultContent += `\n### DIRECT_CURRICULUM_CHUNKS\n`;
+                    addedDirectHeader = true;
+                  }
+                  vaultContent += `[CHUNK_ID: ${c.id}]\n${c.chunk_text}\n---\n`;
+                  topChunkIds.push(c.id);
+                }
+              });
+            }
+            
+            vaultContent += `\n### BROADER_CONTEXT\n`;
+          } else {
+            console.log(`[Router] SLO Code ${normPromptCode} not found in slo_database. Falling back to direct chunk matching.`);
+            // Legacy / Fallback to direct chunk query if not found in slo_database
+            const { data: sloMatch } = await supabase
+              .from('document_chunks')
+              .select('id, chunk_text')
+              .contains('slo_codes', [normPromptCode])
+              .eq('document_id', priorityDocumentId)
+              .limit(3);
+            
+            if (sloMatch && sloMatch.length > 0) {
+              vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s => s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
+              topChunkIds = sloMatch.map(s => s.id);
+              isGrounded = true;
+            }
           }
         }
       }
@@ -256,16 +337,97 @@ export async function generateAIResponse(
         // SLO Surgical Extraction (Priority Doc Only)
         const codes = extractSLOCodes(userPrompt);
         if (codes.length > 0) {
-          const { data: sloMatch } = await supabase
-            .from('document_chunks')
-            .select('id, chunk_text')
-            .contains('slo_codes', [normalizeSLO(codes[0].code)])
-            .eq('document_id', priorityDocumentId)
-            .limit(3);
+          const normPromptCode = normalizeSLO(codes[0].code);
+          console.log(`[Router-Sync] SLO Code detected in prompt: ${codes[0].code} -> Normalized: ${normPromptCode}`);
           
-          if (sloMatch && sloMatch.length > 0) {
-            vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s=>s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
-            topChunkIds = sloMatch.map(s=>s.id);
+          // 1. Try to find the exact SLO from slo_database
+          const { data: slos } = await supabase
+            .from('slo_database')
+            .select('*')
+            .eq('document_id', priorityDocumentId);
+          
+          const matchedSlo = slos?.find(s => {
+            if (!s.slo_code) return false;
+            return normalizeSLO(s.slo_code) === normPromptCode;
+          });
+          
+          if (matchedSlo) {
+            console.log(`[Router-Sync] Found matching SLO in slo_database: ${matchedSlo.slo_code}`);
+            isGrounded = true;
+            vaultContent = `### SURGICAL_VAULT_EXTRACT
+[OFFICIAL_SLO_RECORD: ${matchedSlo.slo_code}]
+Code: ${matchedSlo.slo_code}
+Grade: ${matchedSlo.grade_level || 'N/A'}
+Domain: ${matchedSlo.domain_name || matchedSlo.domain || 'N/A'}
+Standard/Full Text: ${matchedSlo.slo_full_text}
+Cognitive Complexity: ${matchedSlo.cognitive_complexity || 'N/A'}
+Teaching Strategies: ${matchedSlo.teaching_strategies?.join(', ') || 'N/A'}
+Assessment Ideas: ${matchedSlo.assessment_ideas?.join(', ') || 'N/A'}
+Prerequisites: ${matchedSlo.prerequisite_concepts?.join(', ') || 'N/A'}
+Misconceptions: ${matchedSlo.common_misconceptions?.join(', ') || 'N/A'}
+
+`;
+            
+            // 2. Fetch associated chunks from chunk_slo_mapping junction table
+            const { data: mappings } = await supabase
+              .from('chunk_slo_mapping')
+              .select('chunk_id')
+              .eq('slo_id', matchedSlo.id);
+            
+            if (mappings && mappings.length > 0) {
+              const chunkIds = mappings.map(m => m.chunk_id);
+              const { data: chunksFromMapping } = await supabase
+                .from('document_chunks')
+                .select('id, chunk_text')
+                .in('id', chunkIds);
+              
+              if (chunksFromMapping && chunksFromMapping.length > 0) {
+                vaultContent += `### ASSOCIATED_CURRICULUM_CHUNKS\n`;
+                chunksFromMapping.forEach(c => {
+                  vaultContent += `[CHUNK_ID: ${c.id}]\n${c.chunk_text}\n---\n`;
+                });
+                topChunkIds = chunksFromMapping.map(c => c.id);
+              }
+            }
+            
+            // 3. Secondary check: Direct slo_codes containment in document_chunks
+            const { data: directChunks } = await supabase
+              .from('document_chunks')
+              .select('id, chunk_text')
+              .contains('slo_codes', [normPromptCode])
+              .eq('document_id', priorityDocumentId)
+              .limit(3);
+            
+            if (directChunks && directChunks.length > 0) {
+              let addedDirectHeader = false;
+              directChunks.forEach(c => {
+                if (!topChunkIds.includes(c.id)) {
+                  if (!addedDirectHeader) {
+                    vaultContent += `\n### DIRECT_CURRICULUM_CHUNKS\n`;
+                    addedDirectHeader = true;
+                  }
+                  vaultContent += `[CHUNK_ID: ${c.id}]\n${c.chunk_text}\n---\n`;
+                  topChunkIds.push(c.id);
+                }
+              });
+            }
+            
+            vaultContent += `\n### BROADER_CONTEXT\n`;
+          } else {
+            console.log(`[Router-Sync] SLO Code ${normPromptCode} not found in slo_database. Falling back to direct chunk matching.`);
+            // Legacy / Fallback to direct chunk query if not found in slo_database
+            const { data: sloMatch } = await supabase
+              .from('document_chunks')
+              .select('id, chunk_text')
+              .contains('slo_codes', [normPromptCode])
+              .eq('document_id', priorityDocumentId)
+              .limit(3);
+            
+            if (sloMatch && sloMatch.length > 0) {
+              vaultContent = `### SURGICAL_VAULT_EXTRACT\n${sloMatch.map(s => s.chunk_text).join('\n---\n')}\n\n### BROADER_CONTEXT\n`;
+              topChunkIds = sloMatch.map(s => s.id);
+              isGrounded = true;
+            }
           }
         }
       }
