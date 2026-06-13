@@ -32,6 +32,7 @@ const MIN_ADVANCE = 5000;
 const ROMAN: Record<string, string> = {
   I:'01', II:'02', III:'03', IV:'04', V:'05', VI:'06',
   VII:'07', VIII:'08', IX:'09', X:'10', XI:'11', XII:'12',
+  XIII:'13', XIV:'14', XV:'15'
 };
 
 // Which subjects use grades I-VIII (01-08) vs IX-XII (09-12)
@@ -46,18 +47,20 @@ const BOARD_NAMES: Record<string, string> = {
   SINDH:'Sindh Textbook Board', PUNJAB:'Punjab Curriculum & Textbook Board',
   FBISE:'Federal Board (FBISE)', KPK:'KPK Textbook Board',
   BALOCHISTAN:'Balochistan Curriculum & Textbook Board', AJK:'AJK Textbook Board',
+  NCP:'National Curriculum of Pakistan (NCP)',
 };
 
 // ── DETECTION ─────────────────────────────────────────────────────────────────
 function detectBoard(t: string): string {
   t = t.toLowerCase();
-  if (t.includes('sindh') || t.includes('jamshoro')) return 'SINDH';
-  if (t.includes('punjab') || t.includes('pctb'))    return 'PUNJAB';
-  if (t.includes('federal') || t.includes('fbise'))  return 'FBISE';
-  if (t.includes('kpk') || t.includes('khyber'))     return 'KPK';
-  if (t.includes('balochistan'))                      return 'BALOCHISTAN';
-  if (t.includes('ajk'))                              return 'AJK';
-  return 'SINDH';
+  if (t.includes('sindh') || t.includes('jamshoro') || t.includes('stbb')) return 'SINDH';
+  if (t.includes('punjab') || t.includes('pctb') || t.includes('lahore'))    return 'PUNJAB';
+  if (t.includes('federal') || t.includes('fbise') || t.includes('islamabad'))  return 'FBISE';
+  if (t.includes('kpk') || t.includes('khyber') || t.includes('peshawar') || t.includes('kpcc'))     return 'KPK';
+  if (t.includes('balochistan') || t.includes('quetta') || t.includes('btbb'))                      return 'BALOCHISTAN';
+  if (t.includes('ajk') || t.includes('muzaffarabad'))                              return 'AJK';
+  if (t.includes('ncp') || t.includes('national curriculum') || t.includes('single national') || t.includes('snc') || t.includes('pakistan')) return 'NCP';
+  return 'NCP'; // NCP is the most universal fallback for Pakistan
 }
 function detectSubject(t: string): string {
   t = t.toLowerCase();
@@ -77,20 +80,53 @@ function detectSubject(t: string): string {
   if (t.includes('economics') || t.includes('economic'))   return 'ECO';
   if (t.includes('history') || t.includes('historical'))   return 'HIS';
 
-  // BUG FIX: Previous code defaulted to 'B' (Biology) for everything unrecognized.
-  // This caused SLO codes for Economics, Geography, Islamiat etc. to be
-  // tagged as Biology codes, breaking all lookup and retrieval.
-  // Now we return 'GEN' (General) which is less wrong than 'B'.
+  // Universal dynamic extraction heuristic for unrecognized subjects:
+  // e.g. "Curriculum for Sociology", "Syllabus of Psychology"
+  const dynamicMatch = t.match(/curriculum (?:for|of)\s+([a-z\s]{3,30})/gi) || 
+                       t.match(/syllabus (?:for|of)\s+([a-z\s]{3,30})/gi);
+  if (dynamicMatch) {
+    for (const match of dynamicMatch) {
+      const parts = match.replace(/^(?:curriculum|syllabus)\s+(?:for|of)\s+/i, '').trim().toUpperCase().split(/\s+/);
+      const firstWord = parts[0];
+      if (firstWord && firstWord.length >= 3 && firstWord.length <= 15 && !['THE', 'FOR', 'AND', 'WITH', 'GRADE', 'CLASS'].includes(firstWord)) {
+        console.log(`[detectSubject] Dynamically extracted custom subject code: ${firstWord}`);
+        return firstWord;
+      }
+    }
+  }
+
   console.warn(`[detectSubject] Could not identify subject from text sample. Defaulting to GEN.`);
   return 'GEN';
 }
 function normalizeGrade(raw: any): string | null {
   if (!raw) return null;
-  if (typeof raw !== 'string') raw = String(raw);
-  const t = raw.trim().toUpperCase();
+  if (typeof raw !== 'string') raw = String(raw).trim();
+  const t = raw.toUpperCase().replace(/\s+/g, ' ');
+  
+  // 1. Direct lookup in ROMAN map
   if (ROMAN[t]) return ROMAN[t];
-  const n = parseInt(t, 10);
-  return (!isNaN(n) && n >= 1 && n <= 12) ? n.toString().padStart(2, '0') : null;
+  
+  // 2. Extract roman numerals as word if any exist
+  const romanWordMatch = t.match(/\b(I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII|XIII|XIV|XV)\b/);
+  if (romanWordMatch && romanWordMatch[1] && ROMAN[romanWordMatch[1]]) {
+    return ROMAN[romanWordMatch[1]];
+  }
+
+  // 3. Match any explicit digit
+  const digitMatch = t.match(/\d+/);
+  if (digitMatch) {
+    const num = parseInt(digitMatch[0], 10);
+    if (!isNaN(num) && num >= 0 && num <= 15) {
+      return num.toString().padStart(2, '0');
+    }
+  }
+
+  // 4. Kindergarten / Nursery / Early Childhood Education
+  if (t.includes('KG') || t.includes('KINDERGARTEN') || t.includes('NURSERY') || t.includes('ECE') || t === 'K' || t === 'PRE-I') {
+    return '00';
+  }
+
+  return null;
 }
 
 // ── SLO CODE NORMALIZER ───────────────────────────────────────────────────────
@@ -458,15 +494,14 @@ function makePrompt(
   isDeep: boolean = false,
   pattern: ExtractionPattern | null = null
 ): string {
-  const isPrimary = PRIMARY_SUBJECTS.has(subjectCode);
-
-  const gradeSection = isPrimary ? `
-=== GRADE SYSTEM (Primary - Grades I to VIII) ===
-This is a PRIMARY curriculum covering Grades I through VIII.
-Grade mapping: I→01, II→02, III→03, IV→04, V→05, VI→06, VII→07, VIII→08
-ALWAYS use 2-digit grade: Grade I → 01, Grade VIII → 08` : `
-=== GRADE SYSTEM (Secondary - Grades IX to XII) ===
-Grade mapping: IX→09, X→10, XI→11, XII→12, always 2-digit`;
+  const gradeSection = `
+=== GRADE SYSTEM (Universal - Early Years through Grade XII/XIII+) ===
+This is a universal curriculum framework supporting ANY grade level or stage of learning.
+Grade mapping guidelines:
+- Early Childhood Education / Nursery / Kindergarten / Prep (e.g., ECE, Nursery, KG, Prep, Pre-I) → '00'
+- Primary Grades (e.g., Grades I to VIII / 1 to 8) → '01' to '08' (e.g., I→01, II→02, III→03, IV→04, V→05, VI→06, VII→07, VIII→08)
+- Secondary & Higher Secondary Grades (e.g., Grades IX to XII / 13 / 9 to 13) → '09' to '13' (e.g., IX→09, X→10, XI→11, XII→12, XIII→13)
+- ALWAYS extract the exact original grade/class text and normalize it internally to a 2-digit, zero-padded string representation.`;
 
   const patternContext = pattern ? `
 === LEARNED PATTERN FROM PREVIOUS SUCCESSFUL EXTRACTION ===
@@ -1057,6 +1092,178 @@ RULES:
   }
 }
 
+// ── UNIVERSAL CURRICULUM STANDARDIZER (Grok Ingestion Engine v1.0) ────────────
+function standardizeCurriculum(
+  slos: any[],
+  boardKey: string,
+  subjectCode: string,
+  docName: string
+): { jsonText: string; updatedSlos: any[] } {
+  const subjectName = SUBJECTS[subjectCode] || subjectCode;
+
+  // 1. Detect Grade System (Roman vs. Arabic vs. Mixed)
+  let gradeSystem = 'Arabic';
+  const rawGrades = slos.map(s => String(s.grade || s.grade_level || ''));
+  const hasRoman = rawGrades.some(g => {
+    const u = g.toUpperCase();
+    return u === 'I' || u === 'II' || u === 'III' || u === 'IV' || u === 'V' || u === 'VI' || u === 'VII' || u === 'VIII' || u === 'IX' || u === 'X' || u === 'XI' || u === 'XII';
+  });
+  if (hasRoman) {
+    gradeSystem = 'Roman';
+  }
+
+  const ROMAN_BY_NUM: Record<string, string> = {
+    '01': 'I', '02': 'II', '03': 'III', '04': 'IV', '05': 'V', '06': 'VI',
+    '07': 'VII', '08': 'VIII', '09': 'IX', '10': 'X', '11': 'XI', '12': 'XII',
+    '13': 'XIII'
+  };
+
+  const sortedSlosWithIndex = slos.map((s, idx) => ({ ...s, original_index: idx }));
+
+  const bloomOrder: Record<string, number> = {
+    'remember': 1,
+    'understand': 2,
+    'apply': 3,
+    'analyze': 4,
+    'evaluate': 5,
+    'create': 6
+  };
+
+  const getBloomPriority = (bloom: string | null | undefined): number => {
+    if (!bloom) return 99;
+    const b = bloom.toLowerCase().trim();
+    return bloomOrder[b] || 99;
+  };
+
+  // Group items by grade and domain
+  const groups: Record<string, Record<string, any[]>> = {};
+  const mappedGrades = new Set<string>();
+
+  for (const s of sortedSlosWithIndex) {
+    const rawGrade = s.grade || s.grade_level || '';
+    const normGrade = normalizeGrade(rawGrade) || '99';
+    mappedGrades.add(normGrade);
+
+    let rawDomain = s.domain || 'X';
+    let domainStr = typeof rawDomain === 'string' ? rawDomain.toUpperCase().trim().substring(0, 1) : 'X';
+    if (!domainStr || !/[A-Z]/.test(domainStr)) domainStr = 'X';
+
+    if (!groups[normGrade]) groups[normGrade] = {};
+    if (!groups[normGrade][domainStr]) groups[normGrade][domainStr] = [];
+    groups[normGrade][domainStr].push(s);
+  }
+
+  // Detect grade range
+  const validGrades = Array.from(mappedGrades).filter(g => g !== '99').sort();
+  let gradeRange = 'General';
+  if (validGrades.length > 0) {
+    const minG = validGrades[0];
+    const maxG = validGrades[validGrades.length - 1];
+    const displayMin = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[minG] || minG) : parseInt(minG, 10).toString();
+    const displayMax = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[maxG] || maxG) : parseInt(maxG, 10).toString();
+    gradeRange = `${displayMin}-${displayMax}`;
+  }
+
+  const gradesObject: Record<string, any> = {};
+  const updatedSlos: any[] = [];
+  let totalDomainsCount = 0;
+  let totalSlosCount = 0;
+
+  const sortedGradeKeys = Object.keys(groups).sort();
+
+  for (const gradeKey of sortedGradeKeys) {
+    const dispName = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[gradeKey] || gradeKey) : `Grade ${parseInt(gradeKey, 10) || gradeKey}`;
+    const domainsForGrade: Record<string, any> = {};
+
+    const domainKeys = Object.keys(groups[gradeKey]).sort();
+    totalDomainsCount += domainKeys.length;
+
+    for (const domainKey of domainKeys) {
+      const parentDomainSlos = groups[gradeKey][domainKey];
+      const dname = parentDomainSlos[0]?.domain_name || 'General Core';
+
+      // SORT within domain: Bloom level order first, then original found code, then original index
+      const sortedInDomain = [...parentDomainSlos].sort((a, b) => {
+        const bpA = getBloomPriority(a.bloom_level);
+        const bpB = getBloomPriority(b.bloom_level);
+        if (bpA !== bpB) return bpA - bpB;
+
+        const codeA = a.slo_code || '';
+        const codeB = b.slo_code || '';
+        if (codeA !== codeB) return codeA.localeCompare(codeB);
+
+        return a.original_index - b.original_index;
+      });
+
+      const slosInDomainOutput: any[] = [];
+
+      sortedInDomain.forEach((s, idx) => {
+        totalSlosCount++;
+        const seqStr = String(idx + 1).padStart(2, '0');
+        const universalSloId = `SLO:${subjectCode}-${gradeKey}-${domainKey}-${seqStr}`;
+        const originalCode = s.raw_code_as_found || s.slo_code || s.code || 'CODEL_SLO';
+
+        slosInDomainOutput.push({
+          slo_id: universalSloId,
+          original_code: originalCode,
+          bloom_level: s.bloom_level || 'Understand',
+          full_text: s.slo_full_text || s.full_text || s.description || ''
+        });
+
+        updatedSlos.push({
+          ...s,
+          slo_code: universalSloId,
+          raw_code_as_found: originalCode,
+          domain: domainKey,
+          domain_name: dname,
+          grade_level: gradeKey,
+          grade: gradeKey
+        });
+      });
+
+      domainsForGrade[domainKey] = {
+        domain_name: dname,
+        slos: slosInDomainOutput
+      };
+    }
+
+    gradesObject[gradeKey] = {
+      display_name: dispName,
+      domains: domainsForGrade
+    };
+  }
+
+  const gradeMapping: Record<string, string> = {};
+  for (const gk of sortedGradeKeys) {
+    if (gk !== '99') {
+      const disp = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[gk] || gk) : parseInt(gk, 10).toString();
+      gradeMapping[disp] = gk;
+    }
+  }
+
+  const jsonObject = {
+    curriculum: {
+      name: docName || 'Universal Curriculum Ingestion',
+      subject: subjectName,
+      subject_code: subjectCode,
+      grade_system: gradeSystem,
+      grade_range: gradeRange
+    },
+    grades: gradesObject,
+    metadata: {
+      total_grades: sortedGradeKeys.length,
+      total_domains: totalDomainsCount,
+      total_slos: totalSlosCount,
+      grade_mapping: gradeMapping
+    }
+  };
+
+  return {
+    jsonText: JSON.stringify(jsonObject, null, 2),
+    updatedSlos
+  };
+}
+
 // ── LEDGER JSON BUILDER ───────────────────────────────────────────────────────
 function buildLedger(slos: any[], boardKey: string, subjectCode: string): string {
   const boardName = BOARD_NAMES[boardKey] || boardKey;
@@ -1390,8 +1597,6 @@ export async function POST(
         let docSummary = `raw|board:${board}|subject:${subject}|len:${text.length}`;
 
         // ── TABLE-AWARE EXTRACTION ───────────────────────────────────────────
-        // Pakistan curriculum PDFs often use horizontal tables for multi-grade SLOs.
-        // If detected, we use a specialized Python extractor to maintain column logic.
         if (likelyHasMultiGradeTable(text)) {
            console.log('[Stage 1] Likely multi-grade table detected. Running table-aware extractor...');
            if (!pdfBuffer) {
@@ -1420,25 +1625,43 @@ export async function POST(
                   created_at: new Date().toISOString()
                 }));
 
+                const { jsonText, updatedSlos } = standardizeCurriculum(records, board, subject, doc.name);
+                text = jsonText;
+
                 // Clear any partial extraction if we're doing table-aware fresh
                 await supabase.from('slo_database').delete().eq('document_id', documentId);
 
                 // Insert in batches
                 const BATCH_SIZE = 100;
-                for (let i = 0; i < records.length; i += BATCH_SIZE) {
-                  const batch = records.slice(i, i + BATCH_SIZE);
+                for (let i = 0; i < updatedSlos.length; i += BATCH_SIZE) {
+                  const batch = updatedSlos.slice(i, i + BATCH_SIZE).map(s => ({
+                    document_id: documentId,
+                    slo_code: s.slo_code,
+                    slo_full_text: s.slo_full_text,
+                    domain: s.domain,
+                    domain_name: s.domain_name,
+                    bloom_level: s.bloom_level,
+                    cognitive_complexity: s.cognitive_complexity,
+                    keywords: s.keywords || [],
+                    subject: s.subject,
+                    grade_level: s.grade_level,
+                    extraction_confidence: 1.0,
+                    page_number: s.page_number || null,
+                    is_truncated: s.is_truncated || false,
+                    is_orphan_domain: s.is_orphan_domain || false,
+                    raw_code_as_found: s.raw_code_as_found,
+                    created_at: new Date().toISOString(),
+                    board: board
+                  }));
                   const { error } = await supabase.from('slo_database').insert(batch);
                   if (error) console.error('[Stage 1] Table insert error:', error.message);
                 }
 
-                // Build ledger and update text to skip Stage 2 re-extraction
-                const ledger = buildLedger(records, board, subject);
-                text = ledger;
-                docSummary = `ledger|slos:${records.length}|board:${board}|subject:${subject}|table_aware:true`;
+                docSummary = `ledger|slos:${updatedSlos.length}|board:${board}|subject:${subject}|table_aware:true`;
                 console.log('[Stage 1] Table-extracted ledger built. Stage 2 will skip re-extraction.');
 
                 // Save pattern memory
-                await saveExtractionPattern(supabase, text, records, board, SUBJECTS[subject] || subject);
+                await saveExtractionPattern(supabase, text, updatedSlos, board, SUBJECTS[subject] || subject);
               }
            }
         }
@@ -1522,6 +1745,29 @@ export async function POST(
                 }
               } else if (data.slos && Array.isArray(data.slos)) {
                 items = data.slos;
+              } else if (data.grades && typeof data.grades === 'object') {
+                // Grok universal nesting support
+                for (const [gradeKey, gradeVal] of Object.entries(data.grades)) {
+                  const gVal = gradeVal as any;
+                  if (gVal.domains && typeof gVal.domains === 'object') {
+                    for (const [domainKey, domainVal] of Object.entries(gVal.domains)) {
+                      const dVal = domainVal as any;
+                      if (dVal.slos && Array.isArray(dVal.slos)) {
+                        for (const s of dVal.slos) {
+                          items.push({
+                            slo_code: s.slo_id || s.original_code || null,
+                            slo_full_text: s.full_text || s.slo_full_text || '',
+                            grade: gradeKey,
+                            domain: domainKey,
+                            domain_name: dVal.domain_name,
+                            bloom_level: s.bloom_level || null,
+                            raw_code_as_found: s.original_code || null
+                          });
+                        }
+                      }
+                    }
+                  }
+                }
               }
 
               if (items && items.length > 0) {
@@ -1669,14 +1915,51 @@ export async function POST(
             const { data: allDbSlos } = await supabase.from('slo_database').select('*').eq('document_id', documentId);
             const fullSloList = (allDbSlos && allDbSlos.length > 0) ? allDbSlos : slos;
             
-            const ledger = buildLedger(fullSloList, board, subject);
-            console.log(`[Stage 2] Built ledger with ${fullSloList.length} SLOs. Updating document...`);
+            console.log(`[Stage 2] Standardizing and sorting ${fullSloList.length} SLOs using Grok Curriculum Engine...`);
+            const { jsonText, updatedSlos } = standardizeCurriculum(fullSloList, board, subject, doc.name);
+            
+            // Re-sync standardized SLOs back into the DB (delete raw ones, insert standardized ones)
+            await supabase.from('slo_database').delete().eq('document_id', documentId);
+            
+            const BATCH_SIZE = 100;
+            for (let i = 0; i < updatedSlos.length; i += BATCH_SIZE) {
+              const batch = updatedSlos.slice(i, i + BATCH_SIZE).map(s => ({
+                document_id: documentId,
+                slo_code: s.slo_code,
+                slo_full_text: s.slo_full_text || s.full_text || s.description || '',
+                domain: s.domain,
+                domain_name: s.domain_name,
+                bloom_level: s.bloom_level || null,
+                cognitive_complexity: s.cognitive_complexity || null,
+                keywords: s.keywords || [],
+                subject: s.subject || SUBJECTS[subject] || subject,
+                grade_level: s.grade_level,
+                extraction_confidence: s.extraction_confidence || 1.0,
+                page_number: s.page_number || null,
+                is_truncated: s.is_truncated || false,
+                is_orphan_domain: s.is_orphan_domain || false,
+                raw_code_as_found: s.raw_code_as_found,
+                char_offset: s.char_offset || 0,
+                benchmark: s.benchmark || null,
+                board: board,
+                teaching_strategies: s.teaching_strategies || [],
+                assessment_ideas: s.assessment_ideas || [],
+                prerequisite_concepts: s.prerequisite_concepts || [],
+                common_misconceptions: s.common_misconceptions || [],
+                created_at: new Date().toISOString()
+              }));
+              
+              const { error: insertErr } = await supabase.from('slo_database').insert(batch);
+              if (insertErr) {
+                console.error(`[Stage 2] Standardized SLO insert error batch starting at ${i}:`, insertErr.message);
+              }
+            }
 
             await supabase.from('documents').update({
-              extracted_text  : ledger,
-              document_summary: `ledger|slos:${fullSloList.length}|board:${board}|subject:${subject}`,
+              extracted_text  : jsonText,
+              document_summary: `ledger|slos:${updatedSlos.length}|board:${board}|subject:${subject}`,
             }).eq('id', documentId);
-            console.log(`[Stage 2] Ledger saved ✓`);
+            console.log(`[Stage 2] Universal JSON Standardized Ledger saved ✓`);
           }
 
           await queue.updateProgress(job.id, {
@@ -1718,13 +2001,41 @@ export async function POST(
       if (job.step === IngestionStep.EMBED) {
         console.log(`[Stage 4] START EMBED`);
 
-        const { data: fin } = await supabase
+        // RE-COMPILE FULLY ENRICHED UNIVERSAL JSON PRIOR TO EMBED & DEPLOYMENT
+        const { data: docInfo } = await supabase
           .from('documents')
-          .select('extracted_text')
+          .select('name, document_summary')
           .eq('id', documentId)
           .single();
+          
+        const meta = docInfo?.document_summary || '';
+        const boardCode = meta.match(/board:(\w+)/)?.[1] || 'SINDH';
+        const subjectCode = meta.match(/subject:([A-Z]+)/)?.[1] || 'B';
+        const docName = docInfo?.name || '';
+        
+        const { data: enrichedSlos } = await supabase
+          .from('slo_database')
+          .select('*')
+          .eq('document_id', documentId);
+          
+        let txt = '';
+        if (enrichedSlos && enrichedSlos.length > 0) {
+          console.log(`[Stage 4] Compiling 100% enriched Grok structured JSON for RAG and viewer...`);
+          const { jsonText } = standardizeCurriculum(enrichedSlos, boardCode, subjectCode, docName);
+          txt = jsonText;
+          
+          await supabase.from('documents').update({
+            extracted_text: jsonText,
+          }).eq('id', documentId);
+        } else {
+          const { data: fin } = await supabase
+            .from('documents')
+            .select('extracted_text')
+            .eq('id', documentId)
+            .single();
+          txt = fin?.extracted_text || '';
+        }
 
-        const txt = fin?.extracted_text || '';
         const isLedger = txt.startsWith('# ') || txt.startsWith('Board:') || txt.startsWith('```json') || txt.startsWith('{') || txt.trim().startsWith('{');
         console.log(`[Stage 4] Text to embed: ${txt.length} chars, isLedger: ${isLedger}`);
 
@@ -1741,7 +2052,7 @@ export async function POST(
             status          : 'ready',
             rag_indexed     : true,
             document_summary: isLedger
-              ? txt.split('\n').slice(0, 4).join(' | ')
+              ? 'Universal JSON Ledger'
               : 'indexed',
           })
           .eq('id', documentId);

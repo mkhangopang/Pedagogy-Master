@@ -40,6 +40,18 @@ const StandardsBrowser: React.FC<StandardsBrowserProps> = ({ user, documents }) 
     fetchAllSlos();
   }, []);
 
+  const uniqueGrades = useMemo(() => {
+    const rawGrades = slos.map(s => s.grade_level).filter(Boolean);
+    const set = new Set(rawGrades);
+    return Array.from(set).sort();
+  }, [slos]);
+
+  const uniqueSubjects = useMemo(() => {
+    const rawSubs = slos.map(s => s.subject).filter(Boolean);
+    const set = new Set(rawSubs);
+    return Array.from(set).sort();
+  }, [slos]);
+
   const sortedSlos = useMemo(() => {
     const filtered = slos.filter(s => {
       const matchesSearch = !searchQuery || 
@@ -96,17 +108,32 @@ const StandardsBrowser: React.FC<StandardsBrowserProps> = ({ user, documents }) 
               className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
             />
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
+            <select 
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="px-6 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white text-xs uppercase tracking-widest"
+            >
+              <option value="all">All Subjects</option>
+              {uniqueSubjects.map(sub => (
+                <option key={sub} value={sub}>{sub}</option>
+              ))}
+            </select>
+
             <select 
               value={selectedGrade}
               onChange={(e) => setSelectedGrade(e.target.value)}
               className="px-6 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white text-xs uppercase tracking-widest"
             >
               <option value="all">All Grades</option>
-              <option value="09">Grade 9</option>
-              <option value="10">Grade 10</option>
-              <option value="11">Grade 11</option>
-              <option value="12">Grade 12</option>
+              {uniqueGrades.map(grade => {
+                let label = `Grade ${parseInt(grade, 10)}`;
+                if (grade === '00') label = 'Early Years / KG';
+                else if (isNaN(parseInt(grade, 10))) label = `Grade ${grade}`;
+                return (
+                  <option key={grade} value={grade}>{label}</option>
+                );
+              })}
             </select>
             <button className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg hover:bg-indigo-700 transition-all">
               <Filter size={20} />

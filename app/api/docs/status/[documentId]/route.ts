@@ -31,8 +31,7 @@ export async function GET(
     // Fetch document and job state in parallel
     const [docRes, jobRes] = await Promise.all([
       supabase.from('documents').select(
-        // Exclude extracted_text — it can be MBs and is never needed by the polling UI
-        'id, status, name, document_summary, error_message, subject, grade_level, rag_indexed'
+        'id, status, name, document_summary, error_message, subject, grade_level, rag_indexed, extracted_text'
       ).eq('id', documentId).single(),
 
       supabase.from('ingestion_jobs')
@@ -100,6 +99,7 @@ export async function GET(
       error: docRes.data.error_message || jobRes.data?.error_message,
       sloCount,
       slos,      // Empty array during processing; populated once complete
+      extracted_text: docRes.data.extracted_text || null,
       metadata: {
         subject: docRes.data.subject,
         grade: docRes.data.grade_level,
