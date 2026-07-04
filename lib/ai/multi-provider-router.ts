@@ -18,14 +18,40 @@ export async function* generateAIResponseStream(
   priorityDocumentId?: string
 ): AsyncGenerator<string> {
 
-  // 1. Atomic Quota Enforcement
-  const { data: quotaOk, error: quotaErr } = await supabase.rpc(
-    'increment_query_count',
-    { p_user_id: userId }
-  );
-  if (quotaErr || quotaOk === false) {
-    yield 'QUOTA_EXCEEDED: Upgrade your plan to continue generating content.';
-    return;
+  // 1. Atomic Quota Enforcement with Developer Bypass
+  let isDeveloper = false;
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email, role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile) {
+      const email = profile.email?.toLowerCase().trim();
+      const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || process.env.ADMIN_EMAILS || '';
+      const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+      if (
+        profile.role === 'app_admin' ||
+        (email && (adminEmails.includes(email) || email === 'mkgopang@gmail.com'))
+      ) {
+        isDeveloper = true;
+        console.log(`[generateAIResponseStream] Quota bypassed for developer/admin: ${email}`);
+      }
+    }
+  } catch (err) {
+    console.error('[generateAIResponseStream] Profile lookup failed:', err);
+  }
+
+  if (!isDeveloper) {
+    const { data: quotaOk, error: quotaErr } = await supabase.rpc(
+      'increment_query_count',
+      { p_user_id: userId }
+    );
+    if (quotaErr || quotaOk === false) {
+      yield 'QUOTA_EXCEEDED: Upgrade your plan to continue generating content.';
+      return;
+    }
   }
 
   // 2. Intent Classification
@@ -284,13 +310,39 @@ export async function generateAIResponse(
 
   const start = Date.now();
 
-  // 1. Atomic Quota Enforcement
-  const { data: quotaOk, error: quotaErr } = await supabase.rpc(
-    'increment_query_count',
-    { p_user_id: userId }
-  );
-  if (quotaErr || quotaOk === false) {
-    throw new Error('QUOTA_EXCEEDED: Upgrade your plan to continue generating content.');
+  // 1. Atomic Quota Enforcement with Developer Bypass
+  let isDeveloper = false;
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email, role')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile) {
+      const email = profile.email?.toLowerCase().trim();
+      const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || process.env.ADMIN_EMAILS || '';
+      const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+      if (
+        profile.role === 'app_admin' ||
+        (email && (adminEmails.includes(email) || email === 'mkgopang@gmail.com'))
+      ) {
+        isDeveloper = true;
+        console.log(`[generateAIResponse] Quota bypassed for developer/admin: ${email}`);
+      }
+    }
+  } catch (err) {
+    console.error('[generateAIResponse] Profile lookup failed:', err);
+  }
+
+  if (!isDeveloper) {
+    const { data: quotaOk, error: quotaErr } = await supabase.rpc(
+      'increment_query_count',
+      { p_user_id: userId }
+    );
+    if (quotaErr || quotaOk === false) {
+      throw new Error('QUOTA_EXCEEDED: Upgrade your plan to continue generating content.');
+    }
   }
 
   // 2. Intent Classification
