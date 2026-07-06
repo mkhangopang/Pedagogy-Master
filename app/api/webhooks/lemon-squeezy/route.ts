@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { getSupabaseAdminClient } from '../../../../lib/supabase';
 
 export const runtime = 'nodejs';
@@ -18,8 +18,15 @@ const VARIANT_TO_PLAN: Record<string, string> = {
 function verifySignature(rawBody: string, signature: string): boolean {
   const secret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
   if (!secret) return false;
-  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
-  return expected === signature;
+  
+  const hmac = createHmac('sha256', secret);
+  const digest = hmac.update(rawBody).digest(); 
+  
+  const signatureBuffer = Buffer.from(signature, 'hex'); 
+  
+  if (digest.length !== signatureBuffer.length) return false;
+  
+  return timingSafeEqual(digest, signatureBuffer);
 }
 
 export async function POST(req: NextRequest) {

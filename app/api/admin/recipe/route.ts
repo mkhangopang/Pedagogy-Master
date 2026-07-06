@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       .eq('id', user.id)
       .single();
 
-    const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminString = process.env.ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isEmailAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
 

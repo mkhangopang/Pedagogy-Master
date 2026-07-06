@@ -1,8 +1,22 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { getSupabaseServerClient } from '../../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('Authorization');
+  const token = authHeader?.split(' ')[1];
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const supabase = getSupabaseServerClient(token);
+  const { data: { user } } = await supabase.auth.getUser(token);
+  
+  const adminString = process.env.ADMIN_EMAILS || '';
+  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
+    return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+  }
+
   // Broad search across possible environment key names
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';

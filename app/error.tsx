@@ -23,7 +23,7 @@ export default function Error({
         <div className="space-y-2">
           <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">System Interrupted</h2>
           <p className="text-slate-500 dark:text-slate-400 text-sm font-medium">
-            {error.message || 'An unexpected neural gateway error occurred.'}
+            An unexpected error occurred. Please try again later.
           </p>
         </div>
         <button

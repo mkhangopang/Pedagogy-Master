@@ -172,7 +172,7 @@ export const pulseCredentialsFromServer = async (): Promise<boolean> => {
 
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
-  const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+  const adminString = process.env.ADMIN_EMAILS || '';
   const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
   const isAdminUser = email && adminEmails.includes(email.toLowerCase().trim());
   try {

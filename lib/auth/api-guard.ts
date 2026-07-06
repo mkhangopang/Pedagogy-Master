@@ -1,9 +1,10 @@
 
 import { NextRequest } from 'next/server';
 import { supabase } from '../supabase';
+import { createHash } from 'crypto';
 
 /**
- * B2B API GUARD (v1.0)
+ * B2B API GUARD (v1.1 - Secure)
  * Validates X-API-Key for institutional partners (Noon, Moodle, etc.)
  */
 export async function validateApiKey(req: NextRequest) {
@@ -13,13 +14,14 @@ export async function validateApiKey(req: NextRequest) {
     return { authorized: false, error: 'Missing X-API-Key header' };
   }
 
-  // For bootstrap phase, we check against a specific metadata field in profiles
-  // or a dedicated api_keys table. 
-  // SECURITY: In production, hash these keys.
+  // Hash the incoming key
+  const hashedKey = createHash('sha256').update(apiKey).digest('hex');
+
+  // Validate against hashed key in tenant_config
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('id, plan, role, name')
-    .eq('tenant_config->>api_key', apiKey)
+    .eq('tenant_config->>api_key_hash', hashedKey)
     .single();
 
   if (error || !profile) {
