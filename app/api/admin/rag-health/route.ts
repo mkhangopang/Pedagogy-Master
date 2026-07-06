@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
     // Add comment above each fix
     // Fix: Retrieve admin emails from environment variable to resolve missing export error from constants
-    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
     if (!isAdmin) {

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await anonClient.auth.getUser(token);
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
     if (!isAdmin) return NextResponse.json({ error: 'Administrative access required' }, { status: 403 });

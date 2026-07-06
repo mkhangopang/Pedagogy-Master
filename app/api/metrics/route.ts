@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     
     // Add comment above each fix
     // Fix: Validate admin status using environment variable to resolve missing export error
-    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });

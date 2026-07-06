@@ -26,7 +26,7 @@ export async function DELETE(request: NextRequest) {
     const adminSupabase = getSupabaseAdminClient();
     
     // Check if requester is authorized Admin
-    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const userEmail = (user.email || '').toLowerCase().trim();
     

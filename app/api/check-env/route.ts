@@ -21,12 +21,16 @@ export async function GET() {
   // MASK SENSITIVE KEYS FOR PRODUCTION AUDIT
   const mask = (str: string) => str ? `${str.substring(0, 8)}...${str.substring(str.length - 4)}` : '';
 
+  const isProd = process.env.NODE_ENV === 'production' || process.env.VERCEL_ENV === 'production';
+  const finalUrl = isProd ? mask(supabaseUrl) : supabaseUrl;
+  const finalKey = isProd ? mask(supabaseKey) : supabaseKey;
+
   return NextResponse.json({
     status: isConfigured ? 'OK' : 'CONFIGURATION_MISSING',
     timestamp: new Date().toISOString(),
     config: {
-      url: supabaseUrl,
-      key: supabaseKey
+      url: finalUrl,
+      key: finalKey
     },
     diagnostics: env,
     resolution: isConfigured 

@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
     if (!isAdmin) return NextResponse.json({ error: 'Admin access required' }, { status: 403 });

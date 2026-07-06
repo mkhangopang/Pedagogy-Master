@@ -1,12 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '../../../lib/supabase';
+import { getSupabaseServerClient } from '../../../lib/supabase';
 
 export async function GET(req: NextRequest) {
+  const authHeader = req.headers.get('Authorization');
+  const token = authHeader?.split(' ')[1];
+  if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const supabaseServer = getSupabaseServerClient(token);
+  const { data: { user } } = await supabaseServer.auth.getUser(token);
+  
+  const adminString = process.env.ADMIN_EMAILS || process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+  if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
+    return NextResponse.json({ error: 'Founder Access Required' }, { status: 403 });
+  }
+
   const tests = [];
   
   try {
     // 1. Supabase Connection & Auth
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    const { data: { session }, error: sessionError } = await supabaseServer.auth.getSession();
     tests.push({ 
       name: "Supabase Connection", 
       status: !sessionError ? "pass" : "fail", 
@@ -14,7 +27,7 @@ export async function GET(req: NextRequest) {
     });
 
     // 2. Storage Bucket Accessibility
-    const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+    const { data: buckets, error: bucketError } = await supabaseServer.storage.listBuckets();
     const docBucket = buckets?.find(b => b.name === 'documents');
     tests.push({ 
       name: "Storage Access", 
@@ -23,7 +36,7 @@ export async function GET(req: NextRequest) {
     });
 
     // 3. Database Table Permissions
-    const { error: dbError } = await supabase.from('documents').select('id').limit(1);
+    const { error: dbError } = await supabaseServer.from('documents').select('id').limit(1);
     tests.push({ 
       name: "Database (Documents Table)", 
       status: !dbError || dbError.code === 'PGRST116' ? "pass" : "fail",
