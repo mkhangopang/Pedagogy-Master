@@ -60,6 +60,12 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       
+      if (!session) {
+        alert("Session expired. Please sign in again.");
+        setIsAuditing(false);
+        return;
+      }
+      
       await new Promise(r => setTimeout(r, 800));
       setAuditStep('Polling Vector Database Health...');
       await new Promise(r => setTimeout(r, 800));
@@ -68,7 +74,7 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
       const response = await fetch('/api/admin/run-audit', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session?.access_token}`
+          'Authorization': `Bearer ${session.access_token}`
         }
       });
 
@@ -78,8 +84,8 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
       setReport(newReport);
       setAuditStep('Neural Mapping Complete.');
       setTimeout(() => setIsAuditing(false), 800);
-    } catch (err) {
-      alert("Audit Failed: Infrastructure node unreachable.");
+    } catch (err: any) {
+      alert(`Audit Failed: ${err.message || 'Infrastructure node unreachable.'}`);
       setIsAuditing(false);
     }
   };

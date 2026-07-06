@@ -44,6 +44,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
+  const eventId = event?.meta?.event_id || '';
+
+  // Idempotency check
+  const { data: existingEvent } = await getSupabaseAdminClient()
+    .from('webhook_events')
+    .select('id')
+    .eq('event_id', eventId)
+    .single();
+
+  if (existingEvent) {
+    return NextResponse.json({ received: true });
+  }
+
+  await getSupabaseAdminClient()
+    .from('webhook_events')
+    .insert({ event_id: eventId, event_type: event?.meta?.event_name });
+
   const eventName = event?.meta?.event_name || '';
   const attrs = event?.data?.attributes || {};
   const userEmail = attrs.user_email || '';
