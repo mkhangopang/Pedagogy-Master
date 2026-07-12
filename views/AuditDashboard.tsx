@@ -85,7 +85,7 @@ const AuditDashboard: React.FC<AuditDashboardProps> = ({ user }) => {
       setAuditStep('Neural Mapping Complete.');
       setTimeout(() => setIsAuditing(false), 800);
     } catch (err: any) {
-      alert(`Audit Failed: ${err.message || 'Infrastructure node unreachable.'}`);
+      console.error("Audit error:", err);
       setIsAuditing(false);
     }
   };

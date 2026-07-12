@@ -33,10 +33,8 @@ const Documents: React.FC<DocumentsProps> = ({
   const [readingDoc, setReadingDoc] = useState<Document | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
-  // FOUNDER/ADMIN CHECK (Direct link to Vercel Env)
-  const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  const isAdmin = userProfile.role === UserRole.APP_ADMIN || (userProfile.email && adminEmails.includes(userProfile.email.toLowerCase()));
+  // ADMIN CHECK (Using profile role)
+  const isAdmin = userProfile.role === UserRole.APP_ADMIN;
   
   const limits = ROLE_LIMITS[userProfile.plan] || ROLE_LIMITS[SubscriptionPlan.FREE];
   

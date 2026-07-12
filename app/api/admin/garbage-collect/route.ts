@@ -14,10 +14,10 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     const { data: { user } } = await supabase.auth.getUser(token);
     
-    const adminString = process.env.NEXT_PUBLIC_ADMIN_EMAILS || '';
+    const adminString = process.env.ADMIN_EMAILS || '';
     const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
     if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
-      return NextResponse.json({ error: 'Founder Access Required' }, { status: 403 });
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     // Initialize an admin client that bypasses RLS so we can clean up ANY failed document
