@@ -23,7 +23,7 @@ Pedagogy Master AI is a sophisticated EdTech platform leveraging Gemini AI and R
 - **Weaknesses**: `indexDocumentForRAG` uses a small batch size (5), which is safe for rate limits but slow for large documents.
 
 ## 3. Security Audit
-- **Supabase**: Auth is well-integrated. Row Level Security (RLS) is active on the database for all core tables (documents, profiles, slo_database, etc.).
+- **Supabase**: Auth is well-integrated. Row Level Security (RLS) is active on the database for all core tables (documents, profiles). RLS policies are documented in `sql/rls-policies.sql`.
 - **Storage**: Cloudflare R2 is used for binary assets, providing good isolation from the database.
 - **API Keys**: Correctly handled via `resolveApiKey` and server-side environment variables.
 
