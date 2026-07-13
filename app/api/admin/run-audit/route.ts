@@ -1,11 +1,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
+import { getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
-import { GoogleGenAI } from '@google/genai';
 import { orchestrator } from '../../../../lib/ai/model-orchestrator';
 import { performanceMonitor } from '../../../../lib/monitoring/performance';
+import { checkAdmin } from '../../../../lib/auth/user-role';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,10 +23,10 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     const { data: { user } } = await supabase.auth.getUser(token);
     
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
-      return NextResponse.json({ error: 'Founder Access Required' }, { status: 403 });
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    if (!await checkAdmin(supabase, user.id)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
     const start = Date.now();

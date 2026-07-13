@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase as anonClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { indexDocumentForRAG } from '../../../../lib/rag/document-indexer';
+import { checkAdmin } from '../../../../lib/auth/user-role';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -19,12 +20,11 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await anonClient.auth.getUser(token);
     if (!user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
-    if (!isAdmin) return NextResponse.json({ error: 'Administrative access required' }, { status: 403 });
-
     const supabase = getSupabaseServerClient(token);
+
+    if (!await checkAdmin(supabase, user.id)) {
+      return NextResponse.json({ error: 'Administrative access required' }, { status: 403 });
+    }
 
     const { data: documents, error: fetchError } = await supabase
       .from('documents')

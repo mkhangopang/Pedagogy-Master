@@ -5,6 +5,8 @@ import { extractSLOCodes, normalizeSLO } from '../rag/slo-extractor';
 import { classifyIntent } from './intent-classifier';
 import { kv } from '../kv';
 import { createHash } from 'crypto';
+import { isAdminUser } from '../auth/user-role';
+import { UserProfile } from '../../types';
 
 export async function* generateAIResponseStream(
   userPrompt: string,
@@ -28,15 +30,9 @@ export async function* generateAIResponseStream(
       .maybeSingle();
 
     if (profile) {
-      const email = profile.email?.toLowerCase().trim();
-      const adminString = process.env.ADMIN_EMAILS || '';
-      const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-      if (
-        profile.role === 'app_admin' ||
-        (email && adminEmails.includes(email))
-      ) {
+      if (isAdminUser(profile as UserProfile)) {
         isDeveloper = true;
-        console.log(`[generateAIResponseStream] Quota bypassed for developer/admin: ${email}`);
+        console.log(`[generateAIResponseStream] Quota bypassed for developer/admin: ${profile.email}`);
       }
     }
   } catch (err) {
@@ -320,15 +316,9 @@ export async function generateAIResponse(
       .maybeSingle();
 
     if (profile) {
-      const email = profile.email?.toLowerCase().trim();
-      const adminString = process.env.ADMIN_EMAILS || '';
-      const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-      if (
-        profile.role === 'app_admin' ||
-        (email && adminEmails.includes(email))
-      ) {
+      if (isAdminUser(profile as UserProfile)) {
         isDeveloper = true;
-        console.log(`[generateAIResponse] Quota bypassed for developer/admin: ${email}`);
+        console.log(`[generateAIResponse] Quota bypassed for developer/admin: ${profile.email}`);
       }
     }
   } catch (err) {

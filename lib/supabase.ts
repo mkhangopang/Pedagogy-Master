@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { UserRole, SubscriptionPlan } from '../types';
+import { UserRole, SubscriptionPlan, UserProfile } from '../types';
+import { isAdminUser } from './auth/user-role';
 
 declare global {
   interface Window {
@@ -172,16 +173,18 @@ export const pulseCredentialsFromServer = async (): Promise<boolean> => {
 
 export async function getOrCreateProfile(userId: string, email?: string) {
   if (!isSupabaseConfigured()) return null;
-  const adminString = process.env.ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  const isAdminUser = email && adminEmails.includes(email.toLowerCase().trim());
+  
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
     if (profile) return profile;
+    
+    // Simulate user profile object for isAdminUser check
+    const isNewAdmin = isAdminUser({ email, role: 'teacher' } as UserProfile);
+    
     const { data: newProfile } = await supabase.from('profiles').insert({
       id: userId, email: email || '', name: email?.split('@')[0] || 'Educator',
-      role: isAdminUser ? 'app_admin' : 'teacher', plan: isAdminUser ? 'enterprise' : 'free',
-      queries_limit: isAdminUser ? 999999 : 5000
+      role: isNewAdmin ? 'app_admin' : 'teacher', plan: isNewAdmin ? 'enterprise' : 'free',
+      queries_limit: isNewAdmin ? 999999 : 5000
     }).select().single();
     return newProfile;
   } catch (err) { return null; }

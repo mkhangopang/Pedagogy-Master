@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../lib/supabase';
+import { checkAdmin } from '../../../../lib/auth/user-role';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,18 +20,8 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, plan')
-      .eq('id', user.id)
-      .single();
-
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const isEmailAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
-
-    if (!profile || (profile.role !== 'app_admin' && !isEmailAdmin)) {
-      return NextResponse.json({ error: 'Forbidden: Founder access required' }, { status: 403 });
+    if (!await checkAdmin(supabase, user.id)) {
+      return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
     }
 
     // 2. Return Secrets from Environment Variables

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
+import { isAdminUser } from '../../../../lib/auth/user-role';
+import { UserProfile } from '../../../../types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,9 +16,11 @@ export async function POST(req: NextRequest) {
     const supabase = getSupabaseServerClient(token);
     const { data: { user } } = await supabase.auth.getUser(token);
     
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const { data: profile } = await supabase.from('profiles').select('role, email').eq('id', user.id).single();
+
+    if (!isAdminUser(profile as UserProfile)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 

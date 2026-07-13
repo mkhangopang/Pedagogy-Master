@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../lib/supabase';
 import { selfImprovementEngine } from '../../../../lib/ai/self-improvement-engine';
+import { isAdminUser } from '../../../../lib/auth/user-role';
+import { UserProfile } from '../../../../types';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+async function checkAdmin(supabase: any, user: any) {
+  if (!user) return false;
+  const { data: profile } = await supabase.from('profiles').select('role, email').eq('id', user.id).single();
+  return isAdminUser(profile as UserProfile);
+}
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('Authorization');
@@ -13,10 +21,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseServerClient(token);
   const { data: { user } } = await supabase.auth.getUser(token);
 
-  const adminString = process.env.ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-
-  if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
+  if (!await checkAdmin(supabase, user)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
   }
 
@@ -32,10 +37,7 @@ export async function POST(req: NextRequest) {
   const supabase = getSupabaseServerClient(token);
   const { data: { user } } = await supabase.auth.getUser(token);
 
-  const adminString = process.env.ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-
-  if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
+  if (!await checkAdmin(supabase, user)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
   }
 
