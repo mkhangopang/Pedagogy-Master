@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
 import { checkAdmin } from '../../../lib/auth/user-role';
 import { supabase } from '../../../lib/supabase';
+import { getSynthesizer } from '../../../lib/ai/synthesizer-core';
 
 export const dynamic = 'force-dynamic';
 
