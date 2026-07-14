@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
+import { checkAdmin } from '../../../lib/auth/user-role';
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get('Authorization');
@@ -9,10 +10,8 @@ export async function GET(req: NextRequest) {
   const supabaseServer = getSupabaseServerClient(token);
   const { data: { user } } = await supabaseServer.auth.getUser(token);
   
-  const adminString = process.env.ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
-    return NextResponse.json({ error: 'Founder Access Required' }, { status: 403 });
+  if (!user || !await checkAdmin(supabaseServer, user.id)) {
+    return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
   }
 
   const tests = [];

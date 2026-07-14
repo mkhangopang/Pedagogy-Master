@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
+import { checkAdmin } from '../../../lib/auth/user-role';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,9 +12,7 @@ export async function GET(req: NextRequest) {
   const supabase = getSupabaseServerClient(token);
   const { data: { user } } = await supabase.auth.getUser(token);
   
-  const adminString = process.env.ADMIN_EMAILS || '';
-  const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-  if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
+  if (!user || !await checkAdmin(supabase, user.id)) {
     return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
   }
 

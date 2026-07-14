@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getSynthesizer } from '../../../lib/ai/synthesizer-core';
+import { getSupabaseServerClient } from '../../../lib/supabase';
+import { checkAdmin } from '../../../lib/auth/user-role';
 import { supabase } from '../../../lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -12,9 +13,7 @@ export async function POST(req: Request) {
 
     const { data: { user } } = await supabase.auth.getUser(token);
     
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    if (!user || !adminEmails.includes((user.email || '').toLowerCase())) {
+    if (!user || !await checkAdmin(supabase, user.id)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 

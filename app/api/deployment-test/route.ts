@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
-import { supabase } from '../../../lib/supabase';
+import { supabase, getSupabaseServerClient } from '../../../lib/supabase';
 import { resolveApiKey } from '../../../lib/env-server';
 import { r2Client, R2_BUCKET, isR2Configured, R2_PUBLIC_BASE_URL } from '../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { checkAdmin } from '../../../lib/auth/user-role';
 
 type TestResult = {
   name: string;
@@ -23,10 +24,10 @@ export async function GET(request: NextRequest) {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) return NextResponse.json({ error: 'Invalid session' }, { status: 401 });
 
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
-    if (!isAdmin) return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    const supabaseServer = getSupabaseServerClient(token);
+    if (!await checkAdmin(supabaseServer, user.id)) {
+      return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
+    }
 
     const results: TestResult[] = [];
     const apiKey = (process.env.API_KEY || '').trim();

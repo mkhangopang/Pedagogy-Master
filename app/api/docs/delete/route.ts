@@ -1,8 +1,9 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase as anonClient, getSupabaseAdminClient } from '../../../../lib/supabase';
+import { supabase as anonClient, getSupabaseAdminClient, getSupabaseServerClient } from '../../../../lib/supabase';
 import { r2Client, R2_BUCKET } from '../../../../lib/r2';
 import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { checkAdmin } from '../../../../lib/auth/user-role';
 
 /**
  * NEURAL NODE PURGE PROTOCOL (v10.2)
@@ -24,14 +25,11 @@ export async function DELETE(request: NextRequest) {
 
     // 2. Escalate to Admin Client immediately for robust lookup
     const adminSupabase = getSupabaseAdminClient();
+    const userSupabase = getSupabaseServerClient(token);
     
     // Check if requester is authorized Admin
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const userEmail = (user.email || '').toLowerCase().trim();
-    
     const { data: profile } = await adminSupabase.from('profiles').select('role').eq('id', user.id).single();
-    const isAppAdmin = profile?.role === 'app_admin' || adminEmails.includes(userEmail);
+    const isAppAdmin = await checkAdmin(userSupabase, user.id);
 
     // Fetch document metadata using Admin client to bypass RLS for the check
     const { data: doc, error: fetchError } = await adminSupabase.from('documents').select('*').eq('id', id).maybeSingle();

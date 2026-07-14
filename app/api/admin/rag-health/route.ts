@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../../lib/supabase';
-// Removed missing ADMIN_EMAILS import from constants
+import { checkAdmin } from '../../../../lib/auth/user-role';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,19 +13,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Auth required' }, { status: 401 });
     }
 
-    const supabase = getSupabaseServerClient();
+    const supabase = getSupabaseServerClient(token);
     const { data: { user } } = await supabase.auth.getUser(token);
     
-    if (!user) {
-      return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
-    }
-
-    // Add comment above each fix
-    // Fix: Retrieve admin emails from environment variable to resolve missing export error from constants
-    const adminString = process.env.ADMIN_EMAILS || '';
-    const adminEmails = adminString.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    const isAdmin = user.email && adminEmails.includes(user.email.toLowerCase());
-    if (!isAdmin) {
+    if (!user || !await checkAdmin(supabase, user.id)) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 });
     }
 
