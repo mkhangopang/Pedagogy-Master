@@ -15,7 +15,7 @@ jobs:
       uses: actions/setup-node@v3
       with:
         node-version: 'lts/*'   # use the active LTS
-    - run: npm ci                # deterministic install for CI
+    - run: npm install          # use npm install to avoid ci failures with local file deps
     - run: npm run build
     - run: npm run test
     - run: npm audit --audit-level=high
