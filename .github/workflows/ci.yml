@@ -18,5 +18,5 @@ jobs:
     - run: npm install
     - run: npm run build
     - run: npm run test
-    - run: npm audit fix --force
+    - run: npm audit fix
     - run: npm audit --audit-level=high

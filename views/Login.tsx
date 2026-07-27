@@ -59,6 +59,10 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
       if (view === 'login') {
         const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password });
         if (authError) {
+           console.error("Auth Error:", authError);
+           if (authError.message.includes('Invalid login credentials')) {
+             throw new Error("Invalid email or password. Please check your credentials or use 'Forgot Password' if you signed up with Google.");
+           }
            if (authError.message.includes('Email not confirmed')) {
              throw new Error("Verification Pending: Check your inbox or adjust Supabase Auth settings.");
            }
@@ -79,8 +83,12 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
         if (authError) throw authError;
         if (data.user && !data.session) setView('signup-success');
       } else if (view === 'forgot-password') {
+        console.log("Resetting password for:", email);
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
-        if (resetError) throw resetError;
+        if (resetError) {
+          console.error("Reset Error:", resetError);
+          throw resetError;
+        }
         setView('reset-sent');
       }
     } catch (err: any) {
