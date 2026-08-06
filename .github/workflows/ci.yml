@@ -14,8 +14,9 @@ jobs:
     - name: Use Node.js
       uses: actions/setup-node@v3
       with:
-        node-version: 'lts/*'   # use the active LTS
-    - run: npm install          # use npm install to avoid ci failures with local file deps
+        node-version: '20'
+    - run: npm install
     - run: npm run build
     - run: npm run test
+    - run: npm audit fix
     - run: npm audit --audit-level=high

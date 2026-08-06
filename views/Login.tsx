@@ -29,10 +29,19 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
     // Initialize Turnstile if available
     const win = window as any;
     if (win.turnstile) {
+      console.log("Turnstile found, rendering...");
       win.turnstile.render('#turnstile-widget', {
         sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA', // Use demo key if none provided
-        callback: (token: string) => setCaptchaToken(token),
+        callback: (token: string) => {
+          console.log("Turnstile token received:", token);
+          setCaptchaToken(token);
+        },
+        'error-callback': (err: any) => {
+          console.error("Turnstile error:", err);
+        }
       });
+    } else {
+        console.warn("Turnstile not found in window object.");
     }
   }, [view]);
 
@@ -61,10 +70,10 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
         if (authError) {
            console.error("Auth Error:", authError);
            if (authError.message.includes('Invalid login credentials')) {
-             throw new Error("Invalid email or password. Please check your credentials or use 'Forgot Password' if you signed up with Google.");
+             throw new Error("Invalid email or password. If you originally signed up with Google, please use the 'Continue with Google' button.");
            }
            if (authError.message.includes('Email not confirmed')) {
-             throw new Error("Verification Pending: Check your inbox or adjust Supabase Auth settings.");
+             throw new Error("Verification Pending: Check your inbox.");
            }
            throw authError;
         }
@@ -72,6 +81,7 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
       } else if (view === 'signup') {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
         
+        console.log("Attempting signup with token:", !!captchaToken);
         const { data, error: authError } = await supabase.auth.signUp({ 
           email, 
           password,
