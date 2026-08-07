@@ -75,6 +75,9 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
            if (authError.message.includes('Email not confirmed')) {
              throw new Error("Verification Pending: Check your inbox.");
            }
+           if (authError.message.includes('User already registered')) {
+             throw new Error("An account with this email already exists. Please try signing in instead.");
+           }
            throw authError;
         }
         if (data.session) onSession(data.session);
@@ -90,7 +93,12 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
             captchaToken: captchaToken || undefined
           }
         });
-        if (authError) throw authError;
+        if (authError) {
+          if (authError.message.includes('User already registered')) {
+            throw new Error("An account with this email already exists. Please try signing in instead.");
+          }
+          throw authError;
+        }
         if (data.user && !data.session) setView('signup-success');
       } else if (view === 'forgot-password') {
         console.log("Resetting password for:", email);
