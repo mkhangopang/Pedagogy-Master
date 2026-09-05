@@ -33,9 +33,9 @@ export class SynthesizerCore {
     // TIER 1: HIGH-CAPACITY REASONERS (World-Class Pedagogy)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 2.0 Pro',
+      name: 'Gemini 3.6 Flash (Pedagogy)',
       endpoint: 'native',
-      model: 'gemini-2.0-pro-exp',
+      model: 'gemini-3.6-flash',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 32768,
       rpm: 1000,
@@ -46,9 +46,9 @@ export class SynthesizerCore {
 
     providers.set('gemini-thinking', {
       id: 'gemini-thinking',
-      name: 'Thinking Grid (Gemini 2.5)',
+      name: 'Thinking Grid (Gemini 3.6)',
       endpoint: 'native',
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: 'gemini-3.6-flash',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 65536,
       thinkingLevel: ThinkingLevel.HIGH,
@@ -87,13 +87,13 @@ export class SynthesizerCore {
     // TIER 2: HIGH-SPEED PRODUCTION ENGINES
     providers.set('gemini-flash', {
       id: 'gemini-flash',
-      name: 'Gemini 2.0 Flash',
+      name: 'Gemini 3.5 Flash',
       endpoint: 'native',
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.5-flash',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 16384,
-      rpm: 15,
-      rpd: 1500,
+      rpm: 1000,
+      rpd: 50000,
       tier: 2,
       enabled: true
     });
@@ -140,13 +140,26 @@ export class SynthesizerCore {
     // TIER 3: UTILITY & FALLBACK NODES
     providers.set('gemini-flash-lite', {
       id: 'gemini-flash-lite',
-      name: 'Gemini 1.5 Flash-Lite',
+      name: 'Gemini 3.5 Flash-Lite',
       endpoint: 'native',
-      model: 'gemini-1.5-flash-lite',
+      model: 'gemini-3.5-flash-lite',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 8192,
-      rpm: 100,
-      rpd: 10000,
+      rpm: 1000,
+      rpd: 50000,
+      tier: 3,
+      enabled: true
+    });
+
+    providers.set('gemini-2.5-flash', {
+      id: 'gemini-2.5-flash',
+      name: 'Gemini 2.5 Flash',
+      endpoint: 'native',
+      model: 'gemini-2.5-flash',
+      apiKeyEnv: 'GEMINI_API_KEY',
+      maxTokens: 8192,
+      rpm: 1000,
+      rpd: 50000,
       tier: 3,
       enabled: true
     });
@@ -221,8 +234,9 @@ export class SynthesizerCore {
       });
 
     if (candidates.length === 0) {
-      yield "AI Alert: Synthesis grid saturated. Emergency realignment initiated...";
+      console.warn("⚠️ [Grid Stream] All nodes temporarily marked saturated. Emergency realignment initiated.");
       this.realignGrid();
+      yield* this.synthesizeStream(prompt, options);
       return;
     }
 
@@ -282,6 +296,33 @@ export class SynthesizerCore {
         this.failedProviders.set(provider.id, { until: Date.now() + cooldown, retries: 0 });
         console.warn(`🔴 [Grid Stream] Node ${provider.name} saturated. Failover initiated. Error: ${msg}`);
       }
+    }
+
+    // Direct resilient fallback if all selected candidates fail
+    console.warn("⚠️ [Grid Stream] Candidates exhausted. Attempting direct fallback synthesis.");
+    try {
+      const apiKey = resolveApiKey();
+      if (apiKey) {
+        const ai = new GoogleGenAI({ apiKey });
+        const fallbackStream = await ai.models.generateContentStream({
+          model: 'gemini-3.6-flash',
+          contents: [
+            ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
+            { role: 'user', parts: [{ text: prompt }] }
+          ],
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: 0.2
+          }
+        });
+        for await (const chunk of fallbackStream) {
+          if (chunk.text) yield chunk.text;
+        }
+        return;
+      }
+    } catch (finalErr: any) {
+      console.error("Critical AI generation error in emergency fallback:", finalErr);
+      yield "⚠️ The pedagogical synthesis grid is temporarily experiencing high latency. Please submit your request once more.";
     }
   }
 
@@ -371,6 +412,28 @@ export class SynthesizerCore {
         this.failedProviders.set(provider.id, { until: Date.now() + cooldown, retries: currentFails + 1 });
         console.warn(`🔴 [Grid] Node ${provider.name} saturated. Failover initiated. Error: ${msg}`);
       }
+    }
+
+    // Direct resilient fallback
+    try {
+      const apiKey = resolveApiKey();
+      if (apiKey) {
+        const ai = new GoogleGenAI({ apiKey });
+        const res = await ai.models.generateContent({
+          model: 'gemini-3.6-flash',
+          contents: [
+            ...history.map((h: any) => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
+            { role: 'user', parts: [{ text: prompt }] }
+          ],
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: 0.2
+          }
+        });
+        return { text: res.text || '', provider: 'Gemini 3.6 Flash (Direct Fallback)' };
+      }
+    } catch (e: any) {
+      console.error("Critical emergency synthesis error:", e);
     }
     throw new Error("AI Alert: Global Synthesis Failure. All engines saturated.");
   }

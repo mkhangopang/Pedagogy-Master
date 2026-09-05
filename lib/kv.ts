@@ -73,6 +73,25 @@ class KVStore {
     }
   }
 
+  async incr(key: string, ttlSeconds: number = 86400): Promise<number> {
+    if (this.isRedisActive()) {
+      try {
+        const res = await fetch(`${this.redisUrl}/incr/${key}`, {
+          headers: { Authorization: `Bearer ${this.redisToken}` }
+        });
+        const data = await res.json();
+        if (typeof data.result === 'number') return data.result;
+      } catch (e) {
+        console.warn('⚠️ [KV] Redis Incr Error.');
+      }
+    }
+
+    const current = (await this.get<number>(key)) || 0;
+    const next = current + 1;
+    await this.set(key, next, ttlSeconds);
+    return next;
+  }
+
   async delete(key: string): Promise<void> {
     if (this.isRedisActive()) {
       await fetch(`${this.redisUrl}/del/${key}`, {

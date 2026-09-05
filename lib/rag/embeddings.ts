@@ -25,8 +25,11 @@ async function callEmbeddingAPI(
   attempt: number
 ): Promise<number[][]> {
   const result = await ai.models.embedContent({
-    model: 'text-embedding-004',
+    model: 'gemini-embedding-001',
     contents: texts,
+    config: {
+      outputDimensionality: 768,
+    },
   });
 
   const rawEmbeddings = result.embeddings || [];

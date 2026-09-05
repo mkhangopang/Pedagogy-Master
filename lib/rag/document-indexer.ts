@@ -4,6 +4,57 @@ import { extractSLOCodes, normalizeSLO } from './slo-extractor';
 import { Buffer } from 'buffer';
 
 /**
+ * Helper to convert structured curriculum JSON into clean hierarchical Markdown for RAG chunking.
+ */
+export function formatCurriculumContentToMarkdown(rawContent: string): string {
+  if (!rawContent || typeof rawContent !== 'string') return '';
+  const trimmed = rawContent.trim();
+  if (!trimmed.startsWith('{')) return rawContent;
+
+  try {
+    const data = JSON.parse(trimmed);
+    if (!data || typeof data !== 'object') return rawContent;
+
+    if (data.grades || data.curriculum || data.domains) {
+      let md = `# ${data.curriculum?.name || 'Curriculum Standards'}\n\n`;
+      if (data.curriculum?.subject) md += `Subject: ${data.curriculum.subject}\n`;
+      if (data.curriculum?.grade_range) md += `Grade Range: ${data.curriculum.grade_range}\n\n`;
+
+      if (data.grades) {
+        const gradeKeys = Object.keys(data.grades).sort((a, b) => {
+          const numA = parseInt(a, 10);
+          const numB = parseInt(b, 10);
+          if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+          return a.localeCompare(b);
+        });
+
+        for (const gradeKey of gradeKeys) {
+          const gradeVal = data.grades[gradeKey];
+          md += `## GRADE ${gradeKey} (${gradeVal.display_name || 'Grade ' + gradeKey})\n\n`;
+          if (gradeVal.domains) {
+            for (const [domKey, domVal] of Object.entries(gradeVal.domains as Record<string, any>)) {
+              md += `### DOMAIN ${domKey} - ${domVal.domain_name || domKey}\n\n`;
+              if (Array.isArray(domVal.slos)) {
+                for (const slo of domVal.slos) {
+                  const code = slo.slo_id || slo.original_code || '';
+                  const bloom = slo.bloom_level ? ` [${slo.bloom_level}]` : '';
+                  md += `- ${code}${bloom}: ${slo.full_text || ''}\n`;
+                }
+                md += '\n';
+              }
+            }
+          }
+        }
+      }
+      return md;
+    }
+    return rawContent;
+  } catch {
+    return rawContent;
+  }
+}
+
+/**
  * ADVANCED STRUCTURE-AWARE INDEXER (v7.0)
  * Logic: Tree-based chunk graph with Explicit Performance Metrics.
  */
@@ -14,8 +65,9 @@ export async function indexDocumentForRAG(
   jobId?: string
 ) {
   try {
-    const lines = content.split('\n');
-    const dialect = content.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
+    const normalizedContent = formatCurriculumContentToMarkdown(content);
+    const lines = normalizedContent.split('\n');
+    const dialect = normalizedContent.match(/<!-- MASTER_MD_DIALECT: (.+?) -->/)?.[1] || 'Standard';
 
     let currentSubject = "N/A";
     let currentGrade = "N/A";

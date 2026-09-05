@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
         const key = apiKey || resolveApiKey();
         const ai = new GoogleGenAI({ apiKey: key });
         const response = await ai.models.generateContent({
-          model: 'gemini-2.0-flash',
+          model: 'gemini-3.6-flash',
           contents: [{ role: 'user', parts: [{ text: 'Ping connectivity test' }] }]
         });
         results.push({

@@ -20,9 +20,9 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const MODEL_PRIMARY  = 'gemini-2.0-flash';
-const MODEL_LITE     = 'gemini-2.0-flash-lite';
-const MODEL_FALLBACK = 'gemini-2.0-flash-lite';
+const MODEL_PRIMARY  = 'gemini-3.6-flash';
+const MODEL_LITE     = 'gemini-3.5-flash';
+const MODEL_FALLBACK = 'gemini-3.5-flash-lite';
 
 const CHUNK_SIZE  = 10000;
 const OVERLAP     = 2500;
