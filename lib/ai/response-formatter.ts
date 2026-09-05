@@ -38,7 +38,7 @@ function getToolSpecificInstructions(tool: string, slo?: string): string {
       return `
 ### 🛠️ TOOL: MASTER LESSON SYNTHESIZER (INSTITUTIONAL v5.0)
 1. **SUBJECT-SPECIFIC RIGOR**:
-   - For Mathematics: Execute Singapore Math CPA (Concrete-Pictorial-Abstract) with named physical manipulatives, explicit visual sketching conventions, and strict LaTeX formulas ($...$ inline, $$...$$ block).
+   - For Mathematics: Execute Singapore Math CPA (Concrete-Pictorial-Abstract) with named physical manipulatives, explicit visual sketching conventions, and high-fidelity typography. Write standard numerals, percentages, and basic place-value equations cleanly (e.g. 99, 85%, 34 = 30 + 4, > and <) without dollar signs. Reserve LaTeX ($...$ inline, $$...$$ block) strictly for complex formulas, fractions, and algebraic equations.
    - For Sciences: Execute 5E Inquiry / Phenomenon-Based Learning with empirical variable control and Claim-Evidence-Reasoning (CER) synthesis.
    - For Languages/Humanities: Execute Gradual Release of Responsibility (GRR), mentor text analysis, and Tier 2/3 academic vocabulary routines.
 2. **MANDATORY INSTITUTIONAL SECTIONS**:

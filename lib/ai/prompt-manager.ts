@@ -23,7 +23,7 @@ const TOOL_EXPERT_PROMPTS: Record<ToolType, string> = {
    - Strictly execute the **Singapore Math CPA (Concrete-Pictorial-Abstract)** progression.
    - **Concrete**: Name exact physical manipulatives (e.g., base-ten blocks, ten-frames, counters, fraction tiles, algebra tiles, geoboards) and specify physical student manipulation steps.
    - **Pictorial**: Provide exact visual sketching conventions (e.g., sticks-and-dots, number bonds, ten-frame grids, tape diagrams, bar models).
-   - **Abstract**: Present clean symbolic notation and equations using strict LaTeX format ($...$ for inline, $$...$$ for block math).
+   - **Abstract**: Present clean place-value equations and symbolic notation in clean standard typography (e.g., 34 = 30 + 4, 52 > 25). Reserve LaTeX ($...$ inline, $$...$$ block) strictly for complex formulas, fractions (\\frac{a}{b}), roots, and algebraic variables. Never wrap isolated numerals, digits, counts, or percentages in dollar signs.
    - Address foundational cognitive mechanisms (e.g., unitizing, place value decomposition, multiplicative reasoning).
 
 2. **SCIENCES (Physics, Chemistry, Biology, Environmental, General Science)**:
@@ -199,11 +199,24 @@ ${customInstructions}
 
 [OUTPUT_FORMAT_DIRECTIVE]
 Always use clean, highly readable Markdown with professional typography and clear section headers.
-[MATH_STANDARDS]: Use LaTeX for ALL mathematical expressions, including percentages (e.g., $100\\%$), complexity notation (e.g., $O(n^2)$), units, variables, and formulas.
-- Use $...$ for inline math.
-- Use $$...$$ for block math.
-- Avoid raw dollar signs for currency; use 'USD', 'PKR', or similar.
-- Ensure all LaTeX syntax is valid and fully rendered.
+
+[HIGH_FIDELITY_NUMERACY_AND_TYPOGRAPHY_MANDATE]:
+- NEVER wrap ordinary numbers, digits, counts, grades, percentages, or ratios in dollar signs or LaTeX:
+  - Write: 99, 43 counters, 85%, Grade 1, 0 to 9, 3 ten-rods, 4 ones, 7 tens (70)
+  - NEVER write: $99$, $43$, $85\%$, $0$, $9$, $3$, $4$, $7$, or $70$.
+- NEVER wrap basic comparison or equality symbols in dollar signs:
+  - Write: >, <, =, or 'greater than', 'less than'
+  - NEVER write: $>$, $<$, ($<, >, =$), or (\\langle, \\rangle).
+- For simple elementary arithmetic and place-value decomposition, write clean, plain equations without dollar signs:
+  - Write: 34 = 30 + 4, 52 > 25, 64 > 46, 20 + 5 = 25
+  - NEVER write: $34 = 30 + 4$, $52 > 25$.
+- RESERVE LaTeX ($...$ inline, $$...$$ block) ONLY for advanced mathematical notation:
+  - Fractions: e.g. $\\frac{3}{4}$
+  - Exponents / Polynomials: e.g. $x^2 + y^2 = r^2$
+  - Roots, Integrals, Summations: e.g. $\\sqrt{x}$, $\\sum_{i=1}^n$
+  - Scientific formulas: e.g. $E = mc^2$, $F = G\\frac{m_1 m_2}{r^2}$
+- Ensure all LaTeX syntax is standard and clean without weird element-of symbols like \\in for ordinary prepositions. Write 'in words', 'in 2s', 'in numerals' as plain English words!
+- For currency, use 'USD', 'PKR', 'EUR', or 'cents'—never raw dollar signs.
 
 Use '--- Workflow Recommendation: [Tool_ID] | [Reason] ---' at the very end.
 `;
