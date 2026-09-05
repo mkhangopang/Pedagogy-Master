@@ -1,12 +1,20 @@
 import React from 'react';
-import HydrationBoundary from '../components/HydrationBoundary';
+import type { Metadata } from 'next';
 import './globals.css';
-import 'katex/dist/katex.min.css';
+
+export const metadata: Metadata = {
+  title: 'Pedagogy Master AI',
+  description: 'A production-ready EdTech SaaS platform for intelligent curriculum analysis and pedagogical tool generation.',
+  openGraph: {
+    title: 'Pedagogy Master AI',
+    description: 'A production-ready EdTech SaaS platform for intelligent curriculum analysis and pedagogical tool generation.',
+  },
+};
 
 /**
- * RootLayout (v7.0)
- * Valid Next.js Root Layout for Production Deployment.
- * Ensures the document shell is present for Vercel/Next.js runtime.
+ * RootLayout (v7.1 - Performance Optimized)
+ * Direct SSR rendering for instantaneous Largest Contentful Paint (LCP).
+ * Eliminates synthetic hydration spinners on initial document request.
  */
 export default function RootLayout({
   children,
@@ -20,13 +28,7 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning className="h-full antialiased bg-slate-50 dark:bg-slate-950 font-sans selection:bg-indigo-500 selection:text-white">
         <div id="root" className="min-h-full">
-          <HydrationBoundary fallback={
-            <div className="h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
-              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          }>
-            {children}
-          </HydrationBoundary>
+          {children}
         </div>
       </body>
     </html>

@@ -3,5 +3,8 @@
   "description": "A production-ready EdTech SaaS platform for intelligent curriculum analysis and pedagogical tool generation.",
   "requestFramePermissions": [
     "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]
 }

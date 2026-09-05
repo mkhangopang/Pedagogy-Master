@@ -151,24 +151,7 @@ export const isSupabaseConfigured = (): boolean => {
 };
 
 export const pulseCredentialsFromServer = async (): Promise<boolean> => {
-  if (typeof window === 'undefined') return false;
-  try {
-    const res = await fetch('/api/check-env', { cache: 'no-store' });
-    if (!res.ok) return false;
-    const data = await res.json();
-      if (data.config.url && data.config.key && !data.config.key.includes('...')) {
-        const { url: currentUrl, key: currentKey } = getCredentials();
-        if (data.config.url !== currentUrl || data.config.key !== currentKey) {
-          const win = window as any;
-          win.env = win.env || {};
-          win.env.NEXT_PUBLIC_SUPABASE_URL = data.config.url;
-          win.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = data.config.key;
-          refreshSupabaseInstance();
-          return true;
-        }
-      }
-    return false;
-  } catch (err) { return false; }
+  return isSupabaseConfigured();
 };
 
 export async function getOrCreateProfile(userId: string, email?: string) {

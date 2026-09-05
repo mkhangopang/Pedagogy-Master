@@ -27,9 +27,19 @@
   }
 
   * {
-    @apply transition-colors duration-200;
     -webkit-tap-highlight-color: transparent;
   }
+
+  button, a, input, select, textarea, .transition-colors {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 200ms;
+  }
+}
+
+.content-visibility-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 600px;
 }
 
 /* Typographic Normalization: Smooth Moderate Weights */

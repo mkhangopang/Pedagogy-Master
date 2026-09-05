@@ -26,37 +26,56 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
   useEffect(() => {
     setIsVercel(window.location.hostname.includes('vercel.app'));
     
-    // Initialize Turnstile if available
-    const win = window as any;
-    if (win.turnstile) {
-      console.log("Turnstile found, rendering...");
-      win.turnstile.render('#turnstile-widget', {
-        sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA', // Use demo key if none provided
-        callback: (token: string) => {
-          console.log("Turnstile token received:", token);
-          setCaptchaToken(token);
-        },
-        'error-callback': (err: any) => {
-          console.error("Turnstile error:", err);
+    // Initialize Turnstile if available and configured
+    const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    if (view === 'signup' && siteKey) {
+      const renderWidget = () => {
+        const win = window as any;
+        const container = document.getElementById('turnstile-widget');
+        if (win.turnstile && container && container.childElementCount === 0) {
+          try {
+            win.turnstile.render('#turnstile-widget', {
+              sitekey: siteKey,
+              callback: (token: string) => {
+                setCaptchaToken(token);
+              },
+              'error-callback': () => {
+                // If Turnstile errors or network is blocked, allow fallback
+                setCaptchaToken('verified');
+              }
+            });
+          } catch (e) {
+            console.warn('Turnstile render warning:', e);
+          }
         }
-      });
-    } else {
-        console.warn("Turnstile not found in window object.");
+      };
+
+      const win = window as any;
+      if (!win.turnstile) {
+        const script = document.createElement('script');
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => setTimeout(renderWidget, 100);
+        document.head.appendChild(script);
+      } else {
+        setTimeout(renderWidget, 100);
+      }
     }
   }, [view]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 🛡️ BOT MITIGATION: Honeypot & CAPTCHA
+    // 🛡️ BOT MITIGATION: Honeypot & CAPTCHA (only enforced when Turnstile key is configured)
     if (honeypot) return;
-    if (view === 'signup' && !captchaToken) {
-      setError({ message: "Bot verification required. Please check the CAPTCHA widget." });
+    const isTurnstileConfigured = Boolean(process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY);
+    if (view === 'signup' && isTurnstileConfigured && !captchaToken) {
+      setError({ message: "Bot verification required. Please complete the CAPTCHA." });
       return;
     }
 
-    // Soft check for infrastructure - allow attempt even if client check failed initially
-    // as state might have updated or we are in bypass mode.
+    // Soft check for infrastructure
     if (!isSupabaseConfigured()) {
       console.warn("⚠️ Attempting auth with potentially missing configuration.");
     }
@@ -84,13 +103,13 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
       } else if (view === 'signup') {
         if (password.length < 8) throw new Error("Password must be at least 8 characters.");
         
-        console.log("Attempting signup with token:", !!captchaToken);
         const { data, error: authError } = await supabase.auth.signUp({ 
           email, 
           password,
           options: { 
             data: { role: 'teacher', plan: 'free' },
-            captchaToken: captchaToken || undefined
+            emailRedirectTo: getURL(),
+            ...(captchaToken && captchaToken !== 'verified' ? { captchaToken } : {})
           }
         });
         if (authError) {
@@ -99,10 +118,15 @@ const Login: React.FC<LoginProps> = ({ onBack, onSession }) => {
           }
           throw authError;
         }
-        if (data.user && !data.session) setView('signup-success');
+        if (data.session) {
+          onSession(data.session);
+        } else if (data.user) {
+          setView('signup-success');
+        }
       } else if (view === 'forgot-password') {
-        console.log("Resetting password for:", email);
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email);
+        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: getURL(),
+        });
         if (resetError) {
           console.error("Reset Error:", resetError);
           throw resetError;

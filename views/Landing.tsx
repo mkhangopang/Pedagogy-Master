@@ -18,30 +18,41 @@ interface LandingProps {
 
 /**
  * Modern Scroll Reveal Hook
- * Animates nodes as they enter the viewport
+ * Pre-reveals above-the-fold hero elements so LCP is instant and not delayed by JS execution.
  */
+const HERO_NODES = new Set(['h-badge', 'h-title', 'h-desc', 'h-cta', 'h-vis']);
+
 const useScrollReveal = () => {
-  const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [revealed, setRevealed] = useState<Set<string>>(() => new Set(HERO_NODES));
   
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
-            setRevealed((prev) => new Set([...Array.from(prev), entry.target.id]));
+            setRevealed((prev) => {
+              if (prev.has(entry.target.id)) return prev;
+              const next = new Set(prev);
+              next.add(entry.target.id);
+              return next;
+            });
           }
         });
       },
-      { threshold: 0.1, rootMargin: '0px 0px -100px 0px' }
+      { threshold: 0.05, rootMargin: '60px' }
     );
 
-    document.querySelectorAll('.reveal-node').forEach((node) => observer.observe(node));
+    document.querySelectorAll('.reveal-node').forEach((node) => {
+      if (!HERO_NODES.has(node.id)) {
+        observer.observe(node);
+      }
+    });
     return () => observer.disconnect();
   }, []);
 
   return (id: string) => revealed.has(id) 
     ? 'opacity-100 translate-y-0 scale-100' 
-    : 'opacity-0 translate-y-16 scale-[0.97]';
+    : 'opacity-0 translate-y-8 scale-[0.98]';
 };
 
 const Landing: React.FC<LandingProps> = ({ onStart }) => {
@@ -81,7 +92,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
             </button>
           </div>
           
-          <button onClick={onStart} className="lg:hidden p-2 text-slate-900 dark:text-white">
+          <button onClick={onStart} className="lg:hidden p-2 text-slate-900 dark:text-white" aria-label="Start">
             <MousePointer2 size={24} />
           </button>
         </div>
@@ -91,21 +102,22 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
       <section className="relative min-h-[90vh] flex items-center pt-24 px-4 md:px-8">
         <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           <div className="space-y-8 md:space-y-12 z-10 text-center lg:text-left">
-            <div className={`reveal-node inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-500/20 rounded-full transition-all duration-1000 ${reveal('h-badge')}`} id="h-badge">
+            <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-500/20 rounded-full" id="h-badge">
               <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">Deterministic Curriculum AI</span>
             </div>
 
-            <h1 className={`reveal-node text-5xl md:text-7xl lg:text-[8rem] font-black text-slate-900 dark:text-white tracking-tighter leading-[0.85] transition-all duration-1000 delay-100 ${reveal('h-title')}`} id="h-title">
+            {/* LCP Element: Rendered immediately with zero opacity animation delay */}
+            <h1 className="text-5xl md:text-7xl lg:text-[8rem] font-black text-slate-900 dark:text-white tracking-tighter leading-[0.85]" id="h-title">
               Precision <br /> 
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-purple-500 to-indigo-600 animate-gradient-x">Pedagogy.</span>
             </h1>
 
-            <p className={`reveal-node text-lg md:text-xl text-slate-500 dark:text-slate-400 leading-relaxed font-medium max-w-2xl mx-auto lg:mx-0 transition-all duration-1000 delay-200 ${reveal('h-desc')}`} id="h-desc">
+            <p className="text-lg md:text-xl text-slate-500 dark:text-slate-400 leading-relaxed font-medium max-w-2xl mx-auto lg:mx-0" id="h-desc">
               Ground your instructional design in verified standards. Sync your curriculum PDFs, generate 5E lesson plans, and track student mastery with zero AI hallucination.
             </p>
 
-            <div className={`reveal-node flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-6 transition-all duration-1000 delay-300 ${reveal('h-cta')}`} id="h-cta">
+            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-6" id="h-cta">
               <button 
                 onClick={onStart}
                 className="w-full sm:w-auto px-12 py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 hover:-translate-y-1 transition-all flex items-center justify-center gap-4 group"
@@ -121,7 +133,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
           </div>
 
           {/* Interactive Feature Visual */}
-          <div className={`reveal-node relative transition-all duration-1000 delay-500 ${reveal('h-vis')}`} id="h-vis">
+          <div className="relative" id="h-vis">
              <div className="absolute inset-0 bg-indigo-600/10 blur-[80px] rounded-full animate-pulse" />
              <div className="relative bg-white dark:bg-[#0a0a0a] p-1.5 rounded-[3.5rem] border border-slate-200 dark:border-white/5 shadow-2xl overflow-hidden group">
                 <div className="bg-slate-50 dark:bg-[#111] p-6 md:p-10 rounded-[3rem] space-y-8">
@@ -174,7 +186,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
       </section>
 
       {/* Feature Bento Grid */}
-      <section id="vault" className="py-32 px-4 md:px-8">
+      <section id="vault" className="py-32 px-4 md:px-8 content-visibility-auto">
         <div className="max-w-7xl mx-auto space-y-20">
            <div className={`reveal-node text-center space-y-4 transition-all duration-1000 ${reveal('b-header')}`} id="b-header">
               <h2 className="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tighter">Real Infrastructure.</h2>
@@ -223,7 +235,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
       </section>
 
       {/* Synthesis Showcase */}
-      <section id="synthesis" className="py-32 px-4 md:px-8 bg-slate-50 dark:bg-[#080808] relative overflow-hidden">
+      <section id="synthesis" className="py-32 px-4 md:px-8 bg-slate-50 dark:bg-[#080808] relative overflow-hidden content-visibility-auto">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 md:gap-24 items-center">
            <div className={`reveal-node space-y-10 transition-all duration-1000 ${reveal('net-content')}`} id="net-content">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest">Synthesis Hub</div>
@@ -254,7 +266,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
       </section>
 
       {/* Call to Action */}
-      <section id="enterprise" className="py-32 px-4 md:px-8">
+      <section id="enterprise" className="py-32 px-4 md:px-8 content-visibility-auto">
         <div className={`reveal-node max-w-7xl mx-auto bg-indigo-600 rounded-[3rem] md:rounded-[5rem] p-10 md:p-24 text-white relative overflow-hidden shadow-2xl transition-all duration-1000 ${reveal('e-cta')}`} id="e-cta">
           <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-white opacity-[0.08] rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2" />
           

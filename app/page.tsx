@@ -1,10 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense, lazy, useCallback, useRef } from 'react';
-import { supabase, getSupabaseHealth, getOrCreateProfile, isSupabaseConfigured, getCredentials, pulseCredentialsFromServer, refreshSupabaseInstance } from '../lib/supabase';
-import Sidebar from '../components/Sidebar';
-import Dashboard from '../views/Dashboard';
-import Login from '../views/Login';
+import { supabase, getSupabaseHealth, getOrCreateProfile, isSupabaseConfigured, getCredentials, refreshSupabaseInstance } from '../lib/supabase';
 import Landing from '../views/Landing';
 import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
@@ -12,6 +9,10 @@ import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff, RefreshCw, ArrowRight } from 'lucide-react';
 
+// Code-split heavy views to keep the landing page bundle minimal
+const Sidebar = lazy(() => import('../components/Sidebar'));
+const Dashboard = lazy(() => import('../views/Dashboard'));
+const Login = lazy(() => import('../views/Login'));
 const DocumentsView = lazy(() => import('../views/Documents'));
 const ChatView = lazy(() => import('../views/Chat'));
 const ToolsView = lazy(() => import('../views/Tools'));
@@ -159,9 +160,6 @@ export default function App() {
 
     const initializeAuth = async () => {
       try {
-        // Ensure we have fresh credentials
-        await pulseCredentialsFromServer();
-        
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
           console.log(`📡 [Auth] Event: ${event}`, currentSession ? "Session Active" : "No Session");
           
@@ -190,24 +188,23 @@ export default function App() {
       } catch (err) {
         console.error('📡 [System] Auth initialization failed:', err);
       } finally {
-        // Delay clearing the loader slightly to ensure session state propagates
-        setTimeout(() => setIsAuthResolving(false), 300);
+        setIsAuthResolving(false);
       }
     };
 
-    const timeout = setTimeout(() => {
-      if (initStarted.current) return;
+    if (!initStarted.current) {
       initStarted.current = true;
       initializeAuth();
-    }, 100);
+    }
 
     return () => {
-      clearTimeout(timeout);
       if (authSubscription) authSubscription.unsubscribe();
     };
   }, [fetchAppData, isViewHydrated]);
 
-  if (isAuthResolving && !bypassHandshake) return (
+  // Only show full-screen auth resolving if the user is trying to view a protected workspace view
+  const isProtectedView = currentView !== 'landing' && currentView !== 'login';
+  if (isAuthResolving && isProtectedView && !bypassHandshake) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
       <div className="bg-white dark:bg-slate-900 p-12 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col items-center">
         <Cpu className="text-indigo-600 w-16 h-16 animate-pulse mb-6" />
@@ -222,7 +219,13 @@ export default function App() {
   );
   
   if (!session) {
-    if (currentView === 'login') return <Login onSession={setSession} onBack={() => setCurrentView('landing')} />;
+    if (currentView === 'login') {
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
+          <Login onSession={setSession} onBack={() => setCurrentView('landing')} />
+        </Suspense>
+      );
+    }
     return <Landing onStart={() => setCurrentView('login')} />;
   }
 
@@ -236,7 +239,9 @@ export default function App() {
     <div className={`flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden print:h-auto print:overflow-visible ${theme === 'dark' ? 'dark' : ''}`}>
       {isSidebarOpen && <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
       <div className={`fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out no-print ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'} ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
-        <Sidebar currentView={currentView} onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
+        <Suspense fallback={<div className="w-64 h-full bg-white dark:bg-slate-900 border-r dark:border-slate-800" />}>
+          <Sidebar currentView={currentView} onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
+        </Suspense>
       </div>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:overflow-visible">
         {safeProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
