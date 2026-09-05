@@ -14,6 +14,7 @@
     "@aws-sdk/s3-request-presigner": "^3.714.0",
     "@google/genai": "1.34.0",
     "@supabase/supabase-js": "^2.110.7",
+    "@vercel/speed-insights": "^2.0.0",
     "axios": "^1.7.7",
     "buffer": "6.0.3",
     "cheerio": "^1.0.0-rc.12",
