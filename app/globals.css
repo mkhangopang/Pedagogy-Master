@@ -42,6 +42,24 @@
   contain-intrinsic-size: 0 600px;
 }
 
+/* Zero-JS-Overhead Scroll Animations */
+.reveal-on-scroll {
+  opacity: 0;
+  transform: translateY(1.25rem);
+  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+
+.reveal-on-scroll.is-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Isolate Hero element layouts from document reflow */
+#h-title, #h-desc, #h-badge, #h-cta {
+  contain: layout style;
+}
+
 /* Typographic Normalization: Smooth Moderate Weights */
 .font-black { @apply font-bold; }
 .tracking-tighter { @apply tracking-tight; }

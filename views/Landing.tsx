@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { 
   ArrowRight, BrainCircuit, ShieldCheck, 
   Zap, FileText, Globe, GraduationCap, 
@@ -16,47 +16,34 @@ interface LandingProps {
   onStart: () => void;
 }
 
-/**
- * Modern Scroll Reveal Hook
- * Pre-reveals above-the-fold hero elements so LCP is instant and not delayed by JS execution.
- */
-const HERO_NODES = new Set(['h-badge', 'h-title', 'h-desc', 'h-cta', 'h-vis']);
-
-const useScrollReveal = () => {
-  const [revealed, setRevealed] = useState<Set<string>>(() => new Set(HERO_NODES));
-  
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setRevealed((prev) => {
-              if (prev.has(entry.target.id)) return prev;
-              const next = new Set(prev);
-              next.add(entry.target.id);
-              return next;
-            });
-          }
-        });
-      },
-      { threshold: 0.05, rootMargin: '60px' }
-    );
-
-    document.querySelectorAll('.reveal-node').forEach((node) => {
-      if (!HERO_NODES.has(node.id)) {
-        observer.observe(node);
-      }
-    });
-    return () => observer.disconnect();
-  }, []);
-
-  return (id: string) => revealed.has(id) 
-    ? 'opacity-100 translate-y-0 scale-100' 
-    : 'opacity-0 translate-y-8 scale-[0.98]';
-};
-
 const Landing: React.FC<LandingProps> = ({ onStart }) => {
-  const reveal = useScrollReveal();
+  useEffect(() => {
+    // Zero-overhead scroll observer: updates classes directly without React re-renders or layout thrashing
+    const setupObserver = () => {
+      if (typeof window === 'undefined') return;
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('is-revealed');
+              observer.unobserve(entry.target);
+            }
+          });
+        },
+        { threshold: 0.05, rootMargin: '60px' }
+      );
+
+      document.querySelectorAll('.reveal-on-scroll').forEach((node) => {
+        observer.observe(node);
+      });
+    };
+
+    if ('requestIdleCallback' in window) {
+      (window as any).requestIdleCallback(setupObserver, { timeout: 1000 });
+    } else {
+      setTimeout(setupObserver, 200);
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#030303] overflow-x-hidden selection:bg-indigo-600 selection:text-white font-sans scroll-smooth">
@@ -188,7 +175,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
       {/* Feature Bento Grid */}
       <section id="vault" className="py-32 px-4 md:px-8 content-visibility-auto">
         <div className="max-w-7xl mx-auto space-y-20">
-           <div className={`reveal-node text-center space-y-4 transition-all duration-1000 ${reveal('b-header')}`} id="b-header">
+           <div className="reveal-on-scroll text-center space-y-4" id="b-header">
               <h2 className="text-4xl md:text-6xl font-black text-slate-900 dark:text-white tracking-tighter">Real Infrastructure.</h2>
               <p className="text-base md:text-lg text-slate-500 dark:text-slate-400 max-w-2xl mx-auto font-medium">
                 The multi-provider AI grid designed for high-stakes institutional pedagogy.
@@ -202,7 +189,6 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                 icon={<Database className="text-indigo-500" />}
                 title="Permanent Vault"
                 desc="Upload PDFs once. They become a permanent context node for all future lesson synthesis."
-                reveal={reveal}
               />
               <BentoNode 
                 id="bn2"
@@ -210,7 +196,6 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                 icon={<Zap className="text-emerald-500" />}
                 title="Synthesis Engine"
                 desc="Generate 5E Lesson Plans, Rubrics, and Assessments in under 30 seconds. Fully aligned with Bloom's Taxonomy."
-                reveal={reveal}
                 accent="bg-emerald-500/5"
               />
               <BentoNode 
@@ -219,7 +204,6 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                 icon={<Target className="text-amber-500" />}
                 title="SLO Tracker"
                 desc="Audit coverage across Student Learning Objectives. Mark mastery and visualize curriculum progress in real-time."
-                reveal={reveal}
                 accent="bg-amber-500/5"
               />
               <BentoNode 
@@ -228,7 +212,6 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                 icon={<Cpu className="text-purple-500" />}
                 title="Multi-LLM Grid"
                 desc="Switch between Gemini 3 Pro and Groq for optimized pedagogical reasoning and instant performance."
-                reveal={reveal}
               />
            </div>
         </div>
@@ -237,7 +220,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
       {/* Synthesis Showcase */}
       <section id="synthesis" className="py-32 px-4 md:px-8 bg-slate-50 dark:bg-[#080808] relative overflow-hidden content-visibility-auto">
         <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 md:gap-24 items-center">
-           <div className={`reveal-node space-y-10 transition-all duration-1000 ${reveal('net-content')}`} id="net-content">
+           <div className="reveal-on-scroll space-y-10" id="net-content">
               <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 dark:bg-indigo-900/20 rounded-full text-[10px] font-black text-indigo-600 uppercase tracking-widest">Synthesis Hub</div>
               <h2 className="text-5xl md:text-6xl font-black tracking-tighter text-slate-900 dark:text-white leading-[1]">Your Neural Teaching Assistant.</h2>
               <p className="text-lg text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
@@ -256,7 +239,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
               </button>
            </div>
 
-           <div className={`reveal-node grid grid-cols-1 sm:grid-cols-2 gap-6 transition-all duration-1000 delay-300 ${reveal('net-visual')}`} id="net-visual">
+           <div className="reveal-on-scroll grid grid-cols-1 sm:grid-cols-2 gap-6" id="net-visual">
               <AppCard label="Neural Vault" icon={<FileText size={20}/>} desc="High-fidelity storage" />
               <AppCard label="5E Planner" icon={<BookOpen size={20}/>} desc="Pedagogical flow" />
               <AppCard label="Audit Engine" icon={<ClipboardCheck size={20}/>} desc="Standards validation" />
@@ -267,7 +250,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
 
       {/* Call to Action */}
       <section id="enterprise" className="py-32 px-4 md:px-8 content-visibility-auto">
-        <div className={`reveal-node max-w-7xl mx-auto bg-indigo-600 rounded-[3rem] md:rounded-[5rem] p-10 md:p-24 text-white relative overflow-hidden shadow-2xl transition-all duration-1000 ${reveal('e-cta')}`} id="e-cta">
+        <div className="reveal-on-scroll max-w-7xl mx-auto bg-indigo-600 rounded-[3rem] md:rounded-[5rem] p-10 md:p-24 text-white relative overflow-hidden shadow-2xl" id="e-cta">
           <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-white opacity-[0.08] rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2" />
           
           <div className="relative z-10 flex flex-col lg:flex-row items-center gap-16 md:gap-24">
@@ -329,10 +312,10 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
   );
 };
 
-const BentoNode = ({ id, span, icon, title, desc, reveal, accent }: any) => (
+const BentoNode = ({ id, span, icon, title, desc, accent }: any) => (
   <div 
     id={id}
-    className={`reveal-node ${span} p-8 md:p-10 bg-white dark:bg-[#0c0c0c] border border-slate-200 dark:border-white/5 rounded-[2.5rem] md:rounded-[3.5rem] shadow-sm hover:shadow-2xl hover:border-indigo-500/40 transition-all duration-1000 ${reveal(id)} group cursor-pointer overflow-hidden relative`}
+    className={`reveal-on-scroll ${span} p-8 md:p-10 bg-white dark:bg-[#0c0c0c] border border-slate-200 dark:border-white/5 rounded-[2.5rem] md:rounded-[3.5rem] shadow-sm hover:shadow-2xl hover:border-indigo-500/40 transition-all duration-500 group cursor-pointer overflow-hidden relative`}
   >
     {accent && <div className={`absolute inset-0 ${accent} opacity-40`} />}
     <div className="w-14 h-14 bg-slate-50 dark:bg-white/5 rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 group-hover:rotate-6 transition-all duration-500 relative z-10">

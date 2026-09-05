@@ -48,18 +48,26 @@ export default function App() {
   const [isViewHydrated, setIsViewHydrated] = useState(false);
 
   useEffect(() => {
-    // Try cookie first, then localStorage
-    const cookies = document.cookie.split('; ');
-    const cookie = cookies.find(c => c.startsWith('currentView='));
-    let saved = cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
-    
-    if (!saved) {
-      try { saved = localStorage.getItem('currentView'); } catch (e) {}
-    }
+    // Consolidated client-side hydration for theme and saved view
+    try {
+      const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
+      if (savedTheme) {
+        setTheme(savedTheme);
+        document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+      }
 
-    if (saved && saved !== 'login' && saved !== 'landing') {
-      setCurrentView(saved);
-    }
+      // Try cookie first, then localStorage
+      const cookies = document.cookie.split('; ');
+      const cookie = cookies.find(c => c.startsWith('currentView='));
+      let saved = cookie ? decodeURIComponent(cookie.split('=')[1]) : null;
+      if (!saved) {
+        saved = localStorage.getItem('currentView');
+      }
+      if (saved && saved !== 'login' && saved !== 'landing') {
+        setCurrentView(saved);
+      }
+    } catch (e) {}
+
     setIsViewHydrated(true);
   }, []);
 
@@ -67,21 +75,12 @@ export default function App() {
     if (isViewHydrated && currentView !== 'login' && currentView !== 'landing') {
       try {
         localStorage.setItem('currentView', currentView);
-        // Set cookie with SameSite=None; Secure
         const expires = new Date();
         expires.setFullYear(expires.getFullYear() + 1);
         document.cookie = `currentView=${encodeURIComponent(currentView)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
       } catch (e) {}
     }
   }, [currentView, isViewHydrated]);
-
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
-    if (savedTheme) {
-      setTheme(savedTheme);
-      document.documentElement.classList.toggle('dark', savedTheme === 'dark');
-    }
-  }, []);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -194,7 +193,11 @@ export default function App() {
 
     if (!initStarted.current) {
       initStarted.current = true;
-      initializeAuth();
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(() => initializeAuth(), { timeout: 800 });
+      } else {
+        setTimeout(initializeAuth, 50);
+      }
     }
 
     return () => {
