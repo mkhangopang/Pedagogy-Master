@@ -46,6 +46,9 @@ export default function App() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isViewHydrated, setIsViewHydrated] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot-password' | 'update-password'>('login');
+  const authModeRef = useRef(authMode);
+  authModeRef.current = authMode;
 
   useEffect(() => {
     // Consolidated client-side hydration for theme and saved view
@@ -54,6 +57,16 @@ export default function App() {
       if (savedTheme) {
         setTheme(savedTheme);
         document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+      }
+
+      // Check for password recovery hash in URL
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash || '';
+        const search = window.location.search || '';
+        if (hash.includes('type=recovery') || search.includes('type=recovery')) {
+          setAuthMode('update-password');
+          setCurrentView('login');
+        }
       }
 
       // Try cookie first, then localStorage
@@ -162,13 +175,26 @@ export default function App() {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
           console.log(`📡 [Auth] Event: ${event}`, currentSession ? "Session Active" : "No Session");
           
+          if (event === 'PASSWORD_RECOVERY') {
+            console.log("🔑 [Auth] PASSWORD_RECOVERY event received");
+            setSession(currentSession);
+            setAuthMode('update-password');
+            setCurrentView('login');
+            return;
+          }
+
           if (currentSession) {
             setSession(currentSession);
             fetchAppData(currentSession.user.id, currentSession.user.email, currentSession);
-            setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
+            // If in password recovery flow, do not auto-route to dashboard
+            setCurrentView(prev => {
+              if (authModeRef.current === 'update-password') return 'login';
+              return (prev === 'landing' || prev === 'login') ? 'dashboard' : prev;
+            });
           } else if (event === 'SIGNED_OUT') {
             console.warn("📡 [Auth] Explicit SIGNED_OUT event received");
             setSession(null);
+            setAuthMode('login');
             setCurrentView('landing');
             localStorage.removeItem('currentView');
           } else if (event === 'INITIAL_SESSION' && !currentSession) {
@@ -182,7 +208,10 @@ export default function App() {
           console.log("📡 [Auth] Existing session found via getSession");
           setSession(existingSession);
           fetchAppData(existingSession.user.id, existingSession.user.email, existingSession);
-          setCurrentView(prev => (prev === 'landing' || prev === 'login') ? 'dashboard' : prev);
+          setCurrentView(prev => {
+            if (authModeRef.current === 'update-password') return 'login';
+            return (prev === 'landing' || prev === 'login') ? 'dashboard' : prev;
+          });
         }
       } catch (err) {
         console.error('📡 [System] Auth initialization failed:', err);
@@ -221,15 +250,26 @@ export default function App() {
     </div>
   );
   
-  if (!session) {
-    if (currentView === 'login') {
+  if (!session || authMode === 'update-password' || currentView === 'login') {
+    if (currentView === 'login' || authMode === 'update-password') {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
-          <Login onSession={setSession} onBack={() => setCurrentView('landing')} />
+          <Login 
+            initialMode={authMode} 
+            onSession={(newSession) => {
+              setSession(newSession);
+              setAuthMode('login');
+              setCurrentView('dashboard');
+            }} 
+            onBack={() => {
+              setAuthMode('login');
+              setCurrentView(session ? 'dashboard' : 'landing');
+            }} 
+          />
         </Suspense>
       );
     }
-    return <Landing onStart={() => setCurrentView('login')} />;
+    return <Landing onStart={() => { setAuthMode('login'); setCurrentView('login'); }} />;
   }
 
   const safeProfile = userProfile || {

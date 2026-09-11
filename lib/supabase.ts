@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { UserRole, SubscriptionPlan, UserProfile } from '../types';
-import { isAdminUser } from './auth/user-role';
+import { isAdminUser, ADMIN_EMAILS } from './auth/user-role';
 
 declare global {
   interface Window {
@@ -159,7 +159,15 @@ export async function getOrCreateProfile(userId: string, email?: string) {
   
   try {
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
-    if (profile) return profile;
+    if (profile) {
+      if (email && ADMIN_EMAILS.includes(email.toLowerCase().trim()) && profile.role !== 'app_admin') {
+        const { data: upgraded } = await supabase.from('profiles').update({
+          role: 'app_admin', plan: 'enterprise', queries_limit: 999999
+        }).eq('id', userId).select().single();
+        return upgraded || profile;
+      }
+      return profile;
+    }
     
     // Simulate user profile object for isAdminUser check
     const isNewAdmin = isAdminUser({ email, role: 'teacher' } as UserProfile);
