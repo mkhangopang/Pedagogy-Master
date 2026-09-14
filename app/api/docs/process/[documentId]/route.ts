@@ -1612,9 +1612,10 @@ export async function POST(
 
         // 4. Update document with canonical Universal JSON
         const jsonText = JSON.stringify(groundTruth, null, 2);
+        const boardName = groundTruth.curriculum.board || 'SINDH';
         await supabase.from('documents').update({
           extracted_text: jsonText,
-          document_summary: `ledger|slos:${recordsToInsert.length}|board:${groundTruth.curriculum.board}|subject:${groundTruth.curriculum.subject}|verified:true`,
+          document_summary: `ledger|slos:${recordsToInsert.length}|board:${boardName}|subject:${groundTruth.curriculum.subject}|verified:true`,
           status: 'ready',
           rag_indexed: true,
         }).eq('id', documentId);

@@ -11,6 +11,7 @@ export interface GroundTruthCurriculum {
     subject_code: string;
     grade_system: string;
     grade_range: string;
+    board?: string;
   };
   grades: Record<string, {
     display_name: string;
@@ -38,7 +39,8 @@ export const MATHEMATICS_GRADE_1_8_2024: GroundTruthCurriculum = {
     subject: "Mathematics",
     subject_code: "M",
     grade_system: "Arabic",
-    grade_range: "1-15"
+    grade_range: "1-15",
+    board: "SINDH"
   },
   grades: {
     "12": {
