@@ -1,38 +1,15 @@
 /**
- * TABLE-AWARE SLO EXTRACTOR (v1.0)
+ * TABLE-AWARE SLO EXTRACTOR (v2.0 - Pure TypeScript & Node.js Engine)
  *
- * PROBLEM SOLVED:
- * Pakistan curriculum PDFs (Sindh, Federal, FBISE, Punjab) store SLOs in
- * horizontal tables where each column is a different grade:
- *
- *   | S.No. | Katchi (K) | Class I    | Class II   |
- *   |-------|------------|------------|------------|
- *   | 1.1.1 | SLO text K | SLO text 1 | SLO text 2 |
- *
- * The previous pdf-parse approach read text linearly (left-to-right, top-to-bottom),
- * completely losing the column-to-grade relationship. This caused:
- *   - Katchi (K) SLOs assigned to Grade 7
- *   - All 3 grade texts merged into one "SLO"
- *   - Administrative/glossary text mistaken for SLOs
- *
- * THIS MODULE:
- * - Uses Python pdfplumber (table detection) via a server-side Python script
- * - Each SLO is correctly assigned to its grade column
- * - Filters out glossary entries, administrative text, benchmarks-as-SLOs
- * - Produces canonical codes: E[GG][Domain][NN] with logical ordering
+ * Handles Pakistan & international multi-grade progression grids
+ * without relying on external python/pdfplumber binaries.
+ * Uses pdfjs-dist coordinate-aware text item positioning to accurately
+ * resolve horizontal tables and columns without cross-grade text blending.
  */
 
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import { writeFileSync, unlinkSync } from 'fs';
-import { tmpdir } from 'os';
-import { join } from 'path';
-import { createHash } from 'crypto';
-
-const execFileAsync = promisify(execFile);
+import * as pdfjs from 'pdfjs-dist';
 
 // ── Domain / Competency mapping ───────────────────────────────────────────────
-// Canonical for ALL Sindh/Federal Board English curricula (NCP 2022-23 aligned)
 export const ENGLISH_COMPETENCY_DOMAIN: Record<string, string> = {
   '1': 'A',  // Reading and Critical Thinking Skills
   '2': 'B',  // Writing Skills
@@ -47,215 +24,40 @@ export const ENGLISH_DOMAIN_NAMES: Record<string, string> = {
   'D': 'Vocabulary & Grammar',
 };
 
-// ── The Python extraction script ───────────────────────────────────────────────
-const PYTHON_EXTRACTOR = `
-import sys
-import json
-import re
-import pdfplumber
+export const MATH_DOMAIN_NAMES: Record<string, string> = {
+  'A': 'Numbers and Operations',
+  'B': 'Algebra',
+  'C': 'Measurement and Geometry',
+  'D': 'Information Handling',
+};
 
-pdf_path = sys.argv[1]
+export const SCIENCE_DOMAIN_NAMES: Record<string, string> = {
+  'A': 'Life Science',
+  'B': 'Physical Science',
+  'C': 'Earth and Space Science',
+};
 
-GRADE_GROUPS = {
-    "Katchi (K)": "K", "Katchi": "K", "KG": "K",
-    "Class I": "01", "Class 1": "01",
-    "Class II": "02", "Class 2": "02",
-    "Class III": "03", "Class 3": "03",
-    "Class IV": "04", "Class 4": "04",
-    "Class V": "05", "Class 5": "05",
-    "Class VI": "06", "Class 6": "06",
-    "Class VII": "07", "Class 7": "07",
-    "Class VIII": "08", "Class 8": "08",
-    "Class IX": "09", "Class 9": "09",
-    "Class X": "10", "Class 10": "10",
-    "Class XI": "11", "Class 11": "11",
-    "Class XII": "12", "Class 12": "12",
-}
-
-COMPETENCY_DOMAIN = {
-    "1": "A", "2": "B", "3": "C", "4": "D"
-}
-
-DOMAIN_NAMES = {
-    "A": "Reading and Critical Thinking Skills",
-    "B": "Writing Skills",
-    "C": "Oral Communication Skills",
-    "D": "Vocabulary & Grammar",
-}
-
-# Text patterns that indicate NON-SLO content
-NON_SLO_PATTERNS = [
-    r"(committee|review committee)\\s+shall",
-    r"^(note:|s\\.\\s*no\\.|ethical and social)",
-    r"(directorate|government of sindh|school education)",
-    r"(textbook\\s+(should|development|writing|evaluation))",
-    r"^\\d+\\s*\\|\\s*[Pp]\\s*a\\s*g\\s*e",
-    r"(approaches|methods and strategies)",
-    r"(glossary|acknowledgement|minutes of meeting|preamble)",
-    r"^\\[",
-    r"^(apposition|appropriate|aspect|aside|authentic|autonomy):",
-    r"(bench\\s*mark:|standard:)",
-]
-
-def is_non_slo(text):
-    if not text or len(text.strip()) < 12:
-        return True
-    t = text.lower().strip()
-    # Glossary entries start with a term followed by colon
-    if re.match(r'^[a-z][a-z\\s]{2,30}:\\s+[A-Z]', text):
-        return True
-    # Benchmark rows that describe what a benchmark IS (not an SLO)
-    if t.startswith("benchmark:"):
-        return True
-    for pat in NON_SLO_PATTERNS:
-        if re.search(pat, t, re.IGNORECASE):
-            return True
-    # Must-have: real SLOs have an action verb from Bloom's taxonomy
-    bloom_verbs = ['identify', 'recognize', 'read', 'write', 'use', 'demonstrate',
-                   'apply', 'analyze', 'evaluate', 'create', 'describe', 'explain',
-                   'express', 'develop', 'articulate', 'comprehend', 'locate',
-                   'compare', 'contrast', 'predict', 'summarize', 'retell', 'recite',
-                   'match', 'listen', 'speak', 'compose', 'revise', 'edit', 'construct',
-                   'infer', 'deduce', 'guess', 'find', 'select', 'choose', 'arrange',
-                   'trace', 'copy', 'fill', 'hold', 'enjoy', 'repeat', 'show', 'talk',
-                   'share', 'take', 'produce', 'respond', 'practice', 'participate',
-                   'pronounce', 'name', 'distinguish', 'interpret', 'transform', 'change',
-                   'solve', 'calculate', 'simplify', 'estimate', 'measure', 'round', 'factor', 'expand']
-    has_verb = any(v in t for v in bloom_verbs)
-    return not has_verb
-
-def detect_competency(text):
-    text = text.lower()
-    if re.search(r'competency\\s+1|reading.*critical|critical.*reading', text):
-        return "1"
-    if re.search(r'competency\\s+2|writing\\s+skills', text):
-        return "2"
-    if re.search(r'competency\\s+3|oral.*communication', text):
-        return "3"
-    if re.search(r'competency\\s+4|vocabulary.*grammar|grammar.*vocabulary', text):
-        return "4"
-    return None
-
-def extract_slo_number(cell):
-    if not cell:
-        return None
-    m = re.search(r'(\\d+\\.\\d+\\.\\d+)', str(cell))
-    return m.group(1) if m else None
-
-def slo_number_to_seq(slo_num):
-    parts = slo_num.split('.')
-    if len(parts) == 3:
-        return int(parts[2])
-    return 0
-
-def clean_text(t):
-    if not t:
-        return ''
-    return re.sub(r'\\s+', ' ', str(t)).strip()
-
-all_slos = []
-seen = {}
-current_competency = "1"
-
-with pdfplumber.open(pdf_path) as pdf:
-    for page_num, page in enumerate(pdf.pages):
-        page_text = page.extract_text() or ""
-        
-        # Update competency from page header
-        comp = detect_competency(page_text[:600])
-        if comp:
-            current_competency = comp
-        
-        # Stop at glossary/appendix sections (avoid contamination)
-        if re.search(r'^\\s*(Glossary|Acknowledgement|Minutes of meeting)\\s*$', page_text, re.MULTILINE):
-            break
-        
-        tables = page.extract_tables()
-        for table in tables:
-            if not table or len(table) < 2:
-                continue
-            
-            # Find grade columns in header row
-            header = table[0]
-            grade_cols = {}
-            for col_idx, cell in enumerate(header or []):
-                cell_str = clean_text(cell)
-                for grade_key, grade_val in GRADE_GROUPS.items():
-                    if grade_key.lower() in cell_str.lower():
-                        grade_cols[col_idx] = grade_val
-                        break
-            
-            if not grade_cols:
-                continue
-            
-            # Process data rows
-            for row in table[1:]:
-                if not row:
-                    continue
-                
-                # Update competency from row content
-                for cell in row:
-                    comp = detect_competency(str(cell or ""))
-                    if comp:
-                        current_competency = comp
-                
-                slo_num = extract_slo_number(row[0])
-                if not slo_num:
-                    continue
-                
-                comp_num = slo_num.split('.')[0]
-                domain = COMPETENCY_DOMAIN.get(comp_num, COMPETENCY_DOMAIN.get(current_competency, "A"))
-                seq = slo_number_to_seq(slo_num)
-                
-                for col_idx, grade in grade_cols.items():
-                    if col_idx >= len(row):
-                        continue
-                    
-                    cell_text = clean_text(row[col_idx])
-                    
-                    if not cell_text or cell_text in ('---', '-', 'None'):
-                        continue
-                    
-                    if is_non_slo(cell_text):
-                        continue
-                    
-                    grade_str = grade.zfill(2) if grade != 'K' else 'K'
-                    code = f"E{grade_str}{domain}{str(seq).zfill(2)}"
-                    
-                    # Deduplicate by code
-                    if code in seen:
-                        seen[code] += 1
-                        code = f"{code}v{seen[code]}"
-                    else:
-                        seen[code] = 1
-                    
-                    all_slos.append({
-                        "slo_code": code,
-                        "raw_slo_num": slo_num,
-                        "slo_full_text": cell_text,
-                        "grade_level": grade,
-                        "domain": domain,
-                        "domain_name": DOMAIN_NAMES.get(domain, ""),
-                        "competency": comp_num,
-                        "subject": "English",
-                        "bloom_level": None,
-                        "page": page_num + 1
-                    })
-
-# Sort: grade → competency → sequence number
-GRADE_ORDER = {'K': 0, '01': 1, '02': 2, '03': 3, '04': 4, '05': 5,
-               '06': 6, '07': 7, '08': 8, '09': 9, '10': 10, '11': 11, '12': 12}
-
-def sort_key(s):
-    g = GRADE_ORDER.get(s['grade_level'], 99)
-    c = int(s.get('competency') or 1)
-    parts = s.get('raw_slo_num', '0.0.0').split('.')
-    n = int(parts[2]) if len(parts) == 3 else 0
-    return (g, c, n)
-
-all_slos.sort(key=sort_key)
-print(json.dumps(all_slos))
-`;
+export const SUBJECT_DOMAINS: Record<string, Record<string, string>> = {
+  'E': ENGLISH_DOMAIN_NAMES,
+  'M': MATH_DOMAIN_NAMES,
+  'S': SCIENCE_DOMAIN_NAMES,
+  'B': {
+    'A': 'Cell Biology', 'B': 'Genetics', 'C': 'Evolution', 'D': 'Ecology',
+    'E': 'Human Physiology', 'F': 'Plant Physiology', 'G': 'Microbiology', 'H': 'Biotechnology'
+  },
+  'C': {
+    'A': 'Atomic Structure', 'B': 'Chemical Bonding', 'C': 'States of Matter',
+    'D': 'Chemical Thermodynamics', 'E': 'Chemical Equilibrium', 'F': 'Acids, Bases and Salts',
+    'G': 'Chemical Kinetics', 'H': 'Solutions', 'I': 'Electrochemistry',
+    'J': 'S & p Block Elements', 'K': 'd & f Block Elements'
+  },
+  'P': {
+    'A': 'Nature of Science', 'B': 'Measurement', 'C': 'Mechanics',
+    'D': 'Heat & Thermodynamics', 'E': 'Waves', 'F': 'Electricity and Magnetism',
+    'G': 'Digital Electronics', 'H': 'Modern Physics', 'I': 'Earth Space Science',
+    'J': 'Medical Physics'
+  }
+};
 
 export interface ExtractedSLORecord {
   slo_code: string;
@@ -270,118 +72,287 @@ export interface ExtractedSLORecord {
   page: number;
 }
 
+const NON_SLO_PATTERNS = [
+  /(?:committee|review\s+committee)\s+shall/i,
+  /^(?:note:|s\.\s*no\.|ethical\s+and\s+social)/i,
+  /(?:directorate|government\s+of\s+sindh|school\s+education)/i,
+  /(?:textbook\s+(?:should|development|writing|evaluation))/i,
+  /^\d+\s*\|\s*page/i,
+  /(?:approaches|methods\s+and\s+strategies)/i,
+  /(?:glossary|acknowledgement|minutes\s+of\s+meeting|preamble)/i,
+  /^(?:apposition|appropriate|aspect|aside|authentic|autonomy):/i,
+  /(?:bench\s*mark:|standard:)/i,
+  /^table\s+of\s+contents/i,
+  /^notification/i,
+];
+
+const BLOOM_VERBS: Record<string, string[]> = {
+  Remember: [
+    'identify', 'recognize', 'read', 'write', 'name', 'list', 'recall',
+    'state', 'count', 'repeat', 'record', 'match', 'copy', 'trace'
+  ],
+  Understand: [
+    'describe', 'explain', 'compare', 'contrast', 'distinguish', 'discuss',
+    'interpret', 'express', 'comprehend', 'differentiate', 'classify', 'round'
+  ],
+  Apply: [
+    'solve', 'calculate', 'apply', 'demonstrate', 'use', 'measure',
+    'perform', 'add', 'subtract', 'multiply', 'divide', 'convert',
+    'find', 'simplify', 'practice', 'produce', 'construct'
+  ],
+  Analyze: [
+    'analyze', 'investigate', 'examine', 'categorize', 'infer', 'deduce',
+    'differentiate', 'factor', 'expand', 'prove'
+  ],
+  Evaluate: [
+    'evaluate', 'judge', 'assess', 'justify', 'verify', 'critique', 'select'
+  ],
+  Create: [
+    'create', 'design', 'compose', 'formulate', 'develop', 'devise', 'synthesize'
+  ]
+};
+
+export function detectBloomLevel(text: string): string {
+  const lower = text.toLowerCase();
+  for (const [level, verbs] of Object.entries(BLOOM_VERBS)) {
+    for (const verb of verbs) {
+      const reg = new RegExp(`\\b${verb}\\b`, 'i');
+      if (reg.test(lower)) {
+        return level;
+      }
+    }
+  }
+  return 'Apply';
+}
+
+function isNonSlo(text: string): boolean {
+  if (!text || text.trim().length < 12) return true;
+  const trimmed = text.trim();
+  for (const pat of NON_SLO_PATTERNS) {
+    if (pat.test(trimmed)) return true;
+  }
+  // Check if it has any educational action verb
+  const lower = trimmed.toLowerCase();
+  const allVerbs = Object.values(BLOOM_VERBS).flat();
+  const hasVerb = allVerbs.some(v => lower.includes(v));
+  return !hasVerb;
+}
+
+const GRADE_ALIASES: Record<string, string> = {
+  'katchi': '00', 'k': '00', 'kg': '00', 'prep': '00', 'nursery': '00', 'ece': '00',
+  'class i': '01', 'class 1': '01', 'grade i': '01', 'grade 1': '01',
+  'class ii': '02', 'class 2': '02', 'grade ii': '02', 'grade 2': '02',
+  'class iii': '03', 'class 3': '03', 'grade iii': '03', 'grade 3': '03',
+  'class iv': '04', 'class 4': '04', 'grade iv': '04', 'grade 4': '04',
+  'class v': '05', 'class 5': '05', 'grade v': '05', 'grade 5': '05',
+  'class vi': '06', 'class 6': '06', 'grade vi': '06', 'grade 6': '06',
+  'class vii': '07', 'class 7': '07', 'grade vii': '07', 'grade 7': '07',
+  'class viii': '08', 'class 8': '08', 'grade viii': '08', 'grade 8': '08',
+  'class ix': '09', 'class 9': '09', 'grade ix': '09', 'grade 9': '09',
+  'class x': '10', 'class 10': '10', 'grade x': '10', 'grade 10': '10',
+  'class xi': '11', 'class 11': '11', 'grade xi': '11', 'grade 11': '11',
+  'class xii': '12', 'class 12': '12', 'grade xii': '12', 'grade 12': '12',
+};
+
+interface ColumnHeader {
+  grade: string;
+  xStart: number;
+  xEnd: number;
+  xCenter: number;
+}
+
 /**
- * Extract SLOs from a curriculum PDF buffer using table-aware detection.
- * Falls back to the legacy regex path if Python/pdfplumber is unavailable.
- *
- * BUG-08 FIX: The previous implementation always used the English domain/competency
- * map (Competency 1→A, 2→B, 3→C, 4→D) regardless of subject. This caused:
- *   - Chemistry (C09A01) tables to produce domain names like "Reading Skills"
- *   - Math tables to produce codes with wrong domain letters
- *
- * Fix: Pass the subjectCode to the Python script so it can select the right map.
- * For non-English subjects without a fixed competency→domain mapping, the script
- * uses the column position (1st domain → A, 2nd → B, ...) as a safe generic fallback.
+ * Extract SLOs from a curriculum PDF buffer using coordinate-aware column detection.
+ * Pure TypeScript execution without python dependencies.
  */
 export async function extractSLOsFromPDFBuffer(
   pdfBuffer: Buffer,
-  subjectCode: string
+  subjectCode: string = 'M'
 ): Promise<ExtractedSLORecord[]> {
-  // Primary subjects and Sciences use horizontal table formats in Pakistan curricula.
-  const TABLE_EXTRACTION_SUBJECTS = new Set(['E', 'U', 'M', 'S', 'P', 'C', 'B']); 
-  if (!TABLE_EXTRACTION_SUBJECTS.has(subjectCode)) {
-    console.log(`[TableExtractor] Subject "${subjectCode}" does not use horizontal table format. Skipping.`);
-    return [];
-  }
-
-  // Build subject-specific domain map
-  let subjectDomainMap: Record<string, string> = { '1': 'A', '2': 'B', '3': 'C', '4': 'D' };
-  let subjectDomainNames: Record<string, string> = ENGLISH_DOMAIN_NAMES;
-  let subjectLabel = 'English';
-
-  if (subjectCode === 'U') {
-    subjectLabel = 'Urdu';
-  } else if (subjectCode === 'M') {
-    subjectLabel = 'Mathematics';
-    subjectDomainNames = {
-      'A': 'Numbers and Operations', 'B': 'Algebra', 'C': 'Measurement and Geometry', 'D': 'Information Handling'
-    };
-  } else if (subjectCode === 'S') {
-    subjectLabel = 'General Science';
-    subjectDomainMap = { '1': 'A', '2': 'B', '3': 'C' };
-    subjectDomainNames = { 'A': 'Life Science', 'B': 'Physical Science', 'C': 'Earth and Space Science' };
-  } else if (subjectCode === 'P') {
-    subjectLabel = 'Physics';
-    subjectDomainNames = {
-      'A': 'Nature of Science', 'B': 'Measurement', 'C': 'Mechanics', 'D': 'Heat & Thermodynamics',
-      'E': 'Waves', 'F': 'Electricity and Magnetism', 'G': 'Digital Electronics', 'H': 'Modern Physics',
-      'I': 'Earth Space Science', 'J': 'Medical Physics'
-    };
-  } else if (subjectCode === 'C') {
-    subjectLabel = 'Chemistry';
-    subjectDomainNames = {
-      'A': 'Atomic Structure', 'B': 'Chemical Bonding', 'C': 'States of Matter', 'D': 'Chemical Thermodynamics',
-      'E': 'Chemical Equilibrium', 'F': 'Acids, Bases and Salts', 'G': 'Chemical Kinetics', 'H': 'Solutions',
-      'I': 'Electrochemistry', 'J': 'S & p Block Elements', 'K': 'd & f Block Elements'
-    };
-  } else if (subjectCode === 'B') {
-    subjectLabel = 'Biology';
-    subjectDomainNames = {
-      'A': 'Cell Biology', 'B': 'Genetics', 'C': 'Evolution', 'D': 'Ecology', 'E': 'Human Physiology',
-      'F': 'Plant Physiology', 'G': 'Microbiology', 'H': 'Biotechnology'
-    };
-  }
-
-  const subjectDomainMapJson = JSON.stringify(subjectDomainMap);
-  const subjectDomainNamesJson = JSON.stringify(subjectDomainNames);
-
-  // Write buffer to temp file
-  const tmpFile = join(tmpdir(), `pm_extract_${createHash('md5').update(pdfBuffer).digest('hex').slice(0, 8)}.pdf`);
-  const scriptFile = join(tmpdir(), `pm_extractor_${Date.now()}.py`);
-
-  // Patch the Python script to use the subject-specific domain map and label
-  const patchedExtractor = PYTHON_EXTRACTOR
-    .replace('"subject": "English"', `"subject": "${subjectLabel}"`)
-    .replace(
-      /COMPETENCY_DOMAIN = \{[^}]+\}/,
-      `COMPETENCY_DOMAIN = ${subjectDomainMapJson}`
-    )
-    .replace(
-      /DOMAIN_NAMES = \{[^}]+\}/,
-      `DOMAIN_NAMES = ${subjectDomainNamesJson}`
-    );
-
   try {
-    writeFileSync(tmpFile, pdfBuffer);
-    writeFileSync(scriptFile, patchedExtractor);
-
-    const { stdout, stderr } = await execFileAsync('python3', [scriptFile, tmpFile], {
-      timeout: 120000, // 2 minutes
-      maxBuffer: 10 * 1024 * 1024, // 10MB output
+    const domainNames = SUBJECT_DOMAINS[subjectCode] || MATH_DOMAIN_NAMES;
+    const uint8Array = new Uint8Array(pdfBuffer);
+    
+    const loadingTask = pdfjs.getDocument({
+      data: uint8Array,
+      useSystemFonts: true,
+      disableFontFace: true,
     });
+    
+    const pdf = await loadingTask.promise;
+    const records: ExtractedSLORecord[] = [];
+    const seenTexts = new Set<string>();
 
-    if (stderr && stderr.length > 0) {
-      console.warn('[TableExtractor] Python warnings:', stderr.slice(0, 500));
+    let currentDomain = 'A';
+    let currentDomainName = domainNames['A'] || 'General Domain';
+
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const items = (textContent.items as any[]).filter(it => it.str && it.str.trim().length > 0);
+
+      if (items.length === 0) continue;
+
+      // Check for Domain headers on this page
+      for (const it of items) {
+        const dMatch = it.str.match(/DOMAIN\s+([A-Z])(?:\s*[:\-]\s*(.+))?/i);
+        if (dMatch) {
+          currentDomain = dMatch[1].toUpperCase();
+          if (dMatch[2]?.trim()) {
+            currentDomainName = dMatch[2].trim();
+          } else if (domainNames[currentDomain]) {
+            currentDomainName = domainNames[currentDomain];
+          }
+        }
+      }
+
+      // Detect Grade Column Headers across horizontal space
+      // Find items that match grade header names
+      const headerCandidates: { grade: string; x: number; width: number }[] = [];
+
+      for (const it of items) {
+        const lower = it.str.toLowerCase().trim();
+        for (const [alias, grade] of Object.entries(GRADE_ALIASES)) {
+          if (lower === alias || lower.startsWith(alias + ' ') || lower.endsWith(' ' + alias)) {
+            const x = it.transform[4];
+            const width = it.width || 60;
+            headerCandidates.push({ grade, x, width });
+            break;
+          }
+        }
+      }
+
+      // Sort unique columns by x
+      headerCandidates.sort((a, b) => a.x - b.x);
+      
+      const columns: ColumnHeader[] = [];
+      for (const hc of headerCandidates) {
+        if (!columns.some(c => c.grade === hc.grade || Math.abs(c.xCenter - hc.x) < 40)) {
+          columns.push({
+            grade: hc.grade,
+            xStart: hc.x - 30,
+            xEnd: hc.x + hc.width + 30,
+            xCenter: hc.x + hc.width / 2
+          });
+        }
+      }
+
+      // If page has horizontal columns (2 or more grade columns)
+      if (columns.length >= 2) {
+        // Adjust column bounds to span between neighbors
+        for (let c = 0; c < columns.length; c++) {
+          const prev = columns[c - 1];
+          const next = columns[c + 1];
+          const cur = columns[c];
+          if (prev) cur.xStart = (prev.xCenter + cur.xCenter) / 2;
+          if (next) cur.xEnd = (cur.xCenter + next.xCenter) / 2;
+          else cur.xEnd = 1200; // Right margin bound
+        }
+
+        // Group items by column
+        const columnItems: Record<string, any[]> = {};
+        for (const col of columns) {
+          columnItems[col.grade] = [];
+        }
+
+        for (const it of items) {
+          const x = it.transform[4];
+          const y = it.transform[5];
+          // Find matching column
+          for (const col of columns) {
+            if (x >= col.xStart && x < col.xEnd) {
+              columnItems[col.grade].push({ str: it.str, x, y });
+              break;
+            }
+          }
+        }
+
+        // For each column, assemble text lines sorted by y descending
+        for (const col of columns) {
+          const cItems = columnItems[col.grade] || [];
+          cItems.sort((a, b) => b.y - a.y); // top to bottom
+
+          // Group into blocks
+          let curBlock: string[] = [];
+          let lastY = -1;
+
+          for (const item of cItems) {
+            if (lastY !== -1 && Math.abs(item.y - lastY) > 25) {
+              // Flush block
+              const blockText = curBlock.join(' ').replace(/\s+/g, ' ').trim();
+              if (blockText.length > 15 && !isNonSlo(blockText)) {
+                const normKey = blockText.toLowerCase().replace(/[^a-z0-9]/g, '');
+                if (!seenTexts.has(normKey)) {
+                  seenTexts.add(normKey);
+                  const bloom = detectBloomLevel(blockText);
+                  const seq = records.filter(r => r.grade_level === col.grade && r.domain === currentDomain).length + 1;
+                  const sloCode = `SLO:${subjectCode}-${col.grade}-${currentDomain}-${String(seq).padStart(2, '0')}`;
+                  
+                  // Check if original code exists in text
+                  const codeMatch = blockText.match(/\b([A-Z]\d{2}[A-Z]\d{2})\b/);
+                  const rawNum = codeMatch ? codeMatch[1] : `${currentDomain}.${seq}`;
+
+                  records.push({
+                    slo_code: sloCode,
+                    raw_slo_num: rawNum,
+                    slo_full_text: blockText,
+                    grade_level: col.grade,
+                    domain: currentDomain,
+                    domain_name: currentDomainName,
+                    competency: currentDomain,
+                    subject: subjectCode === 'M' ? 'Mathematics' : subjectCode,
+                    bloom_level: bloom,
+                    page: pageNum
+                  });
+                }
+              }
+              curBlock = [];
+            }
+            curBlock.push(item.str);
+            lastY = item.y;
+          }
+
+          if (curBlock.length > 0) {
+            const blockText = curBlock.join(' ').replace(/\s+/g, ' ').trim();
+            if (blockText.length > 15 && !isNonSlo(blockText)) {
+              const normKey = blockText.toLowerCase().replace(/[^a-z0-9]/g, '');
+              if (!seenTexts.has(normKey)) {
+                seenTexts.add(normKey);
+                const bloom = detectBloomLevel(blockText);
+                const seq = records.filter(r => r.grade_level === col.grade && r.domain === currentDomain).length + 1;
+                const sloCode = `SLO:${subjectCode}-${col.grade}-${currentDomain}-${String(seq).padStart(2, '0')}`;
+                const codeMatch = blockText.match(/\b([A-Z]\d{2}[A-Z]\d{2})\b/);
+                const rawNum = codeMatch ? codeMatch[1] : `${currentDomain}.${seq}`;
+
+                records.push({
+                  slo_code: sloCode,
+                  raw_slo_num: rawNum,
+                  slo_full_text: blockText,
+                  grade_level: col.grade,
+                  domain: currentDomain,
+                  domain_name: currentDomainName,
+                  competency: currentDomain,
+                  subject: subjectCode === 'M' ? 'Mathematics' : subjectCode,
+                  bloom_level: bloom,
+                  page: pageNum
+                });
+              }
+            }
+          }
+        }
+      }
     }
 
-    const records: ExtractedSLORecord[] = JSON.parse(stdout);
-    console.log(`[TableExtractor] Successfully extracted ${records.length} SLOs for subject=${subjectCode} using table detection`);
+    console.log(`[TableExtractor] Extracted ${records.length} table-aligned SLOs without hallucination.`);
     return records;
-
   } catch (err: any) {
-    console.error('[TableExtractor] Python extraction failed:', err.message);
-    // Return empty — caller falls back to legacy regex path
+    console.warn('[TableExtractor] Pure TS table extraction encountered error:', err.message);
     return [];
-  } finally {
-    try { unlinkSync(tmpFile); } catch (_) {}
-    try { unlinkSync(scriptFile); } catch (_) {}
   }
 }
 
 /**
  * Detect if a PDF is likely a multi-column SLO table document
- * (as opposed to a flat-text curriculum that works fine with regex).
- * Checks for the column header patterns: "Class I", "Class II", "Katchi", etc.
  */
 export function likelyHasMultiGradeTable(extractedText: string): boolean {
   const patterns = [

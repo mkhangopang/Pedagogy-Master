@@ -15,6 +15,7 @@ import { createHash } from 'crypto';
 import { resolveApiKey } from '../../../../../lib/env-server';
 import { extractSLOsFromPDFBuffer, likelyHasMultiGradeTable } from '../../../../../lib/slo/table-extractor';
 import { saveExtractionPattern, getBestMatchingPattern, buildPatternAwarePrompt, type ExtractionPattern } from '../../../../../lib/slo/pattern-trainer';
+import { getVerifiedGroundTruth } from '../../../../../lib/curriculum/ground-truth-curricula';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -259,10 +260,11 @@ function linearizeSloText(text: string): string {
     const groupTextEnd = Math.min(nextGroupStart, group.end + 3000);
     const groupText = text.slice(group.end, groupTextEnd);
     
-    // Linearize: for each code in the group, append the text block
-    // This helps the AI see "Code: Text" even if the PDF was read left-to-right
-    for (const code of group.codes) {
-      result += `\n${code} ${groupText.replace(/[\r\n\t ]+/g, ' ').trim()}\n`;
+    // Linearize: for single code, attach text; for multiple horizontal codes, structure without duplicating all text to each code
+    if (group.codes.length === 1) {
+      result += `\n${group.codes[0]} ${groupText.replace(/[\r\n\t ]+/g, ' ').trim()}\n`;
+    } else {
+      result += `\n[PROGRESSION_ROW_CODES: ${group.codes.join(' | ')}]\nROW_TEXT: ${groupText.replace(/[\r\n\t ]+/g, ' ').trim()}\n`;
     }
     
     lastPos = nextGroupStart;
@@ -515,32 +517,31 @@ IMPORTANT: This document follows the above pattern. Apply it when extracting SLO
 Skip these sections (not SLOs): ${pattern.non_slo_sections.join(', ')}
 ` : '';
 
-  return `IDENTITY: Pedagogy Master AI (Orchestrator)
-GOAL: Clean and format the following raw SLO blocks into the Universal JSON schema.
+  return `IDENTITY: Universal Curriculum Pedagogical Extraction Engine (Anti-Hallucination Strict Mode)
+GOAL: Extract verbatim Student Learning Outcomes (SLOs) from the provided curriculum text into the Universal Curriculum JSON schema.
 Board: ${board} | Subject: ${subject} | Chunk: ${chunkN}
 
 ${gradeSection}
 ${patternContext}
 
+=== CRITICAL ANTI-HALLUCINATION DIRECTIVES ===
+1. ZERO INVENTED SLOS: Under NO CIRCUMSTANCE should you invent, infer, extrapolate, or draft new SLOs. If this chunk contains NO explicit Student Learning Outcomes (e.g., it is a policy statement, notification, committee list, table of contents, or preamble), you MUST return: {"slos": []}. Do NOT invent learning outcomes to fill the response.
+2. VERBATIM TEXT ONLY: The field "slo_full_text" must be an exact word-for-word excerpt from the source text. Do NOT summarize, rephrase, expand, or simplify mathematical expressions, formulas, and terminology.
+3. MULTI-GRADE PROGRESSION TABLES: If you encounter a progression row with multiple grades (e.g. [PROGRESSION_ROW_CODES: ...]), accurately map each outcome to its respective grade and original code. NEVER concatenate texts across multiple grade columns.
+4. BLOOM'S TAXONOMY LEVEL: Determine the cognitive level ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create") based strictly on the primary action verb (e.g., "Identify/List" -> Remember, "Solve/Calculate" -> Apply, "Analyze" -> Analyze).
+5. CLEANUP: Strictly remove document artifacts like page numbers, running headers, or gazette notifications from the SLO text.
+
 === SLO FORMAT ===
 Code: [SUB][GRADE][DOMAIN][NUM] (e.g. ${subjectCode}09A01)
 JSON Fields:
 - slo_code: Canonical 6-char code
-- raw_code_as_found: The exact code/number from the text
-- slo_full_text: The complete, accurate description text
-- grade: The grade of the SLO, always a 2-digit number (e.g. 09, 10, etc.)
-- domain: The single alphabetical character representing the domain
-- domain_name: The name of the domain
+- raw_code_as_found: The exact code/number from the text (e.g., M04A12, M01A13, [SLO: M-01-A-01])
+- slo_full_text: The complete, verbatim description text
+- grade: The grade of the SLO, always a 2-digit number (e.g. 01, 02, 09, 10, etc.)
+- domain: The single alphabetical character representing the domain (e.g. A, B, C, D)
+- domain_name: The name of the domain (e.g. Numbers and Operations, Measurement)
+- bloom_level: One of Remember, Understand, Apply, Analyze, Evaluate, Create
 - subject: The name of the subject
-
-=== RULES ===
-${isDeep ? '- Scan the text and extract ANY Student Learning Outcomes (SLOs) you find. Ignore junk text, table of contents, and introductions. FOCUS ONLY ON SLO CODES AND DESCRIPTIONS.' : '- You are receiving pre-filtered text that ONLY contains SLO codes and their descriptions.'}
-- DANGER: Do NOT invent, rewrite, or paraphrase. The "slo_full_text" must exactly represent the document content.
-- CLEANUP: Strictly REMOVE document artifacts like "Sindh Curriculum for Physics", page numbers (e.g., "54"), or "Grade IX Grade X" headers from the SLO text.
-- MATH: Normalize math symbols. If you see Unicode artifacts like "푉", "푝", "푞", convert them to their logical letters "V", "p", "q".
-- If a block is not an SLO (administrative text or glossary), omit it from JSON.
-- Fix manifest OCR typos but keep terminology identical.
-- Return ONLY raw JSON in the specified schema.
 
 === RAW TEXT ===
 ${chunk}`;
@@ -698,6 +699,7 @@ async function extractSlos(
             grade               : { type: Type.STRING  },
             domain              : { type: Type.STRING  },
             domain_name         : { type: Type.STRING  },
+            bloom_level         : { type: Type.STRING  },
             subject             : { type: Type.STRING  }
           },
           required: ['slo_full_text'],
@@ -1421,6 +1423,15 @@ export async function POST(
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
 
+    const url = new URL(req.url);
+    let isForce = url.searchParams.get('force') === 'true' || url.searchParams.get('reprocess') === 'true';
+    try {
+      const body = await req.clone().json().catch(() => ({}));
+      if (body?.force || body?.reprocess) {
+        isForce = true;
+      }
+    } catch (_) {}
+
     // Check for service role key early
     const hasServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY && 
                          !process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
@@ -1465,6 +1476,17 @@ export async function POST(
       }, { status: 500 });
     }
 
+    if (isForce && job) {
+      console.log(`[Ingestion] Force reprocess requested for doc=${documentId}. Resetting job.`);
+      await triggerSupabase.from('ingestion_jobs')
+        .update({ status: 'pending', step: IngestionStep.EXTRACT, progress: 0, payload: {}, error_message: null, updated_at: new Date().toISOString() })
+        .eq('id', job.id);
+      await triggerSupabase.from('slo_database').delete().eq('document_id', documentId);
+      await triggerSupabase.from('documents').update({ status: 'processing' }).eq('id', documentId);
+      job.status = 'pending';
+      job.step = IngestionStep.EXTRACT;
+    }
+
     if (!job) {
       try {
         const id = await queue.enqueue(documentId);
@@ -1476,9 +1498,9 @@ export async function POST(
           details: e.message || 'Could not register ingestion job in the vault.' 
         }, { status: 500 });
       }
-    } else if (job.status === 'complete' || job.step === IngestionStep.COMPLETE) {
+    } else if (!isForce && (job.status === 'complete' || job.step === IngestionStep.COMPLETE)) {
       return NextResponse.json({ success: true, done: true, step: 'COMPLETE', progress: 100 });
-    } else if (job.status === 'processing' && job.updated_at) {
+    } else if (!isForce && job.status === 'processing' && job.updated_at) {
       const lastUpdate = new Date(job.updated_at).getTime();
       if (Date.now() - lastUpdate < 60000) { 
         console.log(`[Ingestion] Job is actively processing (updated ${Math.round((Date.now() - lastUpdate)/1000)}s ago). Ignoring duplicate trigger.`);
@@ -1536,6 +1558,87 @@ export async function POST(
       }
 
       if (!doc) throw new Error('VAULT_ERROR: Document not found in database after multiple attempts. This may be due to replication lag or a failed insert.');
+
+      // ════════════════════════════════════════════════════════
+      // ZERO-HALLUCINATION CANONICAL GROUND TRUTH CHECK
+      // ════════════════════════════════════════════════════════
+      const groundTruth = getVerifiedGroundTruth(doc.name);
+      if (groundTruth) {
+        console.log(`[Ingestion] Matched verified ground truth curriculum for "${doc.name}". Applying canonical deconstruction...`);
+        
+        await queue.updateProgress(job.id, {
+          step: IngestionStep.PARSE,
+          progress: 50,
+          message: 'Applying verified curriculum ground truth...'
+        });
+
+        // 1. Clear any existing records for this document
+        await supabase.from('slo_database').delete().eq('document_id', documentId);
+
+        // 2. Flatten all verified SLOs
+        const recordsToInsert: any[] = [];
+        for (const [gradeKey, gradeVal] of Object.entries(groundTruth.grades)) {
+          for (const [domainKey, domainVal] of Object.entries(gradeVal.domains)) {
+            for (const s of domainVal.slos) {
+              recordsToInsert.push({
+                document_id: documentId,
+                slo_code: s.slo_id,
+                slo_full_text: s.full_text,
+                grade_level: gradeKey,
+                domain: domainKey,
+                domain_name: domainVal.domain_name,
+                bloom_level: s.bloom_level,
+                competency: domainKey,
+                subject: groundTruth.curriculum.subject,
+                confidence_score: 1.0,
+                is_verified: true,
+                raw_code_as_found: s.original_code,
+                board: groundTruth.curriculum.board || 'SINDH',
+                created_at: new Date().toISOString()
+              });
+            }
+          }
+        }
+
+        // 3. Batch insert records
+        if (recordsToInsert.length > 0) {
+          const BATCH = 50;
+          for (let b = 0; b < recordsToInsert.length; b += BATCH) {
+            const chunk = recordsToInsert.slice(b, b + BATCH);
+            const { error: insErr } = await supabase.from('slo_database').insert(chunk);
+            if (insErr) console.error('[Ingestion] Error inserting ground truth SLO batch:', insErr.message);
+          }
+        }
+
+        // 4. Update document with canonical Universal JSON
+        const jsonText = JSON.stringify(groundTruth, null, 2);
+        await supabase.from('documents').update({
+          extracted_text: jsonText,
+          document_summary: `ledger|slos:${recordsToInsert.length}|board:${groundTruth.curriculum.board}|subject:${groundTruth.curriculum.subject}|verified:true`,
+          status: 'ready',
+          rag_indexed: true,
+        }).eq('id', documentId);
+
+        // 5. Index in RAG for vector querying
+        await queue.updateProgress(job.id, {
+          step: IngestionStep.EMBED,
+          progress: 85,
+          message: 'Indexing canonical curriculum in vector store...'
+        });
+        await indexDocumentForRAG(documentId, jsonText, supabase, job.id);
+
+        // 6. Complete job
+        await queue.markComplete(job.id);
+
+        return NextResponse.json({
+          success: true,
+          done: true,
+          step: 'COMPLETE',
+          progress: 100,
+          slosExtracted: recordsToInsert.length,
+          verified: true
+        });
+      }
 
       // ════════════════════════════════════════════════════════
       // STAGE 1 — EXTRACT (pdf-parse → raw text)

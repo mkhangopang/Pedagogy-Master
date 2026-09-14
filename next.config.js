@@ -35,12 +35,8 @@ const nextConfig = {
         source: '/(.*)',
         headers: [
           {
-            key: 'X-Frame-Options',
-            value: 'SAMEORIGIN',
-          },
-          {
             key: 'Content-Security-Policy',
-            value: "frame-ancestors 'self' https://*.google.com https://*.aistudio.google.com;",
+            value: "frame-ancestors *;",
           },
           {
             key: 'Strict-Transport-Security',

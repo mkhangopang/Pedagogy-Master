@@ -54,6 +54,26 @@ const Documents: React.FC<DocumentsProps> = ({
     
   const [ingestionProgressMap, setIngestionProgressMap] = useState<Record<string, any>>({});
 
+  // Auto-resume any pending or interrupted processing on page refresh/mount
+  useEffect(() => {
+    const unfinalized = documents.filter(d => d.status === 'processing' || d.status === 'pending');
+    if (unfinalized.length > 0) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session?.access_token) return;
+        unfinalized.forEach(doc => {
+          fetch(`/api/docs/process/${doc.id}`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}` 
+            },
+            body: JSON.stringify({ reprocess: false })
+          }).catch(err => console.warn('[Documents] Auto-resume check notice for', doc.id, err));
+        });
+      });
+    }
+  }, []);
+
   useEffect(() => {
     // We only need to subscribe if we have processing documents
     // Actually, we can just keep the subscription active for any changes to our documents.
@@ -173,9 +193,13 @@ const Documents: React.FC<DocumentsProps> = ({
     try {
       const { data: { session } } = await supabase.auth.getSession();
       onUpdateDocument(id, { status: 'pending', documentSummary: 'Re-triggering ingestion...' });
-      const response = await fetch(`/api/docs/process/${id}`, { 
+      const response = await fetch(`/api/docs/process/${id}?force=true`, { 
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}` 
+        },
+        body: JSON.stringify({ force: true, reprocess: true })
       });
       if (!response.ok) throw new Error('Failed to start processing');
     } catch (err) {
