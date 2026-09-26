@@ -13,17 +13,19 @@ import { GoogleGenAI, Type } from "@google/genai";
 import OpenAI from 'openai';
 import { createHash } from 'crypto';
 import { resolveApiKey } from '../../../../../lib/env-server';
-import { extractSLOsFromPDFBuffer, likelyHasMultiGradeTable } from '../../../../../lib/slo/table-extractor';
+import { extractSLOsFromPDFBuffer, likelyHasMultiGradeTable, extractSLOsDirectFromText } from '../../../../../lib/slo/table-extractor';
 import { saveExtractionPattern, getBestMatchingPattern, buildPatternAwarePrompt, type ExtractionPattern } from '../../../../../lib/slo/pattern-trainer';
-import { getVerifiedGroundTruth } from '../../../../../lib/curriculum/ground-truth-curricula';
+import { getVerifiedGroundTruth, type GroundTruthCurriculum, type CurriculumMetadata } from '../../../../../lib/curriculum/ground-truth-curricula';
+
+export type { CurriculumMetadata, GroundTruthCurriculum };
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 // ── CONFIG ────────────────────────────────────────────────────────────────────
-const MODEL_PRIMARY  = 'gemini-3.6-flash';
-const MODEL_LITE     = 'gemini-3.5-flash';
-const MODEL_FALLBACK = 'gemini-3.5-flash-lite';
+const MODEL_PRIMARY  = 'gemini-3.8-flash';
+const MODEL_LITE     = 'gemini-flash-latest';
+const MODEL_FALLBACK = 'gemini-2.5-flash';
 
 const CHUNK_SIZE  = 10000;
 const OVERLAP     = 2500;
@@ -465,8 +467,8 @@ function processSlos(
 }
 
 function extractRawSloBlocks(text: string): string[] {
-  // Enhanced Regex: Handles [SLO:M-09-A-01], SLO M-09-A-01, M09A01, M-09-01, etc.
-  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?([A-Z]{1,4})\s*[-\s]*(\d{1,2}|I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)\s*[-\s]*([A-Z])\s*[-\s]*\d{1,2}[lI0-9]*\s*\]?)/gi;
+  // Enhanced Regex: Handles [SLO:M-09-A-01], SLO:P-09-10-X-38, SLO P-11-X15, M09A01, etc.
+  const codeRe = /(?:\[?\s*(?:(?:5L0|SL[O0]|LO|SW|SLO)\s*[:\s]+)?([A-Z]{1,4})\s*[-\s]*(\d{1,3}(?:[-\s]*\d{1,2})?|I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII)\s*[-\s]*([A-Z])\s*[-\s]*\d{1,3}[lI0-9]*\s*\]?)/gi;
   const matches = [];
   let m;
   while ((m = codeRe.exec(text)) !== null) {
@@ -478,9 +480,10 @@ function extractRawSloBlocks(text: string): string[] {
     const current = matches[i];
     const next = matches[i + 1];
     const start = current.index;
-    const end = next ? next.index : start + 400;
+    const end = next ? next.index : start + 1200;
     let block = text.substring(start, end).trim();
-    if (block.length > 400) block = block.substring(0, 400);
+    // Keep complete SLO descriptions (up to 1500 chars) instead of cutting at 400
+    if (block.length > 1500) block = block.substring(0, 1500);
     blocks.push(block.replace(/[\r\n]+/g, ' '));
   }
   return blocks;
@@ -559,19 +562,17 @@ async function callAIChain(
   responseMimeType: 'application/json' | 'text/plain' = 'application/json'
 ): Promise<any> {
   const chain = [
-    // PRIMARY: Gemini Flash — 60 RPM / 1500 RPD free tier. Best for bulk extraction.
+    // PRIMARY: Gemini 3.8 Flash — modern, state-of-the-art document extraction
     { provider: 'gemini', model: MODEL_PRIMARY, key: geminiKey },
-    // FALLBACK 1: Flash Lite — even higher quota, slightly lower quality
+    // FALLBACK 1: Gemini Flash Latest — high quota, resilient
     { provider: 'gemini', model: MODEL_LITE, key: geminiKey },
-    // FALLBACK 2: Groq (Llama 3.3 70B) — very fast, high free quota
+    // FALLBACK 2: Gemini 2.5 Flash — fast, stable
+    { provider: 'gemini', model: MODEL_FALLBACK, key: geminiKey },
+    // FALLBACK 3: Groq (Llama 3.3 70B) — very fast, high free quota
     { provider: 'groq', model: 'llama-3.3-70b-versatile', key: process.env.GROQ_API_KEY },
-    // FALLBACK 3: Groq small model
-    { provider: 'groq', model: 'llama-3.1-8b-instant', key: process.env.GROQ_API_KEY },
     // FALLBACK 4: OpenAI mini
     { provider: 'openai', model: 'gpt-4o-mini', key: process.env.OPENAI_API_KEY },
   ].filter(link => !!link.key);
-  // REMOVED: { provider: 'gemini', model: MODEL_COMPLEX, key: geminiKey }
-  // (gemini-2.5-pro-preview has 10 RPM on free tier — not suitable for bulk extraction)
 
   if (chain.length === 0) {
     throw new Error('ORCHESTRATOR_FAULT: No AI provider keys found in environment.');
@@ -579,7 +580,7 @@ async function callAIChain(
 
   for (const link of chain) {
     let attempts = 0;
-    const maxAttempts = 2;
+    const maxAttempts = 3;
 
     while (attempts < maxAttempts) {
       try {
@@ -587,7 +588,14 @@ async function callAIChain(
         
         let textResult = '';
         if (link.provider === 'gemini') {
-          const ai = new GoogleGenAI({ apiKey: link.key! });
+          const ai = new GoogleGenAI({ 
+            apiKey: link.key!,
+            httpOptions: {
+              headers: {
+                'User-Agent': 'aistudio-build'
+              }
+            }
+          });
           const response = await ai.models.generateContent({
             model: link.model,
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -625,10 +633,10 @@ async function callAIChain(
 
       } catch (e: any) {
         attempts++;
-        const isQuota = /429|quota|RESOURCE_EXHAUSTED/i.test(e.message || '');
-        if (isQuota && attempts < maxAttempts) {
-          console.warn(`[AI Chain] ${link.model} quota hit. Retrying in 2s...`);
-          await new Promise(r => setTimeout(r, 2000));
+        const isRetryable = /429|503|quota|RESOURCE_EXHAUSTED|UNAVAILABLE|high demand/i.test(e.message || '');
+        if (isRetryable && attempts < maxAttempts) {
+          console.warn(`[AI Chain] ${link.model} transient error (${e.message}). Retrying in 2.5s...`);
+          await new Promise(r => setTimeout(r, 2500));
           continue;
         }
         console.error(`[AI Chain] ${link.model} failed:`, e.message);
@@ -1243,13 +1251,30 @@ function standardizeCurriculum(
     }
   }
 
-  const jsonObject = {
+  const jsonObject: {
+    curriculum: {
+      name: string;
+      subject: string;
+      subject_code: string;
+      grade_system: string;
+      grade_range: string;
+      board?: string;
+    };
+    grades: typeof gradesObject;
+    metadata: {
+      total_grades: number;
+      total_domains: number;
+      total_slos: number;
+      grade_mapping: Record<string, string>;
+    };
+  } = {
     curriculum: {
       name: docName || 'Universal Curriculum Ingestion',
       subject: subjectName,
       subject_code: subjectCode,
       grade_system: gradeSystem,
-      grade_range: gradeRange
+      grade_range: gradeRange,
+      board: boardKey || 'SINDH'
     },
     grades: gradesObject,
     metadata: {
@@ -1562,7 +1587,7 @@ export async function POST(
       // ════════════════════════════════════════════════════════
       // ZERO-HALLUCINATION CANONICAL GROUND TRUTH CHECK
       // ════════════════════════════════════════════════════════
-      const groundTruth = getVerifiedGroundTruth(doc.name);
+      const groundTruth: GroundTruthCurriculum | null = getVerifiedGroundTruth(doc.name);
       if (groundTruth) {
         console.log(`[Ingestion] Matched verified ground truth curriculum for "${doc.name}". Applying canonical deconstruction...`);
         
@@ -1588,10 +1613,8 @@ export async function POST(
                 domain: domainKey,
                 domain_name: domainVal.domain_name,
                 bloom_level: s.bloom_level,
-                competency: domainKey,
                 subject: groundTruth.curriculum.subject,
-                confidence_score: 1.0,
-                is_verified: true,
+                extraction_confidence: 1.0,
                 raw_code_as_found: s.original_code,
                 board: groundTruth.curriculum.board || 'SINDH',
                 created_at: new Date().toISOString()
@@ -1700,8 +1723,62 @@ export async function POST(
 
         let docSummary = `raw|board:${board}|subject:${subject}|len:${text.length}`;
 
-        // ── TABLE-AWARE EXTRACTION ───────────────────────────────────────────
-        if (likelyHasMultiGradeTable(text)) {
+        // ── DIRECT VERBATIM SLO EXTRACTION (High Fidelity) ───────────────────
+        const directSlos = extractSLOsDirectFromText(text, subject, board);
+        if (directSlos.length >= 10) {
+          console.log(`[Stage 1] Direct Verbatim Extractor identified ${directSlos.length} pristine SLOs from source document.`);
+          
+          const records = directSlos.map(s => ({
+            document_id: documentId,
+            slo_code: s.slo_code,
+            raw_code_as_found: s.raw_slo_num,
+            slo_full_text: s.slo_full_text,
+            grade_level: s.grade_level,
+            domain: s.domain,
+            domain_name: s.domain_name,
+            bloom_level: s.bloom_level,
+            subject: SUBJECTS[subject] || subject,
+            board: board,
+            extraction_confidence: 1.0,
+            page_number: s.page,
+            created_at: new Date().toISOString()
+          }));
+
+          const { jsonText, updatedSlos } = standardizeCurriculum(records, board, subject, doc.name);
+          text = jsonText;
+
+          // Clear any partial extraction if we are doing direct fresh
+          await supabase.from('slo_database').delete().eq('document_id', documentId);
+
+          // Insert in batches
+          const BATCH_SIZE = 100;
+          for (let i = 0; i < updatedSlos.length; i += BATCH_SIZE) {
+            const batch = updatedSlos.slice(i, i + BATCH_SIZE).map(s => ({
+              document_id: documentId,
+              slo_code: s.slo_code,
+              slo_full_text: s.slo_full_text,
+              domain: s.domain,
+              domain_name: s.domain_name,
+              bloom_level: s.bloom_level,
+              cognitive_complexity: s.cognitive_complexity,
+              keywords: s.keywords || [],
+              subject: s.subject,
+              grade_level: s.grade_level,
+              extraction_confidence: 1.0,
+              page_number: s.page_number || null,
+              is_truncated: s.is_truncated || false,
+              is_orphan_domain: s.is_orphan_domain || false,
+              raw_code_as_found: s.raw_code_as_found,
+              created_at: new Date().toISOString(),
+              board: board
+            }));
+            const { error } = await supabase.from('slo_database').insert(batch);
+            if (error) console.error('[Stage 1] Direct insert error:', error.message);
+          }
+
+          docSummary = `ledger|slos:${updatedSlos.length}|board:${board}|subject:${subject}|direct_extracted:true`;
+          console.log(`[Stage 1] Direct verbatim ledger built with ${updatedSlos.length} SLOs. Stage 2 will skip re-extraction.`);
+        } else if (likelyHasMultiGradeTable(text)) {
            console.log('[Stage 1] Likely multi-grade table detected. Running table-aware extractor...');
            if (!pdfBuffer) {
               const r2Path = doc.file_path;

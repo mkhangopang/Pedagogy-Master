@@ -4,15 +4,19 @@
  * matching Grok's Universal Curriculum Standards.
  */
 
+import { PHYSICS_GRADE_9_12_2024 } from './physics-curriculum-2024';
+
+export interface CurriculumMetadata {
+  name: string;
+  subject: string;
+  subject_code: string;
+  grade_system: string;
+  grade_range: string;
+  board?: string;
+}
+
 export interface GroundTruthCurriculum {
-  curriculum: {
-    name: string;
-    subject: string;
-    subject_code: string;
-    grade_system: string;
-    grade_range: string;
-    board?: string;
-  };
+  curriculum: CurriculumMetadata;
   grades: Record<string, {
     display_name: string;
     domains: Record<string, {
@@ -768,6 +772,10 @@ export function getVerifiedGroundTruth(docName: string): GroundTruthCurriculum |
     (clean.includes('viii') || clean.includes('8') || clean.includes('1 8') || clean.includes('i viii'))
   ) {
     return MATHEMATICS_GRADE_1_8_2024;
+  }
+  
+  if (clean.includes('physics')) {
+    return PHYSICS_GRADE_9_12_2024;
   }
   
   return null;

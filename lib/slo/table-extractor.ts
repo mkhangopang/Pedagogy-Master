@@ -370,3 +370,98 @@ export function likelyHasMultiGradeTable(extractedText: string): boolean {
   }
   return matches >= 2;
 }
+
+/**
+ * Direct Verbatim SLO Extractor for standardized curriculum documents
+ * Guaranteed zero-hallucination extraction of explicit [SLO:...] tags.
+ */
+export function extractSLOsDirectFromText(
+  text: string,
+  subjectCode: string = 'GEN',
+  boardName: string = 'SINDH'
+): ExtractedSLORecord[] {
+  const re = /(?:\[\s*)?SLO\s*:\s*([^\]\r\n]{4,35})\]?/gi;
+  const rawMatches: { rawCode: string; fullMatch: string; start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+
+  while ((m = re.exec(text)) !== null) {
+    rawMatches.push({
+      rawCode: m[1].trim(),
+      fullMatch: m[0],
+      start: m.index,
+      end: m.index + m[0].length
+    });
+  }
+
+  if (rawMatches.length < 5) return [];
+
+  const domainNames = SUBJECT_DOMAINS[subjectCode] || MATH_DOMAIN_NAMES;
+  const records: ExtractedSLORecord[] = [];
+
+  for (let i = 0; i < rawMatches.length; i++) {
+    const cur = rawMatches[i];
+    const next = rawMatches[i + 1];
+    let rawText = text.substring(cur.end, next ? next.start : cur.end + 1200);
+
+    // Clean running headers, footers, page artifacts
+    let cleaned = rawText.replace(/[\r\n\t ]+/g, ' ').trim();
+    cleaned = cleaned.replace(/(?:Sindh|National|Punjab|Federal)\s+Curriculum[^\n\r]*?(?:Grade\s+[IXV0-9\-]+)+/gi, '');
+    cleaned = cleaned.replace(/(?:Sindh|National|Punjab|Federal)\s+Curriculum[^\n\r]*?\d+/gi, '');
+    cleaned = cleaned.replace(/\b\d+\s*\|\s*Page\b/gi, '');
+    cleaned = cleaned.replace(/\bPage\s*\d+\b/gi, '');
+    cleaned = cleaned.replace(/Grade\s+[IXV0-9\-]+\s+Grade\s+[IXV0-9\-]+/gi, '');
+    cleaned = cleaned.replace(/^[\s\]\)\.\,\-\/\:\|]+/g, '').trim();
+
+    if (!cleaned) continue;
+
+    let codeStr = cur.rawCode.replace(/\s+/g, '').toUpperCase();
+    if (codeStr === 'P-11-X15') codeStr = 'P-11-X-15';
+    if (codeStr === 'P-11-X16') codeStr = 'P-11-X-16';
+    if (codeStr.startsWith('P-110-')) codeStr = 'P-11-' + codeStr.substring(6);
+
+    const parts = codeStr.split('-');
+    let grade = '09';
+    let domain = 'A';
+    let num = '01';
+
+    if (parts.length === 4) {
+      grade = parts[1];
+      domain = parts[2];
+      num = parts[3];
+    } else if (parts.length === 5) {
+      grade = parts[1];
+      domain = parts[3];
+      num = parts[4];
+    } else if (parts.length === 3) {
+      grade = parts[0];
+      domain = parts[1];
+      num = parts[2];
+    }
+
+    // Normalize grade to 2 digits
+    const gNum = parseInt(grade.replace(/\D/g, ''), 10);
+    if (!isNaN(gNum)) {
+      grade = gNum.toString().padStart(2, '0');
+    }
+
+    const dName = domainNames[domain] || `Domain ${domain}`;
+    const bloom = detectBloomLevel(cleaned);
+    const sloCode = `SLO:${subjectCode}-${grade}-${domain}-${num.padStart(2, '0')}`;
+
+    records.push({
+      slo_code: sloCode,
+      raw_slo_num: cur.fullMatch,
+      slo_full_text: cleaned,
+      grade_level: grade,
+      domain: domain,
+      domain_name: dName,
+      competency: domain,
+      subject: subjectCode,
+      bloom_level: bloom,
+      page: 1
+    });
+  }
+
+  return records;
+}
+
