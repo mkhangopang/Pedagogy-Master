@@ -56,7 +56,6 @@ export interface NeuralBrain {
 export enum IngestionStep {
   EXTRACT = 'EXTRACT',
   LINEARIZE = 'LINEARIZE',
-  PARSE = 'PARSE',
   ENRICH = 'ENRICH',
   EMBED = 'EMBED',
   COMPLETE = 'COMPLETE'

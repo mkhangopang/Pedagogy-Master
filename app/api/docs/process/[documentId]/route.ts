@@ -1592,7 +1592,7 @@ export async function POST(
         console.log(`[Ingestion] Matched verified ground truth curriculum for "${doc.name}". Applying canonical deconstruction...`);
         
         await queue.updateProgress(job.id, {
-          step: IngestionStep.PARSE,
+          step: IngestionStep.LINEARIZE,
           progress: 50,
           message: 'Applying verified curriculum ground truth...'
         });

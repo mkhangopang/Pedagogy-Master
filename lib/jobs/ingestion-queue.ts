@@ -56,10 +56,14 @@ export class IngestionQueue {
    * Updates the progress of a specific job.
    */
   async updateProgress(jobId: string, progress: JobProgress) {
+    // Sanitize step to conform to Postgres ingestion_jobs_step_check constraint:
+    const allowedSteps = new Set(['EXTRACT', 'LINEARIZE', 'ENRICH', 'EMBED', 'COMPLETE', 'chunk', 'extract', 'linearize', 'embed']);
+    const safeStep = allowedSteps.has(progress.step as string) ? progress.step : IngestionStep.LINEARIZE;
+
     const { error } = await this.supabase
       .from('ingestion_jobs')
       .update({
-        step: progress.step,
+        step: safeStep,
         status: JobStatus.PROCESSING,
         progress: progress.progress,
         message: progress.message,
