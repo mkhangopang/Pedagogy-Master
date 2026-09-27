@@ -5,11 +5,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loader2, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activity-logger';
-import * as pdfjs from 'pdfjs-dist';
-
-if (typeof window !== 'undefined') {
-  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-}
 
 export default function DocumentUploader({ userId, onComplete, onCancel }: any) {
   const [isUploading, setIsUploading] = useState(false);
@@ -201,6 +196,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
 
   const extractTextFromPDF = async (file: File): Promise<string> => {
     try {
+      const pdfjs = await import('pdfjs-dist');
+      if (typeof window !== 'undefined' && pdfjs.GlobalWorkerOptions) {
+        pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+      }
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
       const totalPages = pdf.numPages;

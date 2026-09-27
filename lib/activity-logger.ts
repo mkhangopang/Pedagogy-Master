@@ -49,7 +49,7 @@ export async function logActivity(
     const { data: { session } } = await supabase.auth.getSession();
     const effectiveUserId = entry.userId || session?.user?.id;
     if (effectiveUserId) {
-      supabase.from('improvement_signals').insert({
+      await supabase.from('improvement_signals').insert({
         user_id: effectiveUserId,
         signal_type: `activity:${entry.category}`,
         signal_data: {
@@ -62,7 +62,7 @@ export async function logActivity(
         tool_type: entry.metadata?.toolName || 'system',
         created_at: newLog.timestamp,
         compiled: false
-      }).then(() => {}).catch(() => {});
+      });
     }
   } catch (_) {
     // Non-blocking background sync
