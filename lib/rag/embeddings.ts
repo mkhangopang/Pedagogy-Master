@@ -24,13 +24,25 @@ async function callEmbeddingAPI(
   texts: string[],
   attempt: number
 ): Promise<number[][]> {
-  const result = await ai.models.embedContent({
-    model: 'gemini-embedding-001',
-    contents: texts,
-    config: {
-      outputDimensionality: 768,
-    },
-  });
+  let result: any;
+  try {
+    result = await ai.models.embedContent({
+      model: 'text-embedding-004',
+      contents: texts,
+      config: {
+        outputDimensionality: 768,
+      },
+    });
+  } catch (err: any) {
+    console.warn(`[Embedding] text-embedding-004 failed (${err.message}), falling back to gemini-embedding-001...`);
+    result = await ai.models.embedContent({
+      model: 'gemini-embedding-001',
+      contents: texts,
+      config: {
+        outputDimensionality: 768,
+      },
+    });
+  }
 
   const rawEmbeddings = result.embeddings || [];
   if (rawEmbeddings.length !== texts.length) {

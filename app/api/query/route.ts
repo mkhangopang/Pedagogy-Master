@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
 import { getSynthesizer } from '../../../lib/ai/synthesizer-core';
-import { generateEmbedding } from '../../../lib/rag/embeddings';
+import { RAGPipeline } from '../../../lib/rag/rag-pipeline';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /**
- * SMART RAG INFERENCE NODE (v6.2)
- * Stage 1: Exact SLO Lookup (Regex extraction)
- * Stage 2: Hybrid Semantic Search (v6 RPC)
- * Stage 3: Deterministic Synthesis
+ * SMART RAG INFERENCE NODE (v7.0 - PGVECTOR POWERED)
+ * Stage 1: Vector Search & Atomic SLO Context via RAGPipeline
+ * Stage 2: Grounded Synthesis with Citation Tracking
  */
 export async function POST(req: NextRequest) {
   try {
@@ -22,70 +21,52 @@ export async function POST(req: NextRequest) {
     if (!query) return NextResponse.json({ error: 'Query required' }, { status: 400 });
 
     const supabase = getSupabaseServerClient(token);
-    let context = "";
-    let searchMethod = "semantic";
+    const docIds = documentId ? [documentId] : [];
 
-    // 🔍 STEP 1: Exact SLO Extraction (Resilient to B09 vs B-09)
-    const sloMatch = query.match(/[A-Z]\d{2}[A-Z]\d{2}/i);
-    const sloCode = sloMatch ? sloMatch[0].toUpperCase().replace(/-/g, '') : null;
+    // Retrieve grounded context via pgvector pipeline
+    const groundedResult = await RAGPipeline.buildGroundedContext({
+      query,
+      documentIds: docIds,
+      supabase,
+      matchCount: 8
+    });
 
-    if (sloCode) {
-      const { data: exactChunks } = await supabase
-        .from('document_chunks')
-        .select('chunk_text')
-        .contains('slo_codes', [sloCode])
-        .eq('document_id', documentId)
-        .limit(1);
-
-      if (exactChunks && exactChunks.length > 0) {
-        context = exactChunks[0].chunk_text;
-        searchMethod = "exact_slo_match";
-      }
+    if (!groundedResult.isGrounded) {
+      return NextResponse.json({ 
+        error: "No relevant curriculum context found in current vault node.",
+        suggestion: "Ensure the document is selected and vectorized in your Library."
+      }, { status: 404 });
     }
 
-    // 🔍 STEP 2: Hybrid Vector Search v6
-    if (!context) {
-      const embedding = await generateEmbedding(query);
-      const { data: similarChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v6', {
-        query_text: query,
-        query_embedding: embedding,
-        match_count: 8,
-        filter_document_ids: [documentId]
-      });
-
-      if (rpcError) throw new Error(`RPC_V6_FAULT: ${rpcError.message}`);
-      
-      if (similarChunks && similarChunks.length > 0) {
-        context = similarChunks.map((c: any) => c.chunk_text).join('\n---\n');
-      }
-    }
-
-    if (!context) {
-      return NextResponse.json({ error: "No relevant curriculum context found in current vault node." }, { status: 404 });
-    }
-
-    // 🧠 STEP 3: Deterministic Synthesis
+    // Grounded Synthesis
     const synth = getSynthesizer();
     const result = await synth.synthesize(`
-Based on the following curriculum context, answer the educator's question with 100% fidelity.
-CONTEXT:
-${context}
+Based on the following authoritative curriculum context, answer the educator's question with 100% pedagogical fidelity.
+
+${groundedResult.groundedText}
 
 USER QUESTION:
 "${query}"
 
 RULES:
-- Answer ONLY using provided context.
-- Use verbatim SLO codes.
-- Do not hallucinate standards not present in the vault.
-`, { systemPrompt: 'You are a high-fidelity curriculum assistant. Answer using ONLY provided context.', complexity: 2 });
+- Answer accurately and thoroughly using ONLY the provided curriculum context.
+- Explicitly cite verbatim SLO codes (e.g. M09A01, B09A02) wherever applicable.
+- Structure explanations with clear pedagogical steps, learning targets, and cognitive taxonomy levels.
+- Do not invent standards not present in the provided context.
+`, { 
+      systemPrompt: 'You are an authoritative Curriculum Specialist and Pedagogical Architect. Provide precise, standards-aligned instructional guidance grounded in the provided curriculum.',
+      complexity: 2 
+    });
 
     return NextResponse.json({
       success: true,
       answer: result.text,
       provider: result.provider,
-      searchMethod,
-      contextPreview: context.substring(0, 300) + '...'
+      searchMethod: 'supabase_pgvector_hybrid',
+      contextPreview: groundedResult.groundedText.substring(0, 350) + '...',
+      retrievedChunksCount: groundedResult.retrievedChunks.length,
+      matchedSlosCount: groundedResult.matchedSlos.length,
+      sourceDocuments: groundedResult.sourceDocumentNames
     });
 
   } catch (error: any) {
