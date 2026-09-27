@@ -994,17 +994,25 @@ async function enrichSlos(documentId: string, supabase: any, apiKey: string, job
     return;
   }
 
-  console.log(`[Enrich] Starting enrichment for ${slos.length} SLOs...`);
+  // Filter for SLOs that still need enrichment (bloom_level is missing)
+  const pendingSlos = slos.filter((s: any) => !s.bloom_level);
 
-  const BATCH_SIZE = 15;
-  for (let i = 0; i < slos.length; i += BATCH_SIZE) {
-    const batch = slos.slice(i, i + BATCH_SIZE);
-    const progress = Math.round((i / slos.length) * 10) + 75; // 75% → 85%
+  if (pendingSlos.length === 0) {
+    console.log(`[Enrich] All ${slos.length} SLOs are already enriched. Advancing directly to EMBED stage.`);
+    return;
+  }
+
+  console.log(`[Enrich] Starting enrichment for ${pendingSlos.length} pending SLOs (${slos.length - pendingSlos.length} already enriched)...`);
+
+  const BATCH_SIZE = 25;
+  for (let i = 0; i < pendingSlos.length; i += BATCH_SIZE) {
+    const batch = pendingSlos.slice(i, i + BATCH_SIZE);
+    const progress = Math.round((i / pendingSlos.length) * 10) + 75; // 75% → 85%
 
     await queue.updateProgress(jobId, {
       step: IngestionStep.ENRICH,
       progress,
-      message: `Enriching SLOs (${i + 1}–${Math.min(i + BATCH_SIZE, slos.length)} of ${slos.length})...`
+      message: `Enriching SLOs (${i + 1}–${Math.min(i + BATCH_SIZE, pendingSlos.length)} of ${pendingSlos.length})...`
     });
 
     // BUG FIX (S3-Bug2): Use a stable row index for matching, not slo_code.

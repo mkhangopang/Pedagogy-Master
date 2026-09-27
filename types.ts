@@ -144,3 +144,40 @@ export interface OutputArtifact {
   editDepth: number;
   createdAt: string;
 }
+
+export type ActivityCategory = 
+  | 'document_upload' 
+  | 'query_completion' 
+  | 'setting_adjustment' 
+  | 'system_event';
+
+export type ActivityStatus = 'success' | 'processing' | 'failed';
+
+export interface ActivityLog {
+  id: string;
+  userId?: string;
+  category: ActivityCategory;
+  action: string;
+  summary: string;
+  status: ActivityStatus;
+  timestamp: string;
+  durationMs?: number;
+  metadata?: {
+    documentId?: string;
+    documentName?: string;
+    board?: string;
+    subject?: string;
+    fileSize?: number;
+    mimeType?: string;
+    slosExtracted?: number;
+    promptPreview?: string;
+    model?: string;
+    tokensUsed?: number;
+    toolName?: string;
+    settingKey?: string;
+    previousValue?: any;
+    newValue?: any;
+    errorMessage?: string;
+    [key: string]: any;
+  };
+}

@@ -23,6 +23,8 @@ const AuditView = lazy(() => import('../views/AuditDashboard'));
 const MissionView = lazy(() => import('../views/MissionControl'));
 const OnboardingView = lazy(() => import('../views/Onboarding'));
 const StandardsBrowserView = lazy(() => import('../views/StandardsBrowser'));
+const ActivityLogView = lazy(() => import('../views/ActivityLog'));
+import { logActivity } from '../lib/activity-logger';
 
 export default function App() {
   const [session, setSession] = useState<any>(null);
@@ -100,6 +102,13 @@ export default function App() {
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
     document.documentElement.classList.toggle('dark', newTheme === 'dark');
+    logActivity({
+      category: 'setting_adjustment',
+      action: 'Platform Theme Toggled',
+      summary: `Switched visual appearance to ${newTheme} mode`,
+      status: 'success',
+      metadata: { settingKey: 'theme', previousValue: theme, newValue: newTheme }
+    });
   };
 
   const fetchAppData = useCallback(async (userId: string, email?: string, providedSession?: any) => {
@@ -309,6 +318,7 @@ export default function App() {
                   case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={() => setUserProfile(p => p ? {...p, queriesUsed: p.queriesUsed + 1} : null)} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} onViewChange={setCurrentView} />;
                   case 'tracker': return <TrackerView user={safeProfile} documents={documents} />;
                   case 'standards': return <StandardsBrowserView user={safeProfile} documents={documents} />;
+                  case 'activity_log': return <ActivityLogView user={safeProfile} documents={documents} onViewChange={setCurrentView} />;
                   case 'onboarding': return <OnboardingView user={safeProfile} onComplete={(p) => { setUserProfile(p); setCurrentView('dashboard'); }} />;
                   case 'brain': return safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
                   case 'audit': return safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} />;

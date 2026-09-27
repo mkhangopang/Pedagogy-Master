@@ -8,6 +8,7 @@ import {
 import { NeuralBrain, JobStatus, IngestionStep } from '../types';
 import { supabase } from '../lib/supabase';
 import { DEFAULT_MASTER_PROMPT, LATEST_SQL_BLUEPRINT } from '../constants';
+import { logActivity } from '../lib/activity-logger';
 
 interface BrainControlProps {
   brain: NeuralBrain;
@@ -67,7 +68,15 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${session?.access_token}` }
       });
-      if (res.ok) alert("GRID RE-ALIGNED: All AI nodes have been reset and are ready for synthesis.");
+      if (res.ok) {
+        logActivity({
+          category: 'setting_adjustment',
+          action: 'Neural Grid Re-aligned',
+          summary: 'Reset AI provider fallback chains and cached models',
+          status: 'success'
+        });
+        alert("GRID RE-ALIGNED: All AI nodes have been reset and are ready for synthesis.");
+      }
     } catch (e) {
       alert("Failed to reset grid.");
     } finally {
@@ -104,6 +113,18 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
 
       setFormData(updatedBrain);
       onUpdate(updatedBrain);
+
+      logActivity({
+        category: 'setting_adjustment',
+        action: 'Neural Brain Recipe Calibrated',
+        summary: `Updated Master Pedagogical Prompt to version ${updatedBrain.version}`,
+        status: 'success',
+        metadata: {
+          version: updatedBrain.version,
+          settingKey: 'masterPrompt',
+          promptLength: updatedBrain.masterPrompt.length
+        }
+      });
     } catch (e: any) {
       setSyncError(e.message);
     } finally { setIsSaving(false); }
@@ -115,6 +136,12 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
     try {
       const { error } = await supabase.rpc('reload_schema_cache');
       if (error) throw error;
+      logActivity({
+        category: 'setting_adjustment',
+        action: 'PostgreSQL Schema Cache Reloaded',
+        summary: 'Purged database schema cache via Supabase RPC reload_schema_cache()',
+        status: 'success'
+      });
       alert("API Cache purged. All new columns are now visible.");
     } catch (e: any) {
       alert("Grid Refusal: " + e.message);

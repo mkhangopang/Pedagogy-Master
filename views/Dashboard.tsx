@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, Document, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activity-logger';
 
 interface DashboardProps {
   user: UserProfile;
@@ -39,6 +40,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
       const { error } = await supabase.from('profiles').update({ workspace_name: tempWorkspaceName }).eq('id', user.id);
       if (!error) {
         onProfileUpdate({ ...user, workspaceName: tempWorkspaceName });
+        logActivity({
+          category: 'setting_adjustment',
+          action: 'Institutional Branding Adjusted',
+          summary: `Updated workspace branding to "${tempWorkspaceName}"`,
+          status: 'success',
+          metadata: {
+            settingKey: 'workspaceName',
+            previousValue: user.workspaceName,
+            newValue: tempWorkspaceName
+          }
+        });
         setIsEditingBranding(false);
       }
     } finally { setIsSavingBranding(false); }
@@ -60,6 +72,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
         </div>
         
         <div className="flex flex-wrap gap-2">
+          <button 
+            onClick={() => onViewChange('activity_log')}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-indigo-600 dark:text-indigo-400 hover:scale-[1.02] transition-all shadow-sm"
+          >
+            <Activity size={14} />
+            <span className="text-[9px] font-bold uppercase tracking-widest">Activity Log</span>
+          </button>
+
           <button 
             onClick={() => setIsEditingBranding(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:scale-[1.02] transition-all shadow-sm"

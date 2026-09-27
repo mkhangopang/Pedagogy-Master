@@ -18,6 +18,7 @@ import { buildDifferentiationPrompt, parseDifferentiatedResponse, Differentiated
 import { buildAssessmentPrompt, AssessmentOptions, Assessment } from '../lib/pedagogy/assessment-generator';
 import { DocumentSelector } from '../components/chat/DocumentSelector';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activity-logger';
 
 interface ChatProps {
   brain: NeuralBrain;
@@ -143,6 +144,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       }
       const parsed = parseDifferentiatedResponse(fullResponse, level);
       setDiffResults(prev => ({ ...prev, [level]: parsed }));
+      logActivity({
+        category: 'query_completion',
+        action: `Differentiation Matrix (${level.toUpperCase()})`,
+        summary: `Synthesized differentiated instructional material for ${level}-level learners`,
+        status: 'success',
+        metadata: { level, tool: 'differentiation' }
+      });
     } catch (e) {
       console.error("Diff failed", e);
     } finally {
@@ -165,6 +173,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
       const cleaned = fullResponse.replace(/```json|```/g, '').trim();
       const parsed = JSON.parse(cleaned);
       setAssessmentResult(parsed);
+      logActivity({
+        category: 'query_completion',
+        action: 'Assessment Matrix Generated',
+        summary: `Synthesized assessment: "${parsed.title || 'Instructional Evaluation'}" (${options.questionCount} items)`,
+        status: 'success',
+        metadata: { assessmentTitle: parsed.title, questionCount: options.questionCount, tool: 'assessment_generator' }
+      });
     } catch (e) {
       console.error("Assessment failed", e);
     } finally {
@@ -175,6 +190,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const handleSend = async (msgContent: string) => {
     if (!msgContent.trim() || isLoading || !canQuery) return;
 
+    const startTime = performance.now();
     const userMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: 'user',
@@ -227,8 +243,33 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         setCurrentValidation(validateLessonStructure(fullContent));
       }
       await adaptiveService.captureGeneration(user.id, 'chat', fullContent, { query: msgContent });
-    } catch (err) {
+
+      logActivity({
+        category: 'query_completion',
+        action: 'Neural Chat Query Completed',
+        summary: `Synthesized response for: "${msgContent.slice(0, 60)}${msgContent.length > 60 ? '...' : ''}"`,
+        status: 'success',
+        durationMs: Math.round(performance.now() - startTime),
+        metadata: {
+          promptPreview: msgContent.slice(0, 250),
+          responseLength: fullContent.length,
+          focusedDocId: focusedDocId || undefined,
+          model: 'gemini-3.8-flash'
+        }
+      });
+    } catch (err: any) {
       setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: "Synthesis gate timed out. The neural grid is currently under high load." } : m));
+      logActivity({
+        category: 'query_completion',
+        action: 'Neural Chat Query Failed',
+        summary: `Synthesis failure: ${err?.message || 'The neural grid is currently under high load'}`,
+        status: 'failed',
+        durationMs: Math.round(performance.now() - startTime),
+        metadata: {
+          promptPreview: msgContent.slice(0, 250),
+          errorMessage: err?.message || 'Timeout'
+        }
+      });
     } finally {
       setIsLoading(false);
     }

@@ -17,6 +17,7 @@ import { supabase } from '../lib/supabase';
 import { ToolType, getToolDisplayName } from '../lib/ai/tool-router';
 import { markdownToHtml } from '../lib/markdown-renderer';
 import { PRINT_STYLES } from '../lib/tools-constants';
+import { logActivity } from '../lib/activity-logger';
 
 interface ToolsProps {
   brain: NeuralBrain;
@@ -104,6 +105,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const handleGenerate = async (userInput: string, handoffContext?: string) => {
     if (!userInput.trim() || isGenerating || !canQuery) return;
 
+    const startTime = performance.now();
     const effectiveTool = activeTool || 'master_plan';
     setIsGenerating(true);
     setWorkflowRecommendation(null);
@@ -154,10 +156,38 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled }
       );
 
+      logActivity({
+        category: 'query_completion',
+        action: `${getToolDisplayName(effectiveTool)} Completed`,
+        summary: `Synthesized pedagogical plan for: "${userInput.slice(0, 60)}${userInput.length > 60 ? '...' : ''}"`,
+        status: 'success',
+        durationMs: Math.round(performance.now() - startTime),
+        metadata: {
+          toolName: effectiveTool,
+          promptPreview: userInput.slice(0, 250),
+          persona,
+          documentId: activeDoc?.id,
+          documentName: activeDoc?.name,
+          artifactLength: fullContent.length
+        }
+      });
+
     } catch (err: any) {
       setMessages(prev => prev.map(m =>
         m.id === aiMsgId ? { ...m, content: `Synthesis Error: ${err.message}` } : m
       ));
+      logActivity({
+        category: 'query_completion',
+        action: `${getToolDisplayName(effectiveTool)} Failed`,
+        summary: `Synthesis error: ${err?.message || 'Error occurred'}`,
+        status: 'failed',
+        durationMs: Math.round(performance.now() - startTime),
+        metadata: {
+          toolName: effectiveTool,
+          promptPreview: userInput.slice(0, 250),
+          errorMessage: err?.message
+        }
+      });
     } finally {
       setIsGenerating(false);
     }

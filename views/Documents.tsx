@@ -10,6 +10,7 @@ import DocumentUploader from '../components/DocumentUploader';
 import { DocumentReader } from '../components/DocumentReader';
 import { getR2PublicUrl } from '../lib/r2';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activity-logger';
 
 interface DocumentsProps {
   documents: Document[];
@@ -171,6 +172,17 @@ const Documents: React.FC<DocumentsProps> = ({
         });
         
         if (response.ok) {
+          const deletedDoc = documents.find(d => d.id === id);
+          logActivity({
+            category: 'document_upload',
+            action: 'Curriculum Purged from Vault',
+            summary: `Purged "${deletedDoc?.name || 'Curriculum document'}" from institutional repository`,
+            status: 'success',
+            metadata: {
+              documentId: id,
+              documentName: deletedDoc?.name
+            }
+          });
           // Document was successfully deleted in DB, now update UI
           await onDeleteDocument(id);
         } else {

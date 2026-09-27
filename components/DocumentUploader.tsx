@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BrainCircuit, UploadCloud, AlertCircle, ShieldCheck, Database, Zap, Loader2, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activity-logger';
 import * as pdfjs from 'pdfjs-dist';
 
 if (typeof window !== 'undefined') {
@@ -34,9 +35,14 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const progressRef = useRef(0);
   // BUG-U2 FIX: Component-scoped ref for heartbeat tracking
   const lastTriggerRef = useRef<number>(0);
+  const isTriggeringRef = useRef(false);
+  const lastProgressTimeRef = useRef<number>(Date.now());
 
   // Helper to update both state and ref
   const updateProgress = (value: number) => {
+    if (value > progressRef.current) {
+      lastProgressTimeRef.current = Date.now();
+    }
     progressRef.current = value;
     setProgress(value);
   };
@@ -76,6 +82,18 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             isPolling.current = false;
             updateProgress(100);
             setStatus('Neural Alignment Verified!');
+            logActivity({
+              category: 'document_upload',
+              action: 'Curriculum Ingestion Complete',
+              summary: `Aligned and indexed ${data.name || 'Curriculum Standards'}${data.slosExtracted ? ` (${data.slosExtracted} SLOs)` : ''}`,
+              status: 'success',
+              metadata: {
+                documentId: data.id || docId,
+                documentName: data.name,
+                slosExtracted: data.slosExtracted,
+                status: data.status
+              }
+            });
             setTimeout(() => onComplete(data), 1000);
           } else if (data.status === 'failed') {
             clearInterval(poller);
@@ -97,6 +115,17 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                } catch(e) {}
             }
             
+            logActivity({
+              category: 'document_upload',
+              action: 'Curriculum Ingestion Failed',
+              summary: `Failed to process curriculum: ${cleanErr}`,
+              status: 'failed',
+              metadata: {
+                documentId: docId,
+                errorMessage: cleanErr
+              }
+            });
+
             setError(cleanErr);
             setIsUploading(false);
           } else {
@@ -113,14 +142,15 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
             
             setStatus(data.summary || 'Unrolling Curriculum Domains...');
 
-            // STUCK DETECTION: If progress hasn't moved for 30s, re-trigger the orchestrator
-            // This is critical for serverless environments where background tasks might be killed
+            // STUCK DETECTION: Only re-trigger if progress is truly stalled for > 60s and no trigger is in flight
             const now = Date.now();
+            const timeSinceProgressMoved = now - lastProgressTimeRef.current;
             const timeSinceLastTrigger = now - lastTriggerRef.current;
             
-            if (timeSinceLastTrigger > 30000) {
+            if (timeSinceProgressMoved > 60000 && timeSinceLastTrigger > 45000 && !isTriggeringRef.current) {
               lastTriggerRef.current = now;
-              console.log(`[Orchestrator] Heartbeat check: Progress is ${progressRef.current}%. Re-triggering...`);
+              isTriggeringRef.current = true;
+              console.log(`[Orchestrator] Heartbeat check: Progress is stalled at ${progressRef.current}%. Re-triggering...`);
               
               const triggerController = new AbortController();
               const triggerTimeout = setTimeout(() => triggerController.abort(), 290000);
@@ -131,16 +161,19 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
                 signal: triggerController.signal
               }).then(async (res) => {
                 clearTimeout(triggerTimeout);
+                isTriggeringRef.current = false;
                 if (!res.ok) {
                   const errData = await res.json().catch(() => ({}));
-                  console.error("Orchestrator Trigger Fault:", errData);
-                  // Only set error if it's a critical infrastructure failure (500)
-                  if (res.status >= 500) {
-                    setError(errData.error || errData.details || "Neural Grid Connection Severed.");
+                  console.warn("Orchestrator Trigger Fault:", errData);
+                  // Only fail UI if it is a fatal non-recoverable error explicitly stated
+                  if (errData.error && (errData.error.includes('Vault') || errData.error.includes('Identity Node'))) {
+                    setError(errData.error || errData.details || "Vault connection error.");
                     setIsUploading(false);
                   }
+                  // Otherwise allow status poller to continue reporting the backend state
                 }
               }).catch(e => {
+                isTriggeringRef.current = false;
                 if (e.name !== 'AbortError') {
                   console.warn("Background trigger warning:", e);
                   // Don't kill the UI for network blips, the poller will retry
@@ -225,6 +258,18 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       const { documentId } = handshake;
       setDocId(documentId);
       
+      logActivity({
+        category: 'document_upload',
+        action: 'Manual Curriculum Ingested',
+        summary: `Ingested text standards for "${manualTitle}" (${manualText.length} characters)`,
+        status: 'processing',
+        metadata: {
+          documentId,
+          title: manualTitle,
+          charCount: manualText.length
+        }
+      });
+
       updateProgress(40);
       setStatus('Initializing Neural Orchestrator...');
       
@@ -239,9 +284,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         clearTimeout(triggerTimeout);
         if (!res.ok) {
            const errData = await res.json().catch(() => ({}));
-           console.error("Orchestrator Trigger Fault:", errData);
-           if (res.status >= 500) {
-             setError(errData.error || errData.details || "Neural Grid Connection Severed.");
+           console.warn("Orchestrator Trigger Notice:", errData);
+           if (errData.error && (errData.error.includes('Vault') || errData.error.includes('Identity Node'))) {
+             setError(errData.error || errData.details || "Vault connection failure.");
              setIsUploading(false);
            }
         }
@@ -301,6 +346,19 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
       updateProgress(40);
       setStatus('Initializing Neural Orchestrator...');
       
+      logActivity({
+        category: 'document_upload',
+        action: 'Curriculum Upload Initiated',
+        summary: `Initiated upload of "${file.name}" (${(file.size / 1024).toFixed(1)} KB)`,
+        status: 'processing',
+        metadata: {
+          documentId,
+          documentName: file.name,
+          fileSize: file.size,
+          mimeType: file.type
+        }
+      });
+
       // BUG-U3 FIX: Add AbortController and timeout
       const triggerController = new AbortController();
       const triggerTimeout = setTimeout(() => triggerController.abort(), 290000);
@@ -313,9 +371,9 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         clearTimeout(triggerTimeout);
         if (!res.ok) {
            const errData = await res.json().catch(() => ({}));
-           console.error("Orchestrator Trigger Fault:", errData);
-           if (res.status >= 500) {
-             setError(errData.error || errData.details || "Neural Grid Connection Severed.");
+           console.warn("Orchestrator Trigger Notice:", errData);
+           if (errData.error && (errData.error.includes('Vault') || errData.error.includes('Identity Node'))) {
+             setError(errData.error || errData.details || "Vault connection failure.");
              setIsUploading(false);
            }
         }

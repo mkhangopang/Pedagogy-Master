@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { supabase } from '../lib/supabase';
+import { logActivity } from '../lib/activity-logger';
 import { 
   GraduationCap, 
   ArrowRight, 
@@ -42,6 +43,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
       }).eq('id', user.id);
 
       if (!error) {
+        logActivity({
+          category: 'setting_adjustment',
+          action: 'Educator Profile Configured',
+          summary: `Configured profile: ${formData.pedagogical_approach} model, ${formData.subject || 'All Subjects'} (Grade ${formData.grade_level || 'General'})`,
+          status: 'success',
+          metadata: formData
+        });
         onComplete({
           ...user,
           name: formData.name,

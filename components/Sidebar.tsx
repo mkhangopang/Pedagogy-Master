@@ -22,7 +22,8 @@ import {
   ShieldAlert,
   SearchCheck,
   BarChart3,
-  Eye
+  Eye,
+  Activity
 } from 'lucide-react';
 import { UserRole, UserProfile, StakeholderRole, SubscriptionPlan } from '../types';
 import { supabase } from '../lib/supabase';
@@ -61,6 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     { id: 'standards', label: 'Standards Browser', icon: SearchCheck },
     { id: 'tools', label: 'Neural Tools', icon: Wrench },
     { id: 'tracker', label: 'Progress Tracker', icon: ClipboardCheck },
+    { id: 'activity_log', label: 'Activity Log', icon: Activity },
   ];
 
   // 🏛️ STAKEHOLDER LENS INJECTION (ZERO COST)
