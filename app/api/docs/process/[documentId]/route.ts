@@ -1217,15 +1217,52 @@ function standardizeCurriculum(
   const warnings: string[] = [];
   const subjectName = SUBJECTS[subjectCode] || subjectCode;
 
-  // 1. Helper to extract trailing or embedded numeric position from an SLO code
-  const extractSloNumber = (raw: string | undefined): number => {
-    if (!raw) return 999;
+  // 1. Helper to extract precise Subject, Grade, Domain, and Number from SLO code string
+  const parseSloMeta = (raw: string | undefined): { subject?: string; grade?: string; domain?: string; number?: number } => {
+    if (!raw) return {};
     const clean = raw.trim().replace(/[\[\]]/g, '');
-    const match = clean.match(/[-_]?(\d{1,4})$/);
-    if (match) return parseInt(match[1], 10);
-    const anyNums = clean.match(/\d+/g);
-    if (anyNums && anyNums.length > 0) return parseInt(anyNums[anyNums.length - 1], 10);
-    return 999;
+
+    // Pattern 1: [SLO: B-10-M-01] / SLO:B-10-M- 08 / B-11-C-05 / SLO:B-9-B-01
+    const m1 = clean.match(/(?:SLO:)?\s*([A-Za-z]+)?[-_\s]*(\d{1,2})[-_\s]*([A-Za-z])[-_\s]*(\d{1,4})/i);
+    if (m1) {
+      return {
+        subject: m1[1] ? m1[1].toUpperCase() : undefined,
+        grade: m1[2].padStart(2, '0'),
+        domain: m1[3].toUpperCase(),
+        number: parseInt(m1[4], 10)
+      };
+    }
+
+    // Pattern 2: Practical/Skills format: [SLO:X-09-01] / X-09-02 / SLO:X-11-03
+    const m2 = clean.match(/(?:SLO:)?\s*([A-Za-z])[-_\s]+(\d{1,2})[-_\s]+(\d{1,4})/i);
+    if (m2) {
+      return {
+        grade: m2[2].padStart(2, '0'),
+        domain: m2[1].toUpperCase(),
+        number: parseInt(m2[3], 10)
+      };
+    }
+
+    // Pattern 3: Compact 6-char code: M09A01 / B10M01 / C11A05
+    const m3 = clean.match(/^([A-Za-z]+)(\d{2})([A-Za-z])(\d{1,4})$/i);
+    if (m3) {
+      return {
+        subject: m3[1].toUpperCase(),
+        grade: m3[2],
+        domain: m3[3].toUpperCase(),
+        number: parseInt(m3[4], 10)
+      };
+    }
+
+    // Pattern 4: Fallback trailing number
+    const m4 = clean.match(/[-_\sA-Za-z]*(\d{1,4})\s*$/);
+    if (m4) {
+      return {
+        number: parseInt(m4[1], 10)
+      };
+    }
+
+    return {};
   };
 
   // 2. Helper to clean full_text from stray artifacts and running headers
@@ -1261,45 +1298,58 @@ function standardizeCurriculum(
 
   const sortedSlosWithIndex = slos.map((s, idx) => ({ ...s, original_index: idx }));
 
-  // Track domain encounter order per grade
-  const domainEncounterOrder: Record<string, string[]> = {};
   const groups: Record<string, Record<string, any[]>> = {};
   const domainMetadataMap: Record<string, { domain_name: string; standard?: string }> = {};
 
   for (const s of sortedSlosWithIndex) {
-    const rawGrade = s.grade || s.grade_level || '';
-    let normGrade = normalizeGrade(rawGrade);
+    const rawCode = s.raw_code_as_found || s.slo_code || s.code || s.original_code || '';
+    const parsed = parseSloMeta(rawCode);
+
+    // Resolve Grade: Prefer code's grade if explicit, otherwise normalize s.grade
+    let normGrade = parsed.grade || normalizeGrade(s.grade || s.grade_level || '');
     if (!normGrade || normGrade === '99') {
-      warnings.push(`Ambiguous grade format "${rawGrade}" normalized to 09.`);
       normGrade = '09';
     }
 
-    let rawDomain = s.domain || 'A';
-    let domainStr = typeof rawDomain === 'string' ? rawDomain.toUpperCase().trim().substring(0, 1) : 'A';
-    if (!domainStr || !/[A-Z]/.test(domainStr)) domainStr = 'A';
+    // Resolve Domain: Prefer code's domain if explicit letter A-Z
+    let domainStr = parsed.domain;
+    if (!domainStr || !/[A-Z]/.test(domainStr)) {
+      let rawDomain = s.domain || 'A';
+      domainStr = typeof rawDomain === 'string' ? rawDomain.toUpperCase().trim().substring(0, 1) : 'A';
+      if (!domainStr || !/[A-Z]/.test(domainStr)) domainStr = 'A';
+    }
+
+    // Extract SLO number
+    const sloNum = parsed.number ?? 999;
 
     if (!groups[normGrade]) {
       groups[normGrade] = {};
-      domainEncounterOrder[normGrade] = [];
     }
 
     if (!groups[normGrade][domainStr]) {
       groups[normGrade][domainStr] = [];
-      domainEncounterOrder[normGrade].push(domainStr);
     }
 
-    const domainTitle = s.domain_name || 'General Core';
-    if (!domainMetadataMap[`${normGrade}_${domainStr}`]) {
+    const domainTitle = (s.domain_name && s.domain_name !== 'General Core' && !s.domain_name.startsWith('Domain ')) 
+      ? s.domain_name 
+      : `Domain ${domainStr}`;
+
+    if (!domainMetadataMap[`${normGrade}_${domainStr}`] || domainMetadataMap[`${normGrade}_${domainStr}`].domain_name.startsWith('Domain ')) {
       domainMetadataMap[`${normGrade}_${domainStr}`] = {
         domain_name: domainTitle,
         standard: s.standard || undefined
       };
     }
 
-    groups[normGrade][domainStr].push(s);
+    groups[normGrade][domainStr].push({
+      ...s,
+      parsed_number: sloNum,
+      parsed_domain: domainStr,
+      parsed_grade: normGrade
+    });
   }
 
-  // Filter and sort grade keys strictly ascending numeric (01, 02, ... 09, 10, 11, 12)
+  // Filter and sort grade keys strictly ascending numeric (00, 01, 02, ... 09, 10, 11, 12)
   const validGrades = Object.keys(groups).filter(g => g !== '99').sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
 
   let gradeRange = 'General';
@@ -1321,23 +1371,27 @@ function standardizeCurriculum(
     const dispName = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[gradeKey] || `Grade ${numVal}`) : `Grade ${numVal || gradeKey}`;
     const domainsForGrade: Record<string, any> = {};
 
-    // Domain order strictly following document appearance
-    const domainKeys = domainEncounterOrder[gradeKey] || Object.keys(groups[gradeKey]).sort();
+    // STRICT ORDERING REQUIREMENT #2: DOMAIN ORDER
+    // Domains are ordered strictly alphabetically (A -> Z), keeping X (practical/skills) at the end
+    const domainKeys = Object.keys(groups[gradeKey]).sort((a, b) => {
+      if (a === 'X' && b !== 'X') return 1;
+      if (b === 'X' && a !== 'X') return -1;
+      return a.localeCompare(b);
+    });
+
     totalDomainsCount += domainKeys.length;
 
     for (const domainKey of domainKeys) {
       const parentDomainSlos = groups[gradeKey][domainKey] || [];
-      const meta = domainMetadataMap[`${gradeKey}_${domainKey}`] || { domain_name: 'General Core' };
+      const meta = domainMetadataMap[`${gradeKey}_${domainKey}`] || { domain_name: `Domain ${domainKey}` };
       const dname = meta.domain_name;
 
-      // STRICT ORDERING REQUIREMENT:
-      // Sort within domain by ascending numeric SLO NUMBER extracted from its own code (e.g. 01, 02, 03...)
-      // Zero grouping or sorting by Bloom's taxonomy.
+      // STRICT ORDERING REQUIREMENT #3: SLO NUMBER SEQUENCE
+      // Sort strictly by ascending numeric SLO NUMBER (e.g. 01, 02, 03, ... 08, 09, 11, 12...)
+      // Gaps preserved, zero Bloom taxonomy ordering.
       const sortedInDomain = [...parentDomainSlos].sort((a, b) => {
-        const rawA = a.raw_code_as_found || a.slo_code || '';
-        const rawB = b.raw_code_as_found || b.slo_code || '';
-        const numA = extractSloNumber(rawA);
-        const numB = extractSloNumber(rawB);
+        const numA = a.parsed_number ?? 999;
+        const numB = b.parsed_number ?? 999;
         if (numA !== numB) return numA - numB;
         return (a.original_index ?? 0) - (b.original_index ?? 0);
       });
@@ -1346,9 +1400,9 @@ function standardizeCurriculum(
 
       sortedInDomain.forEach((s, idx) => {
         totalSlosCount++;
-        const originalCode = s.raw_code_as_found || s.slo_code || s.code || `SLO:${subjectCode}-${gradeKey}-${domainKey}-${String(idx + 1).padStart(2, '0')}`;
-        const extractedNum = extractSloNumber(originalCode);
-        const numStr = (extractedNum !== 999) ? String(extractedNum).padStart(2, '0') : String(idx + 1).padStart(2, '0');
+        const originalCode = s.raw_code_as_found || s.slo_code || s.code || s.original_code || `[SLO:${subjectCode}-${gradeKey}-${domainKey}-${String(idx + 1).padStart(2, '0')}]`;
+        const numVal = s.parsed_number !== 999 ? s.parsed_number : (idx + 1);
+        const numStr = String(numVal).padStart(2, '0');
         const universalSloId = `SLO:${subjectCode}-${gradeKey}-${domainKey}-${numStr}`;
 
         const rawStatement = s.slo_full_text || s.full_text || s.description || '';
@@ -1400,7 +1454,7 @@ function standardizeCurriculum(
       grade_range: string;
       board?: string;
     };
-    grades: typeof gradesObject;
+    grades: Record<string, any>;
     metadata: {
       total_grades: number;
       total_domains: number;
