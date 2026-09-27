@@ -489,7 +489,7 @@ function extractRawSloBlocks(text: string): string[] {
   return blocks;
 }
 
-// ── EXTRACTION PROMPT (RALPH v3.0 - PEDAGOGY MASTER EDITION) ──────────────────
+// ── EXTRACTION PROMPT (RALPH v4.0 - UNIVERSAL CURRICULUM SLO EXTRACTION ENGINE) ──
 function makePrompt(
   chunk: string,
   subject: string,
@@ -499,15 +499,6 @@ function makePrompt(
   isDeep: boolean = false,
   pattern: ExtractionPattern | null = null
 ): string {
-  const gradeSection = `
-=== GRADE SYSTEM (Universal - Early Years through Grade XII/XIII+) ===
-This is a universal curriculum framework supporting ANY grade level or stage of learning.
-Grade mapping guidelines:
-- Early Childhood Education / Nursery / Kindergarten / Prep (e.g., ECE, Nursery, KG, Prep, Pre-I) → '00'
-- Primary Grades (e.g., Grades I to VIII / 1 to 8) → '01' to '08' (e.g., I→01, II→02, III→03, IV→04, V→05, VI→06, VII→07, VIII→08)
-- Secondary & Higher Secondary Grades (e.g., Grades IX to XII / 13 / 9 to 13) → '09' to '13' (e.g., IX→09, X→10, XI→11, XII→12, XIII→13)
-- ALWAYS extract the exact original grade/class text and normalize it internally to a 2-digit, zero-padded string representation.`;
-
   const patternContext = pattern ? `
 === LEARNED PATTERN FROM PREVIOUS SUCCESSFUL EXTRACTION ===
 Board: ${pattern.board} | Subject: ${pattern.subject} | Grade Range: ${pattern.grade_range}
@@ -520,33 +511,138 @@ IMPORTANT: This document follows the above pattern. Apply it when extracting SLO
 Skip these sections (not SLOs): ${pattern.non_slo_sections.join(', ')}
 ` : '';
 
-  return `IDENTITY: Universal Curriculum Pedagogical Extraction Engine (Anti-Hallucination Strict Mode)
-GOAL: Extract verbatim Student Learning Outcomes (SLOs) from the provided curriculum text into the Universal Curriculum JSON schema.
-Board: ${board} | Subject: ${subject} | Chunk: ${chunkN}
+  return `SYSTEM INSTRUCTIONS: Universal Curriculum SLO Extraction Engine
 
-${gradeSection}
+ROLE
+You are a document-structuring engine. You extract Student Learning
+Outcomes (SLOs) from a curriculum PDF and output ONE valid JSON object.
+You do not summarize, explain, or comment. Output JSON only — no markdown
+fences, no prose before or after.
+
+Context: Board: ${board} | Expected Subject: ${subject} (${subjectCode}) | Chunk: #${chunkN}
 ${patternContext}
 
-=== CRITICAL ANTI-HALLUCINATION DIRECTIVES ===
-1. ZERO INVENTED SLOS: Under NO CIRCUMSTANCE should you invent, infer, extrapolate, or draft new SLOs. If this chunk contains NO explicit Student Learning Outcomes (e.g., it is a policy statement, notification, committee list, table of contents, or preamble), you MUST return: {"slos": []}. Do NOT invent learning outcomes to fill the response.
-2. VERBATIM TEXT ONLY: The field "slo_full_text" must be an exact word-for-word excerpt from the source text. Do NOT summarize, rephrase, expand, or simplify mathematical expressions, formulas, and terminology.
-3. MULTI-GRADE PROGRESSION TABLES: If you encounter a progression row with multiple grades (e.g. [PROGRESSION_ROW_CODES: ...]), accurately map each outcome to its respective grade and original code. NEVER concatenate texts across multiple grade columns.
-4. BLOOM'S TAXONOMY LEVEL: Determine the cognitive level ("Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create") based strictly on the primary action verb (e.g., "Identify/List" -> Remember, "Solve/Calculate" -> Apply, "Analyze" -> Analyze).
-5. CLEANUP: Strictly remove document artifacts like page numbers, running headers, or gazette notifications from the SLO text.
+═══════════════════════════════════════════════════════════════════
+1. THE CODE FORMAT (universal — do not hardcode a subject)
+═══════════════════════════════════════════════════════════════════
+SLO codes follow the pattern:
 
-=== SLO FORMAT ===
-Code: [SUB][GRADE][DOMAIN][NUM] (e.g. ${subjectCode}09A01)
-JSON Fields:
-- slo_code: Canonical 6-char code
-- raw_code_as_found: The exact code/number from the text (e.g., M04A12, M01A13, [SLO: M-01-A-01])
-- slo_full_text: The complete, verbatim description text
-- grade: The grade of the SLO, always a 2-digit number (e.g. 01, 02, 09, 10, etc.)
-- domain: The single alphabetical character representing the domain (e.g. A, B, C, D)
-- domain_name: The name of the domain (e.g. Numbers and Operations, Measurement)
-- bloom_level: One of Remember, Understand, Apply, Analyze, Evaluate, Create
-- subject: The name of the subject
+    SLO:{SUBJECT}-{GRADE}-{DOMAIN}-{NUMBER}
 
-=== RAW TEXT ===
+- SUBJECT: one or more letters identifying the subject as used IN THIS
+  DOCUMENT (e.g. B=Biology, P=Physics, C=Chemistry, M=Mathematics, E=English).
+  Detect it from the codes themselves on your first pass — never assume
+  a fixed letter. A single document has exactly one SUBJECT letter;
+  if you see more than one, flag it in a top-level "warnings" array
+  rather than silently picking one.
+- GRADE: always 2-digit, zero-padded (01, 02, 09, 10, 11, 12...).
+- DOMAIN: a single letter A–Z marking a thematic unit (each domain has
+  its own heading in the PDF, usually "DOMAIN <LETTER>: <NAME>").
+- NUMBER: the SLO's position within that (subject, grade, domain) triple,
+  as originally numbered in the document. Numbers are NOT always
+  contiguous (some are skipped/retired) — preserve gaps, do not
+  renumber.
+
+NORMALIZE, DON'T DISCARD, malformed codes. The source PDF contains
+inconsistent formatting. Treat all of the following as equivalent
+to the canonical form:
+  [SLO:B-11-C-05]      [SLO: B-11-C-05]      SLO:B-11-C-05]
+  [SLO:B-9-B-01]  →  grade zero-padded to 09
+  SLO:B-10 – S-03   (en-dash / stray spacing) → still parse subject,
+                     grade, domain, number from whatever fragments
+                     are present; do not invent a new grade or domain
+                     because the punctuation is irregular.
+Store the RAW text you found as "original_code" (or "raw_code_as_found", verbatim, uncleaned)
+and the NORMALIZED form as "slo_id" (or "slo_code"). Never let a formatting quirk in
+the raw code invent a new grade bucket (e.g. there must never be a
+"Grade 99" or a domain literally named after a malformed fragment).
+
+RESOLVING GRADE/DOMAIN WHEN THE CODE IS AMBIGUOUS OR CROSS-REFERENCED:
+The GRADE and DOMAIN an SLO belongs to are determined by WHERE IT SITS
+in the document (which grade-column / domain-heading it is physically
+printed under), NOT by re-parsing a possibly-corrupted code string.
+The code is a cross-check, not the source of truth. If the printed
+code disagrees with the document position (e.g. a code fragment implies
+grade 10 but the SLO is listed inside the Grade 12 column of a domain
+table), trust the document position and record the discrepancy in
+"warnings", don't create a separate grade for it.
+
+═══════════════════════════════════════════════════════════════════
+2. ORDERING (this is the primary requirement)
+═══════════════════════════════════════════════════════════════════
+Output order is strictly:
+
+  1. GRADE — ascending numeric order as they appear in the curriculum
+     (e.g. 09, 10, 11, 12 — never invent an out-of-sequence grade).
+  2. DOMAIN — in the order each "DOMAIN <LETTER>: <NAME>" heading first
+     appears for that grade in the source document (this is usually,
+     but not necessarily, alphabetical — follow the document, don't
+     assume A→Z).
+  3. SLO NUMBER — ascending numeric order of the NUMBER extracted from
+     each SLO's own code, within that grade+domain.
+
+DO NOT sort or group by Bloom's Taxonomy level (Remember/Understand/
+Apply/Analyze/Evaluate/Create) at any point. Bloom level is metadata
+attached to each SLO — capture it in the "bloom_level" field — but it
+must NEVER influence extraction order. The final list within a domain
+should read as one continuous ascending run of SLO numbers, e.g.
+01, 02, 03, 04... — if you find yourself outputting 02, 07, 09, 03, 01
+you have made the exact ordering error this prompt exists to prevent.
+Before finalizing each domain's SLO array, re-sort it by NUMBER as a
+final pass regardless of what order you extracted it in.
+
+═══════════════════════════════════════════════════════════════════
+3. NOISE FILTERING (critical — do not let this leak into any field)
+═══════════════════════════════════════════════════════════════════
+Curriculum PDFs repeat running headers/footers on every page, e.g.:
+  "Curriculum of Biology for Sindh Grades IX-XII <page#>"
+  "Grade – IX  Grade – X  Grade – XI  Grade – XII"
+These are page furniture, not content. Strip them from every field —
+they must NEVER appear inside "full_text", "domain_name", or any other
+value. If an SLO's text is split across a page break by one of these
+headers, REJOIN the two halves and drop the header text between them —
+do not preserve it as if it were part of the SLO.
+
+Similarly, each domain begins with a block like:
+  "DOMAIN <X>: <NAME>
+   Standard: Students should be able to: • ... • ...
+   Benchmark 1: ...   Benchmark 2: ..."
+This Standard/Benchmark block is DOMAIN-LEVEL METADATA, not an SLO.
+Capture the domain's standard/benchmark text separately if useful
+(optional "standard" / "benchmarks" fields on the domain object) but
+never let it get concatenated onto an individual SLO's full_text just
+because it appeared adjacent to it in the raw text layer.
+
+═══════════════════════════════════════════════════════════════════
+4. FULL_TEXT CLEANLINESS
+═══════════════════════════════════════════════════════════════════
+- full_text must be ONLY the SLO's own instructional statement.
+- Trim leading/trailing whitespace and stray backticks/symbols the PDF
+  extraction layer may have introduced (e.g. a lone "\`" character).
+- If an SLO's text is genuinely incomplete in the source (truncated
+  mid-sentence, common near page breaks), extract what's there and
+  add "truncated": true rather than guessing or padding it.
+- Preserve the SLO's own enumerated sub-lists (e.g. bullet-style content
+  inside a single SLO like lab-skills lists) as-is inside full_text.
+
+═══════════════════════════════════════════════════════════════════
+5. JSON FIELD REQUIREMENTS PER EXTRACTED ITEM
+═══════════════════════════════════════════════════════════════════
+- slo_id: Canonical "SLO:<SUBJECT>-<GRADE>-<DOMAIN>-<NN>" (e.g. "SLO:${subjectCode}-09-A-01")
+- original_code: Verbatim as found in text (e.g. "[SLO: ${subjectCode}-9-A-01]")
+- slo_code: 6-char or universal code
+- raw_code_as_found: Verbatim raw code
+- slo_full_text: Cleaned instructional statement only
+- grade: 2-digit zero-padded grade string (e.g. "01", "09", "10", "11", "12")
+- domain: Single letter (e.g. "A", "B", "C")
+- domain_name: Name from heading
+- bloom_level: One of "Remember", "Understand", "Apply", "Analyze", "Evaluate", "Create"
+- subject: Subject name
+- truncated: boolean (true if text was truncated in source)
+
+═══════════════════════════════════════════════════════════════════
+6. RAW TEXT TO PROCESS
+═══════════════════════════════════════════════════════════════════
 ${chunk}`;
 }
 
@@ -1111,15 +1207,42 @@ RULES:
 }
 
 // ── UNIVERSAL CURRICULUM STANDARDIZER (Grok Ingestion Engine v1.0) ────────────
+// ── STANDARDIZE CURRICULUM (UNIVERSAL CURRICULUM SLO STANDARDIZATION ENGINE) ──
 function standardizeCurriculum(
   slos: any[],
   boardKey: string,
   subjectCode: string,
   docName: string
 ): { jsonText: string; updatedSlos: any[] } {
+  const warnings: string[] = [];
   const subjectName = SUBJECTS[subjectCode] || subjectCode;
 
-  // 1. Detect Grade System (Roman vs. Arabic vs. Mixed)
+  // 1. Helper to extract trailing or embedded numeric position from an SLO code
+  const extractSloNumber = (raw: string | undefined): number => {
+    if (!raw) return 999;
+    const clean = raw.trim().replace(/[\[\]]/g, '');
+    const match = clean.match(/[-_]?(\d{1,4})$/);
+    if (match) return parseInt(match[1], 10);
+    const anyNums = clean.match(/\d+/g);
+    if (anyNums && anyNums.length > 0) return parseInt(anyNums[anyNums.length - 1], 10);
+    return 999;
+  };
+
+  // 2. Helper to clean full_text from stray artifacts and running headers
+  const cleanSloText = (rawText: string | undefined): { text: string; truncated: boolean } => {
+    if (!rawText) return { text: '', truncated: false };
+    let cleaned = rawText.replace(/`+/g, '').trim();
+    // Strip running page furniture/headers if leaked
+    cleaned = cleaned.replace(/Curriculum of [^\n\r]+Grades [IVXLCDM\d-]+/gi, '').trim();
+    cleaned = cleaned.replace(/Grade\s*–?\s*[IVXLCDM\d]+\s*Grade\s*–?\s*[IVXLCDM\d]+/gi, '').trim();
+    cleaned = cleaned.replace(/Page\s+\d+\s+of\s+\d+/gi, '').trim();
+    cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+
+    const isTruncated = cleaned.endsWith('...') || cleaned.endsWith('…') || (cleaned.length > 30 && !/[.!?:]$/.test(cleaned) && cleaned.slice(-1) !== ')');
+    return { text: cleaned, truncated: isTruncated };
+  };
+
+  // 3. Detect Grade System (Roman vs. Arabic vs. Mixed)
   let gradeSystem = 'Arabic';
   const rawGrades = slos.map(s => String(s.grade || s.grade_level || ''));
   const hasRoman = rawGrades.some(g => {
@@ -1131,48 +1254,54 @@ function standardizeCurriculum(
   }
 
   const ROMAN_BY_NUM: Record<string, string> = {
-    '01': 'I', '02': 'II', '03': 'III', '04': 'IV', '05': 'V', '06': 'VI',
+    '00': 'ECE', '01': 'I', '02': 'II', '03': 'III', '04': 'IV', '05': 'V', '06': 'VI',
     '07': 'VII', '08': 'VIII', '09': 'IX', '10': 'X', '11': 'XI', '12': 'XII',
     '13': 'XIII'
   };
 
   const sortedSlosWithIndex = slos.map((s, idx) => ({ ...s, original_index: idx }));
 
-  const bloomOrder: Record<string, number> = {
-    'remember': 1,
-    'understand': 2,
-    'apply': 3,
-    'analyze': 4,
-    'evaluate': 5,
-    'create': 6
-  };
-
-  const getBloomPriority = (bloom: string | null | undefined): number => {
-    if (!bloom) return 99;
-    const b = bloom.toLowerCase().trim();
-    return bloomOrder[b] || 99;
-  };
-
-  // Group items by grade and domain
+  // Track domain encounter order per grade
+  const domainEncounterOrder: Record<string, string[]> = {};
   const groups: Record<string, Record<string, any[]>> = {};
-  const mappedGrades = new Set<string>();
+  const domainMetadataMap: Record<string, { domain_name: string; standard?: string }> = {};
 
   for (const s of sortedSlosWithIndex) {
     const rawGrade = s.grade || s.grade_level || '';
-    const normGrade = normalizeGrade(rawGrade) || '99';
-    mappedGrades.add(normGrade);
+    let normGrade = normalizeGrade(rawGrade);
+    if (!normGrade || normGrade === '99') {
+      warnings.push(`Ambiguous grade format "${rawGrade}" normalized to 09.`);
+      normGrade = '09';
+    }
 
-    let rawDomain = s.domain || 'X';
-    let domainStr = typeof rawDomain === 'string' ? rawDomain.toUpperCase().trim().substring(0, 1) : 'X';
-    if (!domainStr || !/[A-Z]/.test(domainStr)) domainStr = 'X';
+    let rawDomain = s.domain || 'A';
+    let domainStr = typeof rawDomain === 'string' ? rawDomain.toUpperCase().trim().substring(0, 1) : 'A';
+    if (!domainStr || !/[A-Z]/.test(domainStr)) domainStr = 'A';
 
-    if (!groups[normGrade]) groups[normGrade] = {};
-    if (!groups[normGrade][domainStr]) groups[normGrade][domainStr] = [];
+    if (!groups[normGrade]) {
+      groups[normGrade] = {};
+      domainEncounterOrder[normGrade] = [];
+    }
+
+    if (!groups[normGrade][domainStr]) {
+      groups[normGrade][domainStr] = [];
+      domainEncounterOrder[normGrade].push(domainStr);
+    }
+
+    const domainTitle = s.domain_name || 'General Core';
+    if (!domainMetadataMap[`${normGrade}_${domainStr}`]) {
+      domainMetadataMap[`${normGrade}_${domainStr}`] = {
+        domain_name: domainTitle,
+        standard: s.standard || undefined
+      };
+    }
+
     groups[normGrade][domainStr].push(s);
   }
 
-  // Detect grade range
-  const validGrades = Array.from(mappedGrades).filter(g => g !== '99').sort();
+  // Filter and sort grade keys strictly ascending numeric (01, 02, ... 09, 10, 11, 12)
+  const validGrades = Object.keys(groups).filter(g => g !== '99').sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
   let gradeRange = 'General';
   if (validGrades.length > 0) {
     const minG = validGrades[0];
@@ -1187,51 +1316,62 @@ function standardizeCurriculum(
   let totalDomainsCount = 0;
   let totalSlosCount = 0;
 
-  const sortedGradeKeys = Object.keys(groups).sort();
-
-  for (const gradeKey of sortedGradeKeys) {
-    const dispName = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[gradeKey] || gradeKey) : `Grade ${parseInt(gradeKey, 10) || gradeKey}`;
+  for (const gradeKey of validGrades) {
+    const numVal = parseInt(gradeKey, 10);
+    const dispName = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[gradeKey] || `Grade ${numVal}`) : `Grade ${numVal || gradeKey}`;
     const domainsForGrade: Record<string, any> = {};
 
-    const domainKeys = Object.keys(groups[gradeKey]).sort();
+    // Domain order strictly following document appearance
+    const domainKeys = domainEncounterOrder[gradeKey] || Object.keys(groups[gradeKey]).sort();
     totalDomainsCount += domainKeys.length;
 
     for (const domainKey of domainKeys) {
-      const parentDomainSlos = groups[gradeKey][domainKey];
-      const dname = parentDomainSlos[0]?.domain_name || 'General Core';
+      const parentDomainSlos = groups[gradeKey][domainKey] || [];
+      const meta = domainMetadataMap[`${gradeKey}_${domainKey}`] || { domain_name: 'General Core' };
+      const dname = meta.domain_name;
 
-      // SORT within domain: Bloom level order first, then original found code, then original index
+      // STRICT ORDERING REQUIREMENT:
+      // Sort within domain by ascending numeric SLO NUMBER extracted from its own code (e.g. 01, 02, 03...)
+      // Zero grouping or sorting by Bloom's taxonomy.
       const sortedInDomain = [...parentDomainSlos].sort((a, b) => {
-        const bpA = getBloomPriority(a.bloom_level);
-        const bpB = getBloomPriority(b.bloom_level);
-        if (bpA !== bpB) return bpA - bpB;
-
-        const codeA = a.slo_code || '';
-        const codeB = b.slo_code || '';
-        if (codeA !== codeB) return codeA.localeCompare(codeB);
-
-        return a.original_index - b.original_index;
+        const rawA = a.raw_code_as_found || a.slo_code || '';
+        const rawB = b.raw_code_as_found || b.slo_code || '';
+        const numA = extractSloNumber(rawA);
+        const numB = extractSloNumber(rawB);
+        if (numA !== numB) return numA - numB;
+        return (a.original_index ?? 0) - (b.original_index ?? 0);
       });
 
       const slosInDomainOutput: any[] = [];
 
       sortedInDomain.forEach((s, idx) => {
         totalSlosCount++;
-        const seqStr = String(idx + 1).padStart(2, '0');
-        const universalSloId = `SLO:${subjectCode}-${gradeKey}-${domainKey}-${seqStr}`;
-        const originalCode = s.raw_code_as_found || s.slo_code || s.code || 'CODEL_SLO';
+        const originalCode = s.raw_code_as_found || s.slo_code || s.code || `SLO:${subjectCode}-${gradeKey}-${domainKey}-${String(idx + 1).padStart(2, '0')}`;
+        const extractedNum = extractSloNumber(originalCode);
+        const numStr = (extractedNum !== 999) ? String(extractedNum).padStart(2, '0') : String(idx + 1).padStart(2, '0');
+        const universalSloId = `SLO:${subjectCode}-${gradeKey}-${domainKey}-${numStr}`;
 
-        slosInDomainOutput.push({
+        const rawStatement = s.slo_full_text || s.full_text || s.description || '';
+        const { text: cleanStatement, truncated } = cleanSloText(rawStatement);
+
+        const sloEntry: any = {
           slo_id: universalSloId,
           original_code: originalCode,
           bloom_level: s.bloom_level || 'Understand',
-          full_text: s.slo_full_text || s.full_text || s.description || ''
-        });
+          full_text: cleanStatement
+        };
+
+        if (truncated) {
+          sloEntry.truncated = true;
+        }
+
+        slosInDomainOutput.push(sloEntry);
 
         updatedSlos.push({
           ...s,
           slo_code: universalSloId,
           raw_code_as_found: originalCode,
+          slo_full_text: cleanStatement,
           domain: domainKey,
           domain_name: dname,
           grade_level: gradeKey,
@@ -1241,6 +1381,7 @@ function standardizeCurriculum(
 
       domainsForGrade[domainKey] = {
         domain_name: dname,
+        ...(meta.standard ? { standard: meta.standard } : {}),
         slos: slosInDomainOutput
       };
     }
@@ -1251,20 +1392,11 @@ function standardizeCurriculum(
     };
   }
 
-  const gradeMapping: Record<string, string> = {};
-  for (const gk of sortedGradeKeys) {
-    if (gk !== '99') {
-      const disp = gradeSystem === 'Roman' ? (ROMAN_BY_NUM[gk] || gk) : parseInt(gk, 10).toString();
-      gradeMapping[disp] = gk;
-    }
-  }
-
   const jsonObject: {
     curriculum: {
       name: string;
       subject: string;
       subject_code: string;
-      grade_system: string;
       grade_range: string;
       board?: string;
     };
@@ -1273,24 +1405,23 @@ function standardizeCurriculum(
       total_grades: number;
       total_domains: number;
       total_slos: number;
-      grade_mapping: Record<string, string>;
     };
+    warnings: string[];
   } = {
     curriculum: {
-      name: docName || 'Universal Curriculum Ingestion',
+      name: docName || 'Universal Curriculum Standards',
       subject: subjectName,
       subject_code: subjectCode,
-      grade_system: gradeSystem,
       grade_range: gradeRange,
       board: boardKey || 'SINDH'
     },
     grades: gradesObject,
     metadata: {
-      total_grades: sortedGradeKeys.length,
+      total_grades: validGrades.length,
       total_domains: totalDomainsCount,
-      total_slos: totalSlosCount,
-      grade_mapping: gradeMapping
-    }
+      total_slos: totalSlosCount
+    },
+    warnings: warnings
   };
 
   return {
