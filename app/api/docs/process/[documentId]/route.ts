@@ -16,6 +16,7 @@ import { resolveApiKey } from '../../../../../lib/env-server';
 import { extractSLOsFromPDFBuffer, likelyHasMultiGradeTable, extractSLOsDirectFromText } from '../../../../../lib/slo/table-extractor';
 import { saveExtractionPattern, getBestMatchingPattern, buildPatternAwarePrompt, type ExtractionPattern } from '../../../../../lib/slo/pattern-trainer';
 import { getVerifiedGroundTruth, type GroundTruthCurriculum, type CurriculumMetadata } from '../../../../../lib/curriculum/ground-truth-curricula';
+import { sortCurriculumObjectRecursively } from '../../../../../lib/curriculum/sort-curriculum-slos';
 
 export type { CurriculumMetadata, GroundTruthCurriculum };
 
@@ -1446,6 +1447,40 @@ function standardizeCurriculum(
     };
   }
 
+  // ── EXPLICIT POST-PROCESSING NUMERIC SORT PHASE ───────────────────────────
+  // Iterate through all grades and all domains, extract the numeric ID segment
+  // from each SLO's 'slo_id' using a regex match, and strictly re-sort the 'slos'
+  // array by this numeric value before emitting the final JSON.
+  const extractNumericFromSloId = (idStr: string | undefined): number => {
+    if (!idStr) return 999999;
+    // Regex matches the final numeric segment (e.g., "SLO:B-10-M-01" -> 1, "SLO:B-10-M-17" -> 17)
+    const match = idStr.match(/(?:[-_:.\s]|\b)(\d{1,5})\s*$/);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+    const allNums = idStr.match(/\d+/g);
+    if (allNums && allNums.length > 0) {
+      return parseInt(allNums[allNums.length - 1], 10);
+    }
+    return 999999;
+  };
+
+  for (const gKey of Object.keys(gradesObject)) {
+    const gradeEntry = gradesObject[gKey];
+    if (gradeEntry && gradeEntry.domains) {
+      for (const dKey of Object.keys(gradeEntry.domains)) {
+        const domainEntry = gradeEntry.domains[dKey];
+        if (domainEntry && Array.isArray(domainEntry.slos)) {
+          domainEntry.slos.sort((sloA: any, sloB: any) => {
+            const numA = extractNumericFromSloId(sloA.slo_id || sloA.original_code);
+            const numB = extractNumericFromSloId(sloB.slo_id || sloB.original_code);
+            return numA - numB;
+          });
+        }
+      }
+    }
+  }
+
   const jsonObject: {
     curriculum: {
       name: string;
@@ -1478,8 +1513,10 @@ function standardizeCurriculum(
     warnings: warnings
   };
 
+  const sortedJsonObject = sortCurriculumObjectRecursively(jsonObject);
+
   return {
-    jsonText: JSON.stringify(jsonObject, null, 2),
+    jsonText: JSON.stringify(sortedJsonObject, null, 2),
     updatedSlos
   };
 }
