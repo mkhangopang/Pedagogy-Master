@@ -49,11 +49,12 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [isViewHydrated, setIsViewHydrated] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot-password' | 'update-password'>('login');
+  const [urlAuthError, setUrlAuthError] = useState<string | null>(null);
   const authModeRef = useRef(authMode);
   authModeRef.current = authMode;
 
   useEffect(() => {
-    // Consolidated client-side hydration for theme and saved view
+    // Consolidated client-side hydration for theme, saved view, and auth URL parameters
     try {
       const savedTheme = localStorage.getItem('theme') as 'light' | 'dark';
       if (savedTheme) {
@@ -61,13 +62,88 @@ export default function App() {
         document.documentElement.classList.toggle('dark', savedTheme === 'dark');
       }
 
-      // Check for password recovery hash in URL
+      // Check for password recovery or auth tokens/errors in URL
       if (typeof window !== 'undefined') {
         const hash = window.location.hash || '';
         const search = window.location.search || '';
-        if (hash.includes('type=recovery') || search.includes('type=recovery')) {
-          setAuthMode('update-password');
+        const combined = hash + '&' + search;
+        const params = new URLSearchParams(search);
+
+        // 1. Check for error parameters (e.g. link expired, already used)
+        if (combined.includes('error=')) {
+          const errMatch = combined.match(/error_description=([^&]+)/);
+          const rawErr = errMatch ? errMatch[1] : (params.get('error_description') || params.get('error') || 'Authentication link failed');
+          const desc = decodeURIComponent(rawErr.replace(/\+/g, ' '));
+          setUrlAuthError(desc);
           setCurrentView('login');
+        }
+
+        // 2. Check for password recovery flow or tokens
+        const isRecovery = 
+          combined.includes('type=recovery') || 
+          combined.includes('recovery=true') ||
+          search.includes('mode=update-password');
+
+        if (isRecovery) {
+          console.log("🔑 [Auth] Detected password recovery URL parameters.");
+          setAuthMode('update-password');
+          authModeRef.current = 'update-password';
+          setCurrentView('login');
+        }
+
+        // 3. Extract access_token if provided in hash
+        const tokenMatch = hash.match(/access_token=([^&]+)/);
+        const refreshMatch = hash.match(/refresh_token=([^&]+)/);
+        if (tokenMatch) {
+          supabase.auth.setSession({
+            access_token: tokenMatch[1],
+            refresh_token: refreshMatch ? refreshMatch[1] : ''
+          }).then(({ data, error }) => {
+            if (data?.session) {
+              setSession(data.session);
+              if (!isRecovery) {
+                fetchAppData(data.session.user.id, data.session.user.email, data.session);
+                setCurrentView('dashboard');
+              }
+            }
+            if (error) console.warn("Hash setSession notice:", error.message);
+          }).catch(e => console.warn("Hash setSession error:", e));
+        }
+
+        // 4. PKCE code in query params
+        const codeParam = params.get('code');
+        if (codeParam) {
+          supabase.auth.exchangeCodeForSession(codeParam).then(({ data, error }) => {
+            if (data?.session) {
+              setSession(data.session);
+              if (isRecovery || params.get('type') === 'recovery') {
+                setAuthMode('update-password');
+                authModeRef.current = 'update-password';
+                setCurrentView('login');
+              } else {
+                fetchAppData(data.session.user.id, data.session.user.email, data.session);
+                setCurrentView('dashboard');
+              }
+            }
+            if (error) console.warn("Code exchange notice:", error.message);
+          }).catch(e => console.warn("Code exchange error:", e));
+        }
+
+        // 5. Token hash in query params
+        const tokenHashParam = params.get('token_hash');
+        if (tokenHashParam) {
+          supabase.auth.verifyOtp({
+            token_hash: tokenHashParam,
+            type: (params.get('type') as any) || 'recovery'
+          }).then(({ data, error }) => {
+            if (data?.session) {
+              setSession(data.session);
+              setAuthMode('update-password');
+              authModeRef.current = 'update-password';
+              setCurrentView('login');
+            }
+            if (error) console.warn("Token hash notice:", error.message);
+          }).catch(e => console.warn("Token hash error:", e));
         }
       }
 
@@ -78,7 +154,7 @@ export default function App() {
       if (!saved) {
         saved = localStorage.getItem('currentView');
       }
-      if (saved && saved !== 'login' && saved !== 'landing') {
+      if (saved && saved !== 'login' && saved !== 'landing' && authModeRef.current !== 'update-password') {
         setCurrentView(saved);
       }
     } catch (e) {}
@@ -184,10 +260,11 @@ export default function App() {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
           console.log(`📡 [Auth] Event: ${event}`, currentSession ? "Session Active" : "No Session");
           
-          if (event === 'PASSWORD_RECOVERY') {
-            console.log("🔑 [Auth] PASSWORD_RECOVERY event received");
+          if (event === 'PASSWORD_RECOVERY' || authModeRef.current === 'update-password') {
+            console.log("🔑 [Auth] PASSWORD_RECOVERY event active. Staying in update-password mode.");
             setSession(currentSession);
             setAuthMode('update-password');
+            authModeRef.current = 'update-password';
             setCurrentView('login');
             return;
           }
@@ -204,6 +281,7 @@ export default function App() {
             console.warn("📡 [Auth] Explicit SIGNED_OUT event received");
             setSession(null);
             setAuthMode('login');
+            authModeRef.current = 'login';
             setCurrentView('landing');
             localStorage.removeItem('currentView');
           } else if (event === 'INITIAL_SESSION' && !currentSession) {
@@ -265,20 +343,35 @@ export default function App() {
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
           <Login 
             initialMode={authMode} 
+            initialError={urlAuthError}
             onSession={(newSession) => {
               setSession(newSession);
               setAuthMode('login');
+              authModeRef.current = 'login';
+              setUrlAuthError(null);
+              fetchAppData(newSession.user.id, newSession.user.email, newSession);
               setCurrentView('dashboard');
             }} 
             onBack={() => {
               setAuthMode('login');
+              authModeRef.current = 'login';
+              setUrlAuthError(null);
               setCurrentView(session ? 'dashboard' : 'landing');
             }} 
           />
         </Suspense>
       );
     }
-    return <Landing onStart={() => { setAuthMode('login'); setCurrentView('login'); }} />;
+    return (
+      <Landing 
+        onStart={(mode?: 'login' | 'signup') => { 
+          setAuthMode(mode || 'login'); 
+          authModeRef.current = mode || 'login';
+          setUrlAuthError(null);
+          setCurrentView('login'); 
+        }} 
+      />
+    );
   }
 
   const safeProfile = userProfile || {

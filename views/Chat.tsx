@@ -41,6 +41,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
   const [assessmentResult, setAssessmentResult] = useState<Assessment | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentSavedId, setAssessmentSavedId] = useState<string | null>(null);
+  const [isSpeechDictating, setIsSpeechDictating] = useState(false);
 
   const handleSaveAssessment = async (assessment: Assessment) => {
     try {
@@ -326,11 +327,22 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
         </button>
 
         <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-white/5 shrink-0 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md sticky top-0 z-20">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Layout size={16} className="text-slate-400" />
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Synthesis Hub</span>
             </div>
+            {isSpeechDictating && (
+              <div className="flex items-center gap-2 px-3 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-full animate-pulse shadow-sm">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
+                </span>
+                <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                  Microphone Dictating
+                </span>
+              </div>
+            )}
             {selectedDocsCount > 0 && (
               <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
                 <ShieldCheck size={12} className="text-emerald-500" />
@@ -367,8 +379,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight text-center">Pedagogy Master Neural</h2>
                   <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
                     {focusedDocId 
-                      ? `Neural sync active for your curriculum: "${activeDoc?.name}". Ask for a lesson plan or quiz on a specific SLO.`
-                      : 'Select a curriculum asset from the sidebar to enable precision standards-aligned synthesis.'}
+                      ? `Neural sync active for your curriculum: "${activeDoc?.name}". Type or use the microphone to dictate your prompt.`
+                      : 'Select a curriculum asset from the sidebar or click the microphone to dictate your inquiry.'}
                   </p>
                 </div>
                 <SuggestedPrompts onSelect={handleSend} />
@@ -427,7 +439,12 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
               Neural limit reached. Upgrade for unlimited synthesis.
             </div>
           )}
-          <ChatInput onSend={handleSend} isLoading={isLoading} disabled={!canQuery} />
+          <ChatInput 
+            onSend={handleSend} 
+            isLoading={isLoading} 
+            disabled={!canQuery} 
+            onSpeechStateChange={setIsSpeechDictating} 
+          />
         </div>
       </div>
     </div>
