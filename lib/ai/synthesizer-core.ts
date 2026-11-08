@@ -33,9 +33,9 @@ export class SynthesizerCore {
     // TIER 1: HIGH-CAPACITY REASONERS (World-Class Pedagogy)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 3.6 Flash (Pedagogy)',
+      name: 'Gemini 4 Argon (Pedagogy)',
       endpoint: 'native',
-      model: 'gemini-3.6-flash',
+      model: 'gemini-4-argon',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 32768,
       rpm: 1000,
@@ -46,9 +46,9 @@ export class SynthesizerCore {
 
     providers.set('gemini-thinking', {
       id: 'gemini-thinking',
-      name: 'Thinking Grid (Gemini 3.6)',
+      name: 'Thinking Grid (Gemini 4 Argon)',
       endpoint: 'native',
-      model: 'gemini-3.6-flash',
+      model: 'gemini-4-argon',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 65536,
       thinkingLevel: ThinkingLevel.HIGH,
@@ -87,9 +87,9 @@ export class SynthesizerCore {
     // TIER 2: HIGH-SPEED PRODUCTION ENGINES
     providers.set('gemini-flash', {
       id: 'gemini-flash',
-      name: 'Gemini 3.5 Flash',
+      name: 'Gemini 3.8 Flash',
       endpoint: 'native',
-      model: 'gemini-3.5-flash',
+      model: 'gemini-3.8-flash',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 16384,
       rpm: 1000,
@@ -140,9 +140,9 @@ export class SynthesizerCore {
     // TIER 3: UTILITY & FALLBACK NODES
     providers.set('gemini-flash-lite', {
       id: 'gemini-flash-lite',
-      name: 'Gemini 3.5 Flash-Lite',
+      name: 'Gemini 3.1 Flash-Lite',
       endpoint: 'native',
-      model: 'gemini-3.5-flash-lite',
+      model: 'gemini-3.1-flash-lite',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 8192,
       rpm: 1000,
