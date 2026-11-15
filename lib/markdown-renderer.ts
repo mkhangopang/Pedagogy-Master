@@ -4,8 +4,9 @@
 //          --- dividers, `inline code`, ```code blocks```, blockquotes (>), KaTeX math
 import katex from 'katex';
 
-export function markdownToHtml(md: string): string {
+export function markdownToHtml(md: string, dir: 'ltr' | 'rtl' = 'ltr'): string {
   if (!md) return '';
+  const isRtl = dir === 'rtl';
 
   // -- 1. Stash Code Blocks & Inline Code --------------------------------------
   const codePlaceholders: string[] = [];
@@ -24,7 +25,7 @@ export function markdownToHtml(md: string): string {
         .replace(/>/g, '&gt;');
       const langAttr = lang ? ` data-lang="${lang}"` : '';
       return pushCode(
-        `<pre${langAttr} style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:12px 0;overflow-x:auto;font-size:12px;font-family:monospace;white-space:pre-wrap;color:#334155"><code>${escaped}</code></pre>`
+        `<pre${langAttr} dir="ltr" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 16px;margin:12px 0;overflow-x:auto;font-size:12px;font-family:monospace;white-space:pre-wrap;color:#334155;text-align:left;unicode-bidi:isolate"><code>${escaped}</code></pre>`
       );
     }
   );
@@ -35,7 +36,7 @@ export function markdownToHtml(md: string): string {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
     return pushCode(
-      `<code style="background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:12px;font-family:monospace;color:#4338ca">${escaped}</code>`
+      `<code dir="ltr" style="background:#f1f5f9;padding:1px 6px;border-radius:4px;font-size:12px;font-family:monospace;color:#4338ca;unicode-bidi:isolate">${escaped}</code>`
     );
   });
 
@@ -59,10 +60,10 @@ export function markdownToHtml(md: string): string {
         output: 'html',
         trust: true
       });
-      return pushMath(`<div style="margin: 1.25rem 0; overflow-x: auto; text-align: center;">${rendered}</div>`);
+      return pushMath(`<div dir="ltr" style="margin: 1.25rem 0; overflow-x: auto; text-align: center; unicode-bidi: isolate;">${rendered}</div>`);
     } catch {
       const safe = trimmed.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      return pushMath(`<div style="margin: 1.25rem 0; text-align: center; font-family: monospace;">${safe}</div>`);
+      return pushMath(`<div dir="ltr" style="margin: 1.25rem 0; text-align: center; font-family: monospace; unicode-bidi: isolate;">${safe}</div>`);
     }
   };
 
@@ -100,7 +101,7 @@ export function markdownToHtml(md: string): string {
         output: 'html',
         trust: true
       });
-      return pushMath(rendered);
+      return pushMath(`<span dir="ltr" style="unicode-bidi:isolate">${rendered}</span>`);
     } catch {
       return math
         .replace(/&/g, '&amp;')
@@ -126,27 +127,31 @@ export function markdownToHtml(md: string): string {
     .replace(/___BR_TAG___/g, '<br/>');
 
   // -- 5. Blockquotes (> Teacher Script / Callouts) ---------------------------
+  const blockquoteBorder = isRtl
+    ? 'border-right:4px solid #6366f1;border-radius:8px 0 0 8px;text-align:right'
+    : 'border-left:4px solid #6366f1;border-radius:0 8px 8px 0;text-align:left';
   html = html.replace(
     /^&gt; (.*)$/gm,
-    '<blockquote style="border-left:4px solid #6366f1;padding:8px 16px;margin:12px 0;background:#f8faff;border-radius:0 8px 8px 0;color:#334155;font-style:italic;line-height:1.6">$1</blockquote>'
+    `<blockquote style="${blockquoteBorder};padding:8px 16px;margin:12px 0;background:#f8faff;color:#334155;font-style:italic;line-height:1.7">$1</blockquote>`
   );
 
   // -- 6. Headings ------------------------------------------------------------
+  const textAlign = isRtl ? 'text-align:right;' : '';
   html = html.replace(
     /^# (.+)$/gm,
-    '<h1 style="font-size:20px;font-weight:900;text-transform:uppercase;letter-spacing:0.04em;color:#0f172a;margin:28px 0 12px;padding-bottom:8px;border-bottom:2px solid #4f46e5">$1</h1>'
+    `<h1 style="font-size:20px;font-weight:900;${isRtl ? '' : 'text-transform:uppercase;letter-spacing:0.04em;'}color:#0f172a;margin:28px 0 12px;padding-bottom:8px;border-bottom:2px solid #4f46e5;${textAlign}">$1</h1>`
   );
   html = html.replace(
     /^## (.+)$/gm,
-    '<h2 style="font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:0.03em;color:#1e293b;margin:22px 0 8px;padding-bottom:4px;border-bottom:1px solid #e2e8f0">$1</h2>'
+    `<h2 style="font-size:15px;font-weight:800;${isRtl ? '' : 'text-transform:uppercase;letter-spacing:0.03em;'}color:#1e293b;margin:22px 0 8px;padding-bottom:4px;border-bottom:1px solid #e2e8f0;${textAlign}">$1</h2>`
   );
   html = html.replace(
     /^### (.+)$/gm,
-    '<h3 style="font-size:13px;font-weight:800;color:#4338ca;margin:16px 0 6px">$1</h3>'
+    `<h3 style="font-size:13px;font-weight:800;color:#4338ca;margin:16px 0 6px;${textAlign}">$1</h3>`
   );
   html = html.replace(
     /^#### (.+)$/gm,
-    '<h4 style="font-size:12px;font-weight:700;color:#334155;margin:12px 0 4px">$1</h4>'
+    `<h4 style="font-size:12px;font-weight:700;color:#334155;margin:12px 0 4px;${textAlign}">$1</h4>`
   );
 
   // -- 7. Horizontal rules ----------------------------------------------------
@@ -176,13 +181,15 @@ export function markdownToHtml(md: string): string {
 
     const tableStyle =
       'width:100%;border-collapse:collapse;margin:12px 0;font-size:12px';
+    const thAlign = isRtl ? 'right' : 'left';
+    const thCase = isRtl ? '' : 'text-transform:uppercase;letter-spacing:0.06em;';
     const thStyle =
-      'background:#eef2ff;color:#3730a3;font-weight:800;text-transform:uppercase;font-size:10px;letter-spacing:0.06em;padding:8px 12px;border:1px solid #c7d2fe;text-align:left';
+      `background:#eef2ff;color:#3730a3;font-weight:800;${thCase}font-size:11px;padding:8px 12px;border:1px solid #c7d2fe;text-align:${thAlign}`;
     const tdStyle =
-      'padding:7px 12px;border:1px solid #e2e8f0;color:#374151;vertical-align:top';
+      `padding:7px 12px;border:1px solid #e2e8f0;color:#374151;vertical-align:top;text-align:${thAlign}`;
     const trEvenStyle = 'background:#f8faff';
 
-    let out = '<div style="overflow-x:auto;margin:12px 0"><table style="' + tableStyle + '">';
+    let out = `<div style="overflow-x:auto;margin:12px 0"><table dir="${dir}" style="${tableStyle}">`;
     rows.forEach((row, i) => {
       const cells = row
         .split('|')
@@ -212,11 +219,11 @@ export function markdownToHtml(md: string): string {
       .split('\n')
       .map((l) => l.replace(/^- /, '').trim());
     const liStyle =
-      'display:flex;align-items:flex-start;gap:8px;margin:4px 0;color:#374151;font-size:13px';
+      `display:flex;align-items:flex-start;gap:8px;margin:4px 0;color:#374151;font-size:13px;${textAlign}`;
     const dotStyle =
-      'flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#6366f1;margin-top:6px';
+      'flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#6366f1;margin-top:8px';
     return (
-      '<ul style="margin:8px 0;padding:0;list-style:none">' +
+      `<ul dir="${dir}" style="margin:8px 0;padding:0;list-style:none">` +
       items
         .map(
           (item) =>
@@ -224,7 +231,7 @@ export function markdownToHtml(md: string): string {
             liStyle +
             '"><span style="' +
             dotStyle +
-            '"></span><span>' +
+            '"></span><span style="flex:1">' +
             item +
             '</span></li>'
         )
@@ -240,11 +247,11 @@ export function markdownToHtml(md: string): string {
       .split('\n')
       .map((l) => l.replace(/^\d+\. /, '').trim());
     const liStyle =
-      'display:flex;align-items:flex-start;gap:10px;margin:4px 0;color:#374151;font-size:13px';
+      `display:flex;align-items:flex-start;gap:10px;margin:4px 0;color:#374151;font-size:13px;${textAlign}`;
     const numStyle =
       'flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#eef2ff;color:#4338ca;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:2px';
     return (
-      '<ol style="margin:8px 0;padding:0;list-style:none">' +
+      `<ol dir="${dir}" style="margin:8px 0;padding:0;list-style:none">` +
       items
         .map(
           (item, idx) =>
@@ -254,7 +261,7 @@ export function markdownToHtml(md: string): string {
             numStyle +
             '">' +
             (idx + 1) +
-            '</span><span>' +
+            '</span><span style="flex:1">' +
             item +
             '</span></li>'
         )
@@ -266,7 +273,7 @@ export function markdownToHtml(md: string): string {
   // -- 12. Paragraphs --------------------------------------------------------
   html = html.replace(
     /^(?!\s*<[a-zA-Z\/])(.+)$/gm,
-    '<p style="margin:6px 0;color:#374151;line-height:1.7;font-size:13px">$1</p>'
+    `<p style="margin:6px 0;color:#374151;line-height:1.8;font-size:13px;${textAlign}">$1</p>`
   );
 
   // -- 13. Restore Math Placeholders -----------------------------------------

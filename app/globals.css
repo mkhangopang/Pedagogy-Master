@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -102,4 +104,58 @@
 
 .artifact-canvas-container td {
   @apply px-4 py-3 text-sm border border-slate-100 dark:border-white/5 font-medium;
+}
+
+/* Urdu & Sindhi RTL Typography */
+.font-urdu {
+  font-family: 'Noto Nastaliq Urdu', 'Noto Naskh Arabic', Tahoma, Arial, sans-serif;
+  line-height: 2.25;
+}
+
+.font-sindhi {
+  font-family: 'Noto Naskh Arabic', Tahoma, Arial, sans-serif;
+  line-height: 1.95;
+}
+
+.font-urdu p,
+.font-urdu li,
+.font-urdu td,
+.font-urdu th {
+  line-height: 2.25 !important;
+}
+
+.font-sindhi p,
+.font-sindhi li,
+.font-sindhi td,
+.font-sindhi th {
+  line-height: 1.95 !important;
+}
+
+.dark .artifact-rtl h1,
+.dark .artifact-rtl h2,
+.dark .artifact-rtl h3,
+.dark .artifact-rtl h4,
+.dark .artifact-rtl strong {
+  color: #f8fafc !important;
+}
+
+.dark .artifact-rtl p,
+.dark .artifact-rtl li,
+.dark .artifact-rtl td {
+  color: #cbd5e1 !important;
+}
+
+.dark .artifact-rtl th {
+  background: rgba(99, 102, 241, 0.2) !important;
+  color: #c7d2fe !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark .artifact-rtl td {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+.dark .artifact-rtl blockquote {
+  background: rgba(99, 102, 241, 0.1) !important;
+  color: #e2e8f0 !important;
 }
