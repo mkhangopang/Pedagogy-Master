@@ -1,9 +1,26 @@
 'use client';
 
+import type { TranslationQuotaStatus } from './quota';
+
+export type { TranslationQuotaStatus };
+
 export interface ClientTranslateResult {
   translatedText: string;
   provider?: string;
   qaApplied?: boolean;
+  cacheHit?: boolean;
+  quota?: TranslationQuotaStatus;
+}
+
+export class TranslationQuotaError extends Error {
+  code = 'TRANSLATION_QUOTA_EXCEEDED';
+  quota?: TranslationQuotaStatus;
+
+  constructor(message: string, quota?: TranslationQuotaStatus) {
+    super(message);
+    this.name = 'TranslationQuotaError';
+    this.quota = quota;
+  }
 }
 
 interface TranslateStreamParams {
@@ -12,6 +29,23 @@ interface TranslateStreamParams {
   targetLanguage: 'ur' | 'sd';
   onDraft?: (draftText: string) => void;
   onStatus?: (message: string) => void;
+}
+
+export async function fetchTranslationQuota(
+  token: string
+): Promise<TranslationQuotaStatus | null> {
+  try {
+    const res = await fetch('/api/translate/quota', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.quota ?? null;
+  } catch {
+    return null;
+  }
 }
 
 async function performStreamingRequest(
@@ -40,11 +74,18 @@ async function performStreamingRequest(
 
     if (!res.ok) {
       let errMsg = `Translation failed (HTTP ${res.status}).`;
+      let errCode: string | undefined;
+      let errQuota: TranslationQuotaStatus | undefined;
       try {
         const errJson = await res.json();
         if (errJson?.error) errMsg = errJson.error;
+        errCode = errJson?.code;
+        errQuota = errJson?.quota;
       } catch {
         // Ignore JSON parse error on non-JSON error responses
+      }
+      if (res.status === 429 || errCode === 'TRANSLATION_QUOTA_EXCEEDED') {
+        throw new TranslationQuotaError(errMsg, errQuota);
       }
       throw new Error(errMsg);
     }
@@ -59,6 +100,8 @@ async function performStreamingRequest(
         translatedText: data.translatedText,
         provider: data.provider,
         qaApplied: data.qaApplied,
+        cacheHit: data.cacheHit,
+        quota: data.quota,
       };
     }
 
@@ -98,6 +141,8 @@ async function performStreamingRequest(
               translatedText: event.translatedText,
               provider: event.provider,
               qaApplied: event.qaApplied,
+              cacheHit: event.cacheHit,
+              quota: event.quota,
             };
           } else if (event.type === 'error') {
             throw new Error(event.error || 'Translation failed.');
@@ -120,6 +165,8 @@ async function performStreamingRequest(
             translatedText: tailEvent.translatedText,
             provider: tailEvent.provider,
             qaApplied: tailEvent.qaApplied,
+            cacheHit: tailEvent.cacheHit,
+            quota: tailEvent.quota,
           };
         } else if (tailEvent.type === 'draft' && tailEvent.translatedText) {
           latestDraft = tailEvent.translatedText;
@@ -142,6 +189,9 @@ async function performStreamingRequest(
 
     throw new Error('Unable to translate output right now. Please retry.');
   } catch (err: any) {
+    if (err instanceof TranslationQuotaError) {
+      throw err;
+    }
     if (latestDraft) {
       return {
         translatedText: latestDraft,
@@ -161,6 +211,9 @@ export async function translateContentStream(
   try {
     return await performStreamingRequest(params);
   } catch (firstErr: any) {
+    if (firstErr instanceof TranslationQuotaError) {
+      throw firstErr;
+    }
     const msg = String(firstErr?.message || '');
     const isTransientNetwork =
       firstErr?.name === 'TypeError' ||

@@ -13,14 +13,14 @@ export const ROLE_LIMITS = {
     maxPages: 1000,
     canDeleteSuccessful: true,
     price: "$0", 
-    features: ["100 Document Multi-Key Vault", "Max 1000 Pages/Doc", "Universal Synthesis Grid", "Worldclass Processing"] 
+    features: ["100 Document Multi-Key Vault", "Max 1000 Pages/Doc", "5 Urdu/Sindhi Translations / Month", "Universal Synthesis Grid"] 
   },
   [SubscriptionPlan.PRO]: { 
     docs: 200, 
     maxPages: 1000,
     canDeleteSuccessful: true,
     price: "PKR 1,999/month", 
-    features: ["Unlimited Document Vault", "High-Speed Thinking Nodes", "Advanced Gemini Integration", "Elite Pedagogy Mode"] 
+    features: ["Unlimited Document Vault", "High-Speed Thinking Nodes", "5 Urdu/Sindhi Translations / Day", "DOCX & PDF Downloads Included"] 
   },
   [SubscriptionPlan.ENTERPRISE]: { 
     docs: 9999, 
@@ -28,7 +28,7 @@ export const ROLE_LIMITS = {
     maxPagesSME_2: 3000, 
     canDeleteSuccessful: true, 
     price: "Free-Enterprise", 
-    features: ["Global Institutional Vault", "Maximum Node Priority", "Neural Override Access"] 
+    features: ["Global Institutional Vault", "Maximum Node Priority", "5 Urdu/Sindhi Translations / Day", "DOCX & PDF Downloads Included"] 
   },
 };
 

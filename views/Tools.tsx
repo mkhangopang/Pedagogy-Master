@@ -19,7 +19,12 @@ import { markdownToHtml } from '../lib/markdown-renderer';
 import { PRINT_STYLES } from '../lib/tools-constants';
 import { logActivity } from '../lib/activity-logger';
 import { isAdminUser } from '../lib/auth/user-role';
-import { translateContentStream } from '../lib/translate/client-translate';
+import {
+  TranslationQuotaError,
+  TranslationQuotaStatus,
+  fetchTranslationQuota,
+  translateContentStream,
+} from '../lib/translate/client-translate';
 import {
   ArtifactLanguage,
   exportArtifactAsDocx,
@@ -58,13 +63,16 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   const [translations, setTranslations] = useState<Partial<Record<'ur' | 'sd', string>>>({});
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
+  const [translationQuota, setTranslationQuota] = useState<TranslationQuotaStatus | null>(null);
+  const [quotaUpgradePrompt, setQuotaUpgradePrompt] = useState(false);
   const [isExporting, setIsExporting] = useState<'docx' | 'pdf' | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [showUpgradeHint, setShowUpgradeHint] = useState(false);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
-  const isPro = user.plan !== SubscriptionPlan.FREE || isAdminUser(user);
+  const isDev = isAdminUser(user);
+  const isPro = user.plan !== SubscriptionPlan.FREE || isDev;
 
   // -- Inject print styles ----------------------------------------------------
   useEffect(() => {
@@ -80,6 +88,19 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   useEffect(() => {
     setLocalDocs(documents);
   }, [documents]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !active) return;
+      const q = await fetchTranslationQuota(session.access_token);
+      if (q && active) setTranslationQuota(q);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user.id, user.plan]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -243,6 +264,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     setIsTranslating(true);
     setTranslatingLang(lang);
     setTranslationError(null);
+    setQuotaUpgradePrompt(false);
     try {
       const {
         data: { session },
@@ -269,14 +291,21 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         ...prev,
         [lang]: result.translatedText,
       }));
+      if (result.quota) {
+        setTranslationQuota(result.quota);
+      }
       setSelectedLang(lang);
     } catch (err: any) {
+      if (err instanceof TranslationQuotaError) {
+        if (err.quota) setTranslationQuota(err.quota);
+        setQuotaUpgradePrompt(err.quota?.period === 'month' || user.plan === SubscriptionPlan.FREE);
+      }
       setTranslationError(err?.message || 'Translation failed. Please retry.');
     } finally {
       setIsTranslating(false);
       setTranslatingLang(null);
     }
-  }, []);
+  }, [user.plan]);
 
   useEffect(() => {
     if (
@@ -315,6 +344,21 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
     if (translations[lang]) {
       setSelectedLang(lang);
+      return;
+    }
+
+    if (
+      translationQuota &&
+      !translationQuota.isDeveloper &&
+      translationQuota.remaining !== null &&
+      translationQuota.remaining <= 0
+    ) {
+      setQuotaUpgradePrompt(translationQuota.period === 'month');
+      setTranslationError(
+        translationQuota.period === 'day'
+          ? `Daily translation limit reached (${translationQuota.used}/${translationQuota.limit} Urdu & Sindhi translations used today). Resets tomorrow (UTC).`
+          : `Free plan translation limit reached (${translationQuota.used}/${translationQuota.limit} Urdu & Sindhi translations used this month). Upgrade for 5 translations/day.`
+      );
       return;
     }
 
@@ -555,6 +599,22 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   })}
                 </div>
 
+                {translationQuota && (
+                  <span
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide whitespace-nowrap shrink-0 border ${
+                      translationQuota.isDeveloper
+                        ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300'
+                        : (translationQuota.remaining ?? 0) <= 0
+                          ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/40 text-rose-600 dark:text-rose-400'
+                          : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {translationQuota.isDeveloper
+                      ? 'Dev Unlimited'
+                      : `${translationQuota.remaining}/${translationQuota.limit} left ${translationQuota.period === 'day' ? 'today' : 'this month'}`}
+                  </span>
+                )}
+
                 {workflowRecommendation && !isGenerating && (
                   <button onClick={handleWorkflowTransition} className="px-3.5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap shrink-0">
                     <ArrowRightCircle size={14}/> Next: {getToolDisplayName(workflowRecommendation.tool)}
@@ -650,14 +710,25 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                      <AlertCircle size={14} className="shrink-0" />
                      <span>{translationError || exportError}</span>
                    </div>
-                   <button
-                     type="button"
-                     onClick={() => { setTranslationError(null); setExportError(null); }}
-                     className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
-                     aria-label="Dismiss error"
-                   >
-                     <X size={14} />
-                   </button>
+                   <div className="flex items-center gap-2 shrink-0">
+                     {quotaUpgradePrompt && onViewChange && (
+                       <button
+                         type="button"
+                         onClick={() => onViewChange('pricing')}
+                         className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
+                       >
+                         Upgrade for 5/day
+                       </button>
+                     )}
+                     <button
+                       type="button"
+                       onClick={() => { setTranslationError(null); setExportError(null); setQuotaUpgradePrompt(false); }}
+                       className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                       aria-label="Dismiss error"
+                     >
+                       <X size={14} />
+                     </button>
+                   </div>
                  </>
                )}
              </div>

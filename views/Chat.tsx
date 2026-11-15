@@ -20,6 +20,7 @@ import { DocumentSelector } from '../components/chat/DocumentSelector';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activity-logger';
 import { isAdminUser } from '../lib/auth/user-role';
+import { TranslationQuotaStatus, fetchTranslationQuota } from '../lib/translate/client-translate';
 
 interface ChatProps {
   brain: NeuralBrain;
@@ -44,6 +45,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentSavedId, setAssessmentSavedId] = useState<string | null>(null);
   const [isSpeechDictating, setIsSpeechDictating] = useState(false);
+  const [translationQuota, setTranslationQuota] = useState<TranslationQuotaStatus | null>(null);
 
   const handleSaveAssessment = async (assessment: Assessment) => {
     try {
@@ -80,6 +82,19 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
     const selected = documents.find(d => d.isSelected);
     if (selected) setFocusedDocId(selected.id);
   }, [documents]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || !active) return;
+      const q = await fetchTranslationQuota(session.access_token);
+      if (q && active) setTranslationQuota(q);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [user.id, user.plan]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -402,6 +417,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
                     enableTranslateExport={!isLoading || idx !== messages.length - 1}
                     canExport={user.plan !== SubscriptionPlan.FREE || isAdminUser(user)}
                     userName={user.name}
+                    translationQuota={translationQuota}
+                    onQuotaUpdate={setTranslationQuota}
                     onUpgradeClick={() => onViewChange?.('pricing')}
                   />
                 ))}

@@ -21,7 +21,11 @@ import {
 import { renderSTEM } from '../../lib/math-renderer';
 import { markdownToHtml } from '../../lib/markdown-renderer';
 import { supabase } from '../../lib/supabase';
-import { translateContentStream } from '../../lib/translate/client-translate';
+import {
+  TranslationQuotaError,
+  TranslationQuotaStatus,
+  translateContentStream,
+} from '../../lib/translate/client-translate';
 import {
   ArtifactLanguage,
   exportArtifactAsDocx,
@@ -38,6 +42,8 @@ interface MessageItemProps {
   enableTranslateExport?: boolean;
   canExport?: boolean;
   userName?: string;
+  translationQuota?: TranslationQuotaStatus | null;
+  onQuotaUpdate?: (quota: TranslationQuotaStatus) => void;
   onUpgradeClick?: () => void;
 }
 
@@ -49,6 +55,8 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   enableTranslateExport = false,
   canExport = false,
   userName,
+  translationQuota,
+  onQuotaUpdate,
   onUpgradeClick,
 }) => {
   const isAi = role === 'assistant';
@@ -60,6 +68,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const [translationError, setTranslationError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<'docx' | 'pdf' | null>(null);
   const [showUpgradeHint, setShowUpgradeHint] = useState(false);
+  const [quotaUpgradePrompt, setQuotaUpgradePrompt] = useState(false);
 
   const isGlitch = content.includes('Neural Glitch Guard');
   const cleanEnglish = content.split('--- Synthesis Node:')[0].trim();
@@ -89,8 +98,24 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       return;
     }
 
+    if (
+      translationQuota &&
+      !translationQuota.isDeveloper &&
+      translationQuota.remaining !== null &&
+      translationQuota.remaining <= 0
+    ) {
+      setQuotaUpgradePrompt(translationQuota.period === 'month');
+      setTranslationError(
+        translationQuota.period === 'day'
+          ? `Daily translation limit reached (${translationQuota.used}/${translationQuota.limit} used today). Resets tomorrow (UTC).`
+          : `Free plan limit reached (${translationQuota.used}/${translationQuota.limit} translations used this month). Upgrade for 5/day.`
+      );
+      return;
+    }
+
     setIsTranslating(true);
     setTranslatingLang(lang);
+    setQuotaUpgradePrompt(false);
     try {
       const {
         data: { session },
@@ -117,8 +142,15 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         ...prev,
         [lang]: result.translatedText,
       }));
+      if (result.quota) {
+        onQuotaUpdate?.(result.quota);
+      }
       setSelectedLang(lang);
     } catch (err: any) {
+      if (err instanceof TranslationQuotaError) {
+        if (err.quota) onQuotaUpdate?.(err.quota);
+        setQuotaUpgradePrompt(err.quota?.period === 'month');
+      }
       setTranslationError(err?.message || 'Unable to translate message.');
     } finally {
       setIsTranslating(false);
@@ -281,6 +313,13 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                 {translatingLang === 'sd' ? 'Verifying Sindhi QA...' : 'Translating...'}
               </span>
             )}
+            {translationQuota && !isTranslating && (
+              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                {translationQuota.isDeveloper
+                  ? 'Dev Unlimited'
+                  : `${translationQuota.remaining}/${translationQuota.limit} left ${translationQuota.period === 'day' ? 'today' : 'this month'}`}
+              </span>
+            )}
           </div>
         )}
 
@@ -309,9 +348,20 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             ) : (
               <>
                 <span className="text-rose-600 dark:text-rose-400">{translationError}</span>
-                <button type="button" onClick={() => setTranslationError(null)} className="text-slate-400 hover:text-slate-700">
-                  <X size={13} />
-                </button>
+                <div className="flex items-center gap-2">
+                  {quotaUpgradePrompt && onUpgradeClick && (
+                    <button
+                      type="button"
+                      onClick={onUpgradeClick}
+                      className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider"
+                    >
+                      Upgrade for 5/day
+                    </button>
+                  )}
+                  <button type="button" onClick={() => { setTranslationError(null); setQuotaUpgradePrompt(false); }} className="text-slate-400 hover:text-slate-700">
+                    <X size={13} />
+                  </button>
+                </div>
               </>
             )}
           </div>

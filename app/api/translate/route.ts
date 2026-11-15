@@ -10,6 +10,13 @@ import {
   splitMarkdownForContextReview,
   stashNonTranslatableSegments,
 } from '../../../lib/translate/sindhi-qa';
+import {
+  buildQuotaExceededMessage,
+  checkTranslationQuota,
+  getCachedTranslation,
+  recordTranslationUsage,
+  setCachedTranslation,
+} from '../../../lib/translate/quota';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -539,6 +546,75 @@ export async function POST(req: NextRequest) {
     }
 
     const clampedText = text.slice(0, 60000);
+    const quota = await checkTranslationQuota(supabase, user.id, user.email);
+    if (!quota.allowed) {
+      return NextResponse.json(
+        {
+          error: buildQuotaExceededMessage(quota),
+          code: 'TRANSLATION_QUOTA_EXCEEDED',
+          quota,
+        },
+        { status: 429 }
+      );
+    }
+
+    const executeWithCacheAndQuota = async (
+      onProgress?: (event: Record<string, unknown>) => void
+    ) => {
+      const cached = await getCachedTranslation(clampedText, targetLanguage);
+      if (cached?.translatedText) {
+        const updatedQuota = await recordTranslationUsage({
+          supabase,
+          userId: user.id,
+          authEmail: user.email,
+          targetLanguage,
+          provider: cached.provider,
+          charLength: clampedText.length,
+          cacheHit: true,
+        });
+        return {
+          ...cached,
+          targetLanguage,
+          cacheHit: true,
+          quota: updatedQuota,
+        };
+      }
+
+      const result = await translateMarkdownContent(
+        clampedText,
+        targetLanguage,
+        onProgress
+      );
+
+      await setCachedTranslation(clampedText, targetLanguage, {
+        translatedText: result.translatedText,
+        provider: result.provider,
+        qaApplied: result.qaApplied ?? false,
+        bracketedTermsCount: result.bracketedTermsCount ?? 0,
+        deduplicatedCount: result.deduplicatedCount ?? 0,
+      });
+
+      const updatedQuota = await recordTranslationUsage({
+        supabase,
+        userId: user.id,
+        authEmail: user.email,
+        targetLanguage,
+        provider: result.provider,
+        charLength: clampedText.length,
+        cacheHit: false,
+      });
+
+      return {
+        translatedText: result.translatedText,
+        targetLanguage,
+        provider: result.provider,
+        qaApplied: result.qaApplied ?? false,
+        bracketedTermsCount: result.bracketedTermsCount ?? 0,
+        deduplicatedCount: result.deduplicatedCount ?? 0,
+        cacheHit: false,
+        quota: updatedQuota,
+      };
+    };
 
     if (useStream) {
       const encoder = new TextEncoder();
@@ -568,19 +644,10 @@ export async function POST(req: NextRequest) {
           }, 2500);
 
           try {
-            const result = await translateMarkdownContent(
-              clampedText,
-              targetLanguage,
-              sendEvent
-            );
+            const payload = await executeWithCacheAndQuota(sendEvent);
             sendEvent({
               type: 'result',
-              translatedText: result.translatedText,
-              targetLanguage,
-              provider: result.provider,
-              qaApplied: result.qaApplied ?? false,
-              bracketedTermsCount: result.bracketedTermsCount ?? 0,
-              deduplicatedCount: result.deduplicatedCount ?? 0,
+              ...payload,
             });
           } catch (err: any) {
             console.error('[Translate Stream Fault]:', err);
@@ -609,16 +676,8 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const result = await translateMarkdownContent(clampedText, targetLanguage);
-
-    return NextResponse.json({
-      translatedText: result.translatedText,
-      targetLanguage,
-      provider: result.provider,
-      qaApplied: result.qaApplied ?? false,
-      bracketedTermsCount: result.bracketedTermsCount ?? 0,
-      deduplicatedCount: result.deduplicatedCount ?? 0,
-    });
+    const payload = await executeWithCacheAndQuota();
+    return NextResponse.json(payload);
   } catch (error: any) {
     console.error('[Translate API Fault]:', error);
     return NextResponse.json(
