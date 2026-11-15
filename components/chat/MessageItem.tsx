@@ -21,6 +21,7 @@ import {
 import { renderSTEM } from '../../lib/math-renderer';
 import { markdownToHtml } from '../../lib/markdown-renderer';
 import { supabase } from '../../lib/supabase';
+import { translateContentStream } from '../../lib/translate/client-translate';
 import {
   ArtifactLanguage,
   exportArtifactAsDocx,
@@ -99,26 +100,22 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         throw new Error('Authentication session required to translate.');
       }
 
-      const res = await fetch('/api/translate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+      const result = await translateContentStream({
+        token,
+        text: cleanEnglish,
+        targetLanguage: lang,
+        onDraft: (draftText) => {
+          setTranslations((prev) => ({
+            ...prev,
+            [lang]: draftText,
+          }));
+          setSelectedLang(lang);
         },
-        body: JSON.stringify({
-          text: cleanEnglish,
-          targetLanguage: lang,
-        }),
       });
-
-      const data = await res.json();
-      if (!res.ok || !data?.translatedText) {
-        throw new Error(data?.error || 'Translation failed.');
-      }
 
       setTranslations((prev) => ({
         ...prev,
-        [lang]: data.translatedText,
+        [lang]: result.translatedText,
       }));
       setSelectedLang(lang);
     } catch (err: any) {
@@ -321,9 +318,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         )}
 
         {/* Message Bubble */}
-        <div className={`w-full ${isAi ? '' : 'flex justify-end'}`}>
+        <div className={`w-full min-w-0 ${isAi ? '' : 'flex justify-end'}`}>
           <div
-            className={`relative transition-all duration-500 overflow-hidden ${
+            className={`relative transition-all duration-500 overflow-hidden min-w-0 ${
               isAi
                 ? isGlitch
                   ? 'w-full bg-rose-50 dark:bg-rose-950/20 border-2 border-rose-200 dark:border-rose-900/40 p-6 rounded-[2rem]'

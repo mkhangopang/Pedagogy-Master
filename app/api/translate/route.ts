@@ -49,7 +49,7 @@ async function translateBatchViaClients5(
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
       },
       body: params,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(10000),
     }
   );
 
@@ -83,7 +83,7 @@ async function translateBatchViaGtx(
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
       },
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(8000),
     });
     if (!res.ok) {
       throw new Error(`GTX_HTTP_${res.status}`);
@@ -181,10 +181,10 @@ async function runGoogleTranslateWorkingText(
     }
 
     try {
-      for (const batch of batches) {
-        const res = await translateBatchViaClients5(batch, targetLanguage);
-        translatedSlots.push(...res);
-      }
+      const batchResults = await Promise.all(
+        batches.map((batch) => translateBatchViaClients5(batch, targetLanguage))
+      );
+      translatedSlots = batchResults.flat();
       provider = 'google_translate';
     } catch (primaryErr) {
       console.warn(
@@ -224,6 +224,22 @@ async function runGoogleTranslateWorkingText(
   return { workingTranslated: reconstructed, provider };
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label}_TIMEOUT`)), ms);
+    promise.then(
+      (val) => {
+        clearTimeout(timer);
+        resolve(val);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 async function generateWithGeminiFallbackChain(
   systemInstruction: string,
   contents: string
@@ -236,10 +252,10 @@ async function generateWithGeminiFallbackChain(
     throw new Error('No Gemini API key configured on server.');
   }
 
-  const modelCandidates = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'] as const;
+  const modelCandidates = ['gemini-4-hydrogen', 'gemini-2.5-flash'] as const;
   let lastError: unknown = null;
 
-  for (const apiKey of keyPool.slice(0, 3)) {
+  for (const apiKey of keyPool.slice(0, 2)) {
     const ai = new GoogleGenAI({
       apiKey,
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
@@ -248,16 +264,20 @@ async function generateWithGeminiFallbackChain(
     for (const model of modelCandidates) {
       try {
         const isGemini4 = model.startsWith('gemini-4-');
-        const response = await ai.models.generateContent({
-          model,
-          contents,
-          config: {
-            systemInstruction,
-            ...(isGemini4
-              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
-              : { temperature: 0.1 }),
-          },
-        });
+        const response = await withTimeout(
+          ai.models.generateContent({
+            model,
+            contents,
+            config: {
+              systemInstruction,
+              ...(isGemini4
+                ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                : { temperature: 0.1 }),
+            },
+          }),
+          14000,
+          model
+        );
         const output = response.text?.trim();
         if (output) {
           return output;
@@ -276,17 +296,11 @@ async function generateWithGeminiFallbackChain(
 async function refineSindhiChunkWithGemini(params: {
   englishChunk: string;
   googleDraftChunk: string | null;
-  alreadyGlossedTerms: string[];
 }): Promise<string> {
-  const { englishChunk, googleDraftChunk, alreadyGlossedTerms } = params;
-
-  const previouslyGlossedNote =
-    alreadyGlossedTerms.length > 0
-      ? `\n6. ALREADY GLOSSED TERMS (DO NOT add English brackets for these again in this section): ${alreadyGlossedTerms.slice(-40).join(', ')}`
-      : '';
+  const { englishChunk, googleDraftChunk } = params;
 
   const systemInstruction = `You are a Senior Sindhi Curriculum Linguist, Academic Editor, and Scientific Translator (Sindh Textbook Board standard).
-Your task is to deliver an authentic, natural, publication-grade Sindhi (سنڌي) translation of the provided English educational Markdown content.
+Deliver an authentic, natural, publication-grade Sindhi (سنڌي) translation of the provided English educational Markdown content.
 ${googleDraftChunk ? 'An initial Google Translate Sindhi draft is also provided for cross-reference — audit its context carefully and fix any literal phrasing, wrong word order, missing meanings, or non-standard orthography.' : ''}
 
 STRICT QUALITY & FLOW RULES:
@@ -296,11 +310,11 @@ STRICT QUALITY & FLOW RULES:
    - For genuinely scientific, technical, or specialized pedagogical terms (e.g., فوٽوسنٿيسس (Photosynthesis)، مائٽوسس (Mitosis)، بلوم جي ٽيڪسونامي (Bloom's Taxonomy)، تشخيصي جائزو (Formative Assessment)، مفروضو (Hypothesis)، ڪشش ثقل (Gravity)), place the exact English term in parentheses immediately after the Sindhi term ONLY ON ITS FIRST APPEARANCE.
    - NEVER repeat the same English term in brackets anywhere later in the text — all later mentions must appear in Sindhi only so prose flows smoothly without repetition.
    - NEVER bracket ordinary everyday words (like Student, Teacher, School, Book, Lesson, Question, Answer, Activity, Time, Example, Class, Grade, Step, Note).
-   - Keep bracket usage balanced and readable (do not overcrowd sentences with brackets).
+   - Keep bracket usage balanced and readable.
 4. MARKDOWN & TOKEN FIDELITY:
    - Preserve ALL Markdown syntax identically (#, ##, ###, **bold**, *italic*, -, 1., >, ---, and | table | columns/rows).
    - Keep ALL placeholder tokens like ZCODEBLOCK0Z, ZMATHBLK0Z, ZINLINE0Z completely intact and unmodified in their exact logical positions.
-5. OUTPUT ONLY the final Sindhi Markdown document with zero preamble, notes, or markdown code fences wrapping the whole reply.${previouslyGlossedNote}`;
+5. OUTPUT ONLY the final Sindhi Markdown document with zero preamble or commentary.`;
 
   const contents = googleDraftChunk
     ? `### ENGLISH SOURCE:\n${englishChunk}\n\n### GOOGLE TRANSLATE SINDHI DRAFT (FOR AUDIT & IMPROVEMENT):\n${googleDraftChunk}`
@@ -309,7 +323,10 @@ STRICT QUALITY & FLOW RULES:
   return generateWithGeminiFallbackChain(systemInstruction, contents);
 }
 
-async function translateSindhiWithContextQA(stashed: StashedMarkdown): Promise<{
+async function translateSindhiWithContextQA(
+  stashed: StashedMarkdown,
+  onProgress?: (event: Record<string, unknown>) => void
+): Promise<{
   translatedText: string;
   provider: string;
   qaApplied: boolean;
@@ -318,41 +335,74 @@ async function translateSindhiWithContextQA(stashed: StashedMarkdown): Promise<{
 }> {
   // Stage 1: Fast Google Translate baseline draft (best-effort)
   let draftWorking: string | null = null;
-  let baseProvider = 'sindhi_context_qa';
   try {
     const gt = await runGoogleTranslateWorkingText(stashed.workingText, 'sd');
     draftWorking = gt.workingTranslated;
+
+    // Emit clean baseline draft immediately so clients never fail even if downstream LLM times out
+    const baselineSeen = new Set<string>();
+    const baselineChecked = applySindhiChecksAndBalances(
+      draftWorking,
+      stashed.workingText,
+      baselineSeen
+    );
+    onProgress?.({
+      type: 'draft',
+      translatedText: restoreStashedSegments(baselineChecked.text, stashed),
+      provider: 'google_translate_qa_draft',
+    });
   } catch (gtErr) {
-    console.warn('[Translate][Sindhi] Baseline Google Translate unavailable; Gemini will translate directly from English context:', gtErr);
+    console.warn(
+      '[Translate][Sindhi] Baseline Google Translate unavailable; Gemini will translate directly from English context:',
+      gtErr
+    );
   }
 
-  // Stage 2: Gemini Context Overview + Check & Balance Verification
-  const chunks = splitMarkdownForContextReview(stashed.workingText, draftWorking);
-  const seenTerms = new Set<string>();
+  onProgress?.({
+    type: 'status',
+    message: 'Refining Sindhi grammar & scientific terms with Gemini QA...',
+  });
+
+  // Stage 2: Parallel Gemini Context Overview across large section chunks (up to 9,000 chars each)
+  const chunks = splitMarkdownForContextReview(
+    stashed.workingText,
+    draftWorking,
+    9000
+  );
+
+  const rawChunkResults = await Promise.all(
+    chunks.map(async (chunk) => {
+      try {
+        const geminiText = await refineSindhiChunkWithGemini({
+          englishChunk: chunk.english,
+          googleDraftChunk: chunk.draft,
+        });
+        return { chunk, geminiText };
+      } catch (geminiErr) {
+        console.warn('[Translate][Sindhi] Gemini context review failed on chunk:', geminiErr);
+        return { chunk, geminiText: null };
+      }
+    })
+  );
+
+  // Stage 3: Sequential Cross-Chunk Checks & Balances (guarantees 1st-occurrence-only English brackets across the whole document)
+  const globalSeenTerms = new Set<string>();
   const keptTermsList: string[] = [];
   let totalDeduplicated = 0;
   let qaChunksSucceeded = 0;
-
   const reviewedParts: string[] = [];
 
-  for (const chunk of chunks) {
-    let candidateChunk: string | null = null;
+  for (const { chunk, geminiText } of rawChunkResults) {
+    let acceptedChunk: string | null = null;
 
-    try {
-      const geminiReviewed = await refineSindhiChunkWithGemini({
-        englishChunk: chunk.english,
-        googleDraftChunk: chunk.draft,
-        alreadyGlossedTerms: keptTermsList,
-      });
-
+    if (geminiText) {
       const checked = applySindhiChecksAndBalances(
-        geminiReviewed,
+        geminiText,
         chunk.english,
-        seenTerms
+        globalSeenTerms
       );
-
       if (checked.report.valid) {
-        candidateChunk = checked.text;
+        acceptedChunk = checked.text;
         keptTermsList.push(...checked.keptTerms);
         totalDeduplicated += checked.report.deduplicatedCount;
         qaChunksSucceeded += 1;
@@ -361,12 +411,9 @@ async function translateSindhiWithContextQA(stashed: StashedMarkdown): Promise<{
           `[Translate][Sindhi] QA check flagged chunk (${checked.report.reason}); falling back cleanly.`
         );
       }
-    } catch (geminiErr) {
-      console.warn('[Translate][Sindhi] Gemini context review failed on chunk:', geminiErr);
     }
 
-    if (!candidateChunk) {
-      // Fallback to Google Translate draft (or direct chunk translation) passed through Sindhi hygiene checks
+    if (!acceptedChunk) {
       let draftText = chunk.draft;
       if (!draftText) {
         const fallbackGt = await runGoogleTranslateWorkingText(chunk.english, 'sd');
@@ -375,28 +422,29 @@ async function translateSindhiWithContextQA(stashed: StashedMarkdown): Promise<{
       const checkedDraft = applySindhiChecksAndBalances(
         draftText,
         chunk.english,
-        seenTerms
+        globalSeenTerms
       );
-      candidateChunk = checkedDraft.text;
+      acceptedChunk = checkedDraft.text;
       keptTermsList.push(...checkedDraft.keptTerms);
       totalDeduplicated += checkedDraft.report.deduplicatedCount;
     }
 
-    reviewedParts.push(candidateChunk);
+    reviewedParts.push(acceptedChunk);
   }
 
   const assembledWorking = reviewedParts.join('\n');
   const restored = restoreStashedSegments(assembledWorking, stashed);
 
+  let provider = 'sindhi_context_qa';
   if (qaChunksSucceeded === 0) {
-    baseProvider = 'google_translate_qa_fallback';
+    provider = 'google_translate_qa_fallback';
   } else if (qaChunksSucceeded < chunks.length) {
-    baseProvider = 'sindhi_context_qa_partial';
+    provider = 'sindhi_context_qa_partial';
   }
 
   return {
     translatedText: restored,
-    provider: baseProvider,
+    provider,
     qaApplied: qaChunksSucceeded > 0,
     bracketedTermsCount: keptTermsList.length,
     deduplicatedCount: totalDeduplicated,
@@ -420,7 +468,8 @@ Rules:
 
 async function translateMarkdownContent(
   markdown: string,
-  targetLanguage: TargetLanguage
+  targetLanguage: TargetLanguage,
+  onProgress?: (event: Record<string, unknown>) => void
 ): Promise<{
   translatedText: string;
   provider: string;
@@ -431,7 +480,7 @@ async function translateMarkdownContent(
   const stashed = stashNonTranslatableSegments(markdown);
 
   if (targetLanguage === 'sd') {
-    return translateSindhiWithContextQA(stashed);
+    return translateSindhiWithContextQA(stashed, onProgress);
   }
 
   // Urdu ('ur'): Fast Google Translate primary with Gemini fallback
@@ -473,6 +522,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const text = typeof body?.text === 'string' ? body.text.trim() : '';
     const targetLanguage = body?.targetLanguage as TargetLanguage;
+    const useStream = Boolean(body?.stream);
 
     if (!text) {
       return NextResponse.json(
@@ -489,6 +539,76 @@ export async function POST(req: NextRequest) {
     }
 
     const clampedText = text.slice(0, 60000);
+
+    if (useStream) {
+      const encoder = new TextEncoder();
+      const responseStream = new ReadableStream({
+        async start(controller) {
+          let closed = false;
+          const sendEvent = (payload: Record<string, unknown>) => {
+            if (closed) return;
+            try {
+              controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+            } catch {
+              closed = true;
+            }
+          };
+
+          // Flush immediate initial chunk to prevent gateway/Vercel 504 timeouts
+          sendEvent({
+            type: 'status',
+            message:
+              targetLanguage === 'sd'
+                ? 'Translating Sindhi baseline...'
+                : 'Translating to Urdu...',
+          });
+
+          const heartbeat = setInterval(() => {
+            sendEvent({ type: 'status', message: 'Verifying translation...' });
+          }, 2500);
+
+          try {
+            const result = await translateMarkdownContent(
+              clampedText,
+              targetLanguage,
+              sendEvent
+            );
+            sendEvent({
+              type: 'result',
+              translatedText: result.translatedText,
+              targetLanguage,
+              provider: result.provider,
+              qaApplied: result.qaApplied ?? false,
+              bracketedTermsCount: result.bracketedTermsCount ?? 0,
+              deduplicatedCount: result.deduplicatedCount ?? 0,
+            });
+          } catch (err: any) {
+            console.error('[Translate Stream Fault]:', err);
+            sendEvent({
+              type: 'error',
+              error:
+                err?.message ||
+                'Translation service could not complete this request.',
+            });
+          } finally {
+            clearInterval(heartbeat);
+            if (!closed) {
+              closed = true;
+              controller.close();
+            }
+          }
+        },
+      });
+
+      return new Response(responseStream, {
+        headers: {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'X-Accel-Buffering': 'no',
+        },
+      });
+    }
+
     const result = await translateMarkdownContent(clampedText, targetLanguage);
 
     return NextResponse.json({

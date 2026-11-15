@@ -19,6 +19,7 @@ import { markdownToHtml } from '../lib/markdown-renderer';
 import { PRINT_STYLES } from '../lib/tools-constants';
 import { logActivity } from '../lib/activity-logger';
 import { isAdminUser } from '../lib/auth/user-role';
+import { translateContentStream } from '../lib/translate/client-translate';
 import {
   ArtifactLanguage,
   exportArtifactAsDocx,
@@ -251,26 +252,22 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         throw new Error('Authentication session required to translate.');
       }
 
-      const res = await fetch('/api/translate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
+      const result = await translateContentStream({
+        token,
+        text: sourceText,
+        targetLanguage: lang,
+        onDraft: (draftText) => {
+          setTranslations((prev) => ({
+            ...prev,
+            [lang]: draftText,
+          }));
+          setSelectedLang(lang);
         },
-        body: JSON.stringify({
-          text: sourceText,
-          targetLanguage: lang,
-        }),
       });
-
-      const data = await res.json();
-      if (!res.ok || !data?.translatedText) {
-        throw new Error(data?.error || 'Unable to translate output right now.');
-      }
 
       setTranslations((prev) => ({
         ...prev,
-        [lang]: data.translatedText,
+        [lang]: result.translatedText,
       }));
       setSelectedLang(lang);
     } catch (err: any) {
@@ -515,7 +512,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
         </div>
 
-        <div className={`flex-1 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
+        <div className={`flex-1 min-w-0 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
            <div className="px-4 md:px-8 py-3.5 border-b border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-3 shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
               <div className="flex items-center gap-3 min-w-0">
                 <FileEdit size={18} className="text-indigo-600 shrink-0" />
