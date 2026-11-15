@@ -53,6 +53,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   
   const [workflowRecommendation, setWorkflowRecommendation] = useState<{tool: ToolType, reason: string} | null>(null);
   const [selectedLang, setSelectedLang] = useState<ArtifactLanguage>('en');
+  const [translatingLang, setTranslatingLang] = useState<'ur' | 'sd' | null>(null);
   const [translations, setTranslations] = useState<Partial<Record<'ur' | 'sd', string>>>({});
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
@@ -239,6 +240,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   const translateArtifactTo = useCallback(async (sourceText: string, lang: 'ur' | 'sd') => {
     setIsTranslating(true);
+    setTranslatingLang(lang);
     setTranslationError(null);
     try {
       const {
@@ -275,6 +277,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       setTranslationError(err?.message || 'Translation failed. Please retry.');
     } finally {
       setIsTranslating(false);
+      setTranslatingLang(null);
     }
   }, []);
 
@@ -697,7 +700,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 {isTranslating && (
                   <div className="mb-6 px-4 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-800/40 flex items-center gap-3 text-xs font-semibold text-indigo-700 dark:text-indigo-300 no-print">
                     <Loader2 size={16} className="animate-spin shrink-0" />
-                    <span>Translating artifact with Google Translate...</span>
+                    <span>
+                      {translatingLang === 'sd'
+                        ? 'Translating & verifying Sindhi academic accuracy with contextual QA...'
+                        : 'Translating artifact with Google Translate...'}
+                    </span>
                   </div>
                 )}
                 {displayedContent ? (

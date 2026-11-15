@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import { getSupabaseServerClient } from '../../../lib/supabase';
-import { resolveApiKey } from '../../../lib/env-server';
+import { getAllGeminiKeys, resolveApiKey } from '../../../lib/env-server';
+import {
+  StashedMarkdown,
+  applySindhiChecksAndBalances,
+  normalizeTranslatedMarkdownLine,
+  restoreStashedSegments,
+  splitMarkdownForContextReview,
+  stashNonTranslatableSegments,
+} from '../../../lib/translate/sindhi-qa';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -92,80 +100,11 @@ async function translateBatchViaGtx(
   return results;
 }
 
-async function translateViaGeminiFallback(
-  text: string,
+async function runGoogleTranslateWorkingText(
+  workingText: string,
   targetLanguage: TargetLanguage
-): Promise<string> {
-  const apiKey = resolveApiKey();
-  if (!apiKey) {
-    throw new Error('Translation service unavailable and no fallback API key configured.');
-  }
-
-  const ai = new GoogleGenAI({
-    apiKey,
-    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
-  });
-
-  const langLabel = LANGUAGE_NAMES[targetLanguage];
-  const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash',
-    contents: text,
-    config: {
-      systemInstruction: `You are a precise academic translator. Translate the following English Markdown curriculum document into ${langLabel}.
-Rules:
-1. Preserve ALL Markdown formatting exactly: # headings, **bold**, *italic*, bullet lists (-), numbered lists (1.), blockquotes (>), --- dividers, and | Markdown tables |.
-2. Keep all placeholder tokens (like ZCODEBLOCK0Z, ZMATHBLK0Z, ZINLINE0Z), SLO codes (like [SLO:...]), numbers, and LaTeX math equations completely unchanged.
-3. Output ONLY the translated Markdown document with no preamble or commentary.`,
-      temperature: 0.1,
-    },
-  });
-
-  const output = response.text?.trim();
-  if (!output) {
-    throw new Error('Gemini fallback returned empty translation.');
-  }
-  return output;
-}
-
-function normalizeTranslatedMarkdownLine(line: string): string {
-  return line
-    .replace(/\*\*\s+([^\n*]+?)\s+\*\*/g, '**$1**')
-    .replace(/\*\*\s+([^\n*]+?)\*\*/g, '**$1**')
-    .replace(/\*\*([^\n*]+?)\s+\*\*/g, '**$1**');
-}
-
-async function translateMarkdownContent(
-  markdown: string,
-  targetLanguage: TargetLanguage
-): Promise<{ translatedText: string; provider: string }> {
-  const stashedBlocks: string[] = [];
-  const stashBlock = (match: string, tag: 'CODEBLOCK' | 'MATHBLK') => {
-    const idx = stashedBlocks.length;
-    stashedBlocks.push(match);
-    return `Z${tag}${idx}Z`;
-  };
-
-  let working = markdown
-    .replace(/```[\s\S]*?```/g, (m) => stashBlock(m, 'CODEBLOCK'))
-    .replace(/\$\$[\s\S]*?\$\$/g, (m) => stashBlock(m, 'MATHBLK'))
-    .replace(/\\\[[\s\S]*?\\\]/g, (m) => stashBlock(m, 'MATHBLK'));
-
-  const stashedInline: string[] = [];
-  const stashInline = (match: string) => {
-    const idx = stashedInline.length;
-    stashedInline.push(match);
-    return `ZINLINE${idx}Z`;
-  };
-
-  working = working
-    .replace(/`[^`\n]+`/g, stashInline)
-    .replace(/\\\([\s\S]*?\\\)/g, stashInline)
-    .replace(/\$(?!\d+(?:[.,]\d+)?\b)([^$\n]+?)\$/g, stashInline)
-    .replace(/\[?SLO\s*:\s*[A-Za-z0-9\-–—\s]+?\]?(?=[\s.,;:)]|$)/gi, (m) =>
-      stashInline(m)
-    );
-
-  const lines = working.split('\n');
+): Promise<{ workingTranslated: string; provider: 'google_translate' | 'google_translate_gtx' }> {
+  const lines = workingText.split('\n');
   const queue: string[] = [];
   const entries: SegmentEntry[] = [];
 
@@ -218,7 +157,7 @@ async function translateMarkdownContent(
   }
 
   let translatedSlots: string[] = [];
-  let provider = 'google_translate';
+  let provider: 'google_translate' | 'google_translate_gtx' = 'google_translate';
 
   if (queue.length > 0) {
     const batches: string[][] = [];
@@ -253,29 +192,11 @@ async function translateMarkdownContent(
         primaryErr
       );
       translatedSlots = [];
-      try {
-        for (const batch of batches) {
-          const res = await translateBatchViaGtx(batch, targetLanguage);
-          translatedSlots.push(...res);
-        }
-        provider = 'google_translate_gtx';
-      } catch (secondaryErr) {
-        console.warn(
-          '[Translate] Secondary Google Translate failed, falling back to Gemini:',
-          secondaryErr
-        );
-        const fullTranslated = await translateViaGeminiFallback(
-          working,
-          targetLanguage
-        );
-        const restored = fullTranslated
-          .replace(/ZINLINE(\d+)Z/gi, (_m, i) => stashedInline[Number(i)] ?? '')
-          .replace(
-            /Z(?:CODEBLOCK|MATHBLK)(\d+)Z/gi,
-            (_m, i) => stashedBlocks[Number(i)] ?? ''
-          );
-        return { translatedText: restored, provider: 'gemini_fallback' };
+      for (const batch of batches) {
+        const res = await translateBatchViaGtx(batch, targetLanguage);
+        translatedSlots.push(...res);
       }
+      provider = 'google_translate_gtx';
     }
   }
 
@@ -300,14 +221,237 @@ async function translateMarkdownContent(
     })
     .join('\n');
 
-  const finalOutput = reconstructed
-    .replace(/ZINLINE(\d+)Z/gi, (_m, i) => stashedInline[Number(i)] ?? '')
-    .replace(
-      /Z(?:CODEBLOCK|MATHBLK)(\d+)Z/gi,
-      (_m, i) => stashedBlocks[Number(i)] ?? ''
-    );
+  return { workingTranslated: reconstructed, provider };
+}
 
-  return { translatedText: finalOutput, provider };
+async function generateWithGeminiFallbackChain(
+  systemInstruction: string,
+  contents: string
+): Promise<string> {
+  const keys = getAllGeminiKeys();
+  const fallbackKey = resolveApiKey();
+  const keyPool = keys.length > 0 ? keys : fallbackKey ? [fallbackKey] : [];
+
+  if (keyPool.length === 0) {
+    throw new Error('No Gemini API key configured on server.');
+  }
+
+  const modelCandidates = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'] as const;
+  let lastError: unknown = null;
+
+  for (const apiKey of keyPool.slice(0, 3)) {
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+    });
+
+    for (const model of modelCandidates) {
+      try {
+        const isGemini4 = model.startsWith('gemini-4-');
+        const response = await ai.models.generateContent({
+          model,
+          contents,
+          config: {
+            systemInstruction,
+            ...(isGemini4
+              ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+              : { temperature: 0.1 }),
+          },
+        });
+        const output = response.text?.trim();
+        if (output) {
+          return output;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Gemini translation refinement failed.');
+}
+
+async function refineSindhiChunkWithGemini(params: {
+  englishChunk: string;
+  googleDraftChunk: string | null;
+  alreadyGlossedTerms: string[];
+}): Promise<string> {
+  const { englishChunk, googleDraftChunk, alreadyGlossedTerms } = params;
+
+  const previouslyGlossedNote =
+    alreadyGlossedTerms.length > 0
+      ? `\n6. ALREADY GLOSSED TERMS (DO NOT add English brackets for these again in this section): ${alreadyGlossedTerms.slice(-40).join(', ')}`
+      : '';
+
+  const systemInstruction = `You are a Senior Sindhi Curriculum Linguist, Academic Editor, and Scientific Translator (Sindh Textbook Board standard).
+Your task is to deliver an authentic, natural, publication-grade Sindhi (سنڌي) translation of the provided English educational Markdown content.
+${googleDraftChunk ? 'An initial Google Translate Sindhi draft is also provided for cross-reference — audit its context carefully and fix any literal phrasing, wrong word order, missing meanings, or non-standard orthography.' : ''}
+
+STRICT QUALITY & FLOW RULES:
+1. SINDHI ORTHOGRAPHY & GRAMMAR: Use standard Sindhi Perso-Arabic script (سنڌي، ٻ، ڀ، ٽ، ٺ، ڄ، ڃ، ڇ، ڊ، ڌ، ڏ، ڍ، ڙ، ڦ، ک، گھ، ڳ، ڱ، ڻ، ه، ھ، ي، ى). NEVER use Urdu Bari Yeh (ے). Write in smooth, natural Sindhi SOV academic prose suited for teachers and students.
+2. CONTEXTUAL ACCURACY: Translate meaning in full pedagogical context (never word-for-word machine calques). Ensure headings, rubrics, questions, and tables read cohesively.
+3. DIFFICULT & SCIENTIFIC TERMS IN BRACKETS (FIRST OCCURRENCE ONLY):
+   - For genuinely scientific, technical, or specialized pedagogical terms (e.g., فوٽوسنٿيسس (Photosynthesis)، مائٽوسس (Mitosis)، بلوم جي ٽيڪسونامي (Bloom's Taxonomy)، تشخيصي جائزو (Formative Assessment)، مفروضو (Hypothesis)، ڪشش ثقل (Gravity)), place the exact English term in parentheses immediately after the Sindhi term ONLY ON ITS FIRST APPEARANCE.
+   - NEVER repeat the same English term in brackets anywhere later in the text — all later mentions must appear in Sindhi only so prose flows smoothly without repetition.
+   - NEVER bracket ordinary everyday words (like Student, Teacher, School, Book, Lesson, Question, Answer, Activity, Time, Example, Class, Grade, Step, Note).
+   - Keep bracket usage balanced and readable (do not overcrowd sentences with brackets).
+4. MARKDOWN & TOKEN FIDELITY:
+   - Preserve ALL Markdown syntax identically (#, ##, ###, **bold**, *italic*, -, 1., >, ---, and | table | columns/rows).
+   - Keep ALL placeholder tokens like ZCODEBLOCK0Z, ZMATHBLK0Z, ZINLINE0Z completely intact and unmodified in their exact logical positions.
+5. OUTPUT ONLY the final Sindhi Markdown document with zero preamble, notes, or markdown code fences wrapping the whole reply.${previouslyGlossedNote}`;
+
+  const contents = googleDraftChunk
+    ? `### ENGLISH SOURCE:\n${englishChunk}\n\n### GOOGLE TRANSLATE SINDHI DRAFT (FOR AUDIT & IMPROVEMENT):\n${googleDraftChunk}`
+    : `### ENGLISH SOURCE:\n${englishChunk}`;
+
+  return generateWithGeminiFallbackChain(systemInstruction, contents);
+}
+
+async function translateSindhiWithContextQA(stashed: StashedMarkdown): Promise<{
+  translatedText: string;
+  provider: string;
+  qaApplied: boolean;
+  bracketedTermsCount: number;
+  deduplicatedCount: number;
+}> {
+  // Stage 1: Fast Google Translate baseline draft (best-effort)
+  let draftWorking: string | null = null;
+  let baseProvider = 'sindhi_context_qa';
+  try {
+    const gt = await runGoogleTranslateWorkingText(stashed.workingText, 'sd');
+    draftWorking = gt.workingTranslated;
+  } catch (gtErr) {
+    console.warn('[Translate][Sindhi] Baseline Google Translate unavailable; Gemini will translate directly from English context:', gtErr);
+  }
+
+  // Stage 2: Gemini Context Overview + Check & Balance Verification
+  const chunks = splitMarkdownForContextReview(stashed.workingText, draftWorking);
+  const seenTerms = new Set<string>();
+  const keptTermsList: string[] = [];
+  let totalDeduplicated = 0;
+  let qaChunksSucceeded = 0;
+
+  const reviewedParts: string[] = [];
+
+  for (const chunk of chunks) {
+    let candidateChunk: string | null = null;
+
+    try {
+      const geminiReviewed = await refineSindhiChunkWithGemini({
+        englishChunk: chunk.english,
+        googleDraftChunk: chunk.draft,
+        alreadyGlossedTerms: keptTermsList,
+      });
+
+      const checked = applySindhiChecksAndBalances(
+        geminiReviewed,
+        chunk.english,
+        seenTerms
+      );
+
+      if (checked.report.valid) {
+        candidateChunk = checked.text;
+        keptTermsList.push(...checked.keptTerms);
+        totalDeduplicated += checked.report.deduplicatedCount;
+        qaChunksSucceeded += 1;
+      } else {
+        console.warn(
+          `[Translate][Sindhi] QA check flagged chunk (${checked.report.reason}); falling back cleanly.`
+        );
+      }
+    } catch (geminiErr) {
+      console.warn('[Translate][Sindhi] Gemini context review failed on chunk:', geminiErr);
+    }
+
+    if (!candidateChunk) {
+      // Fallback to Google Translate draft (or direct chunk translation) passed through Sindhi hygiene checks
+      let draftText = chunk.draft;
+      if (!draftText) {
+        const fallbackGt = await runGoogleTranslateWorkingText(chunk.english, 'sd');
+        draftText = fallbackGt.workingTranslated;
+      }
+      const checkedDraft = applySindhiChecksAndBalances(
+        draftText,
+        chunk.english,
+        seenTerms
+      );
+      candidateChunk = checkedDraft.text;
+      keptTermsList.push(...checkedDraft.keptTerms);
+      totalDeduplicated += checkedDraft.report.deduplicatedCount;
+    }
+
+    reviewedParts.push(candidateChunk);
+  }
+
+  const assembledWorking = reviewedParts.join('\n');
+  const restored = restoreStashedSegments(assembledWorking, stashed);
+
+  if (qaChunksSucceeded === 0) {
+    baseProvider = 'google_translate_qa_fallback';
+  } else if (qaChunksSucceeded < chunks.length) {
+    baseProvider = 'sindhi_context_qa_partial';
+  }
+
+  return {
+    translatedText: restored,
+    provider: baseProvider,
+    qaApplied: qaChunksSucceeded > 0,
+    bracketedTermsCount: keptTermsList.length,
+    deduplicatedCount: totalDeduplicated,
+  };
+}
+
+async function translateViaGeminiFallback(
+  text: string,
+  targetLanguage: TargetLanguage
+): Promise<string> {
+  const langLabel = LANGUAGE_NAMES[targetLanguage];
+  return generateWithGeminiFallbackChain(
+    `You are a precise academic translator. Translate the following English Markdown curriculum document into ${langLabel}.
+Rules:
+1. Preserve ALL Markdown formatting exactly: # headings, **bold**, *italic*, bullet lists (-), numbered lists (1.), blockquotes (>), --- dividers, and | Markdown tables |.
+2. Keep all placeholder tokens (like ZCODEBLOCK0Z, ZMATHBLK0Z, ZINLINE0Z), numbers, and formatting completely unchanged.
+3. Output ONLY the translated Markdown document with no preamble or commentary.`,
+    text
+  );
+}
+
+async function translateMarkdownContent(
+  markdown: string,
+  targetLanguage: TargetLanguage
+): Promise<{
+  translatedText: string;
+  provider: string;
+  qaApplied?: boolean;
+  bracketedTermsCount?: number;
+  deduplicatedCount?: number;
+}> {
+  const stashed = stashNonTranslatableSegments(markdown);
+
+  if (targetLanguage === 'sd') {
+    return translateSindhiWithContextQA(stashed);
+  }
+
+  // Urdu ('ur'): Fast Google Translate primary with Gemini fallback
+  try {
+    const gt = await runGoogleTranslateWorkingText(stashed.workingText, 'ur');
+    return {
+      translatedText: restoreStashedSegments(gt.workingTranslated, stashed),
+      provider: gt.provider,
+    };
+  } catch (gtErr) {
+    console.warn('[Translate][Urdu] Google Translate failed, falling back to Gemini:', gtErr);
+    const fullTranslated = await translateViaGeminiFallback(
+      stashed.workingText,
+      'ur'
+    );
+    return {
+      translatedText: restoreStashedSegments(fullTranslated, stashed),
+      provider: 'gemini_fallback',
+    };
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -345,15 +489,15 @@ export async function POST(req: NextRequest) {
     }
 
     const clampedText = text.slice(0, 60000);
-    const { translatedText, provider } = await translateMarkdownContent(
-      clampedText,
-      targetLanguage
-    );
+    const result = await translateMarkdownContent(clampedText, targetLanguage);
 
     return NextResponse.json({
-      translatedText,
+      translatedText: result.translatedText,
       targetLanguage,
-      provider,
+      provider: result.provider,
+      qaApplied: result.qaApplied ?? false,
+      bracketedTermsCount: result.bracketedTermsCount ?? 0,
+      deduplicatedCount: result.deduplicatedCount ?? 0,
     });
   } catch (error: any) {
     console.error('[Translate API Fault]:', error);

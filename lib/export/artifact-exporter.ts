@@ -54,14 +54,67 @@ function hasArabicScript(text: string): boolean {
   return /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
 }
 
+function pushMixedScriptRuns(
+  runs: TextRun[],
+  val: string,
+  language: ArtifactLanguage,
+  options: { bold?: boolean; italics?: boolean; color?: string; size?: number }
+) {
+  const isRtl = language !== 'en';
+  if (!isRtl || !hasArabicScript(val)) {
+    runs.push(
+      new TextRun({
+        text: val,
+        bold: options.bold,
+        italics: options.italics,
+        color: options.color ?? '1E293B',
+        size: options.size ?? 22,
+        font: 'Calibri',
+        rightToLeft: false,
+      })
+    );
+    return;
+  }
+
+  const rtlFont = getExportFont(language);
+  const segments = val.split(/([A-Za-z][A-Za-z0-9\s\-'/&+,.:]*[A-Za-z0-9]|[A-Za-z]{2,})/g);
+  for (const segment of segments) {
+    if (!segment) continue;
+    const isLatinSegment = /^[A-Za-z0-9\s\-'/&+,.:]+$/.test(segment) && /[A-Za-z]/.test(segment);
+    if (isLatinSegment) {
+      runs.push(
+        new TextRun({
+          text: segment,
+          bold: options.bold,
+          italics: options.italics,
+          color: options.color ?? '1E293B',
+          size: options.size ?? 20,
+          font: 'Calibri',
+          rightToLeft: false,
+        })
+      );
+    } else {
+      runs.push(
+        new TextRun({
+          text: segment,
+          bold: options.bold,
+          italics: options.italics,
+          color: options.color ?? '1E293B',
+          size: options.size ?? 22,
+          font: rtlFont,
+          rightToLeft: true,
+        })
+      );
+    }
+  }
+}
+
 function buildInlineRuns(
   tokens: Token[] | undefined,
   language: ArtifactLanguage,
   options: { bold?: boolean; italics?: boolean; color?: string; size?: number } = {}
 ): TextRun[] {
   if (!tokens || tokens.length === 0) return [];
-  const isRtl = language !== 'en';
-  const rtlFont = getExportFont(language);
   const runs: TextRun[] = [];
 
   for (const token of tokens) {
@@ -126,52 +179,19 @@ function buildInlineRuns(
         if (textToken.tokens && textToken.tokens.length > 0) {
           runs.push(...buildInlineRuns(textToken.tokens, language, options));
         } else {
-          const val = textToken.text || '';
-          const runIsRtl = isRtl && hasArabicScript(val);
-          runs.push(
-            new TextRun({
-              text: val,
-              bold: options.bold,
-              italics: options.italics,
-              color: options.color ?? '1E293B',
-              size: options.size ?? 22,
-              font: runIsRtl ? rtlFont : 'Calibri',
-              rightToLeft: runIsRtl,
-            })
-          );
+          pushMixedScriptRuns(runs, textToken.text || '', language, options);
         }
         break;
       }
       case 'escape': {
         const escToken = token as Tokens.Escape;
-        runs.push(
-          new TextRun({
-            text: escToken.text,
-            bold: options.bold,
-            italics: options.italics,
-            color: options.color ?? '1E293B',
-            size: options.size ?? 22,
-            font: isRtl ? rtlFont : 'Calibri',
-            rightToLeft: isRtl && hasArabicScript(escToken.text),
-          })
-        );
+        pushMixedScriptRuns(runs, escToken.text, language, options);
         break;
       }
       default: {
         const raw = (token as any).text || (token as any).raw || '';
         if (raw) {
-          const runIsRtl = isRtl && hasArabicScript(raw);
-          runs.push(
-            new TextRun({
-              text: raw,
-              bold: options.bold,
-              italics: options.italics,
-              color: options.color ?? '1E293B',
-              size: options.size ?? 22,
-              font: runIsRtl ? rtlFont : 'Calibri',
-              rightToLeft: runIsRtl,
-            })
-          );
+          pushMixedScriptRuns(runs, raw, language, options);
         }
       }
     }

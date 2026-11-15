@@ -53,6 +53,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   const isAi = role === 'assistant';
   const [copied, setCopied] = useState(false);
   const [selectedLang, setSelectedLang] = useState<ArtifactLanguage>('en');
+  const [translatingLang, setTranslatingLang] = useState<'ur' | 'sd' | null>(null);
   const [translations, setTranslations] = useState<Partial<Record<'ur' | 'sd', string>>>({});
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
@@ -88,6 +89,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     }
 
     setIsTranslating(true);
+    setTranslatingLang(lang);
     try {
       const {
         data: { session },
@@ -123,6 +125,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       setTranslationError(err?.message || 'Unable to translate message.');
     } finally {
       setIsTranslating(false);
+      setTranslatingLang(null);
     }
   };
 
@@ -276,6 +279,11 @@ export const MessageItem: React.FC<MessageItemProps> = ({
               {isExporting === 'pdf' ? <Loader2 size={12} className="animate-spin" /> : canExport ? <Download size={12} /> : <Lock size={11} className="text-amber-500" />}
               PDF
             </button>
+            {isTranslating && (
+              <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+                {translatingLang === 'sd' ? 'Verifying Sindhi QA...' : 'Translating...'}
+              </span>
+            )}
           </div>
         )}
 

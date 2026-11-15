@@ -276,7 +276,15 @@ export function markdownToHtml(md: string, dir: 'ltr' | 'rtl' = 'ltr'): string {
     `<p style="margin:6px 0;color:#374151;line-height:1.8;font-size:13px;${textAlign}">$1</p>`
   );
 
-  // -- 13. Restore Math Placeholders -----------------------------------------
+  // -- 13. Isolate LTR English terms inside parentheses for RTL flow --------
+  if (isRtl) {
+    html = html.replace(
+      /\(([A-Za-z][A-Za-z0-9\s\-'/&+,.:]{1,60})\)/g,
+      '(<bdi dir="ltr" style="unicode-bidi:isolate;font-family:\'Plus Jakarta Sans\',Arial,sans-serif;font-size:0.92em">$1</bdi>)'
+    );
+  }
+
+  // -- 14. Restore Math Placeholders -----------------------------------------
   mathPlaceholders.forEach((mathHtml, idx) => {
     html = html.replace(`___MATH_SLOT_${idx}___`, () => mathHtml);
   });
