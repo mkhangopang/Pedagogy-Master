@@ -3,7 +3,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X, ShieldCheck, Database, Eraser, Trash2 } from 'lucide-react';
-import { ChatMessage, Document, NeuralBrain, UserProfile } from '../types';
+import { ChatMessage, Document, NeuralBrain, UserProfile, SubscriptionPlan } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
 import { MessageItem } from '../components/chat/MessageItem';
@@ -19,6 +19,7 @@ import { buildAssessmentPrompt, AssessmentOptions, Assessment } from '../lib/ped
 import { DocumentSelector } from '../components/chat/DocumentSelector';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activity-logger';
+import { isAdminUser } from '../lib/auth/user-role';
 
 interface ChatProps {
   brain: NeuralBrain;
@@ -26,9 +27,10 @@ interface ChatProps {
   onQuery: () => void;
   canQuery: boolean;
   user: UserProfile;
+  onViewChange?: (view: string) => void;
 }
 
-const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }) => {
+const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, onViewChange }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [localDocs, setLocalDocs] = useState<Document[]>(documents);
   const [isLoading, setIsLoading] = useState(false);
@@ -396,7 +398,11 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user }
                     role={m.role as 'user' | 'assistant'} 
                     content={m.content} 
                     timestamp={m.timestamp} 
-                    isLatest={idx === messages.length - 1} 
+                    isLatest={idx === messages.length - 1}
+                    enableTranslateExport={!isLoading || idx !== messages.length - 1}
+                    canExport={user.plan !== SubscriptionPlan.FREE || isAdminUser(user)}
+                    userName={user.name}
+                    onUpgradeClick={() => onViewChange?.('pricing')}
                   />
                 ))}
                 

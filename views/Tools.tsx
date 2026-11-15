@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   Sparkles, ClipboardCheck, BookOpen, Layers, Loader2, 
   FileText, Copy, ArrowRight, PenTool, Compass, SearchCode, 
@@ -18,6 +18,7 @@ import { ToolType, getToolDisplayName } from '../lib/ai/tool-router';
 import { markdownToHtml } from '../lib/markdown-renderer';
 import { PRINT_STYLES } from '../lib/tools-constants';
 import { logActivity } from '../lib/activity-logger';
+import { isAdminUser } from '../lib/auth/user-role';
 import {
   ArtifactLanguage,
   exportArtifactAsDocx,
@@ -61,7 +62,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
-  const isPro = user.plan !== SubscriptionPlan.FREE;
+  const isPro = user.plan !== SubscriptionPlan.FREE || isAdminUser(user);
 
   // -- Inject print styles ----------------------------------------------------
   useEffect(() => {
@@ -121,7 +122,6 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     const effectiveTool = activeTool || 'master_plan';
     setIsGenerating(true);
     setWorkflowRecommendation(null);
-    setSelectedLang('en');
     setTranslations({});
     setTranslationError(null);
     setExportError(null);
@@ -237,21 +237,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         ? 'font-sindhi artifact-rtl'
         : '';
 
-  const handleSelectLanguage = async (lang: ArtifactLanguage) => {
-    if (isGenerating || isTranslating || !cleanEnglishContent) return;
-    setTranslationError(null);
-
-    if (lang === 'en') {
-      setSelectedLang('en');
-      return;
-    }
-
-    if (translations[lang]) {
-      setSelectedLang(lang);
-      return;
-    }
-
+  const translateArtifactTo = useCallback(async (sourceText: string, lang: 'ur' | 'sd') => {
     setIsTranslating(true);
+    setTranslationError(null);
     try {
       const {
         data: { session },
@@ -268,7 +256,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          text: cleanEnglishContent,
+          text: sourceText,
           targetLanguage: lang,
         }),
       });
@@ -288,6 +276,49 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     } finally {
       setIsTranslating(false);
     }
+  }, []);
+
+  useEffect(() => {
+    if (
+      !isGenerating &&
+      cleanEnglishContent &&
+      selectedLang !== 'en' &&
+      !translations[selectedLang] &&
+      !isTranslating &&
+      !translationError
+    ) {
+      translateArtifactTo(cleanEnglishContent, selectedLang);
+    }
+  }, [
+    isGenerating,
+    cleanEnglishContent,
+    selectedLang,
+    translations,
+    isTranslating,
+    translationError,
+    translateArtifactTo,
+  ]);
+
+  const handleSelectLanguage = async (lang: ArtifactLanguage) => {
+    if (isGenerating || isTranslating) return;
+    setTranslationError(null);
+
+    if (lang === 'en') {
+      setSelectedLang('en');
+      return;
+    }
+
+    if (!cleanEnglishContent) {
+      setSelectedLang(lang);
+      return;
+    }
+
+    if (translations[lang]) {
+      setSelectedLang(lang);
+      return;
+    }
+
+    await translateArtifactTo(cleanEnglishContent, lang);
   };
 
   const handleRichCopy = async () => {
@@ -389,9 +420,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
             <div>
               <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
               <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
-                {/* Add comment above each fix */}
-                {/* Fix: Added ShieldCheck to imports and using it here correctly to display brain sync status */}
-                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500" /><span className="truncate">Brain v4.0 Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} /><span className="truncate">Autonomous Creative Intelligence Mode.</span></>}
+                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500" /><span className="truncate">Brain v4.0 Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} /><span className="truncate">Autonomous Creative Intelligence Mode &bull; English, اردو (Urdu) &amp; سنڌي (Sindhi) Output</span></>}
               </div>
             </div>
           </div>
@@ -491,41 +520,40 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {cleanEnglishContent && (
-                  <div
-                    role="group"
-                    aria-label="Output language"
-                    className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 shrink-0"
-                  >
-                    <span className="px-2 text-slate-400 hidden sm:inline-flex items-center" title="Google Translate">
-                      {isTranslating ? <Loader2 size={13} className="animate-spin text-indigo-600" /> : <Languages size={13} />}
-                    </span>
-                    {(
-                      [
-                        { id: 'en', label: 'English' },
-                        { id: 'ur', label: 'اردو (Urdu)' },
-                        { id: 'sd', label: 'سنڌي (Sindhi)' },
-                      ] as const
-                    ).map((langOpt) => {
-                      const active = selectedLang === langOpt.id;
-                      return (
-                        <button
-                          key={langOpt.id}
-                          type="button"
-                          disabled={isGenerating || isTranslating}
-                          onClick={() => handleSelectLanguage(langOpt.id)}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap shrink-0 disabled:opacity-50 ${
-                            active
-                              ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                              : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                          }`}
-                        >
-                          {langOpt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                <div
+                  role="group"
+                  aria-label="Output language"
+                  className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 shrink-0"
+                >
+                  <span className="px-2 text-slate-400 inline-flex items-center gap-1" title="Google Translate (Urdu & Sindhi)">
+                    {isTranslating ? <Loader2 size={13} className="animate-spin text-indigo-600" /> : <Languages size={13} />}
+                    <span className="text-[10px] font-bold uppercase tracking-wider hidden xl:inline">Translate</span>
+                  </span>
+                  {(
+                    [
+                      { id: 'en', label: 'English' },
+                      { id: 'ur', label: 'اردو (Urdu)' },
+                      { id: 'sd', label: 'سنڌي (Sindhi)' },
+                    ] as const
+                  ).map((langOpt) => {
+                    const active = selectedLang === langOpt.id;
+                    return (
+                      <button
+                        key={langOpt.id}
+                        type="button"
+                        disabled={isGenerating || isTranslating}
+                        onClick={() => handleSelectLanguage(langOpt.id)}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap shrink-0 disabled:opacity-50 ${
+                          active
+                            ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        {langOpt.label}
+                      </button>
+                    );
+                  })}
+                </div>
 
                 {workflowRecommendation && !isGenerating && (
                   <button onClick={handleWorkflowTransition} className="px-3.5 py-2 bg-indigo-600 text-white hover:bg-indigo-700 rounded-xl transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest shadow-sm whitespace-nowrap shrink-0">
@@ -679,9 +707,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                     dangerouslySetInnerHTML={{ __html: markdownToHtml(displayedContent, isRtl ? 'rtl' : 'ltr') }}
                   />
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-full py-40 text-center opacity-30 no-print">
-                    <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-8"><FileText size={48} className="text-slate-300" /></div>
-                    <h2 className="text-lg font-black text-slate-300 uppercase tracking-widest">Select a specialized tool to begin</h2>
+                  <div className="flex flex-col items-center justify-center h-full py-32 text-center no-print">
+                    <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-6 opacity-50"><FileText size={44} className="text-slate-400" /></div>
+                    <h2 className="text-base font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Ready to Synthesize</h2>
+                    <p className="mt-3 max-w-md text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Enter a prompt on the left. Use the language bar above to switch output between <span className="font-semibold text-slate-700 dark:text-slate-200">English</span>, <span className="font-semibold text-slate-700 dark:text-slate-200">اردو (Urdu)</span>, and <span className="font-semibold text-slate-700 dark:text-slate-200">سنڌي (Sindhi)</span>.
+                    </p>
                   </div>
                 )}
               </div>
