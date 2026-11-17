@@ -43,19 +43,12 @@ const Login: React.FC<LoginProps> = ({
     initialError ? { message: initialError } : null
   );
 
-  // Recovery metadata returned from gateway
-  const [recoveryInfo, setRecoveryInfo] = useState<{
-    emailOtp?: string;
-    directLocalUrl?: string;
-    actionLink?: string;
-    rateLimitNotice?: string;
-    emailDispatched?: boolean;
-  } | null>(null);
+  // Recovery dispatch state from gateway
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
 
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
-  const [copiedCode, setCopiedCode] = useState(false);
 
   // Bot mitigation
   const [honeypot, setHoneypot] = useState('');
@@ -331,18 +324,8 @@ const Login: React.FC<LoginProps> = ({
           throw new Error(recoveryData.error || "Failed to send password reset link.");
         }
 
-        setRecoveryInfo({
-          emailOtp: recoveryData.emailOtp,
-          directLocalUrl: recoveryData.directLocalUrl,
-          actionLink: recoveryData.actionLink,
-          rateLimitNotice: recoveryData.rateLimitNotice,
-          emailDispatched: recoveryData.emailDispatched
-        });
-
-        if (recoveryData.emailOtp) {
-          setOtpCode(recoveryData.emailOtp);
-        }
-
+        setRecoveryNotice(recoveryData.message || null);
+        setOtpCode('');
         setView('reset-sent');
       } 
       
@@ -376,7 +359,7 @@ const Login: React.FC<LoginProps> = ({
 
         // Path B: Server-side OTP / Token Gateway verification fallback
         if (!updateSucceeded) {
-          let codeToUse = otpCode.trim() || recoveryInfo?.emailOtp || '';
+          let codeToUse = otpCode.trim();
 
           // Smart token extraction if pasted link
           if (codeToUse.includes('token=') || codeToUse.includes('token_hash=')) {
@@ -389,7 +372,7 @@ const Login: React.FC<LoginProps> = ({
           }
 
           if (!codeToUse) {
-            throw new Error("Verification code or link is required. Please check your screen/inbox for the code, or request a fresh link.");
+            throw new Error("Verification code or link is required. Please check your email inbox for the code, or request a fresh link.");
           }
 
           const updateRes = await fetch('/api/auth/reset-password', {
@@ -536,7 +519,7 @@ const Login: React.FC<LoginProps> = ({
   }
 
   // ───────────────────────────────────────────────────────────────────────────
-  // VIEW: RESET SENT (WITH INSTANT CODE ENTRY OPTION)
+  // VIEW: RESET SENT (EMAIL INBOX VERIFICATION)
   // ───────────────────────────────────────────────────────────────────────────
   if (view === 'reset-sent') {
     return (
@@ -545,70 +528,24 @@ const Login: React.FC<LoginProps> = ({
           <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <Mail className="w-8 h-8 text-indigo-600" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Reset Instructions Sent</h2>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Check Your Email</h2>
           <p className="text-slate-500 mb-6 text-sm">
-            We dispatched password recovery instructions for <span className="font-semibold text-slate-800 dark:text-slate-200">{email}</span>.
+            {recoveryNotice || (
+              <>
+                If an account exists for <span className="font-semibold text-slate-800 dark:text-slate-200">{email}</span>, we sent a password reset link and verification code. Please check your inbox and spam folder.
+              </>
+            )}
           </p>
-
-          {/* Instant One-Time Recovery Code if available */}
-          {recoveryInfo?.emailOtp && (
-            <div className="p-4 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/40 rounded-2xl mb-6 text-center">
-              <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest block mb-1">
-                Instant Recovery Code
-              </span>
-              <div className="flex items-center justify-center gap-2 my-1">
-                <span className="text-2xl font-mono font-black tracking-widest text-indigo-700 dark:text-indigo-300 select-all">
-                  {recoveryInfo.emailOtp}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (recoveryInfo?.emailOtp) {
-                      navigator.clipboard.writeText(recoveryInfo.emailOtp);
-                      setCopiedCode(true);
-                      setTimeout(() => setCopiedCode(false), 2000);
-                    }
-                  }}
-                  className="p-1 text-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-300 text-xs font-semibold"
-                  title="Copy code"
-                >
-                  {copiedCode ? <CheckCircle2 size={16} className="text-emerald-500" /> : "Copy"}
-                </button>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Use this code below to set your new password directly without waiting for email redirection.
-              </p>
-            </div>
-          )}
-
-          {/* Rate limit note if applicable */}
-          {recoveryInfo?.rateLimitNotice && (
-            <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/30 rounded-xl mb-4 text-xs text-amber-700 dark:text-amber-400 text-left">
-              <span className="font-bold">Email Cooldown Notice:</span> {recoveryInfo.rateLimitNotice}. You can continue immediately using the Instant Recovery Code above.
-            </div>
-          )}
 
           <div className="space-y-3">
             <button 
               onClick={() => {
-                if (recoveryInfo?.emailOtp) {
-                  setOtpCode(recoveryInfo.emailOtp);
-                }
                 setView('update-password');
               }} 
               className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2"
             >
-              <KeyRound size={16} /> Set New Password Now
+              <KeyRound size={16} /> Enter Email Code & Set Password
             </button>
-
-            {recoveryInfo?.directLocalUrl && (
-              <a 
-                href={recoveryInfo.directLocalUrl}
-                className="block w-full py-2.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 transition-colors"
-              >
-                Or open direct local recovery link →
-              </a>
-            )}
 
             <button 
               onClick={() => setView('login')} 
@@ -782,7 +719,7 @@ const Login: React.FC<LoginProps> = ({
                   <label htmlFor="auth-otp" className="text-sm font-semibold text-slate-600 dark:text-slate-400">
                     Reset Code or Link
                   </label>
-                  <span className="text-[10px] font-medium text-slate-400">Code from screen/email or paste link</span>
+                  <span className="text-[10px] font-medium text-slate-400">Code from email or paste reset link</span>
                 </div>
                 <div className="relative">
                   <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />

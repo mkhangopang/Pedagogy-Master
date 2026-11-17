@@ -134,18 +134,23 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
   const handleSaveEdit = async (slo: SloRecord) => {
     setIsSubmittingFeedback(true);
     try {
-      // 1. Submit Feedback to API
-      await fetch('/api/slo/feedback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: user.id,
-          original_text: slo.slo_full_text,
-          original_json: { slo_code: slo.slo_code, slo_full_text: slo.slo_full_text },
-          corrected_json: { slo_code: editData.code, slo_full_text: editData.text },
-          context_metadata: { document_id: (slo as any).document_id }
-        })
-      });
+      // 1. Submit Feedback to API with verified session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch('/api/slo/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            original_text: slo.slo_full_text,
+            original_json: { slo_code: slo.slo_code, slo_full_text: slo.slo_full_text },
+            corrected_json: { slo_code: editData.code, slo_full_text: editData.text },
+            context_metadata: { document_id: (slo as any).document_id }
+          })
+        });
+      }
 
       // 2. Update Local State & Database
       const { error } = await supabase

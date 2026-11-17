@@ -3,7 +3,8 @@
 // FIXES: Math (M) curriculum support — horizontal SLO table, grades I-VIII, OCR in grade position
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseAdminClient, getSupabaseServerClient } from '../../../../../lib/supabase';
+import { supabase as anonClient, getSupabaseAdminClient, getSupabaseServerClient, isSupabaseConfigured } from '../../../../../lib/supabase';
+import { checkAdmin } from '../../../../../lib/auth/user-role';
 import { getObjectBuffer } from '../../../../../lib/r2';
 import { indexDocumentForRAG } from '../../../../../lib/rag/document-indexer';
 import { IngestionStep } from '../../../../../types';
@@ -1668,15 +1669,61 @@ export async function POST(
     const params = await context?.params;
     const documentId = params?.documentId;
 
-    if (!documentId || documentId === 'null' || documentId === 'undefined') {
+    if (!documentId || documentId === 'null' || documentId === 'undefined' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(documentId)) {
       return NextResponse.json({ 
         error: 'Invalid Document ID', 
-        details: 'The document ID provided is missing or invalid.' 
+        details: 'The document ID provided is missing or malformed.' 
       }, { status: 400 });
     }
 
+    if (!isSupabaseConfigured()) {
+      return NextResponse.json({ error: 'Vault infrastructure not configured.' }, { status: 503 });
+    }
+
+    const cronSecretHeader = req.headers.get('x-cron-secret');
+    const isValidCron = Boolean(process.env.CRON_SECRET && cronSecretHeader === process.env.CRON_SECRET);
+
     const authHeader = req.headers.get('Authorization');
-    const token = authHeader?.split(' ')[1];
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+
+    if (!isValidCron && !token) {
+      return NextResponse.json({ error: 'Unauthorized: authentication required.' }, { status: 401 });
+    }
+
+    // Check for service role key early
+    const hasServiceKey = Boolean(
+      process.env.SUPABASE_SERVICE_ROLE_KEY &&
+      !process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder')
+    );
+
+    if (!isValidCron) {
+      const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
+      if (authError || !user) {
+        return NextResponse.json({ error: 'Unauthorized: invalid or expired session.' }, { status: 401 });
+      }
+
+      const authLookupClient = hasServiceKey ? getSupabaseAdminClient() : getSupabaseServerClient(token);
+      const { data: ownerDoc, error: ownerErr } = await authLookupClient
+        .from('documents')
+        .select('id, user_id')
+        .eq('id', documentId)
+        .maybeSingle();
+
+      if (ownerErr) {
+        return NextResponse.json({ error: 'Vault lookup failed', details: ownerErr.message }, { status: 500 });
+      }
+
+      if (!ownerDoc) {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+      }
+
+      const isOwner = ownerDoc.user_id === user.id;
+      const isAppAdmin = isOwner ? false : await checkAdmin(authLookupClient, user.id);
+
+      if (!isOwner && !isAppAdmin) {
+        return NextResponse.json({ error: 'Forbidden: you do not own this document.' }, { status: 403 });
+      }
+    }
 
     const url = new URL(req.url);
     let isForce = url.searchParams.get('force') === 'true' || url.searchParams.get('reprocess') === 'true';
@@ -1686,26 +1733,13 @@ export async function POST(
         isForce = true;
       }
     } catch (_) {}
-
-    // Check for service role key early
-    const hasServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY && 
-                         !process.env.SUPABASE_SERVICE_ROLE_KEY.includes('placeholder');
     
-    // Determine which client to use for the trigger phase
-    // If no service key, we MUST use the user token to act on their behalf
+    // After authorization passes, use Service Role if configured for reliable background indexing, else user-scoped client
     const triggerSupabase = hasServiceKey 
       ? getSupabaseAdminClient() 
-      : (token ? getSupabaseServerClient(token) : getSupabaseAdminClient());
+      : getSupabaseServerClient(token);
     
     const queue = new IngestionQueue(triggerSupabase);
-
-    if (!hasServiceKey && !token) {
-      console.error('[Ingestion] CRITICAL: SUPABASE_SERVICE_ROLE_KEY is missing and no user token provided.');
-      return NextResponse.json({ 
-        error: 'Infrastructure misconfiguration: Service Role Key missing and no user token provided.',
-        details: 'Please set SUPABASE_SERVICE_ROLE_KEY in your environment or ensure you are logged in.'
-      }, { status: 500 });
-    }
 
     let job: any;
     try {
@@ -1788,8 +1822,10 @@ export async function POST(
 
     console.log(`[Ingestion] Background process started for doc=${documentId}`);
     
-    // Use user-scoped client if possible, fallback to admin
-    const supabase = token ? getSupabaseServerClient(token) : getSupabaseAdminClient();
+    // Use verified user-scoped client or authorized service client
+    const supabase = hasServiceKey
+      ? getSupabaseAdminClient()
+      : getSupabaseServerClient(token);
     // queue is already defined above
 
     try {

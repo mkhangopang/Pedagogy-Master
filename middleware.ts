@@ -23,7 +23,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const config = {
-  matcher: ['/api/chat', '/api/query', '/api/docs/process/:path*'],
+  matcher: [
+    '/api/chat',
+    '/api/query',
+    '/api/translate',
+    '/api/slo/feedback',
+    '/api/auth/reset-password',
+    '/api/docs/upload',
+    '/api/docs/process/:path*',
+  ],
 };
 
 interface RateWindow {
@@ -35,9 +43,13 @@ interface RateWindow {
 const rateLimitStore = new Map<string, RateWindow>();
 
 const LIMITS: Record<string, { rpm: number }> = {
-  '/api/chat':  { rpm: 30 },
-  '/api/query': { rpm: 20 },
-  '/api/docs/process': { rpm: 5 },
+  '/api/chat':                { rpm: 30 },
+  '/api/query':               { rpm: 20 },
+  '/api/translate':           { rpm: 15 },
+  '/api/slo/feedback':        { rpm: 15 },
+  '/api/docs/upload':         { rpm: 10 },
+  '/api/docs/process':        { rpm: 5 },
+  '/api/auth/reset-password': { rpm: 5 },
 };
 
 function getLimitForPath(pathname: string): number {
@@ -48,11 +60,12 @@ function getLimitForPath(pathname: string): number {
 }
 
 function getRateLimitKey(req: NextRequest): string {
-  // Use token prefix so different users on shared IPs are tracked separately.
+  // Use trailing JWT signature slice (unique per token/user) instead of leading header bytes
   const authHeader = req.headers.get('Authorization') ?? '';
-  const tokenPrefix = authHeader.replace('Bearer ', '').substring(0, 16) || 'anon';
+  const rawToken = authHeader.replace(/^Bearer\s+/i, '').trim();
+  const tokenSuffix = rawToken ? rawToken.slice(-16) : 'anon';
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-  return `${ip}:${tokenPrefix}`;
+  return `${ip}:${tokenSuffix}`;
 }
 
 export function middleware(req: NextRequest) {

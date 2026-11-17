@@ -1,14 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient, getCredentials, isSupabaseConfigured } from '../../../../lib/supabase';
+import { kv } from '../../../../lib/kv';
 import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const RECOVERY_WINDOW_SECONDS = 900; // 15 minutes
+const MAX_RECOVERY_REQUESTS = 5;
+const MAX_OTP_VERIFY_ATTEMPTS = 8;
+
+function getClientIp(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip')?.trim() ||
+    'unknown'
+  );
+}
+
+function resolveSafeOrigin(requestedOrigin: unknown, reqOrigin: string): string {
+  const allowedOrigins = new Set<string>();
+  const candidates = [
+    reqOrigin,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.NEXT_PUBLIC_VERCEL_URL
+      ? (process.env.NEXT_PUBLIC_VERCEL_URL.startsWith('http')
+          ? process.env.NEXT_PUBLIC_VERCEL_URL
+          : `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`)
+      : null,
+  ];
+
+  for (const c of candidates) {
+    if (!c) continue;
+    try {
+      allowedOrigins.add(new URL(c).origin);
+    } catch {
+      // ignore invalid env URL
+    }
+  }
+
+  if (typeof requestedOrigin === 'string' && requestedOrigin.trim()) {
+    try {
+      const parsed = new URL(requestedOrigin.trim());
+      if (allowedOrigins.has(parsed.origin)) {
+        return parsed.origin;
+      }
+    } catch {
+      // fall through to safe server origin
+    }
+  }
+
+  return reqOrigin && reqOrigin.startsWith('http') ? new URL(reqOrigin).origin : 'http://localhost:3000';
+}
+
+async function checkRateLimit(key: string, maxAttempts: number): Promise<boolean> {
+  try {
+    const count = await kv.incr(key, RECOVERY_WINDOW_SECONDS);
+    return count <= maxAttempts;
+  } catch {
+    return true;
+  }
+}
+
 /**
- * PRODUCTION AUTH RECOVERY GATEWAY
- * Solves Supabase Site URL / redirect whitelist mismatch and device desync
- * by orchestrating official emails, instant local recovery links, and direct OTP validation.
+ * PRODUCTION AUTH RECOVERY GATEWAY (Hardened)
+ * Dispatches official Supabase recovery emails without ever exposing OTPs,
+ * action links, or hashed tokens in HTTP responses.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -20,49 +77,30 @@ export async function POST(req: NextRequest) {
     const { action, email, otp, newPassword, origin } = body;
 
     const cleanEmail = String(email || '').trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@')) {
+    if (!cleanEmail || !cleanEmail.includes('@') || cleanEmail.length > 254) {
       return NextResponse.json({ error: 'A valid email address is required.' }, { status: 400 });
     }
 
     const { url, key } = getCredentials();
-    const supabaseAdmin = getSupabaseAdminClient();
-    const clientOrigin = origin || req.nextUrl.origin || 'http://localhost:3000';
+    const clientOrigin = resolveSafeOrigin(origin, req.nextUrl.origin);
+    const clientIp = getClientIp(req);
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ACTION 1: REQUEST RECOVERY LINK & OTP
+    // ACTION 1: REQUEST RECOVERY EMAIL (NO CREDENTIALS RETURNED TO CLIENT)
     // ─────────────────────────────────────────────────────────────────────────
     if (action === 'request' || !action) {
-      // 1. Generate authoritative recovery link & OTP using Admin client
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'recovery',
-        email: cleanEmail,
-        options: {
-          redirectTo: `${clientOrigin}/reset-password`
-        }
-      });
-
-      if (linkError) {
-        console.error('❌ [Auth Recovery] Generate link error:', linkError);
-        if (linkError.message?.toLowerCase().includes('not found') || linkError.status === 404) {
-          return NextResponse.json({ 
-            error: `No registered account found with email "${cleanEmail}". Please check your email or create a new account.` 
-          }, { status: 404 });
-        }
-        return NextResponse.json({ error: linkError.message || 'Failed to generate password recovery.' }, { status: 500 });
+      const allowed = await checkRateLimit(
+        `auth:recover:req:${clientIp}:${cleanEmail}`,
+        MAX_RECOVERY_REQUESTS
+      );
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Too many password reset requests. Please wait 15 minutes and try again.' },
+          { status: 429 }
+        );
       }
 
-      const properties = linkData?.properties || {};
-      const emailOtp = properties.email_otp || null;
-      const hashedToken = properties.hashed_token || null;
-      const actionLink = properties.action_link || '';
-
-      // Direct local recovery link for this app environment
-      const directLocalUrl = `${clientOrigin}/reset-password?token_hash=${hashedToken || ''}&email=${encodeURIComponent(cleanEmail)}`;
-
-      // 2. Trigger Supabase official email delivery
-      let emailDispatched = false;
       let rateLimitNotice: string | null = null;
-
       try {
         const anonClient = createClient(url, key, { auth: { persistSession: false } });
         const { error: emailErr } = await anonClient.auth.resetPasswordForEmail(cleanEmail, {
@@ -72,47 +110,51 @@ export async function POST(req: NextRequest) {
         if (emailErr) {
           console.warn('⚠️ [Auth Recovery] resetPasswordForEmail notice:', emailErr.message);
           if (emailErr.message?.toLowerCase().includes('security') || emailErr.status === 429) {
-            rateLimitNotice = emailErr.message;
+            rateLimitNotice = 'Please wait a moment before requesting another recovery email.';
           }
-        } else {
-          emailDispatched = true;
         }
       } catch (err: any) {
         console.warn('⚠️ [Auth Recovery] resetPasswordForEmail exception:', err.message);
       }
 
+      if (rateLimitNotice) {
+        return NextResponse.json(
+          { error: rateLimitNotice, rateLimitNotice },
+          { status: 429 }
+        );
+      }
+
+      // Generic response prevents email enumeration and never leaks OTPs or recovery URLs
       return NextResponse.json({
         success: true,
-        message: emailDispatched 
-          ? `Password reset email dispatched to ${cleanEmail}.`
-          : `Recovery credentials generated for ${cleanEmail}.`,
-        email: cleanEmail,
-        emailOtp,
-        hashedToken,
-        actionLink,
-        directLocalUrl,
-        emailDispatched,
-        rateLimitNotice
+        emailDispatched: true,
+        message: 'If an account exists for that email, password reset instructions have been sent. Please check your inbox and spam folder.'
       });
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // ACTION 2: VERIFY OTP / TOKEN AND UPDATE PASSWORD
+    // ACTION 2: VERIFY OTP / TOKEN FROM EMAIL AND UPDATE PASSWORD
     // ─────────────────────────────────────────────────────────────────────────
     if (action === 'verify-otp') {
+      const allowed = await checkRateLimit(
+        `auth:recover:otp:${clientIp}:${cleanEmail}`,
+        MAX_OTP_VERIFY_ATTEMPTS
+      );
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Too many verification attempts. Please wait 15 minutes before trying again.' },
+          { status: 429 }
+        );
+      }
+
       let cleanOtp = String(otp || '').trim();
       const cleanPassword = String(newPassword || '').trim();
 
-      // Smart extraction: if the user pasted a full URL or query string, extract the token
+      // Smart extraction if the user pasted the recovery link from their email
       if (cleanOtp.includes('token=') || cleanOtp.includes('token_hash=')) {
         const tokenMatch = cleanOtp.match(/(?:token|token_hash)=([a-zA-Z0-9_-]+)/);
         if (tokenMatch && tokenMatch[1]) {
           cleanOtp = tokenMatch[1];
-        }
-      } else if (cleanOtp.includes('#access_token=')) {
-        const atMatch = cleanOtp.match(/access_token=([a-zA-Z0-9._-]+)/);
-        if (atMatch && atMatch[1]) {
-          cleanOtp = atMatch[1];
         }
       }
 
@@ -126,7 +168,7 @@ export async function POST(req: NextRequest) {
       let userId: string | null = null;
       const anonClient = createClient(url, key, { auth: { persistSession: false } });
 
-      // Attempt A: Verify with email + token (standard 6-8 digit code)
+      // Attempt A: Verify with email + token (standard OTP code emailed to user)
       const { data: verifyData, error: verifyError } = await anonClient.auth.verifyOtp({
         email: cleanEmail,
         token: cleanOtp,
@@ -136,16 +178,17 @@ export async function POST(req: NextRequest) {
       if (!verifyError && verifyData?.user) {
         userId = verifyData.user.id;
       } else {
-        // Attempt B: Verify with token_hash (from email action link)
+        // Attempt B: Verify with token_hash (from emailed action link)
         const { data: hashData, error: hashError } = await anonClient.auth.verifyOtp({
           token_hash: cleanOtp,
           type: 'recovery'
         });
 
-        if (!hashError && hashData?.user) {
+        // Ensure token_hash actually belongs to cleanEmail to prevent cross-account token confusion
+        if (!hashError && hashData?.user && hashData.user.email?.toLowerCase() === cleanEmail) {
           userId = hashData.user.id;
         } else {
-          console.warn('⚠️ [Auth Recovery] Both verifyOtp attempts failed:', {
+          console.warn('⚠️ [Auth Recovery] OTP verification failed:', {
             otpErr: verifyError?.message,
             hashErr: hashError?.message
           });
@@ -154,11 +197,11 @@ export async function POST(req: NextRequest) {
 
       if (!userId) {
         return NextResponse.json({ 
-          error: 'Invalid or expired verification code. Please request a fresh reset link or code.' 
+          error: 'Invalid or expired verification code. Please check your email or request a fresh reset link.' 
         }, { status: 400 });
       }
 
-      // Authoritatively update password via Admin Client
+      const supabaseAdmin = getSupabaseAdminClient();
       const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
         password: cleanPassword
       });
@@ -179,6 +222,17 @@ export async function POST(req: NextRequest) {
     // ACTION 3: RESEND SIGNUP CONFIRMATION
     // ─────────────────────────────────────────────────────────────────────────
     if (action === 'resend-signup') {
+      const allowed = await checkRateLimit(
+        `auth:resend:signup:${clientIp}:${cleanEmail}`,
+        MAX_RECOVERY_REQUESTS
+      );
+      if (!allowed) {
+        return NextResponse.json(
+          { error: 'Too many resend requests. Please wait 15 minutes before trying again.' },
+          { status: 429 }
+        );
+      }
+
       const anonClient = createClient(url, key, { auth: { persistSession: false } });
       const { error: resendError } = await anonClient.auth.resend({
         type: 'signup',
