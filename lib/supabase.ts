@@ -107,17 +107,20 @@ export const getSupabaseClient = (): SupabaseClient => {
           },
           setItem: (key, value) => {
             if (typeof window === 'undefined') return;
-            // Set cookie with SameSite=None; Secure for iframe support
             const expires = new Date();
             expires.setFullYear(expires.getFullYear() + 1);
-            const cookieValue = `${key}=${encodeURIComponent(value)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
+            const isHttps = window.location.protocol === 'https:';
+            const sameSiteAttr = isHttps ? 'SameSite=None; Secure' : 'SameSite=Lax';
+            const cookieValue = `${key}=${encodeURIComponent(value)}; expires=${expires.toUTCString()}; path=/; ${sameSiteAttr}`;
             document.cookie = cookieValue;
             // Also set localStorage as secondary
             try { localStorage.setItem(key, value); } catch (e) {}
           },
           removeItem: (key) => {
             if (typeof window === 'undefined') return;
-            document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=None; Secure`;
+            const isHttps = window.location.protocol === 'https:';
+            const sameSiteAttr = isHttps ? 'SameSite=None; Secure' : 'SameSite=Lax';
+            document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; ${sameSiteAttr}`;
             try { localStorage.removeItem(key); } catch (e) {}
           }
         }

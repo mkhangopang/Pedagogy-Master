@@ -10,6 +10,7 @@ import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
 import { Loader2, Menu, Cpu, MessageSquarePlus, Share2, Check } from 'lucide-react';
 import { PilotFeedbackDrawer } from '../components/PilotFeedbackDrawer';
 import { trackProductEvent } from '../lib/analytics';
+import { normalizeAuthEntryMode } from '../lib/auth/auth-mode';
 
 // Code-split heavy views to keep the landing page bundle minimal
 const Sidebar = lazy(() => import('../components/Sidebar'));
@@ -73,6 +74,14 @@ export default function App() {
         const combined = hash + '&' + search;
         const params = new URLSearchParams(search);
 
+        const cleanAuthUrlParams = () => {
+          try {
+            window.history.replaceState({}, '', window.location.pathname);
+          } catch {
+            // ignore history restriction
+          }
+        };
+
         // 1. Check for error parameters (e.g. link expired, already used)
         if (combined.includes('error=')) {
           const errMatch = combined.match(/error_description=([^&]+)/);
@@ -105,6 +114,7 @@ export default function App() {
           }).then(({ data, error }) => {
             if (data?.session) {
               setSession(data.session);
+              cleanAuthUrlParams();
               if (!isRecovery) {
                 fetchAppData(data.session.user.id, data.session.user.email, data.session);
                 setCurrentView('dashboard');
@@ -114,39 +124,70 @@ export default function App() {
           }).catch(e => console.warn("Hash setSession error:", e));
         }
 
-        // 4. PKCE code in query params
+        // 4. PKCE code in query params (guard against double-exchange with detectSessionInUrl)
         const codeParam = params.get('code');
         if (codeParam) {
-          supabase.auth.exchangeCodeForSession(codeParam).then(({ data, error }) => {
+          (async () => {
+            try {
+              const { data: existingData } = await supabase.auth.getSession();
+              let activeSession = existingData?.session || null;
+              let exchangeErr: any = null;
+
+              if (!activeSession) {
+                const { data, error } = await supabase.auth.exchangeCodeForSession(codeParam);
+                activeSession = data?.session || null;
+                exchangeErr = error;
+              }
+
+              if (activeSession) {
+                setSession(activeSession);
+                cleanAuthUrlParams();
+                if (isRecovery || params.get('type') === 'recovery') {
+                  setAuthMode('update-password');
+                  authModeRef.current = 'update-password';
+                  setCurrentView('login');
+                } else {
+                  fetchAppData(activeSession.user.id, activeSession.user.email, activeSession);
+                  setCurrentView('dashboard');
+                }
+              } else if (exchangeErr) {
+                console.warn("Code exchange notice:", exchangeErr.message);
+                setUrlAuthError(exchangeErr.message || 'Verification link expired or already used.');
+                setCurrentView('login');
+              }
+            } catch (e: any) {
+              console.warn("Code exchange error:", e);
+            }
+          })();
+        }
+
+        // 5. Token hash in query params (supports signup confirmation, email change, magiclink, and recovery)
+        const tokenHashParam = params.get('token_hash');
+        if (tokenHashParam) {
+          const otpType = params.get('type') || 'recovery';
+          const isTokenRecovery = otpType === 'recovery' || isRecovery;
+          supabase.auth.verifyOtp({
+            token_hash: tokenHashParam,
+            type: otpType as any
+          }).then(({ data, error }) => {
             if (data?.session) {
               setSession(data.session);
-              if (isRecovery || params.get('type') === 'recovery') {
+              cleanAuthUrlParams();
+              if (isTokenRecovery) {
                 setAuthMode('update-password');
                 authModeRef.current = 'update-password';
                 setCurrentView('login');
               } else {
+                setAuthMode('login');
+                authModeRef.current = 'login';
                 fetchAppData(data.session.user.id, data.session.user.email, data.session);
                 setCurrentView('dashboard');
               }
-            }
-            if (error) console.warn("Code exchange notice:", error.message);
-          }).catch(e => console.warn("Code exchange error:", e));
-        }
-
-        // 5. Token hash in query params
-        const tokenHashParam = params.get('token_hash');
-        if (tokenHashParam) {
-          supabase.auth.verifyOtp({
-            token_hash: tokenHashParam,
-            type: (params.get('type') as any) || 'recovery'
-          }).then(({ data, error }) => {
-            if (data?.session) {
-              setSession(data.session);
-              setAuthMode('update-password');
-              authModeRef.current = 'update-password';
+            } else if (error) {
+              console.warn("Token hash notice:", error.message);
+              setUrlAuthError(error.message || 'Email verification link is invalid or expired.');
               setCurrentView('login');
             }
-            if (error) console.warn("Token hash notice:", error.message);
           }).catch(e => console.warn("Token hash error:", e));
         }
       }
@@ -172,7 +213,9 @@ export default function App() {
         localStorage.setItem('currentView', currentView);
         const expires = new Date();
         expires.setFullYear(expires.getFullYear() + 1);
-        document.cookie = `currentView=${encodeURIComponent(currentView)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
+        const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+        const sameSiteAttr = isHttps ? 'SameSite=None; Secure' : 'SameSite=Lax';
+        document.cookie = `currentView=${encodeURIComponent(currentView)}; expires=${expires.toUTCString()}; path=/; ${sameSiteAttr}`;
       } catch (e) {}
       if (session) {
         trackProductEvent({
@@ -397,8 +440,9 @@ export default function App() {
     return (
       <Landing 
         onStart={(mode?: 'login' | 'signup') => { 
-          setAuthMode(mode || 'login'); 
-          authModeRef.current = mode || 'login';
+          const safeMode = normalizeAuthEntryMode(mode, 'login');
+          setAuthMode(safeMode); 
+          authModeRef.current = safeMode;
           setUrlAuthError(null);
           setCurrentView('login'); 
         }} 

@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured, getURL } from '../lib/supabase';
+import { normalizeAuthEntryMode } from '../lib/auth/auth-mode';
 import { 
   GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, 
   CheckCircle2, AlertCircle, Eye, EyeOff, ShieldCheck, KeyRound,
-  RefreshCw, Sparkles, Hash
+  RefreshCw, Hash
 } from 'lucide-react';
 
 interface LoginProps {
@@ -30,7 +31,8 @@ const Login: React.FC<LoginProps> = ({
   initialMode = 'login',
   initialError = null 
 }) => {
-  const [view, setView] = useState<AuthView>(initialMode);
+  const safeInitialMode = normalizeAuthEntryMode(initialMode, 'login');
+  const [view, setView] = useState<AuthView>(safeInitialMode);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [email, setEmail] = useState('');
@@ -43,8 +45,10 @@ const Login: React.FC<LoginProps> = ({
     initialError ? { message: initialError } : null
   );
 
-  // Recovery dispatch state from gateway
+  // Recovery & confirmation dispatch state
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
+  const [needsConfirmationEmail, setNeedsConfirmationEmail] = useState<string | null>(null);
+  const [existingAccountPrompt, setExistingAccountPrompt] = useState(false);
 
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
@@ -54,10 +58,16 @@ const Login: React.FC<LoginProps> = ({
   const [honeypot, setHoneypot] = useState('');
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
+  const switchView = (nextView: AuthView) => {
+    setView(nextView);
+    setError(null);
+    setResendMessage(null);
+    setNeedsConfirmationEmail(null);
+    setExistingAccountPrompt(false);
+  };
+
   useEffect(() => {
-    if (initialMode) {
-      setView(initialMode);
-    }
+    setView(normalizeAuthEntryMode(initialMode, 'login'));
   }, [initialMode]);
 
   useEffect(() => {
@@ -124,14 +134,23 @@ const Login: React.FC<LoginProps> = ({
         }
       }
 
-      // 4. PKCE Code Exchange in URL
+      // 4. PKCE Code Exchange in URL (skip if session already exchanged by detectSessionInUrl)
       if (codeParam) {
         try {
-          const { data, error: exchangeErr } = await supabase.auth.exchangeCodeForSession(codeParam);
-          if (!exchangeErr && data?.session && isMounted) {
+          const { data: curData } = await supabase.auth.getSession();
+          let activeSession = curData?.session || null;
+          let exchangeErr: any = null;
+
+          if (!activeSession) {
+            const { data, error } = await supabase.auth.exchangeCodeForSession(codeParam);
+            activeSession = data?.session || null;
+            exchangeErr = error;
+          }
+
+          if (!exchangeErr && activeSession && isMounted) {
             setHasActiveSession(true);
-            if (data.session.user?.email) setEmail(data.session.user.email);
-            if (params.get('type') === 'recovery' || initialMode === 'update-password') {
+            if (activeSession.user?.email) setEmail(activeSession.user.email);
+            if (params.get('type') === 'recovery' || safeInitialMode === 'update-password') {
               setView('update-password');
             }
           }
@@ -140,17 +159,22 @@ const Login: React.FC<LoginProps> = ({
         }
       }
 
-      // 5. Token hash verification
+      // 5. Token hash verification (respect query type for signup vs recovery)
       if (tokenHashParam) {
         try {
+          const hashType = params.get('type') || 'recovery';
           const { data, error: verifyErr } = await supabase.auth.verifyOtp({
             token_hash: tokenHashParam,
-            type: 'recovery'
+            type: hashType as any
           });
           if (!verifyErr && data?.session && isMounted) {
             setHasActiveSession(true);
             if (data.session.user?.email) setEmail(data.session.user.email);
-            setView('update-password');
+            if (hashType === 'recovery' || safeInitialMode === 'update-password') {
+              setView('update-password');
+            } else {
+              onSession(data.session);
+            }
           }
         } catch (e) {
           console.warn("Token hash verify notice:", e);
@@ -188,7 +212,7 @@ const Login: React.FC<LoginProps> = ({
       isMounted = false;
       subscription.unsubscribe();
     };
-  }, [initialMode]);
+  }, [safeInitialMode]);
 
   useEffect(() => {
     // Cloudflare Turnstile if site key is configured
@@ -237,6 +261,9 @@ const Login: React.FC<LoginProps> = ({
     const cleanEmail = email.trim().toLowerCase();
     setLoading(true);
     setError(null);
+    setResendMessage(null);
+    setNeedsConfirmationEmail(null);
+    setExistingAccountPrompt(false);
 
     try {
       // ───────────────────────────────────────────────────────────────────────
@@ -256,8 +283,9 @@ const Login: React.FC<LoginProps> = ({
           if (authError.message.includes('Invalid login credentials')) {
             throw new Error("Invalid email or password. Please verify your credentials or use 'Forgot?' to reset your password.");
           }
-          if (authError.message.includes('Email not confirmed')) {
-            throw new Error("Verification Pending: Please check your email inbox to confirm your account.");
+          if (authError.message.toLowerCase().includes('email not confirmed')) {
+            setNeedsConfirmationEmail(cleanEmail);
+            throw new Error("Verification Pending: Your email is not confirmed yet. Check your inbox or click below to resend the activation link.");
           }
           throw authError;
         }
@@ -287,13 +315,18 @@ const Login: React.FC<LoginProps> = ({
 
         if (authError) {
           if (authError.message.includes('User already registered') || authError.message.includes('already registered')) {
-            throw new Error("An account with this email already exists. Please Sign In or Reset Password.");
+            setExistingAccountPrompt(true);
+            throw new Error("An account with this email already exists. Please Sign In or reset your password.");
           }
           throw authError;
         }
 
         if (data.session) {
           onSession(data.session);
+        } else if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          // Supabase returns an empty identities array without sending an email when email already exists & is confirmed
+          setExistingAccountPrompt(true);
+          throw new Error("An account with this email is already registered. Please Sign In or use Forgot Password.");
         } else if (data.user) {
           setView('signup-success');
         }
@@ -416,11 +449,34 @@ const Login: React.FC<LoginProps> = ({
       }
     } catch (err: any) {
       setError({ message: err.message || "Authentication service failed to respond." });
-      setLoading(false);
     } finally {
-      if (view !== 'signup-success' && view !== 'reset-sent' && view !== 'update-password-success') {
-        setLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const handleResendConfirmation = async (targetEmail: string) => {
+    const clean = targetEmail.trim().toLowerCase();
+    if (!clean) return;
+    setResendLoading(true);
+    setResendMessage(null);
+    setError(null);
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resend-signup', email: clean, origin })
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setResendMessage(json.message || 'Confirmation email resent! Please check your inbox and spam folder.');
+      } else {
+        setError({ message: json.error || 'Failed to resend confirmation email.' });
       }
+    } catch (e: any) {
+      setError({ message: e.message || 'Network error while resending confirmation.' });
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -475,9 +531,16 @@ const Login: React.FC<LoginProps> = ({
             </div>
           )}
 
+          {error && (
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-xl mb-4 text-xs text-rose-600 dark:text-rose-400 text-left flex items-start gap-2">
+              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+              <span>{error.message}</span>
+            </div>
+          )}
+
           <div className="space-y-3">
             <button 
-              onClick={() => setView('login')} 
+              onClick={() => switchView('login')} 
               className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20"
             >
               Return to Sign In
@@ -486,27 +549,7 @@ const Login: React.FC<LoginProps> = ({
             <button 
               type="button"
               disabled={resendLoading}
-              onClick={async () => {
-                setResendLoading(true);
-                setResendMessage(null);
-                try {
-                  const res = await fetch('/api/auth/reset-password', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'resend-signup', email })
-                  });
-                  const json = await res.json();
-                  if (res.ok) {
-                    setResendMessage(json.message || "Confirmation email resent!");
-                  } else {
-                    setError({ message: json.error || "Failed to resend confirmation." });
-                  }
-                } catch (e: any) {
-                  setError({ message: e.message || "Network error while resending confirmation." });
-                } finally {
-                  setResendLoading(false);
-                }
-              }}
+              onClick={() => handleResendConfirmation(email)}
               className="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-indigo-600 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
             >
               {resendLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
@@ -627,7 +670,7 @@ const Login: React.FC<LoginProps> = ({
             {view !== 'login' && view !== 'update-password' && (
               <button 
                 type="button"
-                onClick={() => { setView('login'); setError(null); }} 
+                onClick={() => switchView('login')} 
                 className="text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1 transition-colors"
               >
                 <ArrowLeft size={14} /> Back
@@ -754,7 +797,7 @@ const Login: React.FC<LoginProps> = ({
                   {view === 'login' && (
                     <button 
                       type="button" 
-                      onClick={() => { setView('forgot-password'); setError(null); }} 
+                      onClick={() => switchView('forgot-password')} 
                       className="text-[11px] font-bold text-indigo-600 hover:underline"
                     >
                       Forgot?
@@ -822,13 +865,50 @@ const Login: React.FC<LoginProps> = ({
               </div>
             )}
 
-            {/* Error Message */}
+            {/* Resend Confirmation Feedback */}
+            {resendMessage && (
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-xl text-xs text-emerald-700 dark:text-emerald-400 flex items-start gap-2 animate-in fade-in">
+                <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
+                <span>{resendMessage}</span>
+              </div>
+            )}
+
+            {/* Error Message + Contextual Recovery Actions */}
             {error && (
-              <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl space-y-1 animate-in fade-in">
+              <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl space-y-2.5 animate-in fade-in">
                 <div className="flex items-start gap-2 text-xs font-semibold">
                   <AlertCircle size={15} className="shrink-0 mt-0.5" /> 
                   <span>{error.message}</span>
                 </div>
+                {needsConfirmationEmail && (
+                  <button
+                    type="button"
+                    disabled={resendLoading}
+                    onClick={() => handleResendConfirmation(needsConfirmationEmail)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold transition-colors disabled:opacity-50"
+                  >
+                    {resendLoading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    Resend Activation Email
+                  </button>
+                )}
+                {existingAccountPrompt && (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => switchView('login')}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors"
+                    >
+                      Switch to Sign In
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => switchView('forgot-password')}
+                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 text-[11px] font-bold hover:border-indigo-500/40 transition-colors"
+                    >
+                      Reset Password
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -857,7 +937,7 @@ const Login: React.FC<LoginProps> = ({
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5 text-center">
               <button 
                 type="button"
-                onClick={() => { setView('signup'); setError(null); }} 
+                onClick={() => switchView('signup')} 
                 className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
               >
                 New educator? Create account
@@ -869,7 +949,7 @@ const Login: React.FC<LoginProps> = ({
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5 text-center">
               <button 
                 type="button"
-                onClick={() => { setView('login'); setError(null); }} 
+                onClick={() => switchView('login')} 
                 className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
               >
                 Already have an account? Sign In
@@ -881,7 +961,7 @@ const Login: React.FC<LoginProps> = ({
             <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5 text-center">
               <button 
                 type="button"
-                onClick={() => { setView('forgot-password'); setError(null); }} 
+                onClick={() => switchView('forgot-password')} 
                 className="text-sm font-semibold text-slate-500 hover:text-indigo-600 transition-colors"
               >
                 Need a new reset code? Send again

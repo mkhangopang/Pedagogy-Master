@@ -35,8 +35,18 @@ export async function GET(req: NextRequest) {
           redirectUrl.hash = `access_token=${data.session.access_token}&refresh_token=${data.session.refresh_token}&type=${type || 'bearer'}`;
           return NextResponse.redirect(redirectUrl.toString());
         }
-      } catch (e) {
+        if (exchangeError) {
+          const destination = type === 'recovery' ? '/reset-password' : '/';
+          return NextResponse.redirect(
+            `${origin}${destination}?error=${encodeURIComponent(exchangeError.message || 'Verification link expired or already used')}`
+          );
+        }
+      } catch (e: any) {
         console.warn('⚠️ [Callback Route] Code exchange notice:', e);
+        const destination = type === 'recovery' ? '/reset-password' : '/';
+        return NextResponse.redirect(
+          `${origin}${destination}?error=${encodeURIComponent(e?.message || 'Unable to verify authentication code')}`
+        );
       }
     }
 
@@ -52,8 +62,18 @@ export async function GET(req: NextRequest) {
           redirectUrl.hash = `access_token=${data.session.access_token}&refresh_token=${data.session.refresh_token}&type=${type}`;
           return NextResponse.redirect(redirectUrl.toString());
         }
-      } catch (e) {
+        if (verifyError) {
+          const destination = type === 'recovery' ? '/reset-password' : '/';
+          return NextResponse.redirect(
+            `${origin}${destination}?error=${encodeURIComponent(verifyError.message || 'Verification link expired or invalid')}`
+          );
+        }
+      } catch (e: any) {
         console.warn('⚠️ [Callback Route] Token hash verification notice:', e);
+        const destination = type === 'recovery' ? '/reset-password' : '/';
+        return NextResponse.redirect(
+          `${origin}${destination}?error=${encodeURIComponent(e?.message || 'Unable to verify email token')}`
+        );
       }
     }
   }

@@ -8,10 +8,9 @@ import {
   GraduationCap, 
   ArrowRight, 
   CheckCircle2, 
-  BookOpen, 
-  Target, 
   Sparkles,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 interface OnboardingProps {
@@ -22,6 +21,7 @@ interface OnboardingProps {
 const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: user.name || '',
     school_name: '',
@@ -30,32 +30,43 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
     pedagogical_approach: '5E Model'
   });
 
-  const handleComplete = async () => {
+  const handleComplete = async (skip = false) => {
     setLoading(true);
+    setErrorMsg(null);
+    const displayName = formData.name.trim() || user.name || 'Educator';
     try {
-      const { error } = await supabase.from('profiles').update({
-        name: formData.name,
-        school_name: formData.school_name,
-        grade_level: formData.grade_level,
-        subject: formData.subject,
+      const { error } = await supabase.from('profiles').upsert({
+        id: user.id,
+        email: user.email || '',
+        name: displayName,
+        school_name: skip ? (formData.school_name || 'Independent Educator') : formData.school_name,
+        grade_level: skip ? (formData.grade_level || 'all') : formData.grade_level,
+        subject: skip ? (formData.subject || 'General') : formData.subject,
         pedagogical_approach: formData.pedagogical_approach,
         onboarding_completed: true
-      }).eq('id', user.id);
+      }, { onConflict: 'id' });
 
-      if (!error) {
-        logActivity({
-          category: 'setting_adjustment',
-          action: 'Educator Profile Configured',
-          summary: `Configured profile: ${formData.pedagogical_approach} model, ${formData.subject || 'All Subjects'} (Grade ${formData.grade_level || 'General'})`,
-          status: 'success',
-          metadata: formData
-        });
-        onComplete({
-          ...user,
-          name: formData.name,
-          onboarding_completed: true
-        });
+      if (error) {
+        setErrorMsg(error.message || 'Could not save your profile right now. Please try again or skip.');
+        return;
       }
+
+      logActivity({
+        category: 'setting_adjustment',
+        action: skip ? 'Educator Onboarding Skipped' : 'Educator Profile Configured',
+        summary: skip
+          ? 'Entered workspace using default educator settings'
+          : `Configured profile: ${formData.pedagogical_approach} model, ${formData.subject || 'All Subjects'} (Grade ${formData.grade_level || 'General'})`,
+        status: 'success',
+        metadata: formData
+      });
+      onComplete({
+        ...user,
+        name: displayName,
+        onboarding_completed: true
+      });
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Unexpected error saving onboarding profile.');
     } finally {
       setLoading(false);
     }
@@ -123,13 +134,23 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                   </div>
                 </div>
 
-                <button 
-                  onClick={() => setStep(2)}
-                  disabled={!formData.name || !formData.school_name}
-                  className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
-                >
-                  Continue to Context <ArrowRight size={18} />
-                </button>
+                <div className="space-y-3">
+                  <button 
+                    onClick={() => setStep(2)}
+                    disabled={!formData.name.trim() || !formData.school_name.trim()}
+                    className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    Continue to Context <ArrowRight size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleComplete(true)}
+                    disabled={loading}
+                    className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-indigo-600 transition-colors"
+                  >
+                    Skip setup &amp; enter workspace
+                  </button>
+                </div>
               </div>
             )}
 
@@ -149,10 +170,15 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                       className="w-full px-5 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
                     >
                       <option value="">Select...</option>
+                      <option value="k-2">Early Years / Grades K–2</option>
+                      <option value="3-5">Primary / Grades 3–5</option>
+                      <option value="6-8">Middle / Grades 6–8</option>
                       <option value="09">Grade 9</option>
                       <option value="10">Grade 10</option>
                       <option value="11">Grade 11</option>
                       <option value="12">Grade 12</option>
+                      <option value="higher-ed">College / University</option>
+                      <option value="all">All Grades / Curriculum Lead</option>
                     </select>
                   </div>
                   <div className="space-y-2">
@@ -221,13 +247,37 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                   </div>
                 </div>
 
-                <button 
-                  onClick={handleComplete}
-                  disabled={loading}
-                  className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-bold text-xs uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
-                >
-                  {loading ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle2 size={20} /> Enter Workspace</>}
-                </button>
+                {errorMsg && (
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-semibold flex items-center gap-2 text-left">
+                    <AlertCircle size={15} className="shrink-0" />
+                    <span>{errorMsg}</span>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <button 
+                    onClick={() => handleComplete(false)}
+                    disabled={loading}
+                    className="w-full py-5 bg-indigo-600 text-white rounded-[2rem] font-bold text-xs uppercase tracking-widest shadow-2xl flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-50"
+                  >
+                    {loading ? <Loader2 className="animate-spin" size={20} /> : <><CheckCircle2 size={20} /> Enter Workspace</>}
+                  </button>
+                  {errorMsg && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onComplete({
+                          ...user,
+                          name: formData.name.trim() || user.name || 'Educator',
+                          onboarding_completed: true
+                        });
+                      }}
+                      className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-indigo-600 transition-colors"
+                    >
+                      Continue to workspace anyway
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

@@ -13,7 +13,7 @@ import {
 import { APP_NAME } from '../constants';
 
 interface LandingProps {
-  onStart: () => void;
+  onStart: (mode?: 'login' | 'signup') => void;
 }
 
 const Landing: React.FC<LandingProps> = ({ onStart }) => {
@@ -78,23 +78,45 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
             <span className="text-xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">{APP_NAME}</span>
           </div>
 
-          <div className="hidden lg:flex items-center gap-10">
+          <div className="hidden lg:flex items-center gap-8">
             {['Vault', 'Synthesis', 'Audit'].map((item) => (
               <a key={item} href={`#${item.toLowerCase()}`} className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-indigo-600 transition-colors">
                 {item}
               </a>
             ))}
+            <button
+              type="button"
+              onClick={() => onStart('login')}
+              className="px-5 py-2.5 text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 font-black text-[10px] uppercase tracking-widest transition-colors"
+            >
+              Sign In
+            </button>
             <button 
-              onClick={onStart}
+              type="button"
+              onClick={() => onStart('signup')}
               className="px-8 py-3 bg-slate-900 dark:bg-white text-white dark:text-black rounded-full font-black text-[10px] uppercase tracking-widest hover:scale-105 transition-all"
             >
               Get Started
             </button>
           </div>
           
-          <button onClick={onStart} className="lg:hidden p-2 text-slate-900 dark:text-white" aria-label="Start">
-            <MousePointer2 size={24} />
-          </button>
+          <div className="lg:hidden flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => onStart('login')}
+              className="px-3.5 py-2 rounded-full border border-slate-200 dark:border-white/10 text-[10px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-200"
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => onStart('signup')}
+              className="p-2 text-slate-900 dark:text-white"
+              aria-label="Create Account"
+            >
+              <MousePointer2 size={22} />
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -117,17 +139,25 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
               Ground your instructional design in verified standards. Sync your curriculum PDFs, generate 5E lesson plans, and track student mastery with zero AI hallucination.
             </p>
 
-            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-6" id="h-cta">
+            <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4" id="h-cta">
               <button 
-                onClick={onStart}
-                className="w-full sm:w-auto px-12 py-6 bg-indigo-600 text-white rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 hover:-translate-y-1 transition-all flex items-center justify-center gap-4 group"
+                type="button"
+                onClick={() => onStart('signup')}
+                className="w-full sm:w-auto px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-600/30 hover:bg-indigo-700 hover:-translate-y-1 transition-all flex items-center justify-center gap-4 group"
               >
-                Launch Workspace
+                Create Free Account
                 <ArrowRight className="group-hover:translate-x-1.5 transition-transform" />
               </button>
-              <div className="flex items-center gap-4 px-6 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl">
-                 <ShieldCheck className="text-emerald-500" size={20} />
-                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Verified RAG Infrastructure</span>
+              <button
+                type="button"
+                onClick={() => onStart('login')}
+                className="w-full sm:w-auto px-8 py-5 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-800 dark:text-white rounded-[2rem] font-black text-sm uppercase tracking-wider hover:border-indigo-500/40 transition-all"
+              >
+                Sign In
+              </button>
+              <div className="hidden xl:flex items-center gap-3 px-5 py-3 bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl">
+                 <ShieldCheck className="text-emerald-500" size={18} />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Verified RAG</span>
               </div>
             </div>
           </div>
@@ -171,7 +201,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                             <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Alignment Confidence</span>
                             <span className="block text-sm font-black text-indigo-600">99.8% Deterministic</span>
                          </div>
-                         <button onClick={onStart} className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:scale-105 transition-all">
+                         <button type="button" onClick={() => onStart('signup')} className="px-6 py-3 bg-indigo-600 text-white rounded-xl font-black text-[10px] uppercase tracking-widest shadow-lg hover:scale-105 transition-all">
                            Synthesize
                          </button>
                       </div>
@@ -247,7 +277,7 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                  <FeaturePoint text="Differentiated Learning Tiers" />
               </div>
               
-              <button onClick={onStart} className="flex items-center gap-4 text-indigo-600 font-black uppercase tracking-[0.2em] text-[11px] group transition-all">
+              <button type="button" onClick={() => onStart('signup')} className="flex items-center gap-4 text-indigo-600 font-black uppercase tracking-[0.2em] text-[11px] group transition-all">
                  Explore Synthesis Node <ArrowUpRight className="group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
               </button>
            </div>
@@ -280,7 +310,8 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
 
             <div className="shrink-0 flex flex-col items-center gap-5">
                <button 
-                onClick={onStart}
+                type="button"
+                onClick={() => onStart('signup')}
                 className="w-full sm:w-auto px-14 py-7 bg-white text-indigo-950 rounded-[2.5rem] font-black text-2xl shadow-3xl hover:scale-105 active:scale-95 transition-all duration-500"
                >
                  Get Started Free
