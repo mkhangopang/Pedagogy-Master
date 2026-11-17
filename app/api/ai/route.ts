@@ -4,6 +4,7 @@ import { generateAIResponseStream } from '../../../lib/ai/multi-provider-router'
 import { detectToolIntent, ToolType, getToolDisplayName } from '../../../lib/ai/tool-router';
 import { getFullPrompt } from '../../../lib/ai/prompt-manager';
 import { DEFAULT_MASTER_PROMPT } from '../../../constants';
+import { checkAndConsumeAiQuota, buildAiQuotaExceededMessage } from '../../../lib/rate-limit/free-tier-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,6 +23,25 @@ export async function POST(req: NextRequest) {
     const { toolType, userInput, priorityDocumentId, adaptiveContext, history } = body;
     
     const supabase = getSupabaseServerClient(token);
+
+    const quota = await checkAndConsumeAiQuota({
+      supabase,
+      userId: user.id,
+      authEmail: user.email,
+      routeName: toolType || 'neural_tool',
+    });
+
+    if (!quota.allowed) {
+      return NextResponse.json(
+        {
+          error: buildAiQuotaExceededMessage(quota),
+          code: 'QUOTA_EXCEEDED',
+          quota,
+        },
+        { status: 429 }
+      );
+    }
+
     const { data: profile } = await supabase.from('profiles').select('workspace_name, name').eq('id', user.id).single();
     const brandName = profile?.workspace_name || 'Pedagogy Master AI';
 
@@ -44,7 +64,8 @@ export async function POST(req: NextRequest) {
       undefined,
       effectiveTool,
       systemPrompt, 
-      priorityDocumentId
+      priorityDocumentId,
+      { skipQuotaCheck: true, authEmail: user.email }
     );
 
     const encoder = new TextEncoder();
@@ -52,6 +73,11 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         try {
           for await (const token of stream) {
+            if (typeof token === 'string' && token.startsWith('QUOTA_EXCEEDED')) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: token.replace(/^QUOTA_EXCEEDED:\s*/i, ''), code: 'QUOTA_EXCEEDED' })}\n\n`));
+              controller.close();
+              return;
+            }
             const payload = JSON.stringify({ token });
             controller.enqueue(encoder.encode(`data: ${payload}\n\n`));
           }

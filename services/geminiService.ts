@@ -10,23 +10,30 @@ function parseAIError(errorData: any): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
   
   if (msg.startsWith('AI Alert:')) return msg;
+  if (errorData?.code === 'QUOTA_EXCEEDED' && msg) {
+    return `AI Alert: ${msg}`;
+  }
 
   const lowerMsg = msg.toLowerCase();
   
+  if (errorData?.retryAfter || lowerMsg.includes('rate limit exceeded')) {
+    const waitSec = errorData?.retryAfter ? `${errorData.retryAfter}s` : '15s';
+    return `AI Alert: High demand right now. Please wait ${waitSec} and try again so the workspace stays smooth for everyone.`;
+  }
   if (lowerMsg.includes('grid_saturated') || lowerMsg.includes('saturated') || lowerMsg.includes('429')) {
-    return "AI Alert: Synthesis grid saturated. Please wait 60s for neural cooling.";
+    return "AI Alert: Synthesis grid busy. Please wait 15s and retry.";
   }
   if (lowerMsg.includes('grid_fault') || lowerMsg.includes('vault_error')) {
     return "AI Alert: Neural context node missing. Try re-selecting the document.";
   }
   if (lowerMsg.includes('timeout') || lowerMsg.includes('deadline') || lowerMsg.includes('504')) {
-    return "AI Alert: Neural handshake timed out. Retrying connection...";
+    return "AI Alert: Neural handshake timed out. Please retry your request.";
   }
-  if (lowerMsg.includes('quota') || lowerMsg.includes('exhausted')) {
-    return "AI Alert: Neural quota exhausted for this node. Try again in a few minutes.";
+  if (lowerMsg.includes('quota') || lowerMsg.includes('exhausted') || lowerMsg.includes('limit reached')) {
+    return msg ? `AI Alert: ${msg}` : "AI Alert: Daily free synthesis limit reached. Resets tomorrow (UTC).";
   }
 
-  return "AI Alert: Synthesis grid exception. Check your connectivity.";
+  return "AI Alert: Temporary connection issue. Please try again in a moment.";
 }
 
 /**
@@ -75,9 +82,11 @@ async function* parseSSEStream(
           const jsonStr = line.slice(6); // strip "data: "
           try {
             const parsed = JSON.parse(jsonStr);
-            // Our SSE format: { token: "..." }
+            // Our SSE format: { token: "..." } or { error: "..." }
             if (parsed?.token !== undefined) {
               yield String(parsed.token);
+            } else if (parsed?.error) {
+              yield `\n\nAI Alert: ${String(parsed.error)}`;
             } else if (typeof parsed === 'string') {
               yield parsed;
             }
@@ -155,9 +164,9 @@ export const geminiService = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "AI Alert: Synthesis grid exception." }));
-        // If cooldown needed, set it
-        if (response.status === 429) {
-          globalCooldownUntil = Date.now() + 60000;
+        if (response.status === 429 && errorData?.code !== 'QUOTA_EXCEEDED') {
+          const waitSec = Math.min(30, Math.max(5, Number(errorData?.retryAfter || 15)));
+          globalCooldownUntil = Date.now() + waitSec * 1000;
         }
         yield parseAIError(errorData);
         return;
@@ -229,8 +238,9 @@ export const geminiService = {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: "AI Alert: Synthesis grid exception." }));
-        if (response.status === 429) {
-          globalCooldownUntil = Date.now() + 60000;
+        if (response.status === 429 && errorData?.code !== 'QUOTA_EXCEEDED') {
+          const waitSec = Math.min(30, Math.max(5, Number(errorData?.retryAfter || 15)));
+          globalCooldownUntil = Date.now() + waitSec * 1000;
         }
         yield parseAIError(errorData);
         return;

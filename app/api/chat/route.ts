@@ -8,6 +8,8 @@ import { selfImprovementEngine } from '../../../lib/ai/self-improvement-engine';
 import { GoogleGenAI } from '@google/genai';
 import { resolveApiKey } from '../../../lib/env-server';
 
+import { checkAndConsumeAiQuota, buildAiQuotaExceededMessage } from '../../../lib/rate-limit/free-tier-guard';
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -27,6 +29,24 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { message, history = [], priorityDocumentId, adaptiveContext } = body;
     if (!message) return NextResponse.json({ error: 'Message required' }, { status: 400 });
+
+    const quota = await checkAndConsumeAiQuota({
+      supabase,
+      userId: user.id,
+      authEmail: user.email,
+      routeName: 'chat_tutor',
+    });
+
+    if (!quota.allowed) {
+      return NextResponse.json(
+        {
+          error: buildAiQuotaExceededMessage(quota),
+          code: 'QUOTA_EXCEEDED',
+          quota,
+        },
+        { status: 429 }
+      );
+    }
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -59,7 +79,8 @@ export async function POST(req: NextRequest) {
         undefined,
         'chat_tutor',
         assembledSystemPrompt,
-        priorityDocumentId
+        priorityDocumentId,
+        { skipQuotaCheck: true, authEmail: user.email }
       );
 
       const encoder = new TextEncoder();
@@ -70,7 +91,7 @@ export async function POST(req: NextRequest) {
             for await (const token of stream) {
               if (typeof token === 'string' && token.startsWith('QUOTA_EXCEEDED')) {
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-                  error: 'Monthly query limit reached. Please upgrade your plan.',
+                  error: token.replace(/^QUOTA_EXCEEDED:\s*/i, '') || 'Daily free synthesis limit reached. Resets tomorrow (UTC).',
                   code: 'QUOTA_EXCEEDED'
                 })}\n\n`));
                 controller.close();

@@ -12,23 +12,47 @@ export const ROLE_LIMITS = {
     docs: 100, 
     maxPages: 1000,
     canDeleteSuccessful: true,
-    price: "$0", 
-    features: ["100 Document Multi-Key Vault", "Max 1000 Pages/Doc", "5 Urdu/Sindhi Translations / Month", "Universal Synthesis Grid"] 
+    price: "$0",
+    periodLabel: "Free Public Access",
+    availableSoon: false,
+    dailySynthesisLimit: 25,
+    features: [
+      "Up to 25 AI Syntheses / Day",
+      "100 Document Multi-Key Vault (up to 1000 pages)",
+      "5 Urdu / Sindhi Translations / Month",
+      "Copy & Paste Formatting Included"
+    ]
   },
   [SubscriptionPlan.PRO]: { 
-    docs: 200, 
+    docs: 500,
     maxPages: 1000,
     canDeleteSuccessful: true,
-    price: "PKR 1,999/month", 
-    features: ["Unlimited Document Vault", "High-Speed Thinking Nodes", "5 Urdu/Sindhi Translations / Day", "DOCX & PDF Downloads Included"] 
+    price: "~$9",
+    periodLabel: "Approx. / month (USD)",
+    availableSoon: true,
+    dailySynthesisLimit: 200,
+    features: [
+      "Up to 200 AI Syntheses / Day",
+      "Priority High-Speed Reasoning Nodes",
+      "5 Urdu / Sindhi Translations / Day",
+      "One-Click DOCX & PDF Downloads"
+    ]
   },
-  [SubscriptionPlan.ENTERPRISE]: { 
-    docs: 9999, 
-    maxPagesSME_1: 5000, 
-    maxPagesSME_2: 3000, 
-    canDeleteSuccessful: true, 
-    price: "Free-Enterprise", 
-    features: ["Global Institutional Vault", "Maximum Node Priority", "5 Urdu/Sindhi Translations / Day", "DOCX & PDF Downloads Included"] 
+  [SubscriptionPlan.ENTERPRISE]: {
+    docs: 9999,
+    maxPagesSME_1: 5000,
+    maxPagesSME_2: 3000,
+    canDeleteSuccessful: true,
+    price: "~$29",
+    periodLabel: "Approx. / month (USD)",
+    availableSoon: true,
+    dailySynthesisLimit: 9999,
+    features: [
+      "Campus-Wide Curriculum Vault",
+      "Shared Departmental SLO Registry",
+      "5 Urdu / Sindhi Translations / Day",
+      "DOCX, PDF & Team Analytics Included"
+    ]
   },
 };
 

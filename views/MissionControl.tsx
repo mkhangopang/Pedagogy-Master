@@ -7,7 +7,8 @@ import {
   XCircle, Zap, TrendingUp, AlertTriangle, 
   Filter, MoreVertical, Key, Database,
   Wallet, ShieldCheck, Clock, RefreshCcw,
-  Scale, Eye, UserCircle, Building
+  Scale, Eye, UserCircle, Building,
+  BarChart3, ThumbsUp, ThumbsDown, MessageSquare, Languages, Bell
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { UserProfile, SubscriptionPlan, UserRole, StakeholderRole } from '../types';
@@ -18,13 +19,35 @@ const MissionControl: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState({ totalUsers: 0, proUsers: 0, revenueEst: 0 });
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'recipe'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'analytics' | 'recipe'>('users');
   const [recipeData, setRecipeData] = useState<{ sqlSchema: string, masterPrompt: string } | null>(null);
   const [loadingRecipe, setLoadingRecipe] = useState(false);
+  const [analyticsData, setAnalyticsData] = useState<any | null>(null);
+  const [loadingAnalytics, setLoadingAnalytics] = useState(false);
 
   useEffect(() => {
     fetchAdminData();
   }, []);
+
+  const fetchAnalytics = async (force = false) => {
+    if (analyticsData && !force) return;
+    setLoadingAnalytics(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const res = await fetch('/api/admin/analytics', {
+        headers: { 'Authorization': `Bearer ${session.access_token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAnalyticsData(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingAnalytics(false);
+    }
+  };
 
   const fetchRecipe = async () => {
     if (recipeData) return;
@@ -48,10 +71,12 @@ const MissionControl: React.FC = () => {
     }
   };
 
-  const handleTabChange = (tab: 'users' | 'recipe') => {
+  const handleTabChange = (tab: 'users' | 'analytics' | 'recipe') => {
     setActiveTab(tab);
     if (tab === 'recipe') {
       fetchRecipe();
+    } else if (tab === 'analytics') {
+      fetchAnalytics();
     }
   };
 
@@ -136,24 +161,30 @@ const MissionControl: React.FC = () => {
            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
               <button 
                 onClick={() => handleTabChange('users')}
-                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all ${activeTab === 'users' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
                 Identities
               </button>
               <button 
+                onClick={() => handleTabChange('analytics')}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'analytics' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+              >
+                <BarChart3 size={12} /> Pilot Analytics
+              </button>
+              <button 
                 onClick={() => handleTabChange('recipe')}
-                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 ${activeTab === 'recipe' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'recipe' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
               >
                 <Key size={12} /> App Recipe
               </button>
            </div>
            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm text-center min-w-[120px]">
-              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Rev (PKR)</p>
-              <p className="text-xl font-bold text-emerald-600">{(stats.proUsers * 2500).toLocaleString()}</p>
+              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Public Tier</p>
+              <p className="text-xl font-bold text-emerald-600 tabular-nums">$0 Free</p>
            </div>
            <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm text-center min-w-[120px]">
               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Active Nodes</p>
-              <p className="text-xl font-bold text-indigo-600">{stats.totalUsers}</p>
+              <p className="text-xl font-bold text-indigo-600 tabular-nums">{stats.totalUsers}</p>
            </div>
         </div>
       </header>
@@ -258,6 +289,192 @@ const MissionControl: React.FC = () => {
            </div>
         </section>
       </div>
+      ) : activeTab === 'analytics' ? (
+        <div className="px-4 md:px-0 space-y-6 animate-in fade-in duration-300">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
+                Public Pilot Analytics &amp; Educator Micro-Feedback
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Real-time aggregated usage across free educators (30-day rolling window)
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchAnalytics(true)}
+              disabled={loadingAnalytics}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
+            >
+              <RefreshCcw size={13} className={loadingAnalytics ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+          </div>
+
+          {loadingAnalytics && !analyticsData ? (
+            <div className="p-12 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">
+              Aggregating Telemetry Signals...
+            </div>
+          ) : analyticsData ? (
+            <>
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active (7d / 24h)</p>
+                  <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white tabular-nums">
+                    {analyticsData.users?.active7d ?? 0}
+                    <span className="text-sm font-bold text-slate-400 ml-1">/ {analyticsData.users?.active24h ?? 0}</span>
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                    {analyticsData.users?.new7d ?? 0} new educators this week
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">AI Syntheses (30d)</p>
+                  <p className="mt-2 text-2xl font-black text-indigo-600 dark:text-indigo-400 tabular-nums">
+                    {analyticsData.usage?.syntheses30d ?? 0}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                    {analyticsData.usage?.syntheses24h ?? 0} in last 24h
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Languages size={12} /> Translations (30d)
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white tabular-nums">
+                    {analyticsData.usage?.translations?.total ?? 0}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                    Urdu: {analyticsData.usage?.translations?.urdu ?? 0} • Sindhi: {analyticsData.usage?.translations?.sindhi ?? 0}
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Output Satisfaction</p>
+                  <p className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                    {analyticsData.feedback?.micro?.satisfactionRate !== null && analyticsData.feedback?.micro?.satisfactionRate !== undefined
+                      ? `${analyticsData.feedback.micro.satisfactionRate}%`
+                      : '—'}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                    👍 {analyticsData.feedback?.micro?.helpful ?? 0} • 👎 {analyticsData.feedback?.micro?.needsWork ?? 0}
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                    <Bell size={12} /> Paid Waitlist
+                  </p>
+                  <p className="mt-2 text-2xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                    {(analyticsData.waitlist?.proInterested ?? 0) + (analyticsData.waitlist?.enterpriseInterested ?? 0)}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                    Pro (~$9): {analyticsData.waitlist?.proInterested ?? 0} • Inst (~$29): {analyticsData.waitlist?.enterpriseInterested ?? 0}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Top Tools &amp; Routes</h3>
+                  {analyticsData.usage?.topTools?.length > 0 ? (
+                    <div className="space-y-2.5">
+                      {analyticsData.usage.topTools.map((item: any) => (
+                        <div key={item.tool} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 dark:border-white/5 last:border-0">
+                          <span className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">{item.tool}</span>
+                          <span className="font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-4">No tool runs recorded yet.</p>
+                  )}
+                </div>
+
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Micro-Feedback Tags</h3>
+                  {analyticsData.feedback?.micro?.topTags?.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {analyticsData.feedback.micro.topTags.map((t: any) => (
+                        <span key={t.tag} className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums">
+                          {t.tag}: {t.count}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-4">No micro-feedback tags submitted yet.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                    <ThumbsUp size={13} className="text-emerald-500" /> Recent Output Micro-Feedback
+                  </h3>
+                  {analyticsData.feedback?.micro?.recent?.length > 0 ? (
+                    <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
+                      {analyticsData.feedback.micro.recent.map((fb: any) => (
+                        <div key={fb.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1.5 font-bold uppercase text-[10px]">
+                              {fb.rating === 'up' ? (
+                                <ThumbsUp size={12} className="text-emerald-600" />
+                              ) : (
+                                <ThumbsDown size={12} className="text-rose-600" />
+                              )}
+                              {fb.toolType} ({fb.language})
+                            </span>
+                            <span className="text-[10px] text-slate-400 tabular-nums">
+                              {new Date(fb.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          {fb.tags?.length > 0 && (
+                            <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                              {fb.tags.join(' • ')}
+                            </p>
+                          )}
+                          {fb.comment && <p className="text-slate-700 dark:text-slate-200">{fb.comment}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-4">Waiting for first output ratings from educators.</p>
+                  )}
+                </div>
+
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                    <MessageSquare size={13} className="text-indigo-500" /> Educator Feedback Notes
+                  </h3>
+                  {analyticsData.feedback?.pilot?.length > 0 ? (
+                    <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
+                      {analyticsData.feedback.pilot.map((note: any) => (
+                        <div key={note.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 space-y-1 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400 uppercase text-[10px]">
+                              {note.category}{note.rating ? ` • ${note.rating}/5` : ''}
+                            </span>
+                            <span className="text-[10px] text-slate-400 tabular-nums">
+                              {note.view} • {new Date(note.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="text-slate-700 dark:text-slate-200 leading-relaxed">{note.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-400 py-4">No pilot feedback notes submitted yet.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="p-8 text-center text-xs text-slate-400">Unable to load analytics.</div>
+          )}
+        </div>
       ) : (
         <div className="px-4 md:px-0 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
           <div className="bg-rose-50 dark:bg-rose-950/20 p-6 rounded-[2.5rem] border border-rose-100 dark:border-rose-900/30">

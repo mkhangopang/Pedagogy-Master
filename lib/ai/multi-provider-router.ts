@@ -299,46 +299,22 @@ export async function* generateAIResponseStream(
   overrideDocPart?: any,
   toolType?: string,
   customSystem?: string,
-  priorityDocumentId?: string
+  priorityDocumentId?: string,
+  options?: { skipQuotaCheck?: boolean; authEmail?: string | null }
 ): AsyncGenerator<string> {
 
-  // 1. Atomic Quota Enforcement with Developer Bypass
-  let isDeveloper = false;
-  try {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('email, role')
-      .eq('id', userId)
-      .maybeSingle();
+  // 1. Atomic Quota Enforcement with Developer Bypass (if not already enforced by caller route)
+  if (!options?.skipQuotaCheck) {
+    const { checkAndConsumeAiQuota, buildAiQuotaExceededMessage } = await import('../rate-limit/free-tier-guard');
+    const quota = await checkAndConsumeAiQuota({
+      supabase,
+      userId,
+      authEmail: options?.authEmail,
+      routeName: toolType || 'stream',
+    });
 
-    if (profile) {
-      isDeveloper = isAdminUser(profile as UserProfile);
-    }
-  } catch (err) {
-    console.warn('[Router] Failed to verify developer status:', err);
-  }
-
-  if (!isDeveloper) {
-    const today = new Date().toISOString().split('T')[0];
-    const userLimitKey = `quota:${userId}:${today}`;
-    const globalLimitKey = `quota:global:${today}`;
-
-    const [userUsage, globalUsage] = await Promise.all([
-      kv.incr(userLimitKey),
-      kv.incr(globalLimitKey)
-    ]);
-
-    // Defaults: 50 requests per user/day, 1000 global
-    const USER_LIMIT = parseInt(process.env.DAILY_USER_AI_LIMIT || '50', 10);
-    const GLOBAL_LIMIT = parseInt(process.env.DAILY_GLOBAL_AI_LIMIT || '1000', 10);
-
-    if (userUsage > USER_LIMIT) {
-      yield '⚠️ **Daily Personal Quota Exceeded**: You have reached your pedagogical synthesis limit for today. Contact your administrator or wait until tomorrow.';
-      return;
-    }
-
-    if (globalUsage > GLOBAL_LIMIT) {
-      yield '⚠️ **System Capacity Reached**: Global AI synthesis limits have been reached for today. Please try again tomorrow.';
+    if (!quota.allowed) {
+      yield `QUOTA_EXCEEDED: ${buildAiQuotaExceededMessage(quota)}`;
       return;
     }
   }

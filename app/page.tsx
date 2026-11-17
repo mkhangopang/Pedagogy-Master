@@ -7,7 +7,9 @@ import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
-import { Loader2, Menu, Cpu, AlertTriangle, Eye, EyeOff, RefreshCw, ArrowRight } from 'lucide-react';
+import { Loader2, Menu, Cpu, MessageSquarePlus, Share2, Check } from 'lucide-react';
+import { PilotFeedbackDrawer } from '../components/PilotFeedbackDrawer';
+import { trackProductEvent } from '../lib/analytics';
 
 // Code-split heavy views to keep the landing page bundle minimal
 const Sidebar = lazy(() => import('../components/Sidebar'));
@@ -50,6 +52,8 @@ export default function App() {
   const [isViewHydrated, setIsViewHydrated] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot-password' | 'update-password'>('login');
   const [urlAuthError, setUrlAuthError] = useState<string | null>(null);
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const authModeRef = useRef(authMode);
   authModeRef.current = authMode;
 
@@ -170,8 +174,16 @@ export default function App() {
         expires.setFullYear(expires.getFullYear() + 1);
         document.cookie = `currentView=${encodeURIComponent(currentView)}; expires=${expires.toUTCString()}; path=/; SameSite=None; Secure`;
       } catch (e) {}
+      if (session) {
+        trackProductEvent({
+          action: 'view_opened',
+          category: 'navigation',
+          label: currentView,
+          toolType: currentView,
+        });
+      }
     }
-  }, [currentView, isViewHydrated]);
+  }, [currentView, isViewHydrated, session]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
@@ -212,14 +224,34 @@ export default function App() {
       .catch(e => console.error("Neural Brain Fetch Error:", e));
     }
 
-    // 2. Fetch Profile
-    getOrCreateProfile(userId, email).then(profile => {
+    // 2. Fetch Profile + True Daily AI Quota
+    getOrCreateProfile(userId, email).then(async (profile) => {
       if (profile) {
+        let dailyUsed = profile.queries_used || 0;
+        let dailyLimit = profile.queries_limit || 25;
+
+        if (currentSession?.access_token) {
+          try {
+            const qRes = await fetch('/api/quota', {
+              headers: { Authorization: `Bearer ${currentSession.access_token}` },
+            });
+            if (qRes.ok) {
+              const qData = await qRes.json();
+              if (qData?.quota) {
+                dailyUsed = qData.quota.isDeveloper ? 0 : qData.quota.used;
+                dailyLimit = qData.quota.isDeveloper ? 999999 : (qData.quota.limit || 25);
+              }
+            }
+          } catch {
+            // Keep profile defaults cleanly
+          }
+        }
+
         const mappedProfile: UserProfile = {
           id: profile.id, email: profile.email || '',
           name: profile.name || email?.split('@')[0] || 'Educator',
           role: profile.role as UserRole, plan: profile.plan as SubscriptionPlan,
-          queriesUsed: profile.queries_used || 0, queriesLimit: profile.queries_limit || 30,
+          queriesUsed: dailyUsed, queriesLimit: dailyLimit,
           generationCount: profile.generation_count || 0, successRate: profile.success_rate || 0,
           onboarding_completed: profile.onboarding_completed
         };
@@ -390,10 +422,49 @@ export default function App() {
       </div>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:overflow-visible">
         {safeProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
-        <header className="flex items-center justify-between p-4 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm z-40 no-print">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600 hover:bg-slate-50 rounded-xl"><Menu size={24} /></button>
-            <span className="font-black text-indigo-950 dark:text-white tracking-tight text-sm uppercase">{currentView.replace('-', ' ')}</span>
+        <header className="flex items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm z-40 no-print">
+          <div className="flex items-center gap-3 min-w-0">
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl"><Menu size={22} /></button>
+            <span className="font-black text-indigo-950 dark:text-white tracking-tight text-sm uppercase truncate">{currentView.replace('-', ' ')}</span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {safeProfile.role !== UserRole.APP_ADMIN && (
+              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[11px] font-bold text-slate-600 dark:text-slate-300 tabular-nums whitespace-nowrap">
+                {Math.max(0, safeProfile.queriesLimit - safeProfile.queriesUsed)}/{safeProfile.queriesLimit} free today
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={async () => {
+                if (typeof window === 'undefined') return;
+                try {
+                  await navigator.clipboard.writeText(window.location.origin);
+                  setShareCopied(true);
+                  setTimeout(() => setShareCopied(false), 2200);
+                  trackProductEvent({
+                    action: 'share_link_copied',
+                    category: 'growth',
+                    label: currentView,
+                    toolType: currentView,
+                  });
+                } catch {
+                  // ignore clipboard restriction
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 text-xs font-bold whitespace-nowrap"
+              title="Copy link to invite fellow educators"
+            >
+              {shareCopied ? <Check size={14} className="text-emerald-500" /> : <Share2 size={14} />}
+              <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFeedbackOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold whitespace-nowrap shadow-sm"
+            >
+              <MessageSquarePlus size={14} />
+              <span>Feedback</span>
+            </button>
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar print:overflow-visible print:p-0">
@@ -425,6 +496,11 @@ export default function App() {
           </div>
         </main>
       </div>
+      <PilotFeedbackDrawer
+        isOpen={isFeedbackOpen}
+        onClose={() => setIsFeedbackOpen(false)}
+        currentView={currentView}
+      />
     </div>
   );
 }

@@ -112,7 +112,7 @@ export function buildQuotaExceededMessage(quota: TranslationQuotaStatus): string
   if (quota.period === 'day') {
     return `Daily translation limit reached (${quota.used}/${quota.limit} Urdu & Sindhi translations used today). Your limit resets tomorrow (UTC).`;
   }
-  return `Free plan translation limit reached (${quota.used}/${quota.limit} Urdu & Sindhi translations used this month). Upgrade to Pro or Enterprise for 5 translations per day.`;
+  return `Free plan translation limit reached (${quota.used}/${quota.limit} Urdu & Sindhi translations used this month). Pro (~$9/mo USD) with 5 translations/day will be available soon.`;
 }
 
 async function resolveUserAccessProfile(

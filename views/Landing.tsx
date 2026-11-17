@@ -8,7 +8,7 @@ import {
   CheckCircle2, Target, Cpu, Lock, Sparkles, 
   Database, ArrowUpRight, MessageSquare, Layers,
   ChevronDown, MousePointer2, Activity, Play,
-  BookOpen, ClipboardCheck
+  BookOpen, ClipboardCheck, Share2
 } from 'lucide-react';
 import { APP_NAME } from '../constants';
 
@@ -17,6 +17,19 @@ interface LandingProps {
 }
 
 const Landing: React.FC<LandingProps> = ({ onStart }) => {
+  const [sharedCopied, setSharedCopied] = React.useState(false);
+
+  const handleShare = async () => {
+    if (typeof window === 'undefined') return;
+    try {
+      await navigator.clipboard.writeText(window.location.origin);
+      setSharedCopied(true);
+      setTimeout(() => setSharedCopied(false), 2500);
+    } catch {
+      // ignore clipboard errors
+    }
+  };
+
   useEffect(() => {
     // Zero-overhead scroll observer: updates classes directly without React re-renders or layout thrashing
     const setupObserver = () => {
@@ -265,14 +278,24 @@ const Landing: React.FC<LandingProps> = ({ onStart }) => {
                </div>
             </div>
 
-            <div className="shrink-0 flex flex-col items-center gap-8">
+            <div className="shrink-0 flex flex-col items-center gap-5">
                <button 
                 onClick={onStart}
-                className="w-full sm:w-auto px-16 py-8 bg-white text-indigo-950 rounded-[2.5rem] font-black text-2xl shadow-3xl hover:scale-105 active:scale-95 transition-all duration-500"
+                className="w-full sm:w-auto px-14 py-7 bg-white text-indigo-950 rounded-[2.5rem] font-black text-2xl shadow-3xl hover:scale-105 active:scale-95 transition-all duration-500"
                >
                  Get Started Free
                </button>
-               <p className="text-[10px] font-bold uppercase tracking-widest opacity-60">No payment required for basic nodes</p>
+               <button
+                type="button"
+                onClick={handleShare}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold uppercase tracking-wider transition-all"
+               >
+                 {sharedCopied ? <CheckCircle2 size={14} className="text-emerald-300" /> : <Share2 size={14} />}
+                 {sharedCopied ? 'Invite Link Copied!' : 'Share Free Access with Educators'}
+               </button>
+               <p className="text-[11px] font-bold uppercase tracking-widest opacity-80 text-center">
+                 Free Public Access Active ($0) • Paid Tiers (~$9–$29 USD) Available Soon
+               </p>
             </div>
           </div>
         </div>

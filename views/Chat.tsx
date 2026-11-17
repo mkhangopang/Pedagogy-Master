@@ -21,6 +21,7 @@ import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activity-logger';
 import { isAdminUser } from '../lib/auth/user-role';
 import { TranslationQuotaStatus, fetchTranslationQuota } from '../lib/translate/client-translate';
+import { trackProductEvent } from '../lib/analytics';
 
 interface ChatProps {
   brain: NeuralBrain;
@@ -275,6 +276,13 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
           model: 'gemini-3.8-flash'
         }
       });
+      trackProductEvent({
+        action: 'chat_query_completed',
+        category: 'synthesis',
+        label: focusedDocId ? 'grounded' : 'general',
+        value: fullContent.length,
+        toolType: 'neural_chat',
+      });
     } catch (err: any) {
       setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: "Synthesis gate timed out. The neural grid is currently under high load." } : m));
       logActivity({
@@ -457,9 +465,20 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
 
         <div className="shrink-0 bg-gradient-to-t from-slate-50 dark:from-[#0a0a0a] via-slate-50 dark:via-[#0a0a0a] to-transparent">
           {!canQuery && (
-            <div className="max-w-2xl mx-auto mb-2 px-4 py-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/50 rounded-2xl flex items-center gap-3 text-rose-800 dark:text-rose-400 text-xs font-bold animate-in slide-in-from-bottom-2">
-              <AlertCircle size={16} />
-              Neural limit reached. Upgrade for unlimited synthesis.
+            <div className="max-w-2xl mx-auto mb-2 px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-2xl flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200 text-xs font-bold animate-in slide-in-from-bottom-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>Daily free synthesis limit reached ({user.queriesUsed}/{user.queriesLimit}). Your quota resets tomorrow (UTC).</span>
+              </div>
+              {onViewChange && (
+                <button
+                  type="button"
+                  onClick={() => onViewChange('pricing')}
+                  className="text-indigo-600 dark:text-indigo-400 underline whitespace-nowrap shrink-0"
+                >
+                  Upcoming Plans
+                </button>
+              )}
             </div>
           )}
           <ChatInput 

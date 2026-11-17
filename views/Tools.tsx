@@ -30,6 +30,8 @@ import {
   exportArtifactAsDocx,
   exportArtifactAsPdf,
 } from '../lib/export/artifact-exporter';
+import { MicroFeedbackBar } from '../components/MicroFeedbackBar';
+import { trackProductEvent } from '../lib/analytics';
 
 interface ToolsProps {
   brain: NeuralBrain;
@@ -211,6 +213,14 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           artifactLength: fullContent.length
         }
       });
+      trackProductEvent({
+        action: 'tool_synthesis_completed',
+        category: 'synthesis',
+        label: effectiveTool,
+        value: fullContent.length,
+        toolType: effectiveTool,
+        metadata: { persona, grounded: Boolean(isCurriculumEnabled && activeDoc) },
+      });
 
     } catch (err: any) {
       setMessages(prev => prev.map(m =>
@@ -295,6 +305,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         setTranslationQuota(result.quota);
       }
       setSelectedLang(lang);
+      trackProductEvent({
+        action: 'artifact_translated',
+        category: 'translation',
+        label: lang,
+        toolType: activeTool || 'master_plan',
+      });
     } catch (err: any) {
       if (err instanceof TranslationQuotaError) {
         if (err.quota) setTranslationQuota(err.quota);
@@ -384,6 +400,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     }
     setCopySuccess(true);
     setTimeout(() => setCopySuccess(false), 2000);
+    trackProductEvent({
+      action: 'artifact_copied',
+      category: 'export',
+      label: selectedLang,
+      toolType: activeTool || 'master_plan',
+    });
   };
 
   const handleDownload = async (format: 'docx' | 'pdf') => {
@@ -551,8 +573,20 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
             {messages.map((m) => (<MessageItem key={m.id} id={m.id} role={m.role} content={m.content} timestamp={m.timestamp} metadata={m.metadata} />))}
             {isGenerating && <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-indigo-500" /></div>}
           </div>
-          <div className="p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d]">
-            <ChatInput onSend={handleGenerate} isLoading={isGenerating} placeholder={`Refine ${getToolDisplayName(activeTool)}...`} />
+          <div className="p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d] space-y-2">
+            {!canQuery && (
+              <div className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-200 text-[11px] font-semibold flex items-center justify-between gap-2">
+                <span>Daily free synthesis limit reached ({user.queriesUsed}/{user.queriesLimit}). Resets tomorrow (UTC).</span>
+                <button
+                  type="button"
+                  onClick={() => onViewChange?.('pricing')}
+                  className="text-indigo-600 dark:text-indigo-400 font-bold underline whitespace-nowrap"
+                >
+                  Upcoming Plans
+                </button>
+              </div>
+            )}
+            <ChatInput onSend={handleGenerate} isLoading={isGenerating} disabled={!canQuery} placeholder={`Refine ${getToolDisplayName(activeTool)}...`} />
           </div>
         </div>
 
@@ -681,45 +715,45 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
            {(translationError || exportError || showUpgradeHint) && (
              <div className="px-4 md:px-8 py-2.5 border-b border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-[#111] flex flex-wrap items-center justify-between gap-3 text-xs no-print">
                {showUpgradeHint ? (
-                 <>
-                   <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-medium">
-                     <Lock size={14} className="text-amber-500 shrink-0" />
-                     <span>Free users can copy &amp; paste translated Urdu/Sindhi content. Upgrade to Pro or Enterprise to download DOCX &amp; PDF files.</span>
-                   </div>
-                   <div className="flex items-center gap-2 shrink-0">
-                     <button
-                       type="button"
-                       onClick={() => onViewChange?.('pricing')}
-                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
-                     >
-                       Upgrade Plan
-                     </button>
-                     <button
-                       type="button"
-                       onClick={() => setShowUpgradeHint(false)}
-                       className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
-                       aria-label="Dismiss upgrade message"
-                     >
-                       <X size={14} />
-                     </button>
-                   </div>
-                 </>
-               ) : (
-                 <>
-                   <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-medium">
-                     <AlertCircle size={14} className="shrink-0" />
-                     <span>{translationError || exportError}</span>
-                   </div>
-                   <div className="flex items-center gap-2 shrink-0">
-                     {quotaUpgradePrompt && onViewChange && (
+                   <>
+                     <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-medium">
+                       <Lock size={14} className="text-amber-500 shrink-0" />
+                       <span>Free users can copy &amp; paste translated Urdu/Sindhi content anytime. Paid plans (~$9/mo USD) with DOCX &amp; PDF downloads will be available soon.</span>
+                     </div>
+                     <div className="flex items-center gap-2 shrink-0">
                        <button
                          type="button"
-                         onClick={() => onViewChange('pricing')}
+                         onClick={() => onViewChange?.('pricing')}
                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
                        >
-                         Upgrade for 5/day
+                         View Upcoming Plans
                        </button>
-                     )}
+                       <button
+                         type="button"
+                         onClick={() => setShowUpgradeHint(false)}
+                         className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                         aria-label="Dismiss upgrade message"
+                       >
+                         <X size={14} />
+                       </button>
+                     </div>
+                   </>
+                 ) : (
+                   <>
+                     <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-medium">
+                       <AlertCircle size={14} className="shrink-0" />
+                       <span>{translationError || exportError}</span>
+                     </div>
+                     <div className="flex items-center gap-2 shrink-0">
+                       {quotaUpgradePrompt && onViewChange && (
+                         <button
+                           type="button"
+                           onClick={() => onViewChange('pricing')}
+                           className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
+                         >
+                           Upcoming Plans
+                         </button>
+                       )}
                      <button
                        type="button"
                        onClick={() => { setTranslationError(null); setExportError(null); setQuotaUpgradePrompt(false); }}
@@ -776,11 +810,22 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   </div>
                 )}
                 {displayedContent ? (
-                  <div
-                    dir={isRtl ? 'rtl' : 'ltr'}
-                    className={`prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500 ${rtlFontClass}`}
-                    dangerouslySetInnerHTML={{ __html: markdownToHtml(displayedContent, isRtl ? 'rtl' : 'ltr') }}
-                  />
+                  <>
+                    <div
+                      dir={isRtl ? 'rtl' : 'ltr'}
+                      className={`prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500 ${rtlFontClass}`}
+                      dangerouslySetInnerHTML={{ __html: markdownToHtml(displayedContent, isRtl ? 'rtl' : 'ltr') }}
+                    />
+                    {!isGenerating && (
+                      <MicroFeedbackBar
+                        key={`${activeTool}-${cleanEnglishContent.length}`}
+                        toolType={activeTool || 'master_plan'}
+                        language={selectedLang}
+                        targetType="artifact"
+                        preview={cleanEnglishContent.slice(0, 120)}
+                      />
+                    )}
+                  </>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-32 text-center no-print">
                     <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-6 opacity-50"><FileText size={44} className="text-slate-400" /></div>

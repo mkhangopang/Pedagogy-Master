@@ -24,9 +24,11 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const config = {
   matcher: [
+    '/api/ai',
     '/api/chat',
     '/api/query',
     '/api/translate',
+    '/api/feedback',
     '/api/slo/feedback',
     '/api/auth/reset-password',
     '/api/docs/upload',
@@ -39,16 +41,18 @@ interface RateWindow {
   resetAt: number;
 }
 
-// In-memory store — resets on cold start (acceptable for edge workers)
+// In-memory store — resets on cold start (DB/KV quota guards enforce persistent daily limits)
 const rateLimitStore = new Map<string, RateWindow>();
 
 const LIMITS: Record<string, { rpm: number }> = {
-  '/api/chat':                { rpm: 30 },
-  '/api/query':               { rpm: 20 },
-  '/api/translate':           { rpm: 15 },
+  '/api/ai':                  { rpm: 12 },
+  '/api/chat':                { rpm: 15 },
+  '/api/query':               { rpm: 15 },
+  '/api/translate':           { rpm: 10 },
+  '/api/feedback':            { rpm: 30 },
   '/api/slo/feedback':        { rpm: 15 },
-  '/api/docs/upload':         { rpm: 10 },
-  '/api/docs/process':        { rpm: 5 },
+  '/api/docs/upload':         { rpm: 6 },
+  '/api/docs/process':        { rpm: 4 },
   '/api/auth/reset-password': { rpm: 5 },
 };
 

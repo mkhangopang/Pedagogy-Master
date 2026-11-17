@@ -31,6 +31,7 @@ import {
   exportArtifactAsDocx,
   exportArtifactAsPdf,
 } from '../../lib/export/artifact-exporter';
+import { MicroFeedbackBar } from '../MicroFeedbackBar';
 
 interface MessageItemProps {
   role: 'user' | 'assistant';
@@ -108,7 +109,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       setTranslationError(
         translationQuota.period === 'day'
           ? `Daily translation limit reached (${translationQuota.used}/${translationQuota.limit} used today). Resets tomorrow (UTC).`
-          : `Free plan limit reached (${translationQuota.used}/${translationQuota.limit} translations used this month). Upgrade for 5/day.`
+          : `Free plan limit reached (${translationQuota.used}/${translationQuota.limit} Urdu & Sindhi translations used this month). Higher daily limits (5/day) will be available soon in Pro (~$9/mo USD).`
       );
       return;
     }
@@ -328,16 +329,16 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             {showUpgradeHint ? (
               <>
                 <span className="text-slate-700 dark:text-slate-200">
-                  Free users can copy &amp; paste translated text. Paid plans unlock DOCX &amp; PDF downloads.
+                  Free users can copy &amp; paste translated text anytime. DOCX &amp; PDF downloads will be available soon in Paid Plans (~$9/mo USD).
                 </span>
                 <div className="flex items-center gap-2">
                   {onUpgradeClick && (
                     <button
                       type="button"
                       onClick={onUpgradeClick}
-                      className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider"
+                      className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
                     >
-                      Upgrade
+                      View Upcoming Plans
                     </button>
                   )}
                   <button type="button" onClick={() => setShowUpgradeHint(false)} className="text-slate-400 hover:text-slate-700">
@@ -353,9 +354,9 @@ export const MessageItem: React.FC<MessageItemProps> = ({
                     <button
                       type="button"
                       onClick={onUpgradeClick}
-                      className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider"
+                      className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
                     >
-                      Upgrade for 5/day
+                      Upcoming Plans
                     </button>
                   )}
                   <button type="button" onClick={() => { setTranslationError(null); setQuotaUpgradePrompt(false); }} className="text-slate-400 hover:text-slate-700">
@@ -443,6 +444,15 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>
+
+        {isAi && enableTranslateExport && cleanEnglish && !isGlitch && (
+          <MicroFeedbackBar
+            toolType="neural_chat"
+            language={selectedLang}
+            targetType="chat"
+            preview={cleanEnglish.slice(0, 120)}
+          />
+        )}
       </div>
     </div>
   );

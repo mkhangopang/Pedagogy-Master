@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServerClient } from '../../../lib/supabase';
 import { getSynthesizer } from '../../../lib/ai/synthesizer-core';
 import { RAGPipeline } from '../../../lib/rag/rag-pipeline';
+import { checkAndConsumeAiQuota, buildAiQuotaExceededMessage } from '../../../lib/rate-limit/free-tier-guard';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -15,12 +16,37 @@ export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
     const token = authHeader?.split(' ')[1];
-    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!token || token === 'undefined' || token.length < 10) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const supabase = getSupabaseServerClient(token);
+    const { data: { user } } = await supabase.auth.getUser(token);
+    if (!user) {
+      return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
+    }
 
     const { query, documentId } = await req.json();
     if (!query) return NextResponse.json({ error: 'Query required' }, { status: 400 });
 
-    const supabase = getSupabaseServerClient(token);
+    const quota = await checkAndConsumeAiQuota({
+      supabase,
+      userId: user.id,
+      authEmail: user.email,
+      routeName: 'rag_query',
+    });
+
+    if (!quota.allowed) {
+      return NextResponse.json(
+        {
+          error: buildAiQuotaExceededMessage(quota),
+          code: 'QUOTA_EXCEEDED',
+          quota,
+        },
+        { status: 429 }
+      );
+    }
+
     const docIds = documentId ? [documentId] : [];
 
     // Retrieve grounded context via pgvector pipeline

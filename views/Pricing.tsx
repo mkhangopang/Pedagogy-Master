@@ -1,9 +1,22 @@
+'use client';
 
-import React, { useState } from 'react';
-import { Check, Zap, Building2, UserCircle, Star, Loader2, ExternalLink, ShieldCheck, Wallet, ArrowRight, CreditCard, Smartphone } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  Check,
+  Building2,
+  UserCircle,
+  Star,
+  Bell,
+  CheckCircle2,
+  Sparkles,
+  Clock,
+  ShieldCheck,
+  Share2,
+} from 'lucide-react';
 import { SubscriptionPlan } from '../types';
 import { ROLE_LIMITS } from '../constants';
-import { paymentService } from '../services/paymentService';
+import { supabase } from '../lib/supabase';
+import { trackProductEvent } from '../lib/analytics';
 
 interface PricingProps {
   currentPlan: SubscriptionPlan;
@@ -12,189 +25,260 @@ interface PricingProps {
 }
 
 const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy }) => {
-  const [loadingPlan, setLoadingPlan] = useState<SubscriptionPlan | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'local'>('local');
-  const [showLocalModal, setShowLocalModal] = useState(false);
+  const [notifiedPlans, setNotifiedPlans] = useState<Record<string, boolean>>({});
+  const [submittingPlan, setSubmittingPlan] = useState<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
 
-  const handleCheckout = async (plan: SubscriptionPlan) => {
-    if (plan === SubscriptionPlan.FREE) {
-      onUpgrade(plan);
-      return;
-    }
+  useEffect(() => {
+    trackProductEvent({
+      action: 'view_opened',
+      category: 'navigation',
+      label: 'pricing',
+      toolType: 'pricing',
+    });
+  }, []);
 
-    if (paymentMethod === 'local' || plan === SubscriptionPlan.PRO) {
-      setShowLocalModal(true);
-      return;
-    }
-
-    setLoadingPlan(plan);
+  const handlePlanInterest = async (plan: SubscriptionPlan.PRO | SubscriptionPlan.ENTERPRISE) => {
+    if (notifiedPlans[plan] || submittingPlan) return;
+    setSubmittingPlan(plan);
     try {
-      await paymentService.openCheckout(plan);
-    } catch (err) {
-      console.error("Checkout failed:", err);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token) {
+        await fetch('/api/feedback', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            kind: 'plan_interest',
+            plan,
+            approxPriceUsd: ROLE_LIMITS[plan].price,
+          }),
+        });
+      }
+      setNotifiedPlans((prev) => ({ ...prev, [plan]: true }));
+      trackProductEvent({
+        action: 'paid_plan_interest',
+        category: 'pricing',
+        label: plan,
+        toolType: 'pricing',
+      });
+    } catch {
+      setNotifiedPlans((prev) => ({ ...prev, [plan]: true }));
     } finally {
-      setLoadingPlan(null);
+      setSubmittingPlan(null);
+    }
+  };
+
+  const handleShareWorkspace = async () => {
+    if (typeof window === 'undefined') return;
+    const shareUrl = window.location.origin;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+      trackProductEvent({
+        action: 'share_link_copied',
+        category: 'growth',
+        label: 'pricing_banner',
+        toolType: 'pricing',
+      });
+    } catch {
+      // ignore clipboard restriction
     }
   };
 
   const tiers = [
-    { 
-      id: SubscriptionPlan.FREE, 
-      name: "Core Educator", 
-      icon: <UserCircle size={28} />, 
-      color: "indigo" 
+    {
+      id: SubscriptionPlan.FREE,
+      name: 'Core Educator',
+      subtitle: 'Active Now for All Educators',
+      icon: <UserCircle size={24} />,
+      comingSoon: false,
     },
-    { 
-      id: SubscriptionPlan.PRO, 
-      name: "Expert Designer", 
-      icon: <Star size={28} className="text-amber-500" />, 
-      color: "emerald",
-      popular: true
+    {
+      id: SubscriptionPlan.PRO,
+      name: 'Expert Designer',
+      subtitle: 'Upcoming Individual Upgrade',
+      icon: <Star size={24} className="text-amber-500" />,
+      comingSoon: true,
     },
-    { 
-      id: SubscriptionPlan.ENTERPRISE, 
-      name: "Institution", 
-      icon: <Building2 size={28} />, 
-      color: "purple" 
+    {
+      id: SubscriptionPlan.ENTERPRISE,
+      name: 'Institution',
+      subtitle: 'Upcoming School & Campus Plan',
+      icon: <Building2 size={24} className="text-indigo-500" />,
+      comingSoon: true,
     },
   ];
 
   return (
-    <div className="py-8 animate-in fade-in duration-500 max-w-6xl mx-auto px-4 lg:px-0 text-left">
-      <div className="text-center max-w-2xl mx-auto mb-12">
-        <h1 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tight uppercase">Scale Your Workspace</h1>
-        <p className="text-slate-500 dark:text-slate-400 mt-4 text-lg font-medium">Powering pedagogy for solo educators and entire campus networks.</p>
-        
-        <div className="inline-flex mt-10 p-1.5 bg-slate-100 dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-white/5">
-           <button 
-             onClick={() => setPaymentMethod('local')}
-             className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentMethod === 'local' ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-sm' : 'text-slate-500'}`}
-           >
-             <Smartphone size={14}/> EasyPaisa / JazzCash
-           </button>
-           <button 
-             onClick={() => setPaymentMethod('card')}
-             className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentMethod === 'card' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500'}`}
-           >
-             <CreditCard size={14}/> International Card
-           </button>
+    <div className="py-6 md:py-10 animate-in fade-in duration-500 max-w-6xl mx-auto px-4 lg:px-0 text-left space-y-10">
+      <div className="text-center max-w-2xl mx-auto space-y-4">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-300 text-xs font-bold">
+          <Sparkles size={14} />
+          <span>Public Free Access Open • No Payment Needed</span>
         </div>
+
+        <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+          Workspace Plans &amp; Upcoming Tiers
+        </h1>
+        <p className="text-slate-600 dark:text-slate-400 text-base md:text-lg font-medium">
+          Every educator starts immediately on the active <strong>Free Plan ($0/mo)</strong> with fair daily limits so the platform runs smoothly for everyone. Paid plans below preview upcoming features with approximate USD pricing and will be <strong>available soon</strong>.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
         {tiers.map((tier) => {
-          const limits = ROLE_LIMITS[tier.id];
+          const limits = ROLE_LIMITS[tier.id] as any;
+          const isFreeActive = tier.id === SubscriptionPlan.FREE && (currentPlan === SubscriptionPlan.FREE || !tier.comingSoon);
           const isCurrent = currentPlan === tier.id;
-          const isLoading = loadingPlan === tier.id;
+          const isComingSoon = Boolean(tier.comingSoon);
+          const isNotified = Boolean(notifiedPlans[tier.id]);
 
           return (
-            <div 
-              key={tier.id} 
-              className={`relative bg-white dark:bg-slate-900 rounded-[3rem] p-8 md:p-10 border-2 transition-all duration-300 flex flex-col ${
-                tier.popular ? 'border-indigo-500 shadow-2xl scale-105 z-10' : 'border-slate-100 dark:border-white/5 hover:border-slate-300 shadow-sm'
+            <div
+              key={tier.id}
+              className={`relative rounded-3xl p-7 md:p-8 border transition-all flex flex-col ${
+                isComingSoon
+                  ? 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-white/10'
+                  : 'bg-white dark:bg-slate-900 border-indigo-500 shadow-xl ring-1 ring-indigo-500/20'
               }`}
             >
-              {tier.popular && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-600 text-white px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl">
-                  Best Value
-                </div>
-              )}
-
-              <div className="mb-8">
-                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-6 bg-slate-50 dark:bg-white/5 text-indigo-600 shadow-inner`}>
+              <div className="flex items-center justify-between gap-2 mb-6">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100 dark:bg-white/5 text-indigo-600 dark:text-indigo-400 shrink-0">
                   {tier.icon}
                 </div>
-                <h3 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">{tier.name}</h3>
-                <div className="mt-4 flex items-baseline gap-1">
-                  <span className="text-4xl font-black text-slate-900 dark:text-white">{limits.price}</span>
-                  <span className="text-slate-500 font-bold text-sm uppercase tracking-widest">/month</span>
-                </div>
+                {isComingSoon ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
+                    <Clock size={12} />
+                    Available Soon
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-700/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
+                    <CheckCircle2 size={12} />
+                    Active Free Plan
+                  </span>
+                )}
               </div>
 
-              <div className="space-y-4 mb-10 flex-1">
-                {limits.features.map((feature, i) => (
-                  <div key={i} className="flex items-start gap-3">
-                    <div className="mt-1 bg-emerald-100 dark:bg-emerald-900/30 rounded-full p-0.5 shadow-sm">
-                      <Check size={12} className="text-emerald-600" />
+              <div className="mb-6">
+                <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                  {tier.name}
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                  {tier.subtitle}
+                </p>
+
+                <div className="mt-5 flex items-baseline gap-2">
+                  <span className="text-4xl font-black text-slate-900 dark:text-white tabular-nums">
+                    {limits.price}
+                  </span>
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    {isComingSoon ? 'USD approx. / mo' : 'USD / month'}
+                  </span>
+                </div>
+                {isComingSoon && (
+                  <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    Placeholder preview — billing is not active yet
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-3.5 mb-8 flex-1">
+                {limits.features.map((feature: string, i: number) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <div className="mt-0.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full p-0.5 shrink-0">
+                      <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
                     </div>
-                    <span className="text-slate-600 dark:text-slate-400 text-sm font-bold">{feature}</span>
+                    <span className="text-slate-700 dark:text-slate-300 text-sm font-medium leading-snug">
+                      {feature}
+                    </span>
                   </div>
                 ))}
               </div>
 
-              <button 
-                onClick={() => !isCurrent && handleCheckout(tier.id)}
-                disabled={isCurrent || isLoading}
-                className={`w-full py-5 rounded-[1.5rem] font-black text-xs uppercase tracking-widest transition-all shadow-xl active:scale-95 flex items-center justify-center gap-2 ${
-                  isCurrent 
-                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed shadow-none' 
-                    : tier.popular 
-                      ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200' 
-                      : 'bg-slate-900 text-white hover:bg-black'
-                }`}
-              >
-                {isLoading ? <Loader2 className="animate-spin" size={18} /> : null}
-                {isCurrent ? 'Active Plan' : (
-                  <>
-                    Upgrade License
-                    <ArrowRight size={14} />
-                  </>
-                )}
-              </button>
+              {isComingSoon ? (
+                <button
+                  type="button"
+                  disabled={submittingPlan === tier.id}
+                  onClick={() =>
+                    handlePlanInterest(
+                      tier.id === SubscriptionPlan.PRO
+                        ? SubscriptionPlan.PRO
+                        : SubscriptionPlan.ENTERPRISE
+                    )
+                  }
+                  className={`w-full py-3.5 px-4 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
+                    isNotified
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-700/40 text-emerald-700 dark:text-emerald-300'
+                      : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90'
+                  }`}
+                >
+                  {isNotified ? (
+                    <>
+                      <CheckCircle2 size={15} />
+                      Notify Request Saved
+                    </>
+                  ) : (
+                    <>
+                      <Bell size={15} />
+                      Available Soon — Notify Me
+                    </>
+                  )}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onUpgrade(SubscriptionPlan.FREE)}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 whitespace-nowrap shadow-lg shadow-indigo-600/20"
+                >
+                  <ShieldCheck size={15} />
+                  {isCurrent || isFreeActive ? 'Active — Start Synthesizing' : 'Use Free Plan'}
+                </button>
+              )}
             </div>
           );
         })}
       </div>
 
-      <div className="mt-20 bg-indigo-900 rounded-[3rem] p-10 md:p-16 text-white flex flex-col md:flex-row items-center justify-between gap-10 shadow-2xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-white opacity-5 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/2" />
-        <div className="max-w-lg relative z-10 text-center md:text-left space-y-6">
-          <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[10px] font-bold uppercase tracking-widest">Enterprise Sync</div>
-          <h2 className="text-4xl font-black leading-none tracking-tight">Institutional Licensing</h2>
-          <p className="text-indigo-100 text-lg font-medium">Standardize instructional quality across your campus with dedicated cloud namespaces and priority service access.</p>
+      <div className="bg-slate-900 dark:bg-indigo-950/60 border border-slate-800 dark:border-indigo-500/20 rounded-3xl p-7 md:p-10 text-white flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div className="space-y-2 max-w-xl">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 rounded-full text-[11px] font-bold uppercase tracking-wider text-indigo-200">
+            Invite Fellow Educators
+          </div>
+          <h3 className="text-2xl font-black tracking-tight">
+            Help colleagues teach faster — Share Free Access
+          </h3>
+          <p className="text-sm text-slate-300 leading-relaxed">
+            Built for smooth reliability across classrooms: daily rate protection keeps response speed fast for all teachers while we gather feedback before launching paid tiers.
+          </p>
         </div>
-        <button className="px-12 py-6 bg-white text-indigo-950 rounded-[2rem] font-black text-lg shadow-2xl hover:scale-105 transition-all active:scale-95 shrink-0 relative z-10">
-          Request Quote
-        </button>
+
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={handleShareWorkspace}
+            className="px-5 py-3.5 bg-white text-slate-950 hover:bg-indigo-50 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap"
+          >
+            {shareCopied ? <CheckCircle2 size={15} className="text-emerald-600" /> : <Share2 size={15} />}
+            {shareCopied ? 'Link Copied' : 'Copy Invite Link'}
+          </button>
+          {onShowPolicy && (
+            <button
+              type="button"
+              onClick={onShowPolicy}
+              className="px-4 py-3.5 rounded-2xl border border-white/20 text-xs font-bold uppercase tracking-wider text-white/90 hover:bg-white/10 whitespace-nowrap"
+            >
+              Usage Policy
+            </button>
+          )}
+        </div>
       </div>
-
-      {showLocalModal && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
-           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8">
-              <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-black dark:text-white tracking-tight uppercase">Manual Payment Portal</h3>
-                <button onClick={() => setShowLocalModal(false)} className="text-slate-400 hover:text-slate-900">✕</button>
-              </div>
-
-              <div className="p-6 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-[2rem] space-y-4">
-                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-lg">EP</div>
-                    <div>
-                       <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">EasyPaisa Account</p>
-                       <p className="font-bold text-slate-900 dark:text-white">0301 2345678</p>
-                    </div>
-                 </div>
-                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-lg">JC</div>
-                    <div>
-                       <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">JazzCash Account</p>
-                       <p className="font-bold text-slate-900 dark:text-white">0301 2345678</p>
-                    </div>
-                 </div>
-              </div>
-
-              <div className="space-y-4">
-                 <p className="text-xs text-slate-500 font-medium leading-relaxed">
-                   1. Transfer <b>PKR 2,500</b> for lifetime Beta Access.<br />
-                   2. Take a screenshot of the confirmation.<br />
-                   3. Email screenshot to <b>support@edunexus.ai</b>.<br />
-                   Your workspace will be activated within 4 hours.
-                 </p>
-                 <button onClick={() => setShowLocalModal(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl">Return to Workspace</button>
-              </div>
-           </div>
-        </div>
-      )}
     </div>
   );
 };
