@@ -193,30 +193,25 @@ export async function getAiQuotaStatus(params: {
   const userKvKey = `ai:quota:v1:user:${userId}:${dayKey}`;
   const globalKvKey = `ai:quota:v1:global:${dayKey}`;
 
-  let dbUserCount = 0;
-  try {
-    const { count, error } = await supabase
-      .from('improvement_signals')
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .eq('signal_type', 'ai_quota_usage')
-      .gte('created_at', startIso);
-
-    if (!error && typeof count === 'number') {
-      dbUserCount = count;
-    }
-  } catch {
-    // Soft fallback to KV
-  }
-
-  const [kvUserCount, kvGlobalCount] = await Promise.all([
+  const [dbCountRes, kvUserCount, kvGlobalCount] = await Promise.all([
+    Promise.resolve(
+      supabase
+        .from('improvement_signals')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('signal_type', 'ai_quota_usage')
+        .gte('created_at', startIso)
+    )
+      .then(({ count, error }) => (!error && typeof count === 'number' ? count : 0))
+      .catch(() => 0),
     kv.get<number>(userKvKey).then((v) => v || 0).catch(() => 0),
     kv.get<number>(globalKvKey).then((v) => v || 0).catch(() => 0),
   ]);
 
+  const dbUserCount = dbCountRes;
   const userUsed = Math.max(dbUserCount, kvUserCount);
   if (dbUserCount > kvUserCount) {
-    await kv.set(userKvKey, dbUserCount, ttlSeconds).catch(() => {});
+    kv.set(userKvKey, dbUserCount, ttlSeconds).catch(() => {});
   }
 
   return computeAiQuotaStatus({
@@ -251,9 +246,9 @@ export async function checkAndConsumeAiQuota(params: {
     kv.incr(globalKvKey, ttlSeconds).catch(() => statusBefore.globalUsed + 1),
   ]);
 
-  // Persist user's consumption in Supabase so limits survive serverless cold starts
-  try {
-    await supabase.from('improvement_signals').insert({
+  // Persist user's consumption in Supabase non-blocking so stream TTFB has zero extra DB wait
+  void Promise.resolve(
+    supabase.from('improvement_signals').insert({
       user_id: userId,
       signal_type: 'ai_quota_usage',
       signal_data: {
@@ -263,10 +258,8 @@ export async function checkAndConsumeAiQuota(params: {
       tool_type: routeName,
       compiled: false,
       created_at: now.toISOString(),
-    });
-  } catch {
-    // Non-blocking fallback to KV
-  }
+    })
+  ).catch(() => {});
 
   const nextUsed = Math.max(statusBefore.used + 1, nextUserKv);
   const nextGlobalUsed = Math.max(statusBefore.globalUsed + 1, nextGlobalKv);

@@ -1,12 +1,19 @@
 import { supabase } from '../lib/supabase';
 import { UserProfile, OutputArtifact } from '../types';
 
+const CONTEXT_CACHE_TTL_MS = 3 * 60 * 1000;
+const adaptiveContextCache = new Map<string, { value: string; expiresAt: number }>();
+
 export const adaptiveService = {
   /**
-   * LAYER 1-4: Assembles behavioral intelligence from history
-   * Now includes "Success Pattern Injection" for Few-Shot learning.
+   * LAYER 1-4: Assembles behavioral intelligence from history (cached 3m for instant I/O)
    */
   async buildFullContext(userId: string, requestType: string): Promise<string> {
+    const cached = adaptiveContextCache.get(userId);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.value;
+    }
+
     const [profile, recentSuccesses] = await Promise.all([
       this.getUserProfile(userId),
       this.getRecentSuccesses(userId)
@@ -17,7 +24,7 @@ export const adaptiveService = {
     const editBehavior = this.analyzeEditPatterns(profile.editPatterns || {});
     const inferredStyle = this.inferTeachingStyle(recentSuccesses);
 
-    return `
+    const assembled = `
 ### ADAPTIVE_BEHAVIOR_PROFILE
 - Primary Teaching Style: ${profile.teachingStyle || inferredStyle}
 - Preferred Approach: ${profile.pedagogicalApproach || '5E Inquiry-Based'}
@@ -36,6 +43,12 @@ ${recentSuccesses.length > 0
 - Prioritize ${profile.subjectArea || 'core'} concepts.
 - If user preferences indicate conciseness, omit conversational filler.
 `;
+
+    adaptiveContextCache.set(userId, {
+      value: assembled,
+      expiresAt: Date.now() + CONTEXT_CACHE_TTL_MS,
+    });
+    return assembled;
   },
 
   async getUserProfile(userId: string): Promise<UserProfile | null> {
@@ -117,6 +130,7 @@ ${recentSuccesses.length > 0
   },
 
   async captureEvent(userId: string, artifactId: string, eventType: 'export' | 'accept' | 'abandon' | 'edit', extraData: any = {}) {
+    adaptiveContextCache.delete(userId);
     await supabase.from('feedback_events').insert({
       user_id: userId,
       artifact_id: artifactId,

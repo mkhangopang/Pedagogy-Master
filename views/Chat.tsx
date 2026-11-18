@@ -2,7 +2,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Bot, Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X, ShieldCheck, Database, Eraser, Trash2 } from 'lucide-react';
+import { Sparkles, AlertCircle, Layout, ChevronRight, ChevronLeft, X, ShieldCheck, Trash2 } from 'lucide-react';
+import { BlinkingRobot } from '../components/BlinkingRobot';
 import { ChatMessage, Document, NeuralBrain, UserProfile, SubscriptionPlan } from '../types';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
@@ -99,7 +100,10 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: isLoading ? 'auto' : 'smooth',
+      });
     }
   }, [messages, isLoading, currentValidation]);
 
@@ -251,17 +255,31 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
         focusedDocId || undefined
       );
 
+      let rafId: number | null = null;
+      const flushContent = () => {
+        rafId = null;
+        const snapshot = fullContent;
+        setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: snapshot } : m));
+      };
+
       for await (const chunk of stream) {
         if (chunk) {
           fullContent += chunk;
-          setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: fullContent } : m));
+          if (typeof window !== 'undefined' && rafId === null) {
+            rafId = window.requestAnimationFrame(flushContent);
+          }
         }
       }
-      
+
+      if (rafId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(rafId);
+      }
+      setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: fullContent } : m));
+
       if (activeTool === 'validate') {
         setCurrentValidation(validateLessonStructure(fullContent));
       }
-      await adaptiveService.captureGeneration(user.id, 'chat', fullContent, { query: msgContent });
+      void adaptiveService.captureGeneration(user.id, 'chat', fullContent, { query: msgContent });
 
       logActivity({
         category: 'query_completion',
@@ -395,9 +413,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center min-h-[50vh] text-center space-y-8 animate-in fade-in duration-700">
                 <div className="relative">
-                  <div className="w-20 h-20 bg-indigo-600 text-white rounded-[24px] flex items-center justify-center shadow-2xl relative z-10">
-                    <Bot size={40} />
-                  </div>
+                  <BlinkingRobot size="lg" isThinking={isLoading} />
                   <div className="absolute inset-0 bg-indigo-600 rounded-[24px] blur-2xl opacity-20 -z-10 animate-pulse" />
                 </div>
                 <div className="space-y-2">
@@ -414,15 +430,16 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
               <div className="space-y-2 pb-20">
                 {messages
                   .filter(m => m.role !== 'system')
-                  .map((m, idx) => (
+                  .map((m, idx, arr) => (
                   <MessageItem 
                     key={m.id} 
                     id={m.id} 
                     role={m.role as 'user' | 'assistant'} 
                     content={m.content} 
                     timestamp={m.timestamp} 
-                    isLatest={idx === messages.length - 1}
-                    enableTranslateExport={!isLoading || idx !== messages.length - 1}
+                    isLatest={idx === arr.length - 1}
+                    isStreaming={isLoading && idx === arr.length - 1}
+                    enableTranslateExport={!isLoading || idx !== arr.length - 1}
                     canExport={user.plan !== SubscriptionPlan.FREE || isAdminUser(user)}
                     userName={user.name}
                     translationQuota={translationQuota}

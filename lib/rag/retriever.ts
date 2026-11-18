@@ -30,9 +30,22 @@ export function calculateCosineSimilarity(vecA: number[], vecB: number[]): numbe
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+type RpcTier = 'hybrid_search_chunks_v6' | 'match_documents' | 'hybrid_search_chunks_v4';
+const failedRpcUntil = new Map<RpcTier, number>();
+const RPC_SKIP_TTL_MS = 5 * 60 * 1000;
+
+function isRpcSkipped(rpc: RpcTier): boolean {
+  const until = failedRpcUntil.get(rpc);
+  return typeof until === 'number' && Date.now() < until;
+}
+
+function markRpcFailed(rpc: RpcTier) {
+  failedRpcUntil.set(rpc, Date.now() + RPC_SKIP_TTL_MS);
+}
+
 /**
- * TIERED NEURAL RETRIEVER (v40.0 - ULTRA-RESILIENT PGVECTOR PIPELINE)
- * Optimized for Supabase Vector / pgvector search with automatic multi-tier fallback.
+ * TIERED NEURAL RETRIEVER (v40.1 - ULTRA-FAST PGVECTOR PIPELINE)
+ * Optimized for Supabase Vector / pgvector search with automatic RPC failure caching.
  */
 export async function retrieveRelevantChunks({
   query,
@@ -58,7 +71,7 @@ export async function retrieveRelevantChunks({
     }
 
     // TIER 1: SEMANTIC SEARCH (v6 Dialect Aware pgvector RPC)
-    if (queryEmbedding) {
+    if (queryEmbedding && !isRpcSkipped('hybrid_search_chunks_v6')) {
       try {
         const { data: hybridChunks, error: rpcError } = await supabase.rpc('hybrid_search_chunks_v6', {
           query_text: query,
@@ -68,7 +81,9 @@ export async function retrieveRelevantChunks({
           dialect_filter: dialect || null
         });
 
-        if (!rpcError && hybridChunks && hybridChunks.length > 0) {
+        if (rpcError) {
+          markRpcFailed('hybrid_search_chunks_v6');
+        } else if (hybridChunks && hybridChunks.length > 0) {
           return hybridChunks.map((m: any) => ({
             chunk_id: m.id,
             document_id: m.document_id,
@@ -79,12 +94,13 @@ export async function retrieveRelevantChunks({
           }));
         }
       } catch (e: any) {
+        markRpcFailed('hybrid_search_chunks_v6');
         console.warn('⚠️ [Retriever] hybrid_search_chunks_v6 RPC execution exception:', e.message);
       }
     }
 
     // TIER 2: STANDARD SUPABASE PGVECTOR MATCH_DOCUMENTS RPC
-    if (queryEmbedding) {
+    if (queryEmbedding && !isRpcSkipped('match_documents')) {
       try {
         const { data: matchDocs, error: matchError } = await supabase.rpc('match_documents', {
           query_embedding: queryEmbedding,
@@ -92,7 +108,9 @@ export async function retrieveRelevantChunks({
           filter: { document_id: documentIds[0] }
         });
 
-        if (!matchError && matchDocs && matchDocs.length > 0) {
+        if (matchError) {
+          markRpcFailed('match_documents');
+        } else if (matchDocs && matchDocs.length > 0) {
           return matchDocs.map((m: any) => ({
             chunk_id: m.id,
             document_id: m.document_id || documentIds[0],
@@ -103,12 +121,13 @@ export async function retrieveRelevantChunks({
           }));
         }
       } catch (e: any) {
+        markRpcFailed('match_documents');
         console.warn('⚠️ [Retriever] match_documents RPC unavailable:', e.message);
       }
     }
 
     // TIER 3: HYBRID_SEARCH_CHUNKS_V4 RPC
-    if (queryEmbedding) {
+    if (queryEmbedding && !isRpcSkipped('hybrid_search_chunks_v4')) {
       try {
         const { data: fallback, error: fallbackError } = await supabase.rpc('hybrid_search_chunks_v4', {
           query_text: query,
@@ -117,7 +136,9 @@ export async function retrieveRelevantChunks({
           filter_document_ids: documentIds
         });
 
-        if (!fallbackError && fallback && fallback.length > 0) {
+        if (fallbackError) {
+          markRpcFailed('hybrid_search_chunks_v4');
+        } else if (fallback && fallback.length > 0) {
           return fallback.map((m: any) => ({
             chunk_id: m.id,
             document_id: m.document_id,
@@ -128,6 +149,7 @@ export async function retrieveRelevantChunks({
           }));
         }
       } catch (e: any) {
+        markRpcFailed('hybrid_search_chunks_v4');
         console.warn('⚠️ [Retriever] hybrid_search_chunks_v4 RPC failed:', e.message);
       }
     }

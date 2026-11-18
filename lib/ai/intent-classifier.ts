@@ -1,5 +1,3 @@
-import { orchestrator } from "./model-orchestrator";
-import { extractJson } from "./utils";
 import { createHash } from "crypto";
 
 export type QueryIntent = 'lookup' | 'creation' | 'analysis' | 'comparison' | 'general';
@@ -30,30 +28,42 @@ function cacheSet(key: string, val: IntentResult) {
   intentCache.set(key, val);
 }
 
-function ruleBasedClassify(query: string): IntentResult | null {
+function ruleBasedClassify(query: string): IntentResult {
   const q = query.toLowerCase();
+  const wordCount = q.trim().split(/\s+/).length;
+  const isSTEM = /math|science|physics|chemistry|biology|algebra|calculus|geometry|equation|fraction/i.test(q);
 
-  if (/what is|define|explain|describe|tell me about|meaning of/i.test(q) && q.split(' ').length < 15) {
-    return { intent: 'lookup', complexity: 1, suggestedProvider: 'gemini-flash', isSTEM: false, requiresGrounding: true };
-  }
-  if (/slo\s+[a-z0-9]+/i.test(q)) {
-    return { intent: 'lookup', complexity: 1, suggestedProvider: 'gemini-flash', isSTEM: false, requiresGrounding: true };
+  if (/^(hi|hello|hey|assalam|salam|good\s+(morning|afternoon|evening)|thanks|thank you)\b/i.test(q.trim()) && wordCount <= 6) {
+    return { intent: 'general', complexity: 1, suggestedProvider: 'gemini-flash', isSTEM: false, requiresGrounding: false };
   }
 
-  if (/create|generate|write|build|develop|design.*lesson|lesson plan|rubric|quiz|assessment/i.test(q)) {
-    const isSTEM = /math|science|physics|chemistry|biology|algebra|calculus/i.test(q);
+  if (/what is|define|explain|describe|tell me about|meaning of|summarize|list/i.test(q) && wordCount < 18) {
+    return { intent: 'lookup', complexity: 1, suggestedProvider: 'gemini-flash', isSTEM, requiresGrounding: true };
+  }
+
+  if (/slo\s*[:\-]?\s*[a-z0-9]/i.test(q)) {
+    return { intent: 'lookup', complexity: 1, suggestedProvider: 'gemini-flash', isSTEM, requiresGrounding: true };
+  }
+
+  if (/create|generate|write|build|develop|design|lesson\s*plan|5e\s*lesson|rubric|quiz|assessment|worksheet/i.test(q)) {
     return { intent: 'creation', complexity: 3, suggestedProvider: 'gemini-pro', isSTEM, requiresGrounding: true };
   }
 
   if (/analyze|compare|contrast|evaluate|assess|audit|review/i.test(q)) {
-    return { intent: 'analysis', complexity: 2, suggestedProvider: 'sambanova', isSTEM: false, requiresGrounding: true };
+    return { intent: 'analysis', complexity: 2, suggestedProvider: 'gemini-flash', isSTEM, requiresGrounding: true };
   }
 
-  if (/vs|versus|difference between|compare/i.test(q)) {
-    return { intent: 'comparison', complexity: 2, suggestedProvider: 'gemini-flash', isSTEM: false, requiresGrounding: false };
+  if (/vs|versus|difference between/i.test(q)) {
+    return { intent: 'comparison', complexity: 2, suggestedProvider: 'gemini-flash', isSTEM, requiresGrounding: false };
   }
 
-  return null;
+  return {
+    intent: 'general',
+    complexity: wordCount > 25 ? 2 : 1,
+    suggestedProvider: 'gemini-flash',
+    isSTEM,
+    requiresGrounding: true
+  };
 }
 
 export async function classifyIntent(query: string): Promise<IntentResult> {
@@ -64,40 +74,6 @@ export async function classifyIntent(query: string): Promise<IntentResult> {
   if (cached) return cached;
 
   const ruled = ruleBasedClassify(query);
-  if (ruled) {
-    cacheSet(key, ruled);
-    return ruled;
-  }
-
-  try {
-    const prompt = `Classify the pedagogical intent of this user query: "${query}"
-    
-Return ONLY a JSON object with this schema:
-{
-  "intent": "lookup" | "creation" | "analysis" | "comparison" | "general",
-  "complexity": 1 | 2 | 3,
-  "suggestedProvider": "string",
-  "isSTEM": boolean,
-  "requiresGrounding": boolean
-}`;
-
-    const result = await orchestrator.executeTask(prompt, 'lookup');
-    const parsed = extractJson(result.text || '{}');
-    if (parsed?.intent) {
-      cacheSet(key, parsed);
-      return parsed;
-    }
-  } catch (e) {
-    console.warn('[IntentClassifier] AI call failed, using default.');
-  }
-
-  const fallback: IntentResult = {
-    intent: 'general',
-    complexity: 1,
-    suggestedProvider: 'gemini-flash',
-    isSTEM: false,
-    requiresGrounding: true
-  };
-  cacheSet(key, fallback);
-  return fallback;
+  cacheSet(key, ruled);
+  return ruled;
 }

@@ -30,28 +30,15 @@ export class SynthesizerCore {
   private initializeProviders(): Map<string, AIProvider> {
     const providers = new Map<string, AIProvider>();
 
-    // TIER 1: HIGH-CAPACITY REASONERS (World-Class Pedagogy)
+    // TIER 1: HIGH-CAPACITY FAST STREAMERS (Low Thinking for Fast TTFT)
     providers.set('gemini-pro', {
       id: 'gemini-pro',
-      name: 'Gemini 4 Argon (Pedagogy)',
+      name: 'Gemini 4 Argon (Fast Pedagogy)',
       endpoint: 'native',
       model: 'gemini-4-argon',
       apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 32768,
-      rpm: 1000,
-      rpd: 50000,
-      tier: 1,
-      enabled: true
-    });
-
-    providers.set('gemini-thinking', {
-      id: 'gemini-thinking',
-      name: 'Thinking Grid (Gemini 4 Argon)',
-      endpoint: 'native',
-      model: 'gemini-4-argon',
-      apiKeyEnv: 'GEMINI_API_KEY',
-      maxTokens: 65536,
-      thinkingLevel: ThinkingLevel.HIGH,
+      maxTokens: 16384,
+      thinkingLevel: ThinkingLevel.LOW,
       rpm: 1000,
       rpd: 50000,
       tier: 1,
@@ -84,7 +71,7 @@ export class SynthesizerCore {
       enabled: !!process.env.GROQ_API_KEY
     });
 
-    // TIER 2: HIGH-SPEED PRODUCTION ENGINES
+    // TIER 2: ULTRA-LOW-LATENCY PRODUCTION ENGINES (<400ms TTFT)
     providers.set('gemini-flash', {
       id: 'gemini-flash',
       name: 'Gemini 3.8 Flash',
@@ -92,6 +79,7 @@ export class SynthesizerCore {
       model: 'gemini-3.8-flash',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 16384,
+      thinkingLevel: ThinkingLevel.MINIMAL,
       rpm: 1000,
       rpd: 50000,
       tier: 2,
@@ -145,6 +133,7 @@ export class SynthesizerCore {
       model: 'gemini-3.1-flash-lite',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 8192,
+      thinkingLevel: ThinkingLevel.MINIMAL,
       rpm: 1000,
       rpd: 50000,
       tier: 3,
@@ -158,6 +147,20 @@ export class SynthesizerCore {
       model: 'gemini-2.5-flash',
       apiKeyEnv: 'GEMINI_API_KEY',
       maxTokens: 8192,
+      rpm: 1000,
+      rpd: 50000,
+      tier: 3,
+      enabled: true
+    });
+
+    providers.set('gemini-thinking', {
+      id: 'gemini-thinking',
+      name: 'Thinking Grid (Gemini 4 Argon)',
+      endpoint: 'native',
+      model: 'gemini-4-argon',
+      apiKeyEnv: 'GEMINI_API_KEY',
+      maxTokens: 32768,
+      thinkingLevel: ThinkingLevel.LOW,
       rpm: 1000,
       rpd: 50000,
       tier: 3,
@@ -283,11 +286,42 @@ export class SynthesizerCore {
           const res = await fetch(provider.endpoint, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ model: provider.model, messages, temperature: 0.1, stream: false })
+            body: JSON.stringify({ model: provider.model, messages, temperature: 0.1, stream: true })
           });
           if (!res.ok) throw new Error(`Node_Error_${res.status}`);
-          const data = await res.json();
-          yield data.choices[0].message.content;
+
+          if (res.body) {
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let sseBuf = '';
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                sseBuf += decoder.decode(value, { stream: true });
+                const lines = sseBuf.split('\n');
+                sseBuf = lines.pop() ?? '';
+                for (const line of lines) {
+                  const trimmed = line.trim();
+                  if (!trimmed || trimmed === 'data: [DONE]' || !trimmed.startsWith('data: ')) continue;
+                  try {
+                    const parsed = JSON.parse(trimmed.slice(6));
+                    const delta = parsed?.choices?.[0]?.delta?.content ?? parsed?.choices?.[0]?.message?.content;
+                    if (delta) yield String(delta);
+                  } catch {
+                    // ignore partial SSE JSON
+                  }
+                }
+              }
+            } finally {
+              reader.releaseLock();
+            }
+          } else {
+            const data = await res.json();
+            if (data?.choices?.[0]?.message?.content) {
+              yield data.choices[0].message.content;
+            }
+          }
           return;
         }
       } catch (e: any) {

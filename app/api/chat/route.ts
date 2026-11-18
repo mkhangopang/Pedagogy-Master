@@ -14,6 +14,23 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
 
+const BRAIN_CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedBrainPrompt: { value: string; expiresAt: number } | null = null;
+
+async function getCachedBrainPrompt(supabase: any): Promise<string> {
+  if (cachedBrainPrompt && Date.now() < cachedBrainPrompt.expiresAt) {
+    return cachedBrainPrompt.value;
+  }
+  const { data: brain } = await supabase
+    .from('neural_brain')
+    .select('master_prompt')
+    .eq('is_active', true)
+    .maybeSingle();
+  const prompt = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
+  cachedBrainPrompt = { value: prompt, expiresAt: Date.now() + BRAIN_CACHE_TTL_MS };
+  return prompt;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
@@ -23,19 +40,25 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = getSupabaseServerClient(token);
-    const { data: { user } } = await supabase.auth.getUser(token);
+    const [{ data: { user } }, body] = await Promise.all([
+      supabase.auth.getUser(token),
+      req.json(),
+    ]);
     if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
 
-    const body = await req.json();
     const { message, history = [], priorityDocumentId, adaptiveContext } = body;
     if (!message) return NextResponse.json({ error: 'Message required' }, { status: 400 });
 
-    const quota = await checkAndConsumeAiQuota({
-      supabase,
-      userId: user.id,
-      authEmail: user.email,
-      routeName: 'chat_tutor',
-    });
+    const [quota, profileRes, activeMasterPrompt] = await Promise.all([
+      checkAndConsumeAiQuota({
+        supabase,
+        userId: user.id,
+        authEmail: user.email,
+        routeName: 'chat_tutor',
+      }),
+      supabase.from('profiles').select('workspace_name').eq('id', user.id).maybeSingle(),
+      getCachedBrainPrompt(supabase),
+    ]);
 
     if (!quota.allowed) {
       return NextResponse.json(
@@ -48,21 +71,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('workspace_name')
-      .eq('id', user.id)
-      .single();
-
-    const brandName = profile?.workspace_name || 'Pedagogy Master AI';
-
-    const { data: brain } = await supabase
-      .from('neural_brain')
-      .select('master_prompt')
-      .eq('is_active', true)
-      .maybeSingle();
-
-    const activeMasterPrompt = brain?.master_prompt || DEFAULT_MASTER_PROMPT;
+    const brandName = profileRes?.data?.workspace_name || 'Pedagogy Master AI';
 
     const routeInfo = detectToolIntent(message);
     const expertTitle = getToolDisplayName(routeInfo.tool);

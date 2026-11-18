@@ -3,12 +3,10 @@
 import React, { useState, useMemo } from 'react';
 import {
   User,
-  Bot,
   Copy,
   Check,
   Sparkles,
   ExternalLink,
-  AlertTriangle,
   BookOpen,
   Search,
   Languages,
@@ -18,6 +16,7 @@ import {
   Lock,
   X,
 } from 'lucide-react';
+import { BlinkingRobot } from '../BlinkingRobot';
 import { renderSTEM } from '../../lib/math-renderer';
 import { markdownToHtml } from '../../lib/markdown-renderer';
 import { supabase } from '../../lib/supabase';
@@ -39,6 +38,7 @@ interface MessageItemProps {
   timestamp: string;
   id: string;
   isLatest?: boolean;
+  isStreaming?: boolean;
   metadata?: any;
   enableTranslateExport?: boolean;
   canExport?: boolean;
@@ -48,10 +48,11 @@ interface MessageItemProps {
   onUpgradeClick?: () => void;
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({
+const MessageItemComponent: React.FC<MessageItemProps> = ({
   role,
   content,
   timestamp,
+  isStreaming = false,
   metadata,
   enableTranslateExport = false,
   canExport = false,
@@ -222,17 +223,17 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       <div className={`flex flex-col gap-4 mx-auto max-w-full px-4 md:px-8`}>
         {/* Header: Persona Label */}
         <div className={`flex items-center gap-3 flex-wrap ${isAi ? 'flex-row' : 'flex-row-reverse'}`}>
-          <div
-            className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xl border-2 transition-all ${
-              isAi
-                ? isGlitch
-                  ? 'bg-rose-600 border-rose-400 text-white'
-                  : 'bg-indigo-600 border-indigo-400 text-white'
-                : 'bg-indigo-950 border-indigo-700 text-white'
-            }`}
-          >
-            {isAi ? isGlitch ? <AlertTriangle size={16} /> : <Bot size={16} /> : <User size={16} />}
-          </div>
+          {isAi ? (
+            <BlinkingRobot
+              size="sm"
+              isThinking={Boolean(isStreaming)}
+              variant={isGlitch ? 'error' : 'default'}
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-xl border-2 bg-indigo-950 border-indigo-700 text-white">
+              <User size={16} />
+            </div>
+          )}
           <span
             className={`text-[10px] font-black uppercase tracking-[0.2em] ${
               isGlitch ? 'text-rose-600' : 'text-slate-600 dark:text-slate-300'
@@ -380,11 +381,22 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             }`}
           >
             {isAi ? (
-              <div
-                dir={isRtl ? 'rtl' : 'ltr'}
-                className={`prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] break-words ${rtlFontClass}`}
-                dangerouslySetInnerHTML={{ __html: renderedHtml }}
-              />
+              content ? (
+                <div
+                  dir={isRtl ? 'rtl' : 'ltr'}
+                  className={`prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] break-words ${rtlFontClass}`}
+                  dangerouslySetInnerHTML={{ __html: renderedHtml }}
+                />
+              ) : (
+                <div className="flex items-center gap-2.5 py-2 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                  <span className="inline-flex gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce [animation-delay:-0.3s]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce [animation-delay:-0.15s]" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-bounce" />
+                  </span>
+                  <span className="uppercase tracking-widest text-[10px]">Synthesizing fast response...</span>
+                </div>
+              )
             ) : (
               <div className="text-sm md:text-[16px] font-black leading-relaxed text-white tracking-tight selection:bg-indigo-400">
                 {content}
@@ -457,4 +469,6 @@ export const MessageItem: React.FC<MessageItemProps> = ({
     </div>
   );
 };
+
+export const MessageItem = React.memo(MessageItemComponent);
 

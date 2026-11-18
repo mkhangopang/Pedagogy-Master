@@ -5,9 +5,10 @@ import {
   Sparkles, ClipboardCheck, BookOpen, Layers, Loader2, 
   FileText, Copy, ArrowRight, PenTool, Compass, SearchCode, 
   Zap, ChevronLeft, Library, Globe, Check, X,
-  FileEdit, BookMarked, ArrowRightCircle, ShieldCheck, Printer,
+  BookMarked, ArrowRightCircle, ShieldCheck, Printer,
   BrainCircuit, Languages, FileDown, Download, Lock, AlertCircle
 } from 'lucide-react';
+import { BlinkingRobot } from '../components/BlinkingRobot';
 import { geminiService } from '../services/geminiService';
 import { adaptiveService } from '../services/adaptiveService';
 import { NeuralBrain, Document, UserProfile, SubscriptionPlan } from '../types';
@@ -106,7 +107,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: isGenerating ? 'auto' : 'smooth',
+      });
     }
   }, [messages, isGenerating]);
 
@@ -186,14 +190,30 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       );
 
       let fullContent = '';
+      let rafId: number | null = null;
+      const flushArtifact = () => {
+        rafId = null;
+        const snapshot = fullContent;
+        setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: snapshot } : m));
+        setCanvasContent(snapshot);
+      };
+
       for await (const chunk of stream) {
         if (chunk) {
           fullContent += chunk;
-          setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
-          setCanvasContent(fullContent);
+          if (typeof window !== 'undefined' && rafId === null) {
+            rafId = window.requestAnimationFrame(flushArtifact);
+          }
         }
       }
-      await adaptiveService.captureGeneration(
+
+      if (rafId !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(rafId);
+      }
+      setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
+      setCanvasContent(fullContent);
+
+      void adaptiveService.captureGeneration(
         user.id, effectiveTool, fullContent,
         { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled }
       );
@@ -570,8 +590,17 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
              </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar py-6 space-y-2">
-            {messages.map((m) => (<MessageItem key={m.id} id={m.id} role={m.role} content={m.content} timestamp={m.timestamp} metadata={m.metadata} />))}
-            {isGenerating && <div className="flex justify-center py-6"><Loader2 size={20} className="animate-spin text-indigo-500" /></div>}
+            {messages.map((m, idx) => (
+              <MessageItem
+                key={m.id}
+                id={m.id}
+                role={m.role}
+                content={m.content}
+                timestamp={m.timestamp}
+                metadata={m.metadata}
+                isStreaming={isGenerating && idx === messages.length - 1}
+              />
+            ))}
           </div>
           <div className="p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d] space-y-2">
             {!canQuery && (
@@ -593,7 +622,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
         <div className={`flex-1 min-w-0 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
            <div className="px-4 md:px-8 py-3.5 border-b border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-3 shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
               <div className="flex items-center gap-3 min-w-0">
-                <FileEdit size={18} className="text-indigo-600 shrink-0" />
+                <BlinkingRobot size="sm" isThinking={isGenerating} />
                 <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white whitespace-nowrap">Neural Artifact Node</span>
               </div>
 
@@ -826,9 +855,17 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                       />
                     )}
                   </>
+                ) : isGenerating ? (
+                  <div className="flex flex-col items-center justify-center h-full py-32 text-center no-print space-y-5 animate-in fade-in">
+                    <BlinkingRobot size="lg" isThinking />
+                    <div className="space-y-1.5">
+                      <h2 className="text-sm font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Synthesizing Artifact</h2>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Streaming high-speed pedagogical structure...</p>
+                    </div>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-32 text-center no-print">
-                    <div className="w-20 h-20 bg-slate-100 dark:bg-white/5 rounded-[2rem] flex items-center justify-center mb-6 opacity-50"><FileText size={44} className="text-slate-400" /></div>
+                    <div className="mb-6"><BlinkingRobot size="lg" /></div>
                     <h2 className="text-base font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Ready to Synthesize</h2>
                     <p className="mt-3 max-w-md text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                       Enter a prompt on the left. Use the language bar above to switch output between <span className="font-semibold text-slate-700 dark:text-slate-200">English</span>, <span className="font-semibold text-slate-700 dark:text-slate-200">اردو (Urdu)</span>, and <span className="font-semibold text-slate-700 dark:text-slate-200">سنڌي (Sindhi)</span>.

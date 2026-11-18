@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@400;500;600;700&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -78,6 +76,53 @@
 
 .animate-spin-slow {
   animation: spin 20s linear infinite;
+}
+
+@keyframes pm-robot-blink {
+  0%, 44%, 48%, 90%, 94%, 100% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+  46%, 92% {
+    transform: scaleY(0.12);
+    opacity: 0.75;
+  }
+}
+
+@keyframes pm-robot-blink-fast {
+  0%, 35%, 45%, 80%, 90%, 100% {
+    transform: scaleY(1) translateX(0);
+    opacity: 1;
+  }
+  40% {
+    transform: scaleY(0.14) translateX(1px);
+    opacity: 0.8;
+  }
+  85% {
+    transform: scaleY(0.14) translateX(-1px);
+    opacity: 0.8;
+  }
+}
+
+@keyframes pm-robot-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+.animate-robot-blink {
+  animation: pm-robot-blink 4.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-robot-blink-fast {
+  animation: pm-robot-blink-fast 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.animate-robot-float {
+  animation: pm-robot-float 1.6s ease-in-out infinite;
 }
 
 .reveal-node {

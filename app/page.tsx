@@ -7,10 +7,11 @@ import Policy from '../views/Policy';
 import { ProviderStatusBar } from '../components/ProviderStatusBar';
 import { UserRole, SubscriptionPlan, UserProfile, NeuralBrain, Document } from '../types';
 import { DEFAULT_MASTER_PROMPT, DEFAULT_BLOOM_RULES } from '../constants';
-import { Loader2, Menu, Cpu, MessageSquarePlus, Share2, Check } from 'lucide-react';
+import { Loader2, Menu, MessageSquarePlus, Share2, Check } from 'lucide-react';
 import { PilotFeedbackDrawer } from '../components/PilotFeedbackDrawer';
 import { trackProductEvent } from '../lib/analytics';
 import { normalizeAuthEntryMode } from '../lib/auth/auth-mode';
+import { BlinkingRobot } from '../components/BlinkingRobot';
 
 // Code-split heavy views to keep the landing page bundle minimal
 const Sidebar = lazy(() => import('../components/Sidebar'));
@@ -243,10 +244,24 @@ export default function App() {
   };
 
   const fetchAppData = useCallback(async (userId: string, email?: string, providedSession?: any) => {
+    // 0. Instant sessionStorage hydration so reload renders profile/quota at 0ms
+    if (typeof window !== 'undefined') {
+      try {
+        const cachedRaw = sessionStorage.getItem(`pm_profile_v1_${userId}`);
+        if (cachedRaw) {
+          const cachedProfile = JSON.parse(cachedRaw) as UserProfile;
+          setUserProfile(prev => prev || cachedProfile);
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+
     getSupabaseHealth().then(setHealthStatus);
-    
-    // 1. Fetch Brain / System Prompt from DB
+
     const currentSession = providedSession || (await supabase.auth.getSession()).data.session;
+
+    // 1. Fetch Brain, Profile, Quota, and Documents in parallel
     if (currentSession) {
       fetch('/api/brain/get', {
         headers: { 'Authorization': `Bearer ${currentSession.access_token}` }
@@ -267,27 +282,22 @@ export default function App() {
       .catch(e => console.error("Neural Brain Fetch Error:", e));
     }
 
-    // 2. Fetch Profile + True Daily AI Quota
-    getOrCreateProfile(userId, email).then(async (profile) => {
+    const quotaPromise = currentSession?.access_token
+      ? fetch('/api/quota', {
+          headers: { Authorization: `Bearer ${currentSession.access_token}` },
+        })
+          .then((res) => (res.ok ? res.json() : null))
+          .catch(() => null)
+      : Promise.resolve(null);
+
+    Promise.all([getOrCreateProfile(userId, email), quotaPromise]).then(([profile, qData]) => {
       if (profile) {
         let dailyUsed = profile.queries_used || 0;
         let dailyLimit = profile.queries_limit || 25;
 
-        if (currentSession?.access_token) {
-          try {
-            const qRes = await fetch('/api/quota', {
-              headers: { Authorization: `Bearer ${currentSession.access_token}` },
-            });
-            if (qRes.ok) {
-              const qData = await qRes.json();
-              if (qData?.quota) {
-                dailyUsed = qData.quota.isDeveloper ? 0 : qData.quota.used;
-                dailyLimit = qData.quota.isDeveloper ? 999999 : (qData.quota.limit || 25);
-              }
-            }
-          } catch {
-            // Keep profile defaults cleanly
-          }
+        if (qData?.quota) {
+          dailyUsed = qData.quota.isDeveloper ? 0 : qData.quota.used;
+          dailyLimit = qData.quota.isDeveloper ? 999999 : (qData.quota.limit || 25);
         }
 
         const mappedProfile: UserProfile = {
@@ -299,14 +309,20 @@ export default function App() {
           onboarding_completed: profile.onboarding_completed
         };
         setUserProfile(mappedProfile);
-        
+        if (typeof window !== 'undefined') {
+          try {
+            sessionStorage.setItem(`pm_profile_v1_${userId}`, JSON.stringify(mappedProfile));
+          } catch {
+            // ignore quota errors
+          }
+        }
+
         if (!profile.onboarding_completed) {
           setCurrentView('onboarding');
         }
       }
     });
 
-    // 3. Fetch Documents
     supabase.from('documents').select('*').eq('user_id', userId).order('created_at', { ascending: false })
       .then(({ data }) => {
         if (data) {
@@ -384,11 +400,23 @@ export default function App() {
 
     if (!initStarted.current) {
       initStarted.current = true;
-      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-        (window as any).requestIdleCallback(() => initializeAuth(), { timeout: 800 });
-      } else {
-        setTimeout(initializeAuth, 50);
-      }
+      // Execute immediately without idle callback throttling for instant initial load
+      initializeAuth().then(() => {
+        // Prefetch core workspace views after initial session check for 0ms tab switches
+        if (typeof window !== 'undefined') {
+          const prefetchCore = () => {
+            void import('../views/Dashboard');
+            void import('../views/Tools');
+            void import('../views/Chat');
+            void import('../views/Documents');
+          };
+          if ('requestIdleCallback' in window) {
+            (window as any).requestIdleCallback(prefetchCore, { timeout: 600 });
+          } else {
+            setTimeout(prefetchCore, 150);
+          }
+        }
+      });
     }
 
     return () => {
@@ -401,7 +429,7 @@ export default function App() {
   if (isAuthResolving && isProtectedView && !bypassHandshake) return (
     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
       <div className="bg-white dark:bg-slate-900 p-12 rounded-[4rem] shadow-2xl border dark:border-white/5 flex flex-col items-center">
-        <Cpu className="text-indigo-600 w-16 h-16 animate-pulse mb-6" />
+        <BlinkingRobot size="lg" isThinking className="mb-6" />
         <div className="flex gap-2">
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce [animation-delay:-0.15s]" />

@@ -141,8 +141,10 @@ export const geminiService = {
       return;
     }
 
-    const adaptiveContext = user ? await adaptiveService.buildFullContext(user.id, 'chat') : "";
-    const token = await this.getAuthToken();
+    const [adaptiveContext, token] = await Promise.all([
+      user ? adaptiveService.buildFullContext(user.id, 'chat').catch(() => "") : Promise.resolve(""),
+      this.getAuthToken(),
+    ]);
 
     try {
       const response = await fetch('/api/chat', {
@@ -212,12 +214,13 @@ export const geminiService = {
     // FIX BUG 4: Build adaptiveContext here (persona, modes, workflow context) so it
     // stays in the system prompt layer — NOT injected into userInput which
     // pollutes the RAG embedding query.
-    const baseAdaptiveContext = user ? await adaptiveService.buildFullContext(user.id, toolType) : "";
+    const [baseAdaptiveContext, token] = await Promise.all([
+      user ? adaptiveService.buildFullContext(user.id, toolType).catch(() => "") : Promise.resolve(""),
+      this.getAuthToken(),
+    ]);
     const adaptiveContext = adaptiveContextOverride
       ? `${baseAdaptiveContext}\n${adaptiveContextOverride}`
       : baseAdaptiveContext;
-
-    const token = await this.getAuthToken();
 
     try {
       const response = await fetch('/api/ai', {

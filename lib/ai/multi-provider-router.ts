@@ -85,29 +85,48 @@ async function buildGroundedVaultContext({
   let sourceDocName = '';
   let activeDoc: any = null;
 
-  if (priorityDocumentId) {
-    const { data: doc } = await supabase
-      .from('documents')
-      .select('id, name, authority, subject, grade_level, master_md_dialect, extracted_text, generated_json, document_summary')
-      .eq('id', priorityDocumentId)
-      .single();
+  // Run document metadata lookup, SLO database lookup, and semantic retrieval concurrently
+  const docPromise = priorityDocumentId
+    ? supabase
+        .from('documents')
+        .select('id, name, authority, subject, grade_level, master_md_dialect, extracted_text, generated_json, document_summary')
+        .eq('id', priorityDocumentId)
+        .single()
+    : Promise.resolve({ data: null });
 
-    if (doc) {
-      activeDoc = doc;
-      sourceDocName = doc.name;
-
-      // 1. Authoritative SLO Database Lookup
-      const targetGrade = extractTargetGrade(userPrompt);
-      const requestedCount = extractRequestedCount(userPrompt);
-      const promptCodes = extractSLOCodes(userPrompt);
-
-      const { data: slos } = await supabase
+  const sloPromise = priorityDocumentId
+    ? supabase
         .from('slo_database')
         .select('*')
         .eq('document_id', priorityDocumentId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: true })
+    : Promise.resolve({ data: null });
 
-      if (slos && slos.length > 0) {
+  const chunkPromise = effectiveDocumentIds.length > 0
+    ? retrieveRelevantChunks({
+        query: userPrompt,
+        documentIds: effectiveDocumentIds,
+        supabase,
+        matchCount: 12,
+      })
+    : Promise.resolve([]);
+
+  const [{ data: doc }, { data: slos }, initialChunks] = await Promise.all([
+    docPromise,
+    sloPromise,
+    chunkPromise,
+  ]);
+
+  if (priorityDocumentId && doc) {
+    activeDoc = doc;
+    sourceDocName = doc.name;
+
+    // 1. Authoritative SLO Database Lookup
+    const targetGrade = extractTargetGrade(userPrompt);
+    const requestedCount = extractRequestedCount(userPrompt);
+    const promptCodes = extractSLOCodes(userPrompt);
+
+    if (slos && slos.length > 0) {
         let selectedSlos: any[] = [];
 
         // A. Direct code matches in prompt
@@ -236,18 +255,10 @@ async function buildGroundedVaultContext({
           }
         })();
       }
-    }
   }
 
-  // 4. Semantic Retrieval Chunks
-  const augmentedQuery = sourceDocName ? `${userPrompt} ${sourceDocName}` : userPrompt;
-  let chunks = await retrieveRelevantChunks({
-    query: augmentedQuery,
-    documentIds: effectiveDocumentIds,
-    supabase,
-    matchCount: 15,
-    dialect: activeDoc?.master_md_dialect
-  });
+  // 4. Semantic Retrieval Chunks (already fetched in parallel)
+  let chunks = initialChunks;
 
   // Secondary chunk fallback
   if (chunks.length === 0 && priorityDocumentId) {
