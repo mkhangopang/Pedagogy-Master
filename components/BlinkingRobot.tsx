@@ -10,7 +10,8 @@ interface BlinkingRobotProps {
 }
 
 /**
- * Creative Minimalist Output Robot with naturally blinking luminous eyes.
+ * Creative Minimalist Output Robot with naturally blinking luminous eyes
+ * and a refined crescent smile inside a dark-glass OLED visor.
  * Constructed purely with crisp geometric CSS layers (zero custom SVG icons).
  */
 export const BlinkingRobot: React.FC<BlinkingRobotProps> = ({
@@ -23,31 +24,37 @@ export const BlinkingRobot: React.FC<BlinkingRobotProps> = ({
     size === 'lg'
       ? {
           shell: 'w-20 h-20 rounded-[26px]',
-          visor: 'w-14 h-7 rounded-2xl',
-          eye: 'w-2.5 h-3.5 rounded-full',
-          eyeGap: 'gap-3',
+          visor: 'w-14 h-9 rounded-2xl',
+          eye: 'w-2.5 h-3 rounded-full',
+          eyeGap: 'gap-3.5',
+          smile: 'w-6 h-2.5 mt-1 border-b-[2.5px]',
+          frown: 'w-5 h-2 mt-1.5 border-t-[2.5px]',
           antennaStem: 'h-2.5 w-0.5 -top-2.5',
           antennaTip: 'w-2.5 h-2.5 -top-4',
-          mouth: 'w-5 h-0.5 mt-1.5',
+          chinAccent: 'w-4 h-[2px] mt-1.5',
         }
       : size === 'md'
         ? {
             shell: 'w-12 h-12 rounded-2xl',
-            visor: 'w-9 h-4.5 rounded-xl',
-            eye: 'w-1.5 h-2.5 rounded-full',
+            visor: 'w-9 h-[22px] rounded-xl',
+            eye: 'w-1.5 h-2 rounded-full',
             eyeGap: 'gap-2',
+            smile: 'w-3.5 h-1.5 mt-0.5 border-b-2',
+            frown: 'w-3 h-1.5 mt-1 border-t-2',
             antennaStem: 'h-2 w-0.5 -top-2',
             antennaTip: 'w-2 h-2 -top-3',
-            mouth: 'w-3.5 h-0.5 mt-1',
+            chinAccent: 'w-2.5 h-[1.5px] mt-1',
           }
         : {
             shell: 'w-8 h-8 rounded-xl',
-            visor: 'w-6 h-3 rounded-lg',
-            eye: 'w-1 h-1.5 rounded-full',
+            visor: 'w-6 h-[15px] rounded-lg',
+            eye: 'w-[3.5px] h-[5px] rounded-full',
             eyeGap: 'gap-1.5',
+            smile: 'w-2.5 h-[4px] mt-[1.5px] border-b-[1.5px]',
+            frown: 'w-2 h-[3.5px] mt-[2px] border-t-[1.5px]',
             antennaStem: 'h-1.5 w-0.5 -top-1',
             antennaTip: 'w-1.5 h-1.5 -top-2',
-            mouth: 'w-2.5 h-[1.5px] mt-0.5',
+            chinAccent: '',
           };
 
   const isError = variant === 'error';
@@ -61,6 +68,12 @@ export const BlinkingRobot: React.FC<BlinkingRobotProps> = ({
     : isThinking
       ? 'bg-emerald-300 shadow-[0_0_10px_rgba(110,231,183,0.95)]'
       : 'bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,0.9)]';
+
+  const smileTone = isError
+    ? 'border-rose-200/90 [filter:drop-shadow(0_0_4px_rgba(254,205,211,0.65))]'
+    : isThinking
+      ? 'border-emerald-300 [filter:drop-shadow(0_0_5px_rgba(110,231,183,0.85))] animate-robot-smile'
+      : 'border-cyan-300 [filter:drop-shadow(0_0_5px_rgba(103,232,249,0.75))] animate-robot-smile';
 
   const tipTone = isError
     ? 'bg-rose-300'
@@ -87,32 +100,45 @@ export const BlinkingRobot: React.FC<BlinkingRobotProps> = ({
       <div
         className={`relative flex flex-col items-center justify-center border shadow-lg transition-all duration-300 ${dims.shell} ${shellTone}`}
       >
-        {/* Dark-glass visor */}
+        {/* Dark-glass OLED visor with blinking eyes & curved smile */}
         <div
-          className={`flex items-center justify-center bg-slate-950/90 border border-white/10 shadow-inner ${dims.visor} ${dims.eyeGap}`}
+          className={`flex flex-col items-center justify-center bg-slate-950/95 border border-white/10 shadow-inner ${dims.visor}`}
         >
-          {/* Left Blinking Eye */}
-          <span
-            className={`inline-block origin-center ${dims.eye} ${eyeTone} ${
-              isThinking ? 'animate-robot-blink-fast' : 'animate-robot-blink'
-            }`}
-          />
-          {/* Right Blinking Eye */}
-          <span
-            className={`inline-block origin-center ${dims.eye} ${eyeTone} ${
-              isThinking ? 'animate-robot-blink-fast' : 'animate-robot-blink'
-            }`}
-          />
+          <div className={`flex items-center justify-center ${dims.eyeGap}`}>
+            {/* Left Blinking Eye */}
+            <span
+              className={`inline-block origin-center ${dims.eye} ${eyeTone} ${
+                isThinking ? 'animate-robot-blink-fast' : 'animate-robot-blink'
+              }`}
+            />
+            {/* Right Blinking Eye */}
+            <span
+              className={`inline-block origin-center ${dims.eye} ${eyeTone} ${
+                isThinking ? 'animate-robot-blink-fast' : 'animate-robot-blink'
+              }`}
+            />
+          </div>
+
+          {/* Elegant curved crescent smile (or subtle empathetic arc on error) */}
+          {isError ? (
+            <span
+              className={`inline-block origin-center rounded-t-full border-x border-x-transparent transition-transform duration-300 ${dims.frown} ${smileTone}`}
+            />
+          ) : (
+            <span
+              className={`inline-block origin-center rounded-b-full border-x border-x-transparent transition-transform duration-300 ${dims.smile} ${smileTone}`}
+            />
+          )}
         </div>
 
-        {/* Minimalist calm indicator bar */}
-        <span
-          className={`rounded-full transition-all ${dims.mouth} ${
-            isThinking
-              ? 'bg-emerald-300/80 animate-pulse'
-              : 'bg-white/35'
-          }`}
-        />
+        {/* Subtle anodized chin highlight on medium/large variants */}
+        {dims.chinAccent && (
+          <span
+            className={`rounded-full transition-opacity duration-300 ${dims.chinAccent} ${
+              isThinking ? 'bg-emerald-200/40' : 'bg-white/25'
+            }`}
+          />
+        )}
       </div>
     </div>
   );
