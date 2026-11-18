@@ -64,38 +64,40 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
-             <Building size={12} className="text-slate-400" />
-             <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">{brandName} Node</span>
+             <Building size={12} className="text-slate-500 dark:text-slate-400" />
+             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">{brandName} Node</span>
           </div>
-          <h1 className="text-3xl md:text-5xl font-bold text-slate-900 dark:text-white tracking-tighter uppercase">Workspace</h1>
-          <p className="text-slate-500 mt-1 font-semibold text-xs">Ident: <span className="text-indigo-600">{displayName}</span></p>
+          <h1 className="text-3xl md:text-5xl font-bold text-slate-900 dark:text-slate-100 tracking-tighter uppercase">Workspace</h1>
+          <p className="text-slate-600 dark:text-slate-300 mt-1 font-semibold text-xs">Ident: <span className="text-indigo-600 dark:text-indigo-400">{displayName}</span></p>
         </div>
         
         <div className="flex flex-wrap gap-2">
           <button 
             onClick={() => onViewChange('activity_log')}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-indigo-600 dark:text-indigo-400 hover:scale-[1.02] transition-all shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-indigo-700 dark:text-indigo-300 hover:scale-[1.02] transition-all shadow-sm"
           >
             <Activity size={14} />
-            <span className="text-[9px] font-bold uppercase tracking-widest">Activity Log</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Activity Log</span>
           </button>
 
           <button 
             onClick={() => setIsEditingBranding(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 hover:scale-[1.02] transition-all shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:scale-[1.02] transition-all shadow-sm"
           >
             <Settings size={14} />
-            <span className="text-[9px] font-bold uppercase tracking-widest">Settings</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">Settings</span>
           </button>
 
           <button 
             onClick={() => onCheckHealth()}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl border shadow-sm transition-all ${
-              isConnected ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-rose-50 border-rose-100 text-rose-700'
+              isConnected
+                ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300'
+                : 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300'
             }`}
           >
             {isConnected ? <Cloud size={14} /> : <CloudOff size={14} />}
-            <span className="text-[9px] font-bold uppercase tracking-widest">Grid Online</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">{isConnected ? 'Grid Online' : 'Grid Offline'}</span>
           </button>
         </div>
       </header>
@@ -130,19 +132,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
 
       {isEditingBranding && (
         <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-xl animate-in fade-in duration-300">
-           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-100 dark:border-white/5 shadow-2xl space-y-8">
+           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-[3rem] p-10 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-8">
               <div className="flex items-center justify-between">
-                <h3 className="text-2xl font-bold dark:text-white tracking-tight uppercase">Settings</h3>
-                <button onClick={() => setIsEditingBranding(false)} className="p-2 text-slate-400 hover:text-rose-500"><X size={24} /></button>
+                <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight uppercase">Settings</h3>
+                <button onClick={() => setIsEditingBranding(false)} className="p-2 text-slate-500 dark:text-slate-400 hover:text-rose-500"><X size={24} /></button>
               </div>
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Workspace Identity</label>
+                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest ml-1">Workspace Identity</label>
                   <input 
                     type="text" 
                     value={tempWorkspaceName} 
                     onChange={(e) => setTempWorkspaceName(e.target.value)}
-                    className="w-full px-5 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
+                    className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
                     placeholder="Workspace Name"
                   />
                 </div>
@@ -162,12 +164,19 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
   );
 };
 
+const STAT_COLOR_MAP: Record<string, string> = {
+  indigo: 'bg-indigo-50 dark:bg-indigo-950/50',
+  emerald: 'bg-emerald-50 dark:bg-emerald-950/50',
+  amber: 'bg-amber-50 dark:bg-amber-950/50',
+  purple: 'bg-purple-50 dark:bg-purple-950/50',
+};
+
 const StatCard = ({ title, value, icon, color }: any) => (
-  <div className="bg-white dark:bg-slate-900 p-5 md:p-8 rounded-[1.5rem] md:rounded-[2rem] border border-slate-100 dark:border-white/5 flex flex-col gap-4 hover:shadow-lg transition-all group">
-    <div className={`w-8 h-8 md:w-10 md:h-10 bg-${color}-50 dark:bg-${color}-950/20 rounded-lg md:rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>{icon}</div>
+  <div className="bg-white dark:bg-slate-900 p-5 md:p-8 rounded-[1.5rem] md:rounded-[2rem] border border-slate-200 dark:border-slate-800 flex flex-col gap-4 hover:shadow-lg transition-all group">
+    <div className={`w-8 h-8 md:w-10 md:h-10 ${STAT_COLOR_MAP[color] || 'bg-slate-100 dark:bg-slate-800'} rounded-lg md:rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform`}>{icon}</div>
     <div>
-      <div className="text-xl md:text-3xl font-bold text-slate-900 dark:text-white tracking-tighter">{value}</div>
-      <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest">{title}</p>
+      <div className="text-xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tighter">{value}</div>
+      <p className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest">{title}</p>
     </div>
   </div>
 );

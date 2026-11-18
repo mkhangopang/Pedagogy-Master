@@ -108,10 +108,10 @@ export const MicroFeedbackBar: React.FC<MicroFeedbackBarProps> = ({
   };
 
   return (
-    <div className="mt-4 pt-3 border-t border-slate-100 dark:border-white/5 no-print">
+    <div className="mt-4 pt-3 border-t border-slate-200 dark:border-slate-800 no-print">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+          <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300">
             Was this output helpful?
           </span>
           <button
@@ -121,8 +121,8 @@ export const MicroFeedbackBar: React.FC<MicroFeedbackBarProps> = ({
             aria-label="Helpful output"
             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all whitespace-nowrap shrink-0 ${
               rating === 'up'
-                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-700/50 text-emerald-700 dark:text-emerald-300'
-                : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
+                ? 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300'
+                : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <ThumbsUp size={12} />
@@ -135,8 +135,8 @@ export const MicroFeedbackBar: React.FC<MicroFeedbackBarProps> = ({
             aria-label="Output needs improvement"
             className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all whitespace-nowrap shrink-0 ${
               rating === 'down'
-                ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-700/50 text-rose-700 dark:text-rose-300'
-                : 'border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/5'
+                ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300'
+                : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <ThumbsDown size={12} />
@@ -145,14 +145,14 @@ export const MicroFeedbackBar: React.FC<MicroFeedbackBarProps> = ({
         </div>
 
         {submitted && !showDetails && (
-          <div className="flex items-center gap-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+          <div className="flex items-center gap-2 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
             <Check size={13} />
             <span>Thanks for the feedback</span>
             {rating === 'up' && (
               <button
                 type="button"
                 onClick={() => setShowDetails(true)}
-                className="text-slate-400 hover:text-indigo-600 underline text-[10px] font-medium ml-1 whitespace-nowrap"
+                className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 underline text-[10px] font-semibold ml-1 whitespace-nowrap"
               >
                 Add note
               </button>
@@ -164,7 +164,7 @@ export const MicroFeedbackBar: React.FC<MicroFeedbackBarProps> = ({
       {showDetails && (
         <form
           onSubmit={handleSubmitDetails}
-          className="mt-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 space-y-2.5"
+          className="mt-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-2.5"
         >
           <div className="flex flex-wrap gap-1.5">
             {FEEDBACK_TAGS.map((tag) => {
@@ -177,7 +177,7 @@ export const MicroFeedbackBar: React.FC<MicroFeedbackBarProps> = ({
                   className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap shrink-0 border ${
                     active
                       ? 'bg-indigo-600 border-indigo-600 text-white'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-indigo-400'
+                      : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-400'
                   }`}
                 >
                   {tag}
@@ -192,7 +192,7 @@ export const MicroFeedbackBar: React.FC<MicroFeedbackBarProps> = ({
               onChange={(e) => setComment(e.target.value)}
               maxLength={400}
               placeholder="Optional quick note (what should be improved?)"
-              className="flex-1 min-w-0 px-3 py-2 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 min-w-0 px-3 py-2 text-xs rounded-lg bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500"
             />
             <button
               type="submit"

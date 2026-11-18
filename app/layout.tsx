@@ -59,7 +59,7 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;600;700&family=Noto+Nastaliq+Urdu:wght@400;600;700&display=swap"
         />
       </head>
-      <body suppressHydrationWarning className="h-full antialiased bg-slate-50 dark:bg-slate-950 font-sans selection:bg-indigo-500 selection:text-white">
+      <body suppressHydrationWarning className="h-full antialiased bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 font-sans selection:bg-indigo-500 selection:text-white">
         <div id="root" className="min-h-full">
           {children}
         </div>

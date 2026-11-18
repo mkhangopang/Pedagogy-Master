@@ -107,28 +107,28 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
             {step === 1 && (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight uppercase">Identity Node</h3>
-                  <p className="text-slate-500 text-sm mt-1">How should the system address you?</p>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight uppercase">Identity Node</h3>
+                  <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">How should the system address you?</p>
                 </div>
 
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Full Name</label>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest ml-1">Full Name</label>
                     <input 
                       type="text" 
                       value={formData.name}
                       onChange={(e) => setFormData({...formData, name: e.target.value})}
-                      className="w-full px-5 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
                       placeholder="e.g. Dr. Sarah Jenkins"
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Institution</label>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest ml-1">Institution</label>
                     <input 
                       type="text" 
                       value={formData.school_name}
                       onChange={(e) => setFormData({...formData, school_name: e.target.value})}
-                      className="w-full px-5 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
                       placeholder="e.g. Westside High School"
                     />
                   </div>
@@ -146,7 +146,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                     type="button"
                     onClick={() => handleComplete(true)}
                     disabled={loading}
-                    className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-indigo-600 transition-colors"
+                    className="w-full py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                   >
                     Skip setup &amp; enter workspace
                   </button>
@@ -157,50 +157,50 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
             {step === 2 && (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight uppercase">Pedagogical Context</h3>
-                  <p className="text-slate-500 text-sm mt-1">Define your teaching environment.</p>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight uppercase">Pedagogical Context</h3>
+                  <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">Define your teaching environment.</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Grade Level</label>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest ml-1">Grade Level</label>
                     <select 
                       value={formData.grade_level}
                       onChange={(e) => setFormData({...formData, grade_level: e.target.value})}
-                      className="w-full px-5 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
                     >
-                      <option value="">Select...</option>
-                      <option value="k-2">Early Years / Grades K–2</option>
-                      <option value="3-5">Primary / Grades 3–5</option>
-                      <option value="6-8">Middle / Grades 6–8</option>
-                      <option value="09">Grade 9</option>
-                      <option value="10">Grade 10</option>
-                      <option value="11">Grade 11</option>
-                      <option value="12">Grade 12</option>
-                      <option value="higher-ed">College / University</option>
-                      <option value="all">All Grades / Curriculum Lead</option>
+                      <option value="" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Select...</option>
+                      <option value="k-2" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Early Years / Grades K–2</option>
+                      <option value="3-5" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Primary / Grades 3–5</option>
+                      <option value="6-8" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Middle / Grades 6–8</option>
+                      <option value="09" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Grade 9</option>
+                      <option value="10" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Grade 10</option>
+                      <option value="11" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Grade 11</option>
+                      <option value="12" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">Grade 12</option>
+                      <option value="higher-ed" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">College / University</option>
+                      <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">All Grades / Curriculum Lead</option>
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Subject</label>
+                    <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest ml-1">Subject</label>
                     <input 
                       type="text" 
                       value={formData.subject}
                       onChange={(e) => setFormData({...formData, subject: e.target.value})}
-                      className="w-full px-5 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
+                      className="w-full px-5 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
                       placeholder="e.g. Biology"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Primary Framework</label>
+                  <label className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest ml-1">Primary Framework</label>
                   <div className="grid grid-cols-2 gap-3">
                     {['5E Model', 'Bloom-Scaled', 'UbD', 'Direct Instruction'].map((f) => (
                       <button 
                         key={f}
                         onClick={() => setFormData({...formData, pedagogical_approach: f})}
-                        className={`px-4 py-3 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all ${formData.pedagogical_approach === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-black/20 border-slate-200 dark:border-white/10 text-slate-500'}`}
+                        className={`px-4 py-3 rounded-xl border text-[10px] font-bold uppercase tracking-widest transition-all ${formData.pedagogical_approach === f ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-400'}`}
                       >
                         {f}
                       </button>
@@ -209,7 +209,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                 </div>
 
                 <div className="flex gap-3">
-                  <button onClick={() => setStep(1)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 transition-all">Back</button>
+                  <button onClick={() => setStep(1)} className="flex-1 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">Back</button>
                   <button 
                     onClick={() => setStep(3)}
                     disabled={!formData.grade_level || !formData.subject}
@@ -223,32 +223,32 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
 
             {step === 3 && (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 text-center">
-                <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <Sparkles className="w-10 h-10 text-emerald-500" />
+                <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-950/50 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <Sparkles className="w-10 h-10 text-emerald-600 dark:text-emerald-400" />
                 </div>
                 
                 <div>
-                  <h3 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight uppercase">Neural Grid Ready</h3>
-                  <p className="text-slate-500 text-sm mt-1">Your pedagogical node has been successfully initialized.</p>
+                  <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight uppercase">Neural Grid Ready</h3>
+                  <p className="text-slate-600 dark:text-slate-300 text-sm mt-1">Your pedagogical node has been successfully initialized.</p>
                 </div>
 
-                <div className="bg-slate-50 dark:bg-black/20 p-6 rounded-[2rem] border border-slate-100 dark:border-white/5 text-left space-y-3">
+                <div className="bg-slate-50 dark:bg-slate-800/80 p-6 rounded-[2rem] border border-slate-200 dark:border-slate-700 text-left space-y-3">
                   <div className="flex items-center gap-3">
-                    <CheckCircle2 className="text-emerald-500" size={16} />
-                    <span className="text-xs font-semibold dark:text-white">Identity: {formData.name}</span>
+                    <CheckCircle2 className="text-emerald-600 dark:text-emerald-400" size={16} />
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">Identity: {formData.name}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <CheckCircle2 className="text-emerald-500" size={16} />
-                    <span className="text-xs font-semibold dark:text-white">Node: {formData.school_name}</span>
+                    <CheckCircle2 className="text-emerald-600 dark:text-emerald-400" size={16} />
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">Node: {formData.school_name}</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <CheckCircle2 className="text-emerald-500" size={16} />
-                    <span className="text-xs font-semibold dark:text-white">Framework: {formData.pedagogical_approach}</span>
+                    <CheckCircle2 className="text-emerald-600 dark:text-emerald-400" size={16} />
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">Framework: {formData.pedagogical_approach}</span>
                   </div>
                 </div>
 
                 {errorMsg && (
-                  <div className="p-3 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/40 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-semibold flex items-center gap-2 text-left">
+                  <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 rounded-xl text-xs font-semibold flex items-center gap-2 text-left">
                     <AlertCircle size={15} className="shrink-0" />
                     <span>{errorMsg}</span>
                   </div>
@@ -272,7 +272,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                           onboarding_completed: true
                         });
                       }}
-                      className="w-full py-2 text-xs font-semibold text-slate-400 hover:text-indigo-600 transition-colors"
+                      className="w-full py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
                     >
                       Continue to workspace anyway
                     </button>

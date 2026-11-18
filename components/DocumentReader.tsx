@@ -192,41 +192,41 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
   }, [slos, searchTerm]);
 
   return (
-    <div className="fixed inset-0 z-[500] bg-white dark:bg-[#020202] flex flex-col animate-in fade-in duration-300 overflow-hidden text-left">
-      <header className="h-16 md:h-20 border-b dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-4 md:px-8 shrink-0 z-50 shadow-sm">
+    <div className="fixed inset-0 z-[500] bg-slate-50 dark:bg-slate-950 flex flex-col animate-in fade-in duration-300 overflow-hidden text-left">
+      <header className="h-16 md:h-20 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-4 md:px-8 shrink-0 z-50 shadow-sm">
         <div className="flex items-center gap-2 md:gap-5 min-w-0">
           <div className="w-8 h-8 md:w-10 md:h-10 bg-indigo-600 rounded-lg md:rounded-2xl flex items-center justify-center text-white shadow-xl shrink-0">
             <LayoutList size={16} className="md:hidden"/>
             <LayoutList size={22} className="hidden md:block"/>
           </div>
           <div className="min-w-0">
-            <h2 className="text-[9px] md:text-xs font-black uppercase tracking-[0.1em] md:tracking-[0.2em] dark:text-white truncate max-w-[120px] md:max-w-sm">{activeDoc.name}</h2>
+            <h2 className="text-[10px] md:text-xs font-black uppercase tracking-[0.1em] md:tracking-[0.2em] text-slate-900 dark:text-slate-100 truncate max-w-[120px] md:max-w-sm">{activeDoc.name}</h2>
             <div className="flex items-center gap-1 md:gap-2 mt-0.5 md:mt-1">
-              <span className="text-[6px] md:text-[8px] font-bold text-slate-400 uppercase tracking-widest px-1 md:px-2 py-0.5 bg-slate-100 dark:bg-white/5 rounded">Node</span>
-              <span className={`text-[6px] md:text-[8px] font-bold uppercase tracking-widest px-1 md:px-2 py-0.5 rounded ${isWorking ? 'bg-amber-50 text-amber-500 animate-pulse' : 'bg-emerald-50 text-emerald-500'}`}>
+              <span className="text-[8px] md:text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest px-1.5 md:px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded">Node</span>
+              <span className={`text-[8px] md:text-[9px] font-bold uppercase tracking-widest px-1.5 md:px-2 py-0.5 rounded ${isWorking ? 'bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 animate-pulse' : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300'}`}>
                 {isWorking ? 'Syncing' : 'Verified'}
               </span>
-              {isWorking && <span className="text-[6px] md:text-[8px] font-black text-indigo-500 uppercase tracking-widest ml-1">{slos.length} Found</span>}
+              {isWorking && <span className="text-[8px] md:text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest ml-1">{slos.length} Found</span>}
             </div>
           </div>
         </div>
         
         <div className="flex items-center gap-1.5 md:gap-6">
           <div className="relative hidden lg:block">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" size={14} />
             <input 
               type="text" 
               placeholder="Search Ledger..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-6 py-2.5 bg-slate-50 dark:bg-white/5 border-none rounded-2xl text-[11px] font-black uppercase tracking-widest outline-none focus:ring-2 focus:ring-indigo-500 w-48 xl:w-64 transition-all dark:text-white"
+              className="pl-10 pr-6 py-2.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-[11px] font-black uppercase tracking-widest outline-none focus:ring-2 focus:ring-indigo-500 w-48 xl:w-64 transition-all text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400"
             />
           </div>
 
-          <div className="bg-slate-100 dark:bg-white/5 p-0.5 md:p-1 rounded-lg md:rounded-2xl flex gap-0.5 md:gap-1 border dark:border-white/5 shadow-inner">
+          <div className="bg-slate-100 dark:bg-slate-800 p-0.5 md:p-1 rounded-lg md:rounded-2xl flex gap-0.5 md:gap-1 border border-slate-200 dark:border-slate-700 shadow-inner">
              <button 
                onClick={() => setViewMode('ledger')} 
-               className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-6 py-1 md:py-2 rounded-md md:rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'ledger' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm md:shadow-md scale-105' : 'text-slate-500'}`}
+               className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-6 py-1 md:py-2 rounded-md md:rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'ledger' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-200 shadow-sm md:shadow-md scale-105' : 'text-slate-600 dark:text-slate-300'}`}
              >
                <BookOpen size={10} className="md:hidden"/>
                <BookOpen size={14} className="hidden md:block"/>
@@ -235,7 +235,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
              </button>
              <button 
                onClick={() => setViewMode('raw')} 
-               className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-6 py-1 md:py-2 rounded-md md:rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'raw' ? 'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm md:shadow-md scale-105' : 'text-slate-500'}`}
+               className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-6 py-1 md:py-2 rounded-md md:rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all ${viewMode === 'raw' ? 'bg-white dark:bg-slate-700 text-indigo-700 dark:text-indigo-200 shadow-sm md:shadow-md scale-105' : 'text-slate-600 dark:text-slate-300'}`}
              >
                <Terminal size={10} className="md:hidden"/>
                <Terminal size={14} className="hidden md:block"/>
@@ -244,26 +244,26 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
              </button>
           </div>
           
-          <button onClick={onClose} className="p-1.5 md:p-3 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg md:rounded-2xl transition-all">
+          <button onClick={onClose} className="p-1.5 md:p-3 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg md:rounded-2xl transition-all" aria-label="Close document reader">
             <X size={18} className="md:hidden"/>
             <X size={24} className="hidden md:block"/>
           </button>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/20 dark:bg-[#020202]">
+      <main className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50 dark:bg-slate-950">
         <div className="max-w-6xl mx-auto p-6 md:p-12 lg:p-20">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-40 md:py-60 text-center opacity-40">
-               <RefreshCw size={32} className="animate-spin text-indigo-600 mb-6 md:mb-8 md:w-12 md:h-12" />
-               <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-indigo-500 px-4">Retrieving Neural Artifacts...</p>
+            <div className="flex flex-col items-center justify-center py-40 md:py-60 text-center">
+               <RefreshCw size={32} className="animate-spin text-indigo-600 dark:text-indigo-400 mb-6 md:mb-8 md:w-12 md:h-12" />
+               <p className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-indigo-700 dark:text-indigo-300 px-4">Retrieving Neural Artifacts...</p>
             </div>
           ) : viewMode === 'raw' ? (
-            <div className="bg-white dark:bg-[#080808] p-4 md:p-10 lg:p-20 rounded-2xl md:rounded-[3rem] border border-slate-200 dark:border-white/5 shadow-2xl animate-in slide-in-from-bottom-4 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 p-4 md:p-10 lg:p-20 rounded-2xl md:rounded-[3rem] border border-slate-200 dark:border-slate-800 shadow-2xl animate-in slide-in-from-bottom-4 overflow-hidden">
                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 md:mb-12 gap-4">
-                 <div className="flex items-center gap-3 opacity-40">
-                   <FileCode size={16} className="text-indigo-500" />
-                   <span className="text-[8px] md:text-[10px] font-black uppercase tracking-[0.3em]">Universal JSON Schema</span>
+                 <div className="flex items-center gap-3">
+                   <FileCode size={16} className="text-indigo-600 dark:text-indigo-400" />
+                   <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-600 dark:text-slate-300">Universal JSON Schema</span>
                  </div>
                  <button 
                    onClick={() => {
@@ -277,7 +277,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                      }
                      handleCopy(cleanJson);
                    }}
-                   className="w-full sm:w-auto flex items-center justify-center gap-2 text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 transition-all bg-slate-50 dark:bg-white/5 px-4 py-2.5 rounded-xl border dark:border-white/5"
+                   className="w-full sm:w-auto flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all bg-slate-100 dark:bg-slate-800 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700"
                  >
                    <Copy size={14} />
                    {copiedCode ? 'Copied' : 'Copy JSON'}
@@ -285,7 +285,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                </div>
                <div className="relative group">
                  <div className="absolute -inset-4 bg-indigo-500/5 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-                 <pre className="font-mono text-[10px] md:text-sm leading-relaxed overflow-x-auto custom-scrollbar dark:text-slate-300 bg-slate-50 dark:bg-black/20 p-4 md:p-8 rounded-xl md:rounded-2xl border dark:border-white/5">
+                 <pre className="font-mono text-xs md:text-sm leading-relaxed overflow-x-auto custom-scrollbar text-slate-800 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/80 p-4 md:p-8 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-700">
                     {extractedText ? (
                       extractedText.includes('```json') 
                         ? extractedText.split('```json')[1].split('```')[0].trim()
@@ -299,17 +299,17 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
           ) : slos.length > 0 ? (
             <div className="space-y-12 md:space-y-24">
               {isWorking && (
-                <div className="bg-amber-500/10 border border-amber-500/20 p-4 md:p-6 rounded-2xl md:rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse">
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 p-4 md:p-6 rounded-2xl md:rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 animate-pulse">
                   <div className="flex items-center gap-4">
-                    <RefreshCw className="w-4 h-4 md:w-5 md:h-5 text-amber-500 animate-spin" />
-                    <p className="text-[10px] md:text-sm font-bold text-amber-600 uppercase tracking-widest">Neural Grid Syncing: {slos.length} Found...</p>
+                    <RefreshCw className="w-4 h-4 md:w-5 md:h-5 text-amber-600 dark:text-amber-400 animate-spin" />
+                    <p className="text-[11px] md:text-sm font-bold text-amber-800 dark:text-amber-200 uppercase tracking-widest">Neural Grid Syncing: {slos.length} Found...</p>
                   </div>
-                  <div className="text-[8px] md:text-[10px] font-black text-amber-400 uppercase tracking-[0.2em]">Live Stream Active</div>
+                  <div className="text-[9px] md:text-[10px] font-black text-amber-700 dark:text-amber-300 uppercase tracking-[0.2em]">Live Stream Active</div>
                 </div>
               )}
               {Object.entries(groupedSlos).sort((a, b) => a[0].localeCompare(b[0])).map(([groupKey, domains]) => (
                 <div key={groupKey} className="space-y-8 md:space-y-12">
-                  <h2 className="text-xl md:text-3xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tighter border-b border-indigo-100 dark:border-indigo-900 pb-4">
+                  <h2 className="text-xl md:text-3xl font-black text-indigo-900 dark:text-indigo-300 uppercase tracking-tighter border-b border-indigo-200 dark:border-indigo-900 pb-4">
                     {groupKey}
                   </h2>
                   {Object.entries(domains).sort((a, b) => a[0].localeCompare(b[0])).map(([domain, items]) => (
@@ -320,33 +320,33 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                             <Layers size={22} className="hidden md:block"/>
                           </div>
                           <div>
-                            <h3 className="text-base md:text-xl font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white">{domain}</h3>
-                            <p className="text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{items.length} Standards Anchored</p>
+                            <h3 className="text-base md:text-xl font-black uppercase tracking-[0.1em] text-slate-900 dark:text-slate-100">{domain}</h3>
+                            <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mt-1">{items.length} Standards Anchored</p>
                           </div>
-                          <div className="h-px bg-slate-200 dark:bg-white/5 flex-1 ml-2 md:ml-4" />
+                          <div className="h-px bg-slate-200 dark:bg-slate-800 flex-1 ml-2 md:ml-4" />
                        </div>
 
                        <div className="grid grid-cols-1 gap-3 md:gap-4">
                           {items.map((slo) => (
-                            <div key={slo.id} className="group relative flex flex-col lg:flex-row gap-4 md:gap-6 p-4 md:p-6 bg-white dark:bg-[#080808] rounded-2xl md:rounded-[2rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 hover:shadow-2xl transition-all duration-300">
+                            <div key={slo.id} className="group relative flex flex-col lg:flex-row gap-4 md:gap-6 p-4 md:p-6 bg-white dark:bg-slate-900 rounded-2xl md:rounded-[2rem] border border-slate-200 dark:border-slate-800 hover:border-indigo-400 hover:shadow-2xl transition-all duration-300">
                                <div className="lg:w-48 shrink-0 space-y-3 md:space-y-4">
                                  <button 
                                    onClick={() => handleCopy(slo.slo_code)}
-                                   className="w-full flex items-center justify-between gap-3 px-4 md:px-5 py-2 md:py-3 bg-slate-50 dark:bg-white/5 rounded-xl md:rounded-2xl border border-slate-200 dark:border-white/10 hover:bg-indigo-600 hover:text-white transition-all group-hover:scale-[1.02]"
+                                   className="w-full flex items-center justify-between gap-3 px-4 md:px-5 py-2 md:py-3 bg-slate-100 dark:bg-slate-800 rounded-xl md:rounded-2xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all group-hover:scale-[1.02]"
                                  >
                                     <span className="text-[10px] md:text-[11px] font-black tracking-widest uppercase truncate">{slo.slo_code}</span>
-                                    {copiedCode === slo.slo_code ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} className="opacity-20 group-hover:opacity-100" />}
+                                    {copiedCode === slo.slo_code ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} className="opacity-60 group-hover:opacity-100" />}
                                  </button>
                                  <div className="flex flex-wrap gap-2">
-                                   <span className="text-[7px] md:text-[8px] font-black uppercase tracking-widest text-slate-500 bg-slate-100 dark:bg-white/10 px-2 py-1 rounded-lg border dark:border-white/5">{slo.bloom_level || 'Understand'}</span>
+                                   <span className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700">{slo.bloom_level || 'Understand'}</span>
                                    {slo.cognitive_complexity && (
-                                     <span className="text-[7px] md:text-[8px] font-black uppercase tracking-widest text-amber-500 bg-amber-50 dark:bg-amber-500/10 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-500/20">{slo.cognitive_complexity}</span>
+                                     <span className="text-[9px] font-black uppercase tracking-widest text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50 px-2 py-1 rounded-lg border border-amber-200 dark:border-amber-800/60">{slo.cognitive_complexity}</span>
                                    )}
                                  </div>
                                  {slo.keywords && slo.keywords.length > 0 && (
-                                   <div className="flex flex-wrap gap-1 opacity-40 group-hover:opacity-100 transition-opacity">
+                                   <div className="flex flex-wrap gap-1 opacity-75 group-hover:opacity-100 transition-opacity">
                                      {slo.keywords.slice(0, 3).map((kw, idx) => (
-                                       <span key={idx} className="text-[6px] md:text-[7px] font-bold text-slate-400 uppercase tracking-tighter bg-slate-50 dark:bg-white/5 px-1.5 py-0.5 rounded-md">#{kw}</span>
+                                       <span key={idx} className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tighter bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded-md">#{kw}</span>
                                      ))}
                                    </div>
                                  )}
@@ -365,14 +365,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 md:py-40 text-center animate-in zoom-in-95 duration-700">
-               <div className="w-16 h-16 md:w-24 md:h-24 bg-amber-50 dark:bg-amber-950/20 rounded-2xl md:rounded-[2.5rem] flex items-center justify-center mb-6 md:mb-10 text-amber-600">
+               <div className="w-16 h-16 md:w-24 md:h-24 bg-amber-50 dark:bg-amber-950/40 rounded-2xl md:rounded-[2.5rem] flex items-center justify-center mb-6 md:mb-10 text-amber-600 dark:text-amber-400">
                  {isWorking ? <Loader2 size={32} className="animate-spin md:hidden" /> : <AlertTriangle size={32} className="md:hidden" />}
                  {isWorking ? <Loader2 size={48} className="animate-spin hidden md:block" /> : <AlertTriangle size={48} className="hidden md:block" />}
                </div>
-               <h3 className="text-xl md:text-2xl font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white px-4">
+               <h3 className="text-xl md:text-2xl font-black uppercase tracking-[0.2em] text-slate-900 dark:text-slate-100 px-4">
                  {isWorking ? 'Extraction in Progress' : 'Sync Protocol Interrupted'}
                </h3>
-               <p className="text-xs md:text-sm font-medium text-slate-500 max-w-xs md:max-w-sm mt-4 leading-relaxed italic px-4">
+               <p className="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-300 max-w-xs md:max-w-sm mt-4 leading-relaxed italic px-4">
                  {isWorking 
                    ? 'The neural grid is currently linearizing your document. Artifacts will appear here as they are decrypted.' 
                    : 'The curriculum ledger for this document is currently empty. This happens if the document was uploaded before the database migration.'}
@@ -380,9 +380,9 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                
                {/* Show raw stream preview if available during extraction */}
                {isWorking && extractedText && !isLedger && (
-                 <div className="mt-8 md:mt-16 w-full max-w-2xl bg-white dark:bg-[#080808] p-4 md:p-8 rounded-2xl md:rounded-3xl border dark:border-white/5 text-left opacity-50 scale-90 md:scale-100">
-                   <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Raw Stream Preview</h4>
-                   <div className="text-[11px] md:text-sm text-slate-500 font-mono line-clamp-6 whitespace-pre-wrap">
+                 <div className="mt-8 md:mt-16 w-full max-w-2xl bg-white dark:bg-slate-900 p-4 md:p-8 rounded-2xl md:rounded-3xl border border-slate-200 dark:border-slate-800 text-left scale-90 md:scale-100">
+                   <h4 className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest mb-4">Raw Stream Preview</h4>
+                   <div className="text-xs md:text-sm text-slate-700 dark:text-slate-300 font-mono line-clamp-6 whitespace-pre-wrap">
                      {extractedText}
                    </div>
                  </div>
@@ -391,7 +391,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
                <div className="flex flex-col sm:flex-row gap-4 mt-8 md:mt-12 w-full sm:w-auto px-8">
                  <button 
                    onClick={fetchSlos}
-                   className="flex items-center justify-center gap-3 px-8 py-4 md:py-5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl md:rounded-[2rem] font-black text-[10px] md:text-xs uppercase tracking-widest shadow-sm hover:bg-slate-200 transition-all"
+                   className="flex items-center justify-center gap-3 px-8 py-4 md:py-5 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl md:rounded-[2rem] font-black text-[10px] md:text-xs uppercase tracking-widest shadow-sm hover:bg-slate-200 dark:hover:bg-slate-700 transition-all"
                  >
                    <RefreshCw size={14} className="md:hidden" /> 
                    <RefreshCw size={16} className="hidden md:block" /> 
@@ -414,14 +414,14 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
         </div>
       </main>
 
-      <footer className="h-12 border-t dark:border-white/5 bg-white dark:bg-[#080808] flex items-center justify-between px-10 shrink-0 z-50">
+      <footer className="h-12 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between px-10 shrink-0 z-50">
          <div className="flex items-center gap-3">
            <div className={`w-2 h-2 rounded-full ${isWorking ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500 animate-pulse'}`} />
-           <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.3em]">
+           <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-[0.2em]">
              {isWorking ? 'Grid Orchestration Active' : 'Master Protocol Active'}
            </span>
          </div>
-         <span className="text-[8px] font-black text-slate-300 uppercase tracking-[0.2em]">Institutional Alignment Verified</span>
+         <span className="text-[10px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-[0.2em]">Institutional Alignment Verified</span>
       </footer>
     </div>
   );

@@ -320,7 +320,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
   };
 
   return (
-    <div className="flex h-[calc(100vh-100px)] lg:h-[calc(100vh-40px)] bg-slate-50 dark:bg-[#0a0a0a] relative overflow-hidden">
+    <div className="flex h-[calc(100vh-100px)] lg:h-[calc(100vh-40px)] bg-slate-50 dark:bg-slate-950 relative overflow-hidden">
       {showSidebar && (
         <div 
           className="fixed inset-0 z-[40] bg-black/20 backdrop-blur-sm md:hidden" 
@@ -330,15 +330,15 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
 
       <div className={`
         fixed md:relative inset-y-0 left-0 z-[50] md:z-10
-        transition-all duration-300 border-r border-slate-200 dark:border-white/5 
-        bg-white dark:bg-[#0d0d0d] md:bg-white/40 md:dark:bg-white/5 md:backdrop-blur-md
+        transition-all duration-300 border-r border-slate-200 dark:border-slate-800 
+        bg-white dark:bg-slate-900 md:bg-white/80 md:dark:bg-slate-900/80 md:backdrop-blur-md
         ${showSidebar ? 'w-72 md:w-64 translate-x-0 opacity-100' : '-translate-x-full md:translate-x-0 md:w-0 md:opacity-0 overflow-hidden'}
       `}>
         <div className="p-4 space-y-6 flex flex-col h-full">
           <div className="flex items-center justify-between">
-             <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">Curriculum Assets</h3>
+             <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Curriculum Assets</h3>
              <div className="flex items-center gap-2">
-               <Sparkles size={14} className="text-indigo-400" />
+               <Sparkles size={14} className="text-indigo-600 dark:text-indigo-400" />
                <button onClick={() => setShowSidebar(false)} className="md:hidden p-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-lg">
                  <X size={16} />
                </button>
@@ -348,8 +348,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
             <DocumentSelector documents={localDocs} onToggle={toggleDocContext} />
           </div>
           
-          <div className="mt-auto p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
-            <p className="text-[10px] text-indigo-400 font-bold leading-relaxed">
+          <div className="mt-auto p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-500/30 rounded-2xl">
+            <p className="text-[11px] text-indigo-800 dark:text-indigo-200 font-semibold leading-relaxed">
               <b>PRO TIP:</b> Grounding is locked to one document for maximum SLO precision. Switch assets to change context.
             </p>
           </div>
@@ -361,19 +361,19 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
           onClick={() => setShowSidebar(!showSidebar)}
           className={`
             absolute left-0 top-1/2 -translate-y-1/2 z-30 
-            p-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 
-            rounded-r-xl shadow-xl hover:bg-slate-50 dark:hover:bg-slate-700 transition-all
+            p-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 
+            rounded-r-xl shadow-xl hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-200 transition-all
             ${showSidebar ? 'opacity-0 md:opacity-100' : 'opacity-100'}
           `}
         >
           {showSidebar ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
         </button>
 
-        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-white/5 shrink-0 bg-white/80 dark:bg-[#0a0a0a]/80 backdrop-blur-md sticky top-0 z-20">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 dark:border-slate-800 shrink-0 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-20">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <Layout size={16} className="text-slate-400" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Synthesis Hub</span>
+              <Layout size={16} className="text-slate-500 dark:text-slate-400" />
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">Synthesis Hub</span>
             </div>
             {isSpeechDictating && (
               <div className="flex items-center gap-2 px-3 py-1 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50 rounded-full animate-pulse shadow-sm">
@@ -381,15 +381,15 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
                 </span>
-                <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                <span className="text-[9px] font-black uppercase tracking-wider text-rose-700 dark:text-rose-300">
                   Microphone Dictating
                 </span>
               </div>
             )}
             {selectedDocsCount > 0 && (
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-                <ShieldCheck size={12} className="text-emerald-500" />
-                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-600 truncate max-w-[120px]">
+              <div className="hidden sm:flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-700/40 rounded-full">
+                <ShieldCheck size={12} className="text-emerald-600 dark:text-emerald-400" />
+                <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-300 truncate max-w-[120px]">
                   {activeDoc?.name}
                 </span>
               </div>
@@ -397,10 +397,10 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
           </div>
           <div className="flex items-center gap-2">
             <PedagogyToolbar onToolSelect={handleToolSelect} activeTool={activeTool} />
-            <div className="w-px h-6 bg-slate-200 dark:bg-white/10 mx-2" />
+            <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-2" />
             <button 
               onClick={clearChat}
-              className="p-2 text-slate-400 hover:text-rose-500 transition-colors"
+              className="p-2 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
               title="Clear Synthesis History"
             >
               <Trash2 size={18} />
@@ -417,8 +417,8 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
                   <div className="absolute inset-0 bg-indigo-600 rounded-[24px] blur-2xl opacity-20 -z-10 animate-pulse" />
                 </div>
                 <div className="space-y-2">
-                  <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight text-center">Pedagogy Master Neural</h2>
-                  <p className="text-slate-500 dark:text-slate-400 max-w-sm mx-auto text-sm font-medium">
+                  <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight text-center">Pedagogy Master Neural</h2>
+                  <p className="text-slate-600 dark:text-slate-300 max-w-sm mx-auto text-sm font-medium leading-relaxed">
                     {focusedDocId 
                       ? `Neural sync active for your curriculum: "${activeDoc?.name}". Type or use the microphone to dictate your prompt.`
                       : 'Select a curriculum asset from the sidebar or click the microphone to dictate your inquiry.'}
@@ -480,7 +480,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
           </div>
         </div>
 
-        <div className="shrink-0 bg-gradient-to-t from-slate-50 dark:from-[#0a0a0a] via-slate-50 dark:via-[#0a0a0a] to-transparent">
+        <div className="shrink-0 bg-gradient-to-t from-slate-50 dark:from-slate-950 via-slate-50 dark:via-slate-950 to-transparent">
           {!canQuery && (
             <div className="max-w-2xl mx-auto mb-2 px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-2xl flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200 text-xs font-bold animate-in slide-in-from-bottom-2">
               <div className="flex items-center gap-2">

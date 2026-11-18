@@ -22,13 +22,13 @@ export const ProviderStatusBar: React.FC = () => {
   if (!show || status.length === 0) return null;
 
   return (
-    <div className="bg-slate-950/95 backdrop-blur-xl border-b border-white/5 px-4 py-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500 z-[100] no-print">
+    <div className="bg-slate-900/95 backdrop-blur-xl border-b border-slate-800 px-4 py-3 flex flex-col gap-2 animate-in slide-in-from-top duration-500 z-[100] no-print">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_#10b981]" />
-           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-400">8-Engine Multi-Provider Synthesis Grid v10.0</span>
+           <span className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-300">8-Engine Multi-Provider Synthesis Grid v10.0</span>
         </div>
-        <button onClick={() => setShow(false)} className="text-slate-500 hover:text-white transition-colors">✕</button>
+        <button onClick={() => setShow(false)} aria-label="Dismiss status bar" className="text-slate-300 hover:text-white transition-colors">✕</button>
       </div>
 
       <div className="flex items-center gap-6 overflow-x-auto no-scrollbar pb-1">
@@ -37,18 +37,18 @@ export const ProviderStatusBar: React.FC = () => {
              <div className={`w-1.5 h-1.5 rounded-full ${
                p.status === 'active' ? 'bg-emerald-500' :
                p.status === 'rate-limited' ? 'bg-amber-500' :
-               p.status === 'failed' ? 'bg-rose-500' : 'bg-slate-700'
+               p.status === 'failed' ? 'bg-rose-500' : 'bg-slate-600'
              }`} />
              <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
-                  <span className={`text-[10px] font-black uppercase tracking-tight ${p.status === 'disabled' ? 'text-slate-600' : 'text-slate-200'}`}>
+                  <span className={`text-[10px] font-black uppercase tracking-tight ${p.status === 'disabled' ? 'text-slate-400' : 'text-slate-100'}`}>
                     {p.name}
                   </span>
                   {p.tier === 1 && <Zap size={8} className="text-amber-400" />}
                 </div>
                 <div className="flex items-center gap-2">
-                   <span className="text-[8px] font-bold text-slate-500 uppercase">{p.status}</span>
-                   {p.status === 'active' && <span className="text-[8px] font-black text-indigo-400">SERVICE_ONLINE</span>}
+                   <span className="text-[8px] font-bold text-slate-300 uppercase">{p.status}</span>
+                   {p.status === 'active' && <span className="text-[8px] font-black text-indigo-300">SERVICE_ONLINE</span>}
                 </div>
              </div>
           </div>

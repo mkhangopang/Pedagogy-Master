@@ -88,101 +88,103 @@ const StandardsBrowser: React.FC<StandardsBrowserProps> = ({ user, documents }) 
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
-             <BookOpen size={12} className="text-slate-400" />
-             <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Registry Node</span>
+             <BookOpen size={12} className="text-slate-500 dark:text-slate-400" />
+             <span className="text-[10px] font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400">Registry Node</span>
           </div>
-          <h1 className="text-3xl md:text-5xl font-bold text-slate-900 dark:text-white tracking-tighter uppercase">Standards Browser</h1>
-          <p className="text-slate-500 mt-1 font-semibold text-xs">Access <span className="text-indigo-600">Global SLO Repository</span></p>
+          <h1 className="text-3xl md:text-5xl font-bold text-slate-900 dark:text-slate-100 tracking-tighter uppercase">Standards Browser</h1>
+          <p className="text-slate-600 dark:text-slate-300 mt-1 font-semibold text-xs">Access <span className="text-indigo-600 dark:text-indigo-400">Global SLO Repository</span></p>
         </div>
       </header>
 
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] shadow-xl border border-slate-100 dark:border-white/5 space-y-6">
+      <div className="bg-white dark:bg-slate-900 p-6 rounded-[2.5rem] shadow-xl border border-slate-200 dark:border-slate-800 space-y-6">
         <div className="flex flex-col md:flex-row gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" size={18} />
             <input 
               type="text" 
               placeholder="Search by SLO code or description..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white"
+              className="w-full pl-12 pr-4 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-600 transition-all"
             />
           </div>
           <div className="flex flex-wrap gap-3">
             <select 
               value={selectedSubject}
               onChange={(e) => setSelectedSubject(e.target.value)}
-              className="px-6 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white text-xs uppercase tracking-widest"
+              className="px-6 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-600 transition-all text-xs uppercase tracking-widest"
             >
-              <option value="all">All Subjects</option>
+              <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">All Subjects</option>
               {uniqueSubjects.map(sub => (
-                <option key={sub} value={sub}>{sub}</option>
+                <option key={sub} value={sub} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">{sub}</option>
               ))}
             </select>
 
             <select 
               value={selectedGrade}
               onChange={(e) => setSelectedGrade(e.target.value)}
-              className="px-6 py-4 bg-slate-50 dark:bg-black/20 border border-slate-200 dark:border-white/10 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-indigo-600 transition-all dark:text-white text-xs uppercase tracking-widest"
+              className="px-6 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-slate-900 dark:text-slate-100 outline-none focus:ring-2 focus:ring-indigo-600 transition-all text-xs uppercase tracking-widest"
             >
-              <option value="all">All Grades</option>
+              <option value="all" className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">All Grades</option>
               {uniqueGrades.map(grade => {
                 let label = `Grade ${parseInt(grade, 10)}`;
                 if (grade === '00') label = 'Early Years / KG';
                 else if (isNaN(parseInt(grade, 10))) label = `Grade ${grade}`;
                 return (
-                  <option key={grade} value={grade}>{label}</option>
+                  <option key={grade} value={grade} className="bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100">{label}</option>
                 );
               })}
             </select>
-            <button className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg hover:bg-indigo-700 transition-all">
+            <button className="p-4 bg-indigo-600 text-white rounded-2xl shadow-lg hover:bg-indigo-700 transition-all" aria-label="Filter standards">
               <Filter size={20} />
             </button>
           </div>
         </div>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 opacity-40">
-            <Loader2 size={32} className="animate-spin text-indigo-600 mb-4" />
-            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Retrieving Standards...</p>
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 size={32} className="animate-spin text-indigo-600 dark:text-indigo-400 mb-4" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Retrieving Standards...</p>
           </div>
         ) : sortedSlos.length > 0 ? (
           <div className="grid grid-cols-1 gap-4">
             {sortedSlos.map((slo) => (
-              <div key={slo.slo_code} className="group bg-slate-50 dark:bg-black/20 p-6 rounded-3xl border border-slate-100 dark:border-white/5 hover:border-indigo-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div key={slo.slo_code} className="group bg-slate-50 dark:bg-slate-800/70 p-6 rounded-3xl border border-slate-200 dark:border-slate-700 hover:border-indigo-500/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-6">
                 <div className="flex items-start gap-6">
-                  <div className="w-14 h-14 bg-white dark:bg-slate-800 rounded-2xl flex flex-col items-center justify-center shadow-sm shrink-0">
-                    <span className="text-[8px] font-black text-slate-400 uppercase">Grade</span>
-                    <span className="text-lg font-bold text-indigo-600 leading-none">{slo.grade_level || '??'}</span>
+                  <div className="w-14 h-14 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl flex flex-col items-center justify-center shadow-sm shrink-0">
+                    <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 uppercase">Grade</span>
+                    <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400 leading-none">{slo.grade_level || '??'}</span>
                   </div>
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <button 
                         onClick={() => handleCopy(slo.slo_code)}
-                        className="text-[10px] font-black uppercase tracking-widest px-2 py-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 rounded-md hover:bg-indigo-100 transition-all flex items-center gap-2"
+                        className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 rounded-md hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-all flex items-center gap-2"
                       >
                         {slo.slo_code} {copiedCode === slo.slo_code ? <CheckCircle2 size={10} /> : <Copy size={10} />}
                       </button>
-                      <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-md ${
-                        slo.bloom_level === 'Analyze' || slo.bloom_level === 'Evaluate' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md border ${
+                        slo.bloom_level === 'Analyze' || slo.bloom_level === 'Evaluate'
+                          ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300'
+                          : 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300'
                       }`}>
                         {slo.bloom_level || 'Understand'}
                       </span>
                     </div>
-                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 leading-relaxed">{slo.slo_full_text}</p>
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 leading-relaxed">{slo.slo_full_text}</p>
                   </div>
                 </div>
                 
-                <button className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-400 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2 shrink-0">
+                <button className="px-6 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-xl font-bold text-[10px] uppercase tracking-widest shadow-sm hover:bg-slate-100 dark:hover:bg-slate-800 transition-all flex items-center gap-2 shrink-0">
                   View Alignment <ArrowRight size={14} />
                 </button>
               </div>
             ))}
           </div>
         ) : (
-          <div className="py-20 text-center opacity-30">
-            <AlertTriangle size={48} className="mx-auto mb-4 text-slate-300" />
-            <p className="text-xl font-black uppercase tracking-widest text-slate-400">No Standards Found</p>
+          <div className="py-20 text-center">
+            <AlertTriangle size={48} className="mx-auto mb-4 text-slate-400 dark:text-slate-500" />
+            <p className="text-xl font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">No Standards Found</p>
           </div>
         )}
       </div>

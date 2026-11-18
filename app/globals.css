@@ -4,15 +4,17 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --foreground-rgb: 15, 23, 42;
-    --background-start-rgb: 255, 255, 255;
-    --background-end-rgb: 255, 255, 255;
+    --background-start-rgb: 248, 250, 252;
+    --background-end-rgb: 248, 250, 252;
   }
 
   .dark {
-    --foreground-rgb: 241, 245, 249;
-    --background-start-rgb: 3, 3, 3;
-    --background-end-rgb: 3, 3, 3;
+    color-scheme: dark;
+    --foreground-rgb: 226, 232, 240;
+    --background-start-rgb: 15, 23, 42;
+    --background-end-rgb: 11, 17, 32;
   }
 
   html {
@@ -159,12 +161,168 @@
               opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.prose h1, .prose h2, .prose h3 {
-  @apply font-bold text-slate-900 dark:text-white mt-8 mb-4 tracking-tight uppercase;
+/* Unified Eye-Comforting Reading Typography for Chat & Artifacts */
+.prose,
+.pm-prose {
+  color: #1e293b;
+  line-height: 1.78;
 }
 
-.prose strong {
-  @apply font-semibold text-slate-900 dark:text-indigo-400;
+.dark .prose,
+.dark .pm-prose {
+  color: #cbd5e1;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4,
+.pm-prose h1, .pm-prose h2, .pm-prose h3, .pm-prose h4 {
+  @apply font-bold text-slate-900 dark:text-slate-100 mt-7 mb-3 tracking-tight;
+}
+
+.prose h1 { @apply text-xl md:text-2xl pb-2 border-b border-indigo-500/30; }
+.prose h2 { @apply text-base md:text-lg pb-1.5 border-b border-slate-200 dark:border-slate-700/70; }
+.prose h3 { @apply text-sm md:text-base text-indigo-700 dark:text-indigo-300; }
+
+.prose p, .prose li,
+.pm-prose p, .pm-prose li {
+  color: #334155;
+  line-height: 1.78;
+}
+
+.dark .prose p, .dark .prose li,
+.dark .pm-prose p, .dark .pm-prose li {
+  color: #cbd5e1 !important;
+}
+
+.prose strong,
+.pm-prose strong {
+  @apply font-semibold text-slate-900 dark:text-indigo-200;
+}
+
+.dark .pm-prose strong {
+  color: #e2e8f0 !important;
+}
+
+.prose em,
+.pm-prose em {
+  color: #475569;
+}
+
+.dark .prose em,
+.dark .pm-prose em {
+  color: #94a3b8 !important;
+}
+
+.prose ul, .prose ol {
+  @apply my-3 pl-5 space-y-1.5;
+}
+.prose ul { @apply list-disc; }
+.prose ol { @apply list-decimal; }
+
+.prose blockquote,
+.pm-prose blockquote {
+  @apply my-4 px-4 py-3 rounded-r-xl border-l-4 border-indigo-500 bg-indigo-50/70 dark:bg-indigo-950/35 text-slate-700 dark:text-slate-200;
+}
+
+.dark .pm-prose blockquote {
+  background: rgba(99, 102, 241, 0.14) !important;
+  color: #e2e8f0 !important;
+}
+
+.prose hr,
+.pm-prose hr {
+  @apply my-6 border-slate-200 dark:border-slate-700/70;
+}
+
+.dark .pm-prose hr {
+  border-top-color: rgba(148, 163, 184, 0.2) !important;
+}
+
+.prose a,
+.pm-prose a {
+  @apply text-indigo-600 dark:text-indigo-300 underline decoration-indigo-400/50 hover:decoration-indigo-400;
+}
+
+.prose code,
+.pm-prose code {
+  @apply px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/90 text-indigo-700 dark:text-indigo-300 text-[0.88em] font-mono;
+}
+
+.dark .pm-prose code {
+  background: rgba(30, 41, 59, 0.9) !important;
+  color: #a5b4fc !important;
+}
+
+.prose pre,
+.pm-prose pre {
+  @apply my-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700/80 text-slate-800 dark:text-slate-200 overflow-x-auto text-xs font-mono;
+}
+
+.dark .pm-prose pre {
+  background: #0b1120 !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  color: #e2e8f0 !important;
+}
+
+.prose pre code,
+.pm-prose pre code {
+  background: transparent !important;
+  color: inherit !important;
+  padding: 0;
+}
+
+.prose table,
+.pm-prose table {
+  @apply w-full border-collapse my-4 text-sm;
+}
+
+.prose th,
+.pm-prose th {
+  @apply px-3.5 py-2.5 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-950 dark:text-indigo-200 font-bold text-xs border border-indigo-200/80 dark:border-indigo-500/25;
+}
+
+.prose td,
+.pm-prose td {
+  @apply px-3.5 py-2.5 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/70 align-top;
+}
+
+.dark .pm-prose h1,
+.dark .pm-prose h2,
+.dark .pm-prose h4 {
+  color: #f1f5f9 !important;
+  border-bottom-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+.dark .pm-prose h3 {
+  color: #a5b4fc !important;
+}
+
+.dark .pm-prose th {
+  background: rgba(79, 70, 229, 0.22) !important;
+  color: #e0e7ff !important;
+  border-color: rgba(129, 140, 248, 0.28) !important;
+}
+
+.dark .pm-prose td {
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
+}
+
+.dark .pm-prose tbody tr {
+  background: transparent !important;
+}
+
+.dark .pm-prose tbody tr:nth-child(even) {
+  background: rgba(148, 163, 184, 0.05) !important;
+}
+
+.dark .pm-prose ol > li > span:first-child {
+  background: rgba(99, 102, 241, 0.25) !important;
+  color: #c7d2fe !important;
+}
+
+.dark .prose .katex,
+.dark .pm-prose .katex {
+  color: #e2e8f0;
 }
 
 .artifact-canvas-container table {
@@ -172,11 +330,11 @@
 }
 
 .artifact-canvas-container th {
-  @apply px-4 py-3 bg-slate-50 dark:bg-white/5 text-slate-900 dark:text-white font-bold text-xs uppercase border border-slate-200 dark:border-white/10;
+  @apply px-4 py-3 bg-slate-50 dark:bg-slate-800/70 text-slate-900 dark:text-slate-100 font-bold text-xs uppercase border border-slate-200 dark:border-slate-700;
 }
 
 .artifact-canvas-container td {
-  @apply px-4 py-3 text-sm border border-slate-100 dark:border-white/5 font-medium;
+  @apply px-4 py-3 text-sm border border-slate-100 dark:border-slate-800 font-medium text-slate-700 dark:text-slate-300;
 }
 
 /* Urdu & Sindhi RTL Typography */
@@ -209,7 +367,7 @@
 .dark .artifact-rtl h3,
 .dark .artifact-rtl h4,
 .dark .artifact-rtl strong {
-  color: #f8fafc !important;
+  color: #f1f5f9 !important;
 }
 
 .dark .artifact-rtl p,
@@ -219,16 +377,16 @@
 }
 
 .dark .artifact-rtl th {
-  background: rgba(99, 102, 241, 0.2) !important;
-  color: #c7d2fe !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(79, 70, 229, 0.22) !important;
+  color: #e0e7ff !important;
+  border-color: rgba(129, 140, 248, 0.28) !important;
 }
 
 .dark .artifact-rtl td {
-  border-color: rgba(255, 255, 255, 0.08) !important;
+  border-color: rgba(148, 163, 184, 0.18) !important;
 }
 
 .dark .artifact-rtl blockquote {
-  background: rgba(99, 102, 241, 0.1) !important;
+  background: rgba(99, 102, 241, 0.14) !important;
   color: #e2e8f0 !important;
 }

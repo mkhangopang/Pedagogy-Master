@@ -216,7 +216,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   };
 
   return (
-    <div className="w-full bg-gradient-to-t from-slate-50 dark:from-[#0a0a0a] via-slate-50 dark:via-[#0a0a0a] to-transparent pt-6 pb-6 px-4">
+    <div className="w-full bg-gradient-to-t from-slate-50 dark:from-slate-950 via-slate-50 dark:via-slate-950 to-transparent pt-6 pb-6 px-4">
       <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
         
         {/* Active Speech Dictation Banner */}
@@ -291,14 +291,14 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         )}
 
         {/* Main Chat Input Pill */}
-        <div className={`relative flex items-end gap-2 bg-white dark:bg-[#1a1a1a] border-2 rounded-[28px] p-2 pl-4 shadow-2xl transition-all ${
+        <div className={`relative flex items-end gap-2 bg-white dark:bg-slate-900 border-2 rounded-[28px] p-2 pl-4 shadow-2xl transition-all ${
           isListening 
             ? 'border-rose-500 dark:border-rose-500/80 shadow-rose-500/10 ring-2 ring-rose-500/20' 
-            : 'border-slate-300 dark:border-white/20 focus-within:border-indigo-600'
+            : 'border-slate-300 dark:border-slate-700 focus-within:border-indigo-600 dark:focus-within:border-indigo-400'
         }`}>
           <button
             type="button"
-            className="p-2 text-slate-500 hover:text-indigo-600 transition-colors mb-1 rounded-full hover:bg-slate-100 dark:hover:bg-white/5"
+            className="p-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors mb-1 rounded-full hover:bg-slate-100 dark:hover:bg-white/10"
             title="Upload curriculum asset"
           >
             <PlusIcon size={20} />
@@ -323,7 +323,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               placeholder={isListening ? "Listening... Speak your curriculum prompt" : placeholder}
               disabled={disabled || isLoading}
               rows={1}
-              className="w-full bg-transparent border-none outline-none text-slate-900 dark:text-white placeholder-slate-500 dark:placeholder-slate-400 resize-none py-3 text-[16px] font-bold max-h-[160px] custom-scrollbar"
+              className="w-full bg-transparent border-none outline-none text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 resize-none py-3 text-[16px] font-bold max-h-[160px] custom-scrollbar"
               aria-label="Pedagogy Master Query Input"
             />
           </div>
@@ -337,8 +337,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
               isListening
                 ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 ring-4 ring-rose-600/20 animate-pulse'
                 : isSpeechSupported
-                  ? 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95'
-                  : 'text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50'
+                  ? 'text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-100 dark:hover:bg-white/10 active:scale-95'
+                  : 'text-slate-400 dark:text-slate-500 cursor-not-allowed opacity-60'
             }`}
             title={
               !isSpeechSupported
@@ -363,7 +363,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
             className={`flex-shrink-0 w-11 h-11 rounded-full flex items-center justify-center transition-all mb-1 mr-1 ${
               (input.trim() || interimText.trim()) && !isLoading 
                 ? 'bg-indigo-600 text-white shadow-xl hover:bg-indigo-700 active:scale-90' 
-                : 'bg-slate-100 dark:bg-white/5 text-slate-300 dark:text-slate-600'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
             }`}
             aria-label="Send Query"
           >
@@ -372,11 +372,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         </div>
         
         <div className="flex items-center justify-between mt-3 px-2">
-          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-[0.15em] flex items-center gap-1.5">
-            <VolumeIcon size={12} className={isListening ? "text-rose-500 animate-pulse" : "text-slate-400"} />
+          <p className="text-[10px] text-slate-600 dark:text-slate-300 font-bold uppercase tracking-[0.15em] flex items-center gap-1.5">
+            <VolumeIcon size={12} className={isListening ? "text-rose-500 animate-pulse" : "text-slate-500 dark:text-slate-400"} />
             <span>Voice Dictation Ready • Web Speech API</span>
           </p>
-          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-black uppercase tracking-[0.2em]">
+          <p className="text-[10px] text-slate-600 dark:text-slate-300 font-black uppercase tracking-[0.2em]">
             Multi-Provider Logic v42.0
           </p>
         </div>

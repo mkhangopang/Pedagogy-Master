@@ -123,7 +123,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           const Icon = item.icon;
           const isActive = currentView === item.id;
           return (
-            <button key={item.id} onClick={() => { onViewChange(item.id); if (onClose) onClose(); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive ? 'bg-indigo-600 text-white shadow-lg font-bold' : 'text-indigo-200/70 hover:bg-white/5 hover:text-white'} ${isCollapsed ? 'justify-center px-0' : ''}`}>
+            <button key={item.id} onClick={() => { onViewChange(item.id); if (onClose) onClose(); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all group ${isActive ? 'bg-indigo-600 text-white shadow-lg font-bold' : 'text-indigo-100/85 hover:bg-white/10 hover:text-white'} ${isCollapsed ? 'justify-center px-0' : ''}`}>
               <Icon size={20} className={`shrink-0 ${isActive ? 'text-white' : 'group-hover:text-white'}`} />
               {!isCollapsed && <span className="font-medium truncate text-sm uppercase tracking-tight">{item.label}</span>}
             </button>
@@ -131,23 +131,23 @@ const Sidebar: React.FC<SidebarProps> = ({
         })}
       </nav>
 
-      <div className="p-4 border-t border-white/5 bg-black/10">
-        <button onClick={toggleTheme} className={`w-full flex items-center gap-3 px-4 py-2.5 mb-2 text-indigo-300/70 hover:text-white rounded-xl transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
+      <div className="p-4 border-t border-white/10 bg-black/15">
+        <button onClick={toggleTheme} className={`w-full flex items-center gap-3 px-4 py-2.5 mb-2 text-indigo-200 hover:text-white hover:bg-white/5 rounded-xl transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
           {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           {!isCollapsed && <span className="text-[10px] font-black uppercase tracking-widest">Theme: {theme}</span>}
         </button>
 
-        <div className={`flex items-center gap-3 p-3 bg-white/5 rounded-xl mb-2 border border-white/5 ${isCollapsed ? 'justify-center' : ''}`}>
+        <div className={`flex items-center gap-3 p-3 bg-white/10 rounded-xl mb-2 border border-white/10 ${isCollapsed ? 'justify-center' : ''}`}>
           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${roleInfo.color} shadow-sm text-white`}>{roleInfo.icon}</div>
           {!isCollapsed && (
             <div className="overflow-hidden">
-              <p className="text-[10px] font-black uppercase tracking-tighter text-indigo-300">{roleInfo.label}</p>
-              <p className="text-[11px] font-medium truncate opacity-60 text-indigo-100">{userProfile.email}</p>
+              <p className="text-[10px] font-black uppercase tracking-tighter text-indigo-200">{roleInfo.label}</p>
+              <p className="text-[11px] font-medium truncate text-indigo-100/90">{userProfile.email}</p>
             </div>
           )}
         </div>
         
-        <button onClick={handleSignOut} className={`w-full flex items-center gap-3 px-4 py-3 text-rose-400 hover:bg-rose-500/10 rounded-xl transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
+        <button onClick={handleSignOut} className={`w-full flex items-center gap-3 px-4 py-3 text-rose-300 hover:bg-rose-500/15 hover:text-rose-200 rounded-xl transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
           <LogOut size={18} />
           {!isCollapsed && <span className="text-xs font-black uppercase tracking-widest">Sign Out</span>}
         </button>

@@ -80,13 +80,13 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
   };
 
   return (
-    <div className="bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/5 rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-      <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+      <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-emerald-600 rounded-xl text-white shadow-lg"><Target size={20} /></div>
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Quiz Synthesizer</h3>
-            <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Assessment Logic</p>
+            <p className="text-[10px] uppercase font-black text-slate-600 dark:text-slate-300 tracking-widest">Assessment Logic</p>
           </div>
         </div>
       </div>
@@ -96,15 +96,15 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Type</label>
-                <select value={options.type} onChange={e => setOptions({...options, type: e.target.value as any})} className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold outline-none">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Type</label>
+                <select value={options.type} onChange={e => setOptions({...options, type: e.target.value as any})} className="w-full bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold outline-none">
                   <option value="formative">Formative</option>
                   <option value="summative">Summative</option>
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Format</label>
-                <select value={options.format} onChange={e => setOptions({...options, format: e.target.value as any})} className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold outline-none">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Format</label>
+                <select value={options.format} onChange={e => setOptions({...options, format: e.target.value as any})} className="w-full bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-bold outline-none">
                   <option value="MCQ">MCQ Only</option>
                   <option value="CRQ">CRQ</option>
                   <option value="Short Answer">Short Answer</option>
@@ -113,10 +113,10 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cognitive Levels (Bloom&apos;s)</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Cognitive Levels (Bloom&apos;s)</label>
               <div className="flex flex-wrap gap-2">
                 {bloomOptions.map(l => (
-                  <button key={l} onClick={() => toggleBloom(l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${options.bloomLevels.includes(l) ? 'bg-emerald-600 border-emerald-500 text-white shadow-md' : 'bg-white dark:bg-white/5 text-slate-400 border-slate-200 dark:border-white/10'}`}>{l}</button>
+                  <button key={l} onClick={() => toggleBloom(l)} className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${options.bloomLevels.includes(l) ? 'bg-emerald-600 border-emerald-500 text-white shadow-md' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>{l}</button>
                 ))}
               </div>
             </div>
@@ -142,7 +142,7 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
                   {q.options && (
                     <div className="grid grid-cols-1 gap-2 pl-4">
                       {q.options.map((opt, i) => (
-                        <div key={i} className={`text-xs p-2 rounded-xl border ${isCorrect(opt, q.correctAnswer) ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 font-bold' : 'border-slate-200 dark:border-white/10 text-slate-500'}`}>
+                        <div key={i} className={`text-xs p-2 rounded-xl border ${isCorrect(opt, q.correctAnswer) ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-200 font-bold' : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'}`}>
                           {opt}
                         </div>
                       ))}
@@ -153,10 +153,10 @@ export const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({ onGene
             </div>
 
             {isEnterprise ? (
-              <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-white/5">
-                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-500"><Rocket size={12} /> Enterprise LMS Bridge</div>
+              <div className="space-y-4 pt-6 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400"><Rocket size={12} /> Enterprise LMS Bridge</div>
                 <div className="grid grid-cols-2 gap-3">
-                   <button onClick={() => exportToLMS('google')} className="flex items-center justify-center gap-2 py-3 bg-white border border-slate-200 dark:border-white/10 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-all"><Share2 size={14}/> Google Forms</button>
+                   <button onClick={() => exportToLMS('google')} className="flex items-center justify-center gap-2 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"><Share2 size={14}/> Google Forms</button>
                    <button onClick={() => exportToLMS('kahoot')} className="flex items-center justify-center gap-2 py-3 bg-purple-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-700 transition-all"><Download size={14}/> Kahoot Importer</button>
                 </div>
               </div>

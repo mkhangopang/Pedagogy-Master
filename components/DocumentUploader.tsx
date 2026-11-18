@@ -463,35 +463,35 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
   const isQuotaError = error?.toLowerCase().includes('quota') || error?.toLowerCase().includes('429');
 
   return (
-    <div className="bg-white dark:bg-[#080808] rounded-[3rem] p-6 md:p-12 w-full max-w-xl shadow-2xl border border-slate-100 dark:border-white/5 relative overflow-hidden text-left">
+    <div className="bg-white dark:bg-slate-900 rounded-[3rem] p-6 md:p-12 w-full max-w-xl shadow-2xl border border-slate-200 dark:border-slate-800 relative overflow-hidden text-left">
       <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-600 via-purple-500 to-emerald-500" />
       <div className="space-y-8">
         <div className="flex items-center justify-between">
           <div className="w-14 h-14 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-2xl">
              {isUploading ? <BrainCircuit size={28} className="animate-pulse" /> : <UploadCloud size={28} />}
           </div>
-          <div className="px-4 py-1.5 bg-emerald-50 dark:bg-emerald-950/30 rounded-full border border-emerald-100 dark:border-emerald-500/20 flex items-center gap-2">
-             <Zap size={12} className="text-emerald-500" />
-             <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Grid Sync v164.0</span>
+          <div className="px-4 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 rounded-full border border-emerald-200 dark:border-emerald-700/50 flex items-center gap-2">
+             <Zap size={12} className="text-emerald-600 dark:text-emerald-400" />
+             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Grid Sync v164.0</span>
           </div>
         </div>
 
         <div>
-          <h2 className="text-3xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Ingest Asset</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Foundational Curriculum Orchestrator</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">Ingest Asset</h2>
+          <p className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest mt-1">Foundational Curriculum Orchestrator</p>
         </div>
 
         {!isUploading && !error && (
-          <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-2xl">
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl">
             <button 
               onClick={() => setMode('upload')}
-              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'upload' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'upload' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-700 dark:text-indigo-200' : 'text-slate-600 dark:text-slate-300'}`}
             >
               File Upload
             </button>
             <button 
               onClick={() => setMode('manual')}
-              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'manual' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
+              className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${mode === 'manual' ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-700 dark:text-indigo-200' : 'text-slate-600 dark:text-slate-300'}`}
             >
               Manual Entry
             </button>
@@ -499,21 +499,21 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         )}
 
         {isStorageOffline && mode === 'upload' && !isUploading && (
-          <div className="p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-900/30 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
-            <AlertTriangle size={18} className="text-amber-500 shrink-0" />
-            <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-tight">
+          <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-2xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
+            <p className="text-[11px] font-bold text-amber-800 dark:text-amber-200 uppercase tracking-tight">
               Cloud Storage Offline: Using local extraction only. For best results, use <button onClick={() => setMode('manual')} className="underline decoration-2">Manual Entry</button>.
             </p>
           </div>
         )}
 
         {error ? (
-          <div className="p-8 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded-[2rem] space-y-6 animate-in slide-in-from-top-2">
-            <div className="flex items-start gap-4 text-rose-600">
+          <div className="p-8 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-[2rem] space-y-6 animate-in slide-in-from-top-2">
+            <div className="flex items-start gap-4 text-rose-700 dark:text-rose-300">
                {isQuotaError ? <Clock size={24} className="shrink-0 mt-1" /> : <AlertCircle size={24} className="shrink-0 mt-1" />}
                <div className="space-y-1">
                  <p className="text-sm font-black uppercase tracking-tight">{isQuotaError ? 'Grid Saturated' : 'Sync Handshake Fault'}</p>
-                 <p className="text-xs font-medium leading-relaxed opacity-90">{error}</p>
+                 <p className="text-xs font-medium leading-relaxed">{error}</p>
                </div>
             </div>
             <button 
@@ -525,37 +525,37 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
           </div>
         ) : isUploading ? (
           <div className="space-y-6 py-4">
-             <div className="h-3 w-full bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden shadow-inner">
+             <div className="h-3 w-full bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden shadow-inner">
                 <div className="h-full bg-indigo-600 rounded-full transition-all duration-1000 ease-out" style={{ width: `${progress}%` }} />
              </div>
              <div className="flex items-center justify-between">
                <div className="flex items-center gap-3">
-                 <Loader2 size={16} className="text-indigo-600 animate-spin" />
-                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-600">{status}</p>
+                 <Loader2 size={16} className="text-indigo-600 dark:text-indigo-400 animate-spin" />
+                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-300">{status}</p>
                </div>
-               <span className="text-[10px] font-black text-slate-400">{Math.round(progress)}%</span>
+               <span className="text-[10px] font-black text-slate-600 dark:text-slate-300">{Math.round(progress)}%</span>
              </div>
-             <p className="text-[9px] text-slate-400 font-medium italic">Establishing neural context nodes. Do not sever the connection.</p>
+             <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium italic">Establishing neural context nodes. Do not sever the connection.</p>
           </div>
         ) : mode === 'manual' ? (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Document Title</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Document Title</label>
               <input 
                 type="text" 
                 value={manualTitle}
                 onChange={(e) => setManualTitle(e.target.value)}
                 placeholder="e.g. Grade 10 Mathematics - Sindh Board"
-                className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl px-6 py-4 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Curriculum Text (Paste Content)</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Curriculum Text (Paste Content)</label>
               <textarea 
                 value={manualText}
                 onChange={(e) => setManualText(e.target.value)}
                 placeholder="Paste the SLOs or curriculum content here..."
-                className="w-full h-48 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl px-6 py-4 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none"
+                className="w-full h-48 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl px-6 py-4 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none"
               />
             </div>
             <button 
@@ -568,10 +568,10 @@ export default function DocumentUploader({ userId, onComplete, onCancel }: any) 
         ) : (
           <label className="group relative cursor-pointer block">
             <input type="file" className="hidden" accept=".pdf,.txt,.md" onChange={handleFileUpload} />
-            <div className="py-20 md:py-24 border-2 border-dashed border-slate-200 dark:border-white/10 rounded-[3rem] group-hover:border-indigo-500 hover:bg-slate-50/50 dark:hover:bg-white/5 transition-all text-center">
-              <UploadCloud size={64} className="text-slate-300 group-hover:text-indigo-600 transition-all mx-auto mb-6" />
-              <p className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Select Curriculum</p>
-              <p className="text-[9px] font-bold text-slate-400 uppercase mt-2 tracking-[0.2em] opacity-60">Linearized Institutional Assets Only</p>
+            <div className="py-20 md:py-24 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-[3rem] group-hover:border-indigo-500 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all text-center">
+              <UploadCloud size={64} className="text-slate-400 dark:text-slate-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-all mx-auto mb-6" />
+              <p className="text-xl font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">Select Curriculum</p>
+              <p className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase mt-2 tracking-[0.2em]">Linearized Institutional Assets Only</p>
             </div>
           </label>
         )}

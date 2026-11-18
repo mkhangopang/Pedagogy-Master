@@ -436,7 +436,7 @@ export default function App() {
           <div className="w-2 h-2 bg-indigo-600 rounded-full animate-bounce" />
         </div>
       </div>
-      <p className="mt-8 text-indigo-600 font-black uppercase tracking-[0.4em] text-[10px] opacity-50">Syncing Grid</p>
+      <p className="mt-8 text-indigo-700 dark:text-indigo-300 font-black uppercase tracking-[0.4em] text-[10px]">Syncing Grid</p>
     </div>
   );
   
@@ -501,7 +501,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {safeProfile.role !== UserRole.APP_ADMIN && (
-              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[11px] font-bold text-slate-600 dark:text-slate-300 tabular-nums whitespace-nowrap">
+              <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 tabular-nums whitespace-nowrap">
                 {Math.max(0, safeProfile.queriesLimit - safeProfile.queriesUsed)}/{safeProfile.queriesLimit} free today
               </span>
             )}
@@ -523,10 +523,10 @@ export default function App() {
                   // ignore clipboard restriction
                 }
               }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 text-xs font-bold whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold whitespace-nowrap"
               title="Copy link to invite fellow educators"
             >
-              {shareCopied ? <Check size={14} className="text-emerald-500" /> : <Share2 size={14} />}
+              {shareCopied ? <Check size={14} className="text-emerald-600 dark:text-emerald-400" /> : <Share2 size={14} />}
               <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
             </button>
             <button

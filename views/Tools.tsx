@@ -479,21 +479,21 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   if (!activeTool) {
     return (
       <div className="max-w-5xl mx-auto w-full pt-8 pb-20 px-4 md:px-6 animate-in fade-in duration-500 relative z-10 text-left">
-        <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-[#0d0d0d] shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-100 dark:border-white/5 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+        <div className={`fixed inset-y-0 right-0 w-80 bg-white dark:bg-slate-900 shadow-2xl z-[200] transform transition-transform duration-500 border-l border-slate-200 dark:border-slate-800 ${isSliderOpen ? 'translate-x-0' : 'translate-x-full'}`}>
            <div className="p-8 flex flex-col h-full">
               <div className="flex items-center justify-between mb-8">
                  <div className="flex items-center gap-3">
-                    <Library size={20} className="text-indigo-600" />
-                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-white">Vault Selection</h3>
+                    <Library size={20} className="text-indigo-600 dark:text-indigo-400" />
+                    <h3 className="font-black text-xs uppercase tracking-widest text-slate-900 dark:text-slate-100">Vault Selection</h3>
                  </div>
-                 <button onClick={() => setIsSliderOpen(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all"><X size={20}/></button>
+                 <button onClick={() => setIsSliderOpen(false)} className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"><X size={20}/></button>
               </div>
               <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2">
                  {localDocs.map(doc => (
-                   <button key={doc.id} onClick={() => toggleDocContext(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-500 hover:border-slate-300'}`}>
-                     <span className={`text-[9px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>Standard Node</span>
+                   <button key={doc.id} onClick={() => toggleDocContext(doc.id)} className={`w-full text-left p-5 rounded-2xl border transition-all flex flex-col gap-1.5 ${doc.isSelected ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg' : 'bg-slate-50 dark:bg-slate-800/70 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-indigo-400'}`}>
+                     <span className={`text-[10px] font-black uppercase tracking-widest ${doc.isSelected ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-400'}`}>Standard Node</span>
                      <p className={`font-bold text-sm truncate ${doc.isSelected ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{doc.name}</p>
-                     <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-400'}`}>{doc.authority} • {doc.subject}</p>
+                     <p className={`text-[11px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-100' : 'text-slate-600 dark:text-slate-300'}`}>{doc.authority} • {doc.subject}</p>
                    </button>
                  ))}
               </div>
@@ -504,16 +504,16 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           <div className="flex items-center gap-6">
             <div className="p-4 bg-indigo-600 rounded-[2rem] text-white shadow-2xl shrink-0"><Zap size={32} /></div>
             <div>
-              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tighter uppercase">Synthesis Hub</h1>
-              <div className="text-slate-500 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
-                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-500" /><span className="truncate">Brain v4.0 Linked: <span className="text-slate-900 dark:text-white font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} /><span className="truncate">Autonomous Creative Intelligence Mode &bull; English, اردو (Urdu) &amp; سنڌي (Sindhi) Output</span></>}
+              <h1 className="text-2xl md:text-5xl font-black text-slate-900 dark:text-slate-100 tracking-tighter uppercase">Synthesis Hub</h1>
+              <div className="text-slate-600 dark:text-slate-300 font-medium text-xs md:text-lg mt-1 italic flex items-center gap-2">
+                {isCurriculumEnabled && activeDoc ? <><ShieldCheck size={14} className="text-emerald-600 dark:text-emerald-400" /><span className="truncate">Brain v4.0 Linked: <span className="text-slate-900 dark:text-slate-100 font-bold">{activeDoc.name}</span></span></> : <><Globe size={14} /><span className="truncate">Autonomous Creative Intelligence Mode &bull; English, اردو (Urdu) &amp; سنڌي (Sindhi) Output</span></>}
               </div>
             </div>
           </div>
           
-          <div className="bg-white dark:bg-[#111] p-2 rounded-[2.5rem] border border-slate-200 dark:border-white/5 shadow-2xl flex items-center gap-2 no-print">
-            <button onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)} className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-50 dark:bg-white/5 border-transparent text-slate-400'}`}><BookMarked size={16} /><div className="text-left"><p className="text-[8px] font-black uppercase leading-none mb-0.5 tracking-widest">Vault</p><p className="text-[10px] font-bold">Curriculum</p></div></button>
-            <button onClick={() => setIsSliderOpen(true)} className={`p-3 rounded-full transition-all ml-1 shadow-inner ${isSliderOpen ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-indigo-600'}`}><Library size={20} /></button>
+          <div className="bg-white dark:bg-slate-900 p-2 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-2xl flex items-center gap-2 no-print">
+            <button onClick={() => setIsCurriculumEnabled(!isCurriculumEnabled)} className={`flex items-center gap-3 px-6 py-3 rounded-full transition-all border ${isCurriculumEnabled ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'}`}><BookMarked size={16} /><div className="text-left"><p className="text-[9px] font-black uppercase leading-none mb-0.5 tracking-widest">Vault</p><p className="text-[11px] font-bold">Curriculum</p></div></button>
+            <button onClick={() => setIsSliderOpen(true)} className={`p-3 rounded-full transition-all ml-1 shadow-inner ${isSliderOpen ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400'}`} aria-label="Open Vault Library"><Library size={20} /></button>
           </div>
         </div>
 
@@ -533,15 +533,15 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 setExportError(null);
                 setShowUpgradeHint(false);
               }
-            }} className={`p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-[#111] border-slate-200 dark:border-white/5 hover:border-indigo-500 hover:shadow-2xl`}>
+            }} className={`p-10 rounded-[3.5rem] border transition-all text-left flex flex-col gap-6 group bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-indigo-500 hover:shadow-2xl`}>
               <div className={`w-14 h-14 ${tool.color} rounded-2xl flex items-center justify-center ${tool.iconColor} shadow-lg`}><tool.icon size={28} /></div>
               <div>
-                <h3 className="font-black text-2xl text-slate-900 dark:text-white uppercase tracking-tight">{tool.name}</h3>
-                <p className="text-slate-500 dark:text-slate-400 text-base mt-2 font-medium leading-relaxed">{tool.desc}</p>
+                <h3 className="font-black text-2xl text-slate-900 dark:text-slate-100 uppercase tracking-tight">{tool.name}</h3>
+                <p className="text-slate-600 dark:text-slate-300 text-base mt-2 font-medium leading-relaxed">{tool.desc}</p>
               </div>
               <div className="flex items-center justify-between mt-auto">
-                 <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1"><Sparkles size={10} /> Specialized Neural Tool</span>
-                 <ArrowRight size={24} className="text-indigo-600 transition-transform group-hover:translate-x-1" />
+                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-400 flex items-center gap-1"><Sparkles size={10} /> Specialized Neural Tool</span>
+                 <ArrowRight size={24} className="text-indigo-600 dark:text-indigo-400 transition-transform group-hover:translate-x-1" />
               </div>
             </button>
           ))}
@@ -551,15 +551,15 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-[#080808] relative overflow-hidden print:h-auto print:overflow-visible">
-      <div className="flex md:hidden border-b border-slate-200 dark:border-white/5 bg-white dark:bg-[#0d0d0d] px-4 py-2 gap-2 no-print">
+    <div className="flex flex-col h-[calc(100vh-120px)] lg:h-[calc(100vh-64px)] bg-slate-50 dark:bg-slate-950 relative overflow-hidden print:h-auto print:overflow-visible">
+      <div className="flex md:hidden border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 gap-2 no-print">
         <button
           type="button"
           onClick={() => setMobileActiveTab('logs')}
           className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
             mobileActiveTab === 'logs'
               ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
           }`}
         >
           Prompt &amp; Logs
@@ -570,23 +570,23 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
             mobileActiveTab === 'artifact'
               ? 'bg-indigo-600 text-white shadow-sm'
-              : 'bg-slate-100 dark:bg-white/5 text-slate-600 dark:text-slate-300'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200'
           }`}
         >
           Artifact &amp; Translate
         </button>
       </div>
       <div className="flex-1 flex overflow-hidden print:block print:overflow-visible">
-        <div className={`flex flex-col border-r border-slate-200 dark:border-white/5 bg-slate-50/50 dark:bg-[#0d0d0d] transition-all duration-300 no-print ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] shrink-0`}>
-          <div className="px-6 py-4 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-white dark:bg-[#0d0d0d]">
+        <div className={`flex flex-col border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/90 transition-all duration-300 no-print ${mobileActiveTab === 'artifact' ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] shrink-0`}>
+          <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900">
              <div className="flex items-center gap-3">
-               <button onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent(''); setSelectedLang('en'); setTranslations({}); setTranslationError(null); setExportError(null); setShowUpgradeHint(false);}} className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl text-slate-500 transition-all"><ChevronLeft size={22}/></button>
-               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{getToolDisplayName(activeTool)}</span>
+               <button onClick={() => {setActiveTool(null); setMessages([]); setCanvasContent(''); setSelectedLang('en'); setTranslations({}); setTranslationError(null); setExportError(null); setShowUpgradeHint(false);}} className="p-2 -ml-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-slate-600 dark:text-slate-300 transition-all" aria-label="Back to tool hub"><ChevronLeft size={22}/></button>
+               <span className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest">{getToolDisplayName(activeTool)}</span>
              </div>
-             <div className="flex items-center gap-1 bg-slate-100 dark:bg-white/5 p-1 rounded-xl">
-                <button onClick={() => setPersona('architect')} title="Instructional Architect" className={`p-1.5 rounded-lg ${persona === 'architect' ? 'bg-white dark:bg-white/10 text-indigo-600 shadow-sm' : 'text-slate-400'}`}><PenTool size={14}/></button>
-                <button onClick={() => setPersona('creative')} title="Creative Designer" className={`p-1.5 rounded-lg ${persona === 'creative' ? 'bg-white dark:bg-white/10 text-rose-600 shadow-sm' : 'text-slate-400'}`}><Compass size={14}/></button>
-                <button onClick={() => setPersona('auditor')} title="Curriculum Auditor" className={`p-1.5 rounded-lg ${persona === 'auditor' ? 'bg-white dark:bg-white/10 text-emerald-600 shadow-sm' : 'text-slate-400'}`}><SearchCode size={14}/></button>
+             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                <button onClick={() => setPersona('architect')} title="Instructional Architect" className={`p-1.5 rounded-lg ${persona === 'architect' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-300 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}><PenTool size={14}/></button>
+                <button onClick={() => setPersona('creative')} title="Creative Designer" className={`p-1.5 rounded-lg ${persona === 'creative' ? 'bg-white dark:bg-slate-700 text-rose-600 dark:text-rose-300 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}><Compass size={14}/></button>
+                <button onClick={() => setPersona('auditor')} title="Curriculum Auditor" className={`p-1.5 rounded-lg ${persona === 'auditor' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-300 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}><SearchCode size={14}/></button>
              </div>
           </div>
           <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar py-6 space-y-2">
@@ -602,14 +602,14 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               />
             ))}
           </div>
-          <div className="p-6 border-t dark:border-white/5 bg-white dark:bg-[#0d0d0d] space-y-2">
+          <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
             {!canQuery && (
-              <div className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-200 text-[11px] font-semibold flex items-center justify-between gap-2">
+              <div className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-[11px] font-semibold flex items-center justify-between gap-2">
                 <span>Daily free synthesis limit reached ({user.queriesUsed}/{user.queriesLimit}). Resets tomorrow (UTC).</span>
                 <button
                   type="button"
                   onClick={() => onViewChange?.('pricing')}
-                  className="text-indigo-600 dark:text-indigo-400 font-bold underline whitespace-nowrap"
+                  className="text-indigo-700 dark:text-indigo-300 font-bold underline whitespace-nowrap"
                 >
                   Upcoming Plans
                 </button>
@@ -619,11 +619,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           </div>
         </div>
 
-        <div className={`flex-1 min-w-0 flex flex-col bg-white dark:bg-[#0a0a0a] transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
-           <div className="px-4 md:px-8 py-3.5 border-b border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-3 shrink-0 bg-white dark:bg-[#0a0a0a] z-10 no-print">
+        <div className={`flex-1 min-w-0 flex flex-col bg-slate-50/70 dark:bg-slate-950 transition-all duration-300 ${mobileActiveTab === 'logs' ? 'hidden md:flex' : 'flex'} overflow-hidden print:block print:overflow-visible`}>
+           <div className="px-4 md:px-8 py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 shrink-0 bg-white dark:bg-slate-900 z-10 no-print">
               <div className="flex items-center gap-3 min-w-0">
                 <BlinkingRobot size="sm" isThinking={isGenerating} />
-                <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white whitespace-nowrap">Neural Artifact Node</span>
+                <span className="text-[10px] md:text-xs font-black uppercase tracking-widest text-slate-900 dark:text-slate-100 whitespace-nowrap">Neural Artifact Node</span>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -632,8 +632,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   aria-label="Output language"
                   className="inline-flex items-center p-1 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 shrink-0"
                 >
-                  <span className="px-2 text-slate-400 inline-flex items-center gap-1" title="Google Translate (Urdu & Sindhi)">
-                    {isTranslating ? <Loader2 size={13} className="animate-spin text-indigo-600" /> : <Languages size={13} />}
+                  <span className="px-2 text-slate-600 dark:text-slate-300 inline-flex items-center gap-1" title="Google Translate (Urdu & Sindhi)">
+                    {isTranslating ? <Loader2 size={13} className="animate-spin text-indigo-600 dark:text-indigo-400" /> : <Languages size={13} />}
                     <span className="text-[10px] font-bold uppercase tracking-wider hidden xl:inline">Translate</span>
                   </span>
                   {(
@@ -652,8 +652,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                         onClick={() => handleSelectLanguage(langOpt.id)}
                         className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap shrink-0 disabled:opacity-50 ${
                           active
-                            ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shadow-sm'
-                            : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                            ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                            : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                         }`}
                       >
                         {langOpt.label}
@@ -666,10 +666,10 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   <span
                     className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wide whitespace-nowrap shrink-0 border ${
                       translationQuota.isDeveloper
-                        ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-700/50 text-amber-800 dark:text-amber-300'
                         : (translationQuota.remaining ?? 0) <= 0
-                          ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/40 text-rose-600 dark:text-rose-400'
-                          : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300'
+                          ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/50 text-rose-700 dark:text-rose-300'
+                          : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
                     }`}
                   >
                     {translationQuota.isDeveloper
@@ -690,8 +690,8 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   onClick={handleRichCopy}
                   className={`px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap shrink-0 border disabled:opacity-40 ${
                     copySuccess
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
-                      : 'border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-200'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+                      : 'border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-100'
                   }`}
                 >
                   {copySuccess ? <Check size={14}/> : <Copy size={14}/>}
@@ -705,11 +705,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   title={isPro ? 'Download as Word (.docx)' : 'Paid feature: Upgrade to download DOCX'}
                   className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap shrink-0 border disabled:opacity-40 ${
                     isPro
-                      ? 'border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
-                      : 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-amber-300 dark:hover:border-amber-500/40'
+                      ? 'border-indigo-200 dark:border-indigo-500/40 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+                      : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-amber-400 dark:hover:border-amber-500/50'
                   }`}
                 >
-                  {isExporting === 'docx' ? <Loader2 size={14} className="animate-spin" /> : isPro ? <FileDown size={14} /> : <Lock size={13} className="text-amber-500" />}
+                  {isExporting === 'docx' ? <Loader2 size={14} className="animate-spin" /> : isPro ? <FileDown size={14} /> : <Lock size={13} className="text-amber-600 dark:text-amber-400" />}
                   DOCX
                 </button>
 
@@ -720,11 +720,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   title={isPro ? 'Download as PDF (.pdf)' : 'Paid feature: Upgrade to download PDF'}
                   className={`px-3 py-2 rounded-xl transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap shrink-0 border disabled:opacity-40 ${
                     isPro
-                      ? 'border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/40'
-                      : 'border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-amber-300 dark:hover:border-amber-500/40'
+                      ? 'border-emerald-200 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                      : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-amber-400 dark:hover:border-amber-500/50'
                   }`}
                 >
-                  {isExporting === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : isPro ? <Download size={14} /> : <Lock size={13} className="text-amber-500" />}
+                  {isExporting === 'pdf' ? <Loader2 size={14} className="animate-spin" /> : isPro ? <Download size={14} /> : <Lock size={13} className="text-amber-600 dark:text-amber-400" />}
                   PDF
                 </button>
 
@@ -733,7 +733,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                     type="button"
                     disabled={!displayedContent || isGenerating || isTranslating}
                     onClick={handlePrint}
-                    className="px-3 py-2 border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 rounded-xl transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap shrink-0 disabled:opacity-40"
+                    className="px-3 py-2 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl transition-all flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest whitespace-nowrap shrink-0 disabled:opacity-40"
                   >
                     <Printer size={14}/> Print
                   </button>
@@ -742,11 +742,11 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
            </div>
 
            {(translationError || exportError || showUpgradeHint) && (
-             <div className="px-4 md:px-8 py-2.5 border-b border-slate-100 dark:border-white/5 bg-slate-50 dark:bg-[#111] flex flex-wrap items-center justify-between gap-3 text-xs no-print">
+             <div className="px-4 md:px-8 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex flex-wrap items-center justify-between gap-3 text-xs no-print">
                {showUpgradeHint ? (
                    <>
-                     <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200 font-medium">
-                       <Lock size={14} className="text-amber-500 shrink-0" />
+                     <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-medium">
+                       <Lock size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
                        <span>Free users can copy &amp; paste translated Urdu/Sindhi content anytime. Paid plans (~$9/mo USD) with DOCX &amp; PDF downloads will be available soon.</span>
                      </div>
                      <div className="flex items-center gap-2 shrink-0">
@@ -760,7 +760,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                        <button
                          type="button"
                          onClick={() => setShowUpgradeHint(false)}
-                         className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                         className="p-1 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
                          aria-label="Dismiss upgrade message"
                        >
                          <X size={14} />
@@ -769,7 +769,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                    </>
                  ) : (
                    <>
-                     <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-medium">
+                     <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300 font-medium">
                        <AlertCircle size={14} className="shrink-0" />
                        <span>{translationError || exportError}</span>
                      </div>
@@ -786,7 +786,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                      <button
                        type="button"
                        onClick={() => { setTranslationError(null); setExportError(null); setQuotaUpgradePrompt(false); }}
-                       className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-white"
+                       className="p-1 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white"
                        aria-label="Dismiss error"
                      >
                        <X size={14} />
@@ -797,7 +797,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
              </div>
            )}
            
-           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-50/20 dark:bg-[#0a0a0a] print:p-0 print:overflow-visible">
+           <div className="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-12 lg:p-20 bg-slate-100/60 dark:bg-slate-950 print:p-0 print:overflow-visible">
               {/* Print zone - hidden on screen, visible only when printing */}
               <div id="pm-print-zone" dir={isRtl ? 'rtl' : 'ltr'} className={`hidden ${rtlFontClass}`}>
                 <table className="pm-print-container">
@@ -827,9 +827,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                 </table>
               </div>
 
-              <div className="max-w-4xl mx-auto bg-white dark:bg-[#111] p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-100 dark:border-white/5 min-h-full print:shadow-none print:border-none print:rounded-none print:p-0 relative">
+              <div className="max-w-4xl mx-auto bg-white dark:bg-slate-900 p-6 md:p-16 lg:p-20 rounded-[3rem] shadow-2xl border border-slate-200 dark:border-slate-800 min-h-full print:shadow-none print:border-none print:rounded-none print:p-0 relative">
                 {isTranslating && (
-                  <div className="mb-6 px-4 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-800/40 flex items-center gap-3 text-xs font-semibold text-indigo-700 dark:text-indigo-300 no-print">
+                  <div className="mb-6 px-4 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/50 flex items-center gap-3 text-xs font-semibold text-indigo-800 dark:text-indigo-200 no-print">
                     <Loader2 size={16} className="animate-spin shrink-0" />
                     <span>
                       {translatingLang === 'sd'
@@ -842,7 +842,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   <>
                     <div
                       dir={isRtl ? 'rtl' : 'ltr'}
-                      className={`prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500 ${rtlFontClass}`}
+                      className={`prose pm-prose max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500 ${rtlFontClass}`}
                       dangerouslySetInnerHTML={{ __html: markdownToHtml(displayedContent, isRtl ? 'rtl' : 'ltr') }}
                     />
                     {!isGenerating && (
@@ -859,16 +859,16 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                   <div className="flex flex-col items-center justify-center h-full py-32 text-center no-print space-y-5 animate-in fade-in">
                     <BlinkingRobot size="lg" isThinking />
                     <div className="space-y-1.5">
-                      <h2 className="text-sm font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Synthesizing Artifact</h2>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Streaming high-speed pedagogical structure...</p>
+                      <h2 className="text-sm font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-widest">Synthesizing Artifact</h2>
+                      <p className="text-xs text-slate-600 dark:text-slate-300">Streaming high-speed pedagogical structure...</p>
                     </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full py-32 text-center no-print">
                     <div className="mb-6"><BlinkingRobot size="lg" /></div>
-                    <h2 className="text-base font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Ready to Synthesize</h2>
-                    <p className="mt-3 max-w-md text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                      Enter a prompt on the left. Use the language bar above to switch output between <span className="font-semibold text-slate-700 dark:text-slate-200">English</span>, <span className="font-semibold text-slate-700 dark:text-slate-200">اردو (Urdu)</span>, and <span className="font-semibold text-slate-700 dark:text-slate-200">سنڌي (Sindhi)</span>.
+                    <h2 className="text-base font-black text-slate-700 dark:text-slate-200 uppercase tracking-widest">Ready to Synthesize</h2>
+                    <p className="mt-3 max-w-md text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Enter a prompt on the left. Use the language bar above to switch output between <span className="font-semibold text-slate-900 dark:text-slate-100">English</span>, <span className="font-semibold text-slate-900 dark:text-slate-100">اردو (Urdu)</span>, and <span className="font-semibold text-slate-900 dark:text-slate-100">سنڌي (Sindhi)</span>.
                     </p>
                   </div>
                 )}

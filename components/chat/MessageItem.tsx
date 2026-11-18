@@ -236,14 +236,14 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
           )}
           <span
             className={`text-[10px] font-black uppercase tracking-[0.2em] ${
-              isGlitch ? 'text-rose-600' : 'text-slate-600 dark:text-slate-300'
+              isGlitch ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-200'
             }`}
           >
             {isAi ? (isGlitch ? 'System Override' : 'Pedagogy Master') : 'Educator Node'}
           </span>
           {isAi && content && !isGlitch && (
-            <button onClick={handleCopy} className="p-1.5 text-slate-400 hover:text-indigo-600 transition-all" title="Copy response">
-              {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+            <button onClick={handleCopy} className="p-1.5 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-all" title="Copy response">
+              {copied ? <Check size={14} className="text-emerald-600 dark:text-emerald-400" /> : <Copy size={14} />}
             </button>
           )}
         </div>
@@ -384,7 +384,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
               content ? (
                 <div
                   dir={isRtl ? 'rtl' : 'ltr'}
-                  className={`prose dark:prose-invert max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] break-words ${rtlFontClass}`}
+                  className={`prose pm-prose max-w-full text-sm md:text-base leading-relaxed md:leading-[1.8] break-words ${rtlFontClass}`}
                   dangerouslySetInnerHTML={{ __html: renderedHtml }}
                 />
               ) : (
@@ -452,7 +452,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
               {isGlitch ? 'Sanity Intercept' : metadata?.isGrounded ? 'Standard Anchored' : 'Neural Grid'}
             </div>
           )}
-          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+          <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
             {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>
         </div>

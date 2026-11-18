@@ -516,23 +516,23 @@ const Login: React.FC<LoginProps> = ({
   if (view === 'signup-success') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-        <div className="w-full max-w-md bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-xl text-center border border-slate-100 dark:border-white/5 animate-in fade-in zoom-in-95">
-          <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-xl text-center border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95">
+          <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-950/50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 className="w-12 h-12 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Check your email</h2>
-          <p className="text-slate-500 mb-6 text-sm">
-            We have sent an activation link to <span className="font-semibold text-slate-800 dark:text-slate-200">{email}</span>. Click the link to complete verification.
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">Check your email</h2>
+          <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm">
+            We have sent an activation link to <span className="font-semibold text-slate-900 dark:text-slate-100">{email}</span>. Click the link to complete verification.
           </p>
 
           {resendMessage && (
-            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-xl mb-4 text-xs text-emerald-700 dark:text-emerald-400">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl mb-4 text-xs text-emerald-800 dark:text-emerald-300">
               {resendMessage}
             </div>
           )}
 
           {error && (
-            <div className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/30 rounded-xl mb-4 text-xs text-rose-600 dark:text-rose-400 text-left flex items-start gap-2">
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl mb-4 text-xs text-rose-700 dark:text-rose-300 text-left flex items-start gap-2">
               <AlertCircle size={14} className="shrink-0 mt-0.5" />
               <span>{error.message}</span>
             </div>
@@ -550,7 +550,7 @@ const Login: React.FC<LoginProps> = ({
               type="button"
               disabled={resendLoading}
               onClick={() => handleResendConfirmation(email)}
-              className="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-indigo-600 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+              className="w-full py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
             >
               {resendLoading ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
               Didn&apos;t receive it? Resend activation email
@@ -567,15 +567,15 @@ const Login: React.FC<LoginProps> = ({
   if (view === 'reset-sent') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-        <div className="w-full max-w-md bg-white dark:bg-slate-900 p-8 md:p-10 rounded-3xl shadow-xl text-center border border-slate-100 dark:border-white/5 animate-in fade-in zoom-in-95">
-          <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
-            <Mail className="w-8 h-8 text-indigo-600" />
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 p-8 md:p-10 rounded-3xl shadow-xl text-center border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95">
+          <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-950/60 rounded-2xl flex items-center justify-center mx-auto mb-6">
+            <Mail className="w-8 h-8 text-indigo-600 dark:text-indigo-400" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Check Your Email</h2>
-          <p className="text-slate-500 mb-6 text-sm">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">Check Your Email</h2>
+          <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm">
             {recoveryNotice || (
               <>
-                If an account exists for <span className="font-semibold text-slate-800 dark:text-slate-200">{email}</span>, we sent a password reset link and verification code. Please check your inbox and spam folder.
+                If an account exists for <span className="font-semibold text-slate-900 dark:text-slate-100">{email}</span>, we sent a password reset link and verification code. Please check your inbox and spam folder.
               </>
             )}
           </p>
@@ -587,12 +587,12 @@ const Login: React.FC<LoginProps> = ({
               }} 
               className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2"
             >
-              <KeyRound size={16} /> Enter Email Code & Set Password
+              <KeyRound size={16} /> Enter Email Code &amp; Set Password
             </button>
 
             <button 
               onClick={() => setView('login')} 
-              className="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-indigo-600 transition-colors"
+              className="w-full py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
             >
               Return to Sign In
             </button>
@@ -608,12 +608,12 @@ const Login: React.FC<LoginProps> = ({
   if (view === 'update-password-success') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-6">
-        <div className="w-full max-w-md bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-xl text-center border border-slate-100 dark:border-white/5 animate-in fade-in zoom-in-95">
-          <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-900/20 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 p-10 rounded-3xl shadow-xl text-center border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in-95">
+          <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-950/50 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 className="w-12 h-12 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Password Updated</h2>
-          <p className="text-slate-500 mb-8 text-sm">
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">Password Updated</h2>
+          <p className="text-slate-600 dark:text-slate-300 mb-8 text-sm">
             Your new password has been set securely. You can now access your educator workspace.
           </p>
           <button 
@@ -644,7 +644,7 @@ const Login: React.FC<LoginProps> = ({
           {onBack && (
             <button 
               onClick={onBack}
-              className="mb-8 inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-400 hover:text-indigo-600 transition-colors"
+              className="mb-8 inline-flex items-center gap-2 text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
             >
               <ArrowLeft size={14} /> Back to Hub
             </button>
@@ -652,16 +652,16 @@ const Login: React.FC<LoginProps> = ({
           <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-200 dark:shadow-none mb-4">
             <GraduationCap className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight uppercase">Pedagogy Master</h1>
-          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-500/20 rounded-full">
-            <ShieldCheck size={10} className="text-emerald-600" />
-            <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600">Enterprise Protocol Secure</span>
+          <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight uppercase">Pedagogy Master</h1>
+          <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-700/50 rounded-full">
+            <ShieldCheck size={10} className="text-emerald-700 dark:text-emerald-300" />
+            <span className="text-[10px] font-black uppercase tracking-widest text-emerald-700 dark:text-emerald-300">Enterprise Protocol Secure</span>
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-100 dark:border-white/5">
+        <div className="bg-white dark:bg-slate-900 p-8 rounded-3xl shadow-xl border border-slate-200 dark:border-slate-800">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold dark:text-white">
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
               {view === 'login' ? 'Sign In' : 
                view === 'signup' ? 'Create Account' : 
                view === 'update-password' ? 'Set New Password' : 
@@ -671,7 +671,7 @@ const Login: React.FC<LoginProps> = ({
               <button 
                 type="button"
                 onClick={() => switchView('login')} 
-                className="text-xs font-bold text-slate-400 hover:text-indigo-600 flex items-center gap-1 transition-colors"
+                className="text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 transition-colors"
               >
                 <ArrowLeft size={14} /> Back
               </button>
@@ -685,7 +685,7 @@ const Login: React.FC<LoginProps> = ({
                 type="button"
                 onClick={handleGoogleLogin}
                 disabled={googleLoading || loading}
-                className="w-full py-3.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-white rounded-xl font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
+                className="w-full py-3.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-xl font-bold text-sm shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50"
               >
                 {googleLoading ? <Loader2 size={18} className="animate-spin" /> : (
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -700,10 +700,10 @@ const Login: React.FC<LoginProps> = ({
 
               <div className="relative my-8">
                 <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                  <div className="w-full border-t border-slate-100 dark:border-white/5"></div>
+                  <div className="w-full border-t border-slate-200 dark:border-slate-800"></div>
                 </div>
                 <div className="relative flex justify-center text-[10px] font-black uppercase tracking-[0.2em]">
-                  <span className="bg-white dark:bg-slate-900 px-4 text-slate-400">Institutional Access</span>
+                  <span className="bg-white dark:bg-slate-900 px-4 text-slate-600 dark:text-slate-300">Institutional Access</span>
                 </div>
               </div>
             </>
@@ -724,11 +724,11 @@ const Login: React.FC<LoginProps> = ({
 
             {/* Active Session Badge for Password Update */}
             {view === 'update-password' && hasActiveSession && (
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-xl flex items-center gap-3 animate-in fade-in">
-                <CheckCircle2 size={18} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl flex items-center gap-3 animate-in fade-in">
+                <CheckCircle2 size={18} className="text-emerald-700 dark:text-emerald-300 shrink-0" />
                 <div className="text-xs">
-                  <p className="font-bold text-emerald-800 dark:text-emerald-300">Verified Recovery Session</p>
-                  <p className="text-emerald-700 dark:text-emerald-400/80">Updating password for <span className="font-semibold">{email || 'your account'}</span></p>
+                  <p className="font-bold text-emerald-900 dark:text-emerald-200">Verified Recovery Session</p>
+                  <p className="text-emerald-800 dark:text-emerald-300">Updating password for <span className="font-semibold">{email || 'your account'}</span></p>
                 </div>
               </div>
             )}
@@ -736,18 +736,18 @@ const Login: React.FC<LoginProps> = ({
             {/* Email input */}
             {(view !== 'update-password' || !hasActiveSession) && (
               <div className="space-y-1">
-                <label htmlFor="auth-email" className="text-sm font-semibold text-slate-600 dark:text-slate-400 ml-1">
+                <label htmlFor="auth-email" className="text-sm font-semibold text-slate-700 dark:text-slate-200 ml-1">
                   Email Address
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 dark:text-slate-400" />
                   <input 
                     type="email" 
                     id="auth-email"
                     name="email"
                     value={email} 
                     onChange={(e) => setEmail(e.target.value)} 
-                    className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm" 
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 text-sm" 
                     placeholder="name@school.edu" 
                     required 
                   />
@@ -759,13 +759,13 @@ const Login: React.FC<LoginProps> = ({
             {view === 'update-password' && !hasActiveSession && (
               <div className="space-y-1 animate-in fade-in">
                 <div className="flex items-center justify-between ml-1">
-                  <label htmlFor="auth-otp" className="text-sm font-semibold text-slate-600 dark:text-slate-400">
+                  <label htmlFor="auth-otp" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                     Reset Code or Link
                   </label>
-                  <span className="text-[10px] font-medium text-slate-400">Code from email or paste reset link</span>
+                  <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300">Code from email or paste reset link</span>
                 </div>
                 <div className="relative">
-                  <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <Hash className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 dark:text-slate-400" />
                   <input 
                     type="text" 
                     id="auth-otp"
@@ -779,7 +779,7 @@ const Login: React.FC<LoginProps> = ({
                       }
                       setOtpCode(val);
                     }} 
-                    className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm font-mono tracking-wider" 
+                    className="w-full pl-12 pr-4 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 text-sm font-mono tracking-wider" 
                     placeholder="e.g. 28367918 or token" 
                     required={!hasActiveSession}
                   />
@@ -791,35 +791,35 @@ const Login: React.FC<LoginProps> = ({
             {view !== 'forgot-password' && (
               <div className="space-y-1">
                 <div className="flex items-center justify-between ml-1">
-                  <label htmlFor="auth-password" className="text-sm font-semibold text-slate-600 dark:text-slate-400">
+                  <label htmlFor="auth-password" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
                     {view === 'update-password' ? 'New Password' : 'Password'}
                   </label>
                   {view === 'login' && (
                     <button 
                       type="button" 
                       onClick={() => switchView('forgot-password')} 
-                      className="text-[11px] font-bold text-indigo-600 hover:underline"
+                      className="text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:underline"
                     >
                       Forgot?
                     </button>
                   )}
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 dark:text-slate-400" />
                   <input 
                     type={showPassword ? 'text' : 'password'} 
                     id="auth-password"
                     name="password"
                     value={password} 
                     onChange={(e) => setPassword(e.target.value)} 
-                    className="w-full pl-12 pr-12 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm" 
+                    className="w-full pl-12 pr-12 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 text-sm" 
                     placeholder={view === 'update-password' ? 'Min 8 characters' : '••••••••'} 
                     required 
                   />
                   <button 
                     type="button" 
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -831,25 +831,25 @@ const Login: React.FC<LoginProps> = ({
             {/* Confirm Password input */}
             {(view === 'signup' || view === 'update-password') && (
               <div className="space-y-1">
-                <label htmlFor="auth-confirm-password" className="text-sm font-semibold text-slate-600 dark:text-slate-400 ml-1">
+                <label htmlFor="auth-confirm-password" className="text-sm font-semibold text-slate-700 dark:text-slate-200 ml-1">
                   Confirm Password
                 </label>
                 <div className="relative">
-                  <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+                  <KeyRound className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 dark:text-slate-400" />
                   <input 
                     type={showConfirmPassword ? 'text' : 'password'} 
                     id="auth-confirm-password"
                     name="confirmPassword"
                     value={confirmPassword} 
                     onChange={(e) => setConfirmPassword(e.target.value)} 
-                    className="w-full pl-12 pr-12 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-white/5 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none dark:text-white text-sm" 
+                    className="w-full pl-12 pr-12 py-3 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 text-sm" 
                     placeholder="Repeat password" 
                     required 
                   />
                   <button 
                     type="button" 
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
                     aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                   >
                     {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -867,7 +867,7 @@ const Login: React.FC<LoginProps> = ({
 
             {/* Resend Confirmation Feedback */}
             {resendMessage && (
-              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/40 rounded-xl text-xs text-emerald-700 dark:text-emerald-400 flex items-start gap-2 animate-in fade-in">
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2 animate-in fade-in">
                 <CheckCircle2 size={15} className="shrink-0 mt-0.5" />
                 <span>{resendMessage}</span>
               </div>
@@ -875,7 +875,7 @@ const Login: React.FC<LoginProps> = ({
 
             {/* Error Message + Contextual Recovery Actions */}
             {error && (
-              <div className="p-4 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl space-y-2.5 animate-in fade-in">
+              <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 rounded-xl space-y-2.5 animate-in fade-in">
                 <div className="flex items-start gap-2 text-xs font-semibold">
                   <AlertCircle size={15} className="shrink-0 mt-0.5" /> 
                   <span>{error.message}</span>
@@ -903,7 +903,7 @@ const Login: React.FC<LoginProps> = ({
                     <button
                       type="button"
                       onClick={() => switchView('forgot-password')}
-                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200 text-[11px] font-bold hover:border-indigo-500/40 transition-colors"
+                      className="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-[11px] font-bold hover:border-indigo-500/40 transition-colors"
                     >
                       Reset Password
                     </button>
@@ -934,11 +934,11 @@ const Login: React.FC<LoginProps> = ({
 
           {/* View Toggles */}
           {view === 'login' && (
-            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5 text-center">
+            <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 text-center">
               <button 
                 type="button"
                 onClick={() => switchView('signup')} 
-                className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+                className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
               >
                 New educator? Create account
               </button>
@@ -946,11 +946,11 @@ const Login: React.FC<LoginProps> = ({
           )}
 
           {view === 'signup' && (
-            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5 text-center">
+            <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 text-center">
               <button 
                 type="button"
                 onClick={() => switchView('login')} 
-                className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+                className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-200 transition-colors"
               >
                 Already have an account? Sign In
               </button>
@@ -958,11 +958,11 @@ const Login: React.FC<LoginProps> = ({
           )}
 
           {view === 'update-password' && (
-            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-white/5 text-center">
+            <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800 text-center">
               <button 
                 type="button"
                 onClick={() => switchView('forgot-password')} 
-                className="text-sm font-semibold text-slate-500 hover:text-indigo-600 transition-colors"
+                className="text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
               >
                 Need a new reset code? Send again
               </button>

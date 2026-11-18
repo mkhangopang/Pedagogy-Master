@@ -103,10 +103,10 @@ export const PilotFeedbackDrawer: React.FC<PilotFeedbackDrawerProps> = ({
               <MessageSquarePlus size={18} />
             </div>
             <div>
-              <h3 className="text-base font-black text-slate-900 dark:text-white tracking-tight">
+              <h3 className="text-base font-black text-slate-900 dark:text-slate-100 tracking-tight">
                 Share Educator Feedback
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
                 Help shape the free public release &amp; upcoming tools
               </p>
             </div>
@@ -115,7 +115,7 @@ export const PilotFeedbackDrawer: React.FC<PilotFeedbackDrawerProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close feedback dialog"
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10"
+            className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             <X size={18} />
           </button>
@@ -123,18 +123,18 @@ export const PilotFeedbackDrawer: React.FC<PilotFeedbackDrawerProps> = ({
 
         {sent ? (
           <div className="py-10 text-center space-y-3">
-            <CheckCircle2 size={36} className="text-emerald-500 mx-auto" />
-            <p className="font-bold text-slate-900 dark:text-white">
+            <CheckCircle2 size={36} className="text-emerald-600 dark:text-emerald-400 mx-auto" />
+            <p className="font-bold text-slate-900 dark:text-slate-100">
               Feedback received — thank you!
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-600 dark:text-slate-300">
               Every educator note directly guides our next improvements.
             </p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                 Topic
               </label>
               <div className="flex flex-wrap gap-1.5">
@@ -146,7 +146,7 @@ export const PilotFeedbackDrawer: React.FC<PilotFeedbackDrawerProps> = ({
                     className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all whitespace-nowrap border ${
                       category === cat
                         ? 'bg-indigo-600 border-indigo-600 text-white'
-                        : 'bg-slate-50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
                     }`}
                   >
                     {cat}
@@ -156,7 +156,7 @@ export const PilotFeedbackDrawer: React.FC<PilotFeedbackDrawerProps> = ({
             </div>
 
             <div className="space-y-2">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                 Experience Rating
               </label>
               <div className="flex items-center gap-1.5">
@@ -167,22 +167,22 @@ export const PilotFeedbackDrawer: React.FC<PilotFeedbackDrawerProps> = ({
                     onClick={() => setRating(star)}
                     className={`p-2 rounded-xl border transition-all ${
                       rating >= star
-                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-700/40 text-amber-500'
-                        : 'border-slate-200 dark:border-white/10 text-slate-300 dark:text-slate-600'
+                        ? 'bg-amber-50 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700/60 text-amber-600 dark:text-amber-400'
+                        : 'border-slate-300 dark:border-slate-700 text-slate-400 dark:text-slate-500'
                     }`}
                     aria-label={`Rate ${star} out of 5`}
                   >
                     <Star size={16} fill={rating >= star ? 'currentColor' : 'none'} />
                   </button>
                 ))}
-                <span className="ml-2 text-xs font-bold text-slate-500 dark:text-slate-400 tabular-nums">
+                <span className="ml-2 text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums">
                   {rating}/5
                 </span>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                 Your Note
               </label>
               <textarea
@@ -191,7 +191,7 @@ export const PilotFeedbackDrawer: React.FC<PilotFeedbackDrawerProps> = ({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="What worked well? What curriculum feature or language fix would help your classroom most?"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-black/30 border border-slate-200 dark:border-white/10 text-sm text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
               />
             </div>
 

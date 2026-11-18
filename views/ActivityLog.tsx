@@ -186,7 +186,7 @@ export default function ActivityLogView({ user, documents, onViewChange }: Activ
               Live Monitoring
             </span>
           </div>
-          <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-2xl font-medium">
+          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-2xl font-medium">
             Verifiable audit trail tracking document uploads, neural query completions, and settings adjustments for institutional transparency.
           </p>
         </div>
@@ -277,18 +277,18 @@ export default function ActivityLogView({ user, documents, onViewChange }: Activ
         <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
           {/* Search box */}
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" size={15} />
             <input
               type="text"
               placeholder="Search actions, documents, models, or keywords..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="w-full pl-9 pr-8 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
             {searchQuery && (
               <button 
                 onClick={() => setSearchQuery('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-0.5"
               >
                 <X size={13} />
               </button>
@@ -296,7 +296,7 @@ export default function ActivityLogView({ user, documents, onViewChange }: Activ
           </div>
 
           {/* Time range selector */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300">
             <span className="font-semibold text-[11px] uppercase tracking-wider">Time:</span>
             {(['all', '24h', '7d', '30d'] as const).map(range => (
               <button
@@ -354,10 +354,10 @@ export default function ActivityLogView({ user, documents, onViewChange }: Activ
               <button
                 key={st.id}
                 onClick={() => setSelectedStatus(st.id as any)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
                   selectedStatus === st.id
                     ? 'bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
                 }`}
               >
                 {st.label}
@@ -371,13 +371,13 @@ export default function ActivityLogView({ user, documents, onViewChange }: Activ
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
         {logs.length === 0 ? (
           <div className="py-16 px-4 text-center">
-            <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-400">
+            <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-3 text-slate-500 dark:text-slate-400">
               <Activity size={24} />
             </div>
             <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-tight">
               No matching activity records
             </h3>
-            <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 max-w-sm mx-auto">
+            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-sm mx-auto">
               {searchQuery || selectedCategory !== 'all' || selectedStatus !== 'all' || timeRange !== 'all'
                 ? 'Try clearing active filters to see earlier records.'
                 : 'As you interact with the platform (uploading curricula, chatting with neural models, or tuning settings), events will appear here in real time.'}
@@ -532,7 +532,7 @@ export default function ActivityLogView({ user, documents, onViewChange }: Activ
 
               <button
                 onClick={() => setSelectedLog(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                className="p-1.5 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 <X size={18} />
               </button>
@@ -545,35 +545,35 @@ export default function ActivityLogView({ user, documents, onViewChange }: Activ
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
                   Summary & Context
                 </span>
-                <p className="text-sm text-slate-800 dark:text-slate-200 mt-1 font-medium bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800">
+                <p className="text-sm text-slate-800 dark:text-slate-100 mt-1 font-medium bg-slate-50 dark:bg-slate-800/80 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
                   {selectedLog.summary}
                 </p>
               </div>
 
               {/* Key Attributes Grid */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800">
+                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                   <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300">Category</span>
                   <p className="font-semibold text-slate-900 dark:text-white capitalize mt-0.5">
                     {selectedLog.category.replace('_', ' ')}
                   </p>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800">
+                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                   <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300">Status</span>
                   <p className="font-semibold text-emerald-700 dark:text-emerald-400 capitalize mt-0.5">
                     {selectedLog.status}
                   </p>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800">
+                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                   <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300">Timestamp</span>
-                  <p className="font-mono text-[11px] text-slate-700 dark:text-slate-300 mt-0.5 truncate" title={selectedLog.timestamp}>
+                  <p className="font-mono text-[11px] text-slate-700 dark:text-slate-200 mt-0.5 truncate" title={selectedLog.timestamp}>
                     {new Date(selectedLog.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                   </p>
                 </div>
 
-                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800">
+                <div className="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700">
                   <span className="text-[10px] uppercase font-bold text-slate-600 dark:text-slate-300">Execution Latency</span>
                   <p className="font-mono text-slate-900 dark:text-white mt-0.5">
                     {selectedLog.durationMs !== undefined ? `${selectedLog.durationMs}ms` : 'Recorded'}

@@ -13,14 +13,14 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({ documents, o
   if (documents.length === 0) return null;
 
   return (
-    <div className="space-y-4 p-4 bg-white/5 rounded-3xl border border-white/5">
+    <div className="space-y-4 p-4 bg-slate-100/80 dark:bg-slate-900/70 rounded-3xl border border-slate-200/80 dark:border-slate-800">
       <div className="flex items-center justify-between mb-2 px-1">
         <div className="flex items-center gap-2">
-          <Library size={14} className="text-indigo-400" />
-          <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Neural Context</span>
+          <Library size={14} className="text-indigo-600 dark:text-indigo-400" />
+          <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Neural Context</span>
         </div>
         {documents.some(d => d.isSelected) && (
-          <span className="flex items-center gap-1.5 text-[8px] font-black text-emerald-500 uppercase tracking-tighter animate-pulse">
+          <span className="flex items-center gap-1.5 text-[8px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-tighter animate-pulse">
             <Zap size={8} fill="currentColor" /> Linked
           </span>
         )}
@@ -32,25 +32,23 @@ export const DocumentSelector: React.FC<DocumentSelectorProps> = ({ documents, o
             onClick={() => onToggle(doc.id)}
             className={`w-full flex items-center gap-3 p-3 rounded-2xl transition-all border group relative overflow-hidden ${
               doc.isSelected 
-                ? 'bg-indigo-600/10 border-indigo-500/50 text-white shadow-lg' 
-                : 'bg-white/5 border-transparent text-slate-400 hover:bg-white/10'
+                ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-400 dark:border-indigo-500/60 text-indigo-950 dark:text-white shadow-sm' 
+                : 'bg-white dark:bg-slate-800/70 border-slate-200/70 dark:border-slate-700/60 text-slate-700 dark:text-slate-200 hover:border-indigo-300 dark:hover:border-indigo-500/40'
             }`}
           >
-            {doc.isSelected && <div className="absolute inset-0 bg-indigo-500/5 animate-pulse pointer-events-none" />}
-            
             {doc.isSelected ? (
-              <CheckCircle size={16} className="text-indigo-400 shrink-0 relative z-10" />
+              <CheckCircle size={16} className="text-indigo-600 dark:text-indigo-300 shrink-0 relative z-10" />
             ) : (
-              <Circle size={16} className="opacity-20 shrink-0 group-hover:opacity-40 transition-opacity" />
+              <Circle size={16} className="text-slate-400 dark:text-slate-500 shrink-0 group-hover:text-indigo-500 transition-colors" />
             )}
             
             <div className="flex-1 text-left min-w-0 relative z-10">
-              <p className={`text-xs font-bold truncate ${doc.isSelected ? 'text-indigo-100' : ''}`}>{doc.name}</p>
-              <p className="text-[9px] opacity-50 font-medium uppercase tracking-tighter">
+              <p className={`text-xs font-bold truncate ${doc.isSelected ? 'text-indigo-950 dark:text-indigo-100' : 'text-slate-800 dark:text-slate-100'}`}>{doc.name}</p>
+              <p className={`text-[10px] font-medium uppercase tracking-tight ${doc.isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-400'}`}>
                 {doc.subject || 'Processing'} • Grade {doc.gradeLevel || '...'}
               </p>
             </div>
-            <FileText size={14} className={`shrink-0 transition-opacity ${doc.isSelected ? 'opacity-40' : 'opacity-20'}`} />
+            <FileText size={14} className={`shrink-0 transition-opacity ${doc.isSelected ? 'text-indigo-600 dark:text-indigo-300 opacity-75' : 'text-slate-400 dark:text-slate-500'}`} />
           </button>
         ))}
       </div>

@@ -23,26 +23,26 @@ export const DifferentiationPanel: React.FC<DifferentiationPanelProps> = ({ onGe
   const currentResult = results[activeTab];
 
   return (
-    <div className="bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/5 rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
-      <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between">
+    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-300">
+      <div className="p-6 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-purple-600 rounded-xl text-white shadow-lg"><Users size={20} /></div>
           <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Tiered Differentiation</h3>
-            <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest">3-Level Synthesis</p>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">Tiered Differentiation</h3>
+            <p className="text-[10px] uppercase font-black text-slate-500 dark:text-slate-400 tracking-widest">3-Level Synthesis</p>
           </div>
         </div>
       </div>
 
-      <div className="flex p-2 bg-slate-50 dark:bg-black/20 m-4 rounded-2xl gap-1">
+      <div className="flex p-2 bg-slate-100 dark:bg-slate-800/70 m-4 rounded-2xl gap-1">
         {levels.map(l => (
           <button
             key={l.id}
             onClick={() => setActiveTab(l.id as any)}
             className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all ${
               activeTab === l.id 
-                ? 'bg-white dark:bg-white/10 text-slate-900 dark:text-white shadow-sm' 
-                : 'text-slate-400 hover:text-slate-600'
+                ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' 
+                : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {l.id}
@@ -68,17 +68,17 @@ export const DifferentiationPanel: React.FC<DifferentiationPanelProps> = ({ onGe
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Materials</h4>
                 <ul className="space-y-1">
                   {currentResult.materials.map((m, i) => (
-                    <li key={i} className="text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                    <li key={i} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2">
                       <div className="w-1 h-1 bg-emerald-500 rounded-full mt-1.5 shrink-0" /> {m}
                     </li>
                   ))}
                 </ul>
               </div>
               <div className="space-y-2">
-                <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-500">Supports</h4>
+                <h4 className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">Supports</h4>
                 <ul className="space-y-1">
                   {currentResult.supports.map((s, i) => (
-                    <li key={i} className="text-xs text-slate-500 dark:text-slate-400 flex items-start gap-2">
+                    <li key={i} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2">
                       <div className="w-1 h-1 bg-amber-500 rounded-full mt-1.5 shrink-0" /> {s}
                     </li>
                   ))}
@@ -86,11 +86,11 @@ export const DifferentiationPanel: React.FC<DifferentiationPanelProps> = ({ onGe
               </div>
             </div>
 
-            <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-white/5">
-              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Core Activities</h4>
+            <div className="space-y-2 pt-4 border-t border-slate-100 dark:border-slate-800">
+              <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Core Activities</h4>
               <ul className="space-y-2">
                 {currentResult.activities.map((a, i) => (
-                  <li key={i} className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed bg-slate-50 dark:bg-white/5 p-2 rounded-lg">
+                  <li key={i} className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/70 p-2.5 rounded-lg">
                     {a}
                   </li>
                 ))}
@@ -99,9 +99,9 @@ export const DifferentiationPanel: React.FC<DifferentiationPanelProps> = ({ onGe
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="p-4 bg-purple-50 dark:bg-purple-900/10 rounded-full text-purple-600 mb-4"><Sparkles size={24} /></div>
-            <p className="text-sm font-bold text-slate-900 dark:text-white mb-2">Ready for Tiered Adaptation</p>
-            <p className="text-xs text-slate-500 max-w-[200px] mb-6">Select a tier and generate a specialized version based on the current lesson.</p>
+            <div className="p-4 bg-purple-50 dark:bg-purple-900/20 rounded-full text-purple-600 dark:text-purple-400 mb-4"><Sparkles size={24} /></div>
+            <p className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">Ready for Tiered Adaptation</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300 max-w-[200px] mb-6">Select a tier and generate a specialized version based on the current lesson.</p>
             <button
               onClick={() => onGenerate(activeTab)}
               className="px-6 py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-all active:scale-95"

@@ -165,23 +165,23 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
           <h1 className="text-3xl font-black tracking-tight uppercase dark:text-white">Brain Control</h1>
         </div>
         
-        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border dark:border-white/5 shadow-inner">
+        <div className="flex bg-slate-100 dark:bg-slate-900 p-1.5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-inner">
           {['prompt', 'blueprint', 'ingestion'].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab as any)} className={`px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-indigo-600'}`}>{tab}</button>
+            <button key={tab} onClick={() => setActiveTab(tab as any)} className={`px-6 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${activeTab === tab ? 'bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300'}`}>{tab}</button>
           ))}
         </div>
       </header>
 
       {activeTab === 'prompt' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-200 dark:border-white/5 shadow-sm space-y-8">
+          <div className="lg:col-span-2 bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-sm space-y-8">
             <div className="flex items-center justify-between">
                <div>
-                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Institutional Master Prompt</h3>
-                 <p className="text-[10px] text-indigo-600 font-bold mt-1 uppercase tracking-widest">Version {formData.version}.0 Active</p>
+                 <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">Institutional Master Prompt</h3>
+                 <p className="text-[10px] text-indigo-700 dark:text-indigo-300 font-bold mt-1 uppercase tracking-widest">Version {formData.version}.0 Active</p>
                </div>
                <div className="flex gap-2">
-                 <button onClick={handleReloadSchema} disabled={isResyncing} className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 transition-all flex items-center gap-2 shadow-sm">
+                 <button onClick={handleReloadSchema} disabled={isResyncing} className="px-6 py-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center gap-2 shadow-sm">
                    {isResyncing ? <RefreshCw className="animate-spin" size={14}/> : <Wrench size={14}/>} Re-Sync Grid
                  </button>
                  <button onClick={handleSave} disabled={isSaving} className="px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center gap-3">
@@ -192,15 +192,15 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
             <textarea 
               value={formData.masterPrompt}
               onChange={(e) => setFormData({...formData, masterPrompt: e.target.value})}
-              className="w-full h-[600px] p-8 bg-slate-900 dark:bg-black text-indigo-100 border border-slate-700 dark:border-white/5 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
+              className="w-full h-[600px] p-8 bg-slate-900 dark:bg-slate-950 text-slate-100 border border-slate-700 dark:border-slate-800 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
               placeholder="Inject Universal Ingestion logic here..."
             />
           </div>
           <div className="space-y-6">
-             <div className="bg-slate-950 text-white p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden flex flex-col gap-6 border border-white/5">
+             <div className="bg-slate-900 dark:bg-slate-900 text-white p-10 rounded-[3.5rem] shadow-2xl relative overflow-hidden flex flex-col gap-6 border border-slate-800">
                 <div className="absolute top-0 right-0 p-8 opacity-10"><ShieldAlert size={150} /></div>
                 <h3 className="text-xl font-black uppercase tracking-tight text-emerald-400">Recovery</h3>
-                <p className="text-xs text-slate-400 font-medium leading-relaxed italic">If the AI is returning "Quota Exceeded" or "saturated" errors, use the reset button below to force a grid re-alignment.</p>
+                <p className="text-xs text-slate-300 font-medium leading-relaxed italic">If the AI is returning "Quota Exceeded" or "saturated" errors, use the reset button below to force a grid re-alignment.</p>
                 <button onClick={handleResetGrid} disabled={isResettingGrid} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-bold text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl hover:bg-emerald-700 transition-all">
                    {isResettingGrid ? <RefreshCw size={14} className="animate-spin" /> : <RotateCcwIcon size={14}/>} Force Reset Synthesis Grid
                 </button>
@@ -210,17 +210,17 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
       )}
 
       {activeTab === 'blueprint' && (
-        <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-200 dark:border-white/5 shadow-sm space-y-8">
+        <div className="bg-white dark:bg-slate-900 p-10 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-sm space-y-8">
            <div className="flex items-center justify-between">
               <div>
-                 <h3 className="text-xl font-black uppercase tracking-tight dark:text-white">Infrastructure Blueprint SQL</h3>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">v12.1 FIXED INFRASTRUCTURE EDITION</p>
+                 <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white">Infrastructure Blueprint SQL</h3>
+                 <p className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest mt-1">v12.1 FIXED INFRASTRUCTURE EDITION</p>
               </div>
               <div className="flex gap-3">
-                <button onClick={handleCopyBlueprint} className="flex items-center gap-3 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all">
-                   {copiedBlueprint ? <Check size={14} className="text-emerald-500"/> : <Copy size={14}/>} {copiedBlueprint ? 'Script Copied' : 'Copy Repair SQL'}
+                <button onClick={handleCopyBlueprint} className="flex items-center gap-3 px-6 py-3 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-slate-700 transition-all">
+                   {copiedBlueprint ? <Check size={14} className="text-emerald-600 dark:text-emerald-400"/> : <Copy size={14}/>} {copiedBlueprint ? 'Script Copied' : 'Copy Repair SQL'}
                 </button>
-                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-3 px-8 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg">
+                <button onClick={handleSave} disabled={isSaving} className="flex items-center gap-3 px-8 py-3 bg-slate-900 dark:bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 dark:hover:bg-indigo-700 transition-all shadow-lg">
                    {isSaving ? <RefreshCw className="animate-spin" size={14}/> : <DatabaseZap size={14}/>} Save Changes
                 </button>
               </div>
@@ -228,33 +228,33 @@ const BrainControl: React.FC<BrainControlProps> = ({ brain, onUpdate }) => {
            <textarea 
               value={formData.blueprintSql || LATEST_SQL_BLUEPRINT}
               onChange={(e) => setFormData({...formData, blueprintSql: e.target.value})}
-              className="w-full h-[600px] p-8 bg-slate-900 dark:bg-black text-emerald-400 border border-slate-700 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
+              className="w-full h-[600px] p-8 bg-slate-900 dark:bg-slate-950 text-emerald-300 border border-slate-700 dark:border-slate-800 rounded-[2.5rem] font-mono text-[11px] leading-relaxed resize-none outline-none shadow-inner custom-scrollbar"
             />
         </div>
       )}
 
       {activeTab === 'ingestion' && (
-        <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] border border-slate-200 dark:border-white/5 shadow-sm overflow-hidden">
-           <div className="p-10 border-b dark:border-white/5 flex justify-between items-center">
-              <h3 className="text-xl font-black uppercase tracking-tight dark:text-white flex items-center gap-3"><Layers size={24}/> Telemetry</h3>
-              <button onClick={fetchStatus} className="p-3 bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-indigo-600 rounded-full transition-all"><RefreshCw size={16} /></button>
+        <div className="bg-white dark:bg-slate-900 rounded-[3.5rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+           <div className="p-10 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
+              <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white flex items-center gap-3"><Layers size={24}/> Telemetry</h3>
+              <button onClick={fetchStatus} className="p-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-full transition-all"><RefreshCw size={16} /></button>
            </div>
            <div className="overflow-x-auto">
               <table className="w-full text-left text-[10px]">
-                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-black uppercase tracking-widest text-[8px]">
+                 <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-black uppercase tracking-widest text-[9px]">
                     <tr><th className="p-6">Curriculum</th><th className="p-6">Step</th><th className="p-6">Status</th><th className="p-6">Diagnostic</th></tr>
                  </thead>
-                 <tbody className="divide-y divide-slate-50 dark:divide-white/5">
+                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {jobs.map(job => (
-                       <tr key={job.id} className="hover:bg-slate-50/50 transition-colors">
-                          <td className="p-6 font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tighter">{job.documents?.name}</td>
-                          <td className="p-6"><span className="px-3 py-1 bg-slate-100 dark:bg-white/5 rounded-lg uppercase font-black text-[8px] tracking-widest">{job.step}</span></td>
+                       <tr key={job.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                          <td className="p-6 font-bold text-slate-800 dark:text-slate-100 uppercase tracking-tighter">{job.documents?.name}</td>
+                          <td className="p-6"><span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-lg uppercase font-black text-[9px] tracking-widest">{job.step}</span></td>
                           <td className="p-6">
-                             <span className={`flex items-center gap-2 font-black uppercase tracking-widest ${job.status === 'completed' ? 'text-emerald-500' : job.status === 'failed' ? 'text-rose-500' : 'text-amber-500'}`}>
+                             <span className={`flex items-center gap-2 font-black uppercase tracking-widest ${job.status === 'completed' ? 'text-emerald-600 dark:text-emerald-400' : job.status === 'failed' ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>
                                 {job.status === 'processing' && <Loader2 size={10} className="animate-spin" />} {job.status}
                              </span>
                           </td>
-                          <td className="p-6 text-slate-400 font-mono italic max-w-xs truncate">{job.error_message || "Grid Clear."}</td>
+                          <td className="p-6 text-slate-600 dark:text-slate-300 font-mono italic max-w-xs truncate">{job.error_message || "Grid Clear."}</td>
                        </tr>
                     ))}
                  </tbody>

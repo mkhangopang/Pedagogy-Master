@@ -155,36 +155,36 @@ const MissionControl: React.FC = () => {
             <span className="text-[9px] font-bold uppercase tracking-widest text-rose-600 dark:text-rose-400">Founder Control</span>
           </div>
           <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight uppercase">Mission Control</h1>
-          <p className="text-slate-500 mt-1 font-medium text-xs">Bootstrap Grid & Identities.</p>
+          <p className="text-slate-600 dark:text-slate-300 mt-1 font-medium text-xs">Bootstrap Grid &amp; Identities.</p>
         </div>
         <div className="flex flex-col sm:flex-row gap-3">
-           <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+           <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700">
               <button 
                 onClick={() => handleTabChange('users')}
-                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-white dark:bg-slate-900 text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all whitespace-nowrap ${activeTab === 'users' ? 'bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
               >
                 Identities
               </button>
               <button 
                 onClick={() => handleTabChange('analytics')}
-                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'analytics' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'analytics' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
               >
                 <BarChart3 size={12} /> Pilot Analytics
               </button>
               <button 
                 onClick={() => handleTabChange('recipe')}
-                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'recipe' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === 'recipe' ? 'bg-rose-600 text-white shadow-sm' : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'}`}
               >
                 <Key size={12} /> App Recipe
               </button>
            </div>
-           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm text-center min-w-[120px]">
-              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Public Tier</p>
-              <p className="text-xl font-bold text-emerald-600 tabular-nums">$0 Free</p>
+           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-center min-w-[120px]">
+              <p className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest mb-1">Public Tier</p>
+              <p className="text-xl font-bold text-emerald-700 dark:text-emerald-400 tabular-nums">$0 Free</p>
            </div>
-           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-white/5 shadow-sm text-center min-w-[120px]">
-              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Active Nodes</p>
-              <p className="text-xl font-bold text-indigo-600 tabular-nums">{stats.totalUsers}</p>
+           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-center min-w-[120px]">
+              <p className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-widest mb-1">Active Nodes</p>
+              <p className="text-xl font-bold text-indigo-700 dark:text-indigo-400 tabular-nums">{stats.totalUsers}</p>
            </div>
         </div>
       </header>
@@ -192,22 +192,22 @@ const MissionControl: React.FC = () => {
       {activeTab === 'users' ? (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 px-4 md:px-0">
           <section className="lg:col-span-1 space-y-6">
-           <div className="bg-indigo-50 dark:bg-indigo-950/20 p-6 rounded-[2.5rem] border border-indigo-100 dark:border-indigo-900/30">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-indigo-600 mb-4 flex items-center gap-2">
+           <div className="bg-indigo-50 dark:bg-indigo-950/30 p-6 rounded-[2.5rem] border border-indigo-200 dark:border-indigo-800">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-indigo-700 dark:text-indigo-300 mb-4 flex items-center gap-2">
                  <Wallet size={16} /> Activator
               </h3>
               <div className="space-y-4">
-                 <div className="p-4 bg-white/50 dark:bg-black/20 rounded-2xl border border-dashed border-indigo-200">
-                    <p className="text-[8px] font-bold text-indigo-400 uppercase mb-2">High Usage Nodes</p>
+                 <div className="p-4 bg-white/80 dark:bg-slate-900/80 rounded-2xl border border-dashed border-indigo-300 dark:border-indigo-700">
+                    <p className="text-[9px] font-bold text-indigo-700 dark:text-indigo-300 uppercase mb-2">High Usage Nodes</p>
                     {users.filter(u => u.queries_used >= 25 && u.plan === 'free').length > 0 ? (
                        users.filter(u => u.queries_used >= 25 && u.plan === 'free').slice(0, 3).map(u => (
-                         <div key={u.id} className="flex items-center justify-between py-2 border-b border-indigo-100 last:border-0">
-                           <span className="text-[9px] font-semibold truncate max-w-[100px]">{u.email}</span>
-                           <button onClick={() => handleManualUpgrade(u.id, SubscriptionPlan.PRO)} className="text-[8px] font-bold text-indigo-600 uppercase hover:underline">Activate</button>
+                         <div key={u.id} className="flex items-center justify-between py-2 border-b border-indigo-200 dark:border-indigo-800 last:border-0">
+                           <span className="text-[10px] font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[100px]">{u.email}</span>
+                           <button onClick={() => handleManualUpgrade(u.id, SubscriptionPlan.PRO)} className="text-[9px] font-bold text-indigo-700 dark:text-indigo-300 uppercase hover:underline">Activate</button>
                          </div>
                        ))
                     ) : (
-                      <p className="text-[8px] text-indigo-300 italic text-center py-2">System Balanced.</p>
+                      <p className="text-[10px] text-indigo-700 dark:text-indigo-300 italic text-center py-2">System Balanced.</p>
                     )}
                  </div>
               </div>
@@ -215,23 +215,23 @@ const MissionControl: React.FC = () => {
         </section>
 
         <section className="lg:col-span-3 space-y-6">
-           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden">
-              <div className="p-6 border-b dark:border-white/5 flex flex-col sm:flex-row justify-between gap-4">
+           <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row justify-between gap-4">
                  <h3 className="text-md font-bold text-slate-900 dark:text-white uppercase tracking-tight">Identity Grid</h3>
                  <div className="relative">
-                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 dark:text-slate-400" size={14} />
                    <input 
                      type="text" 
                      placeholder="Search identity..." 
                      value={searchTerm}
                      onChange={(e) => setSearchTerm(e.target.value)}
-                     className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border-none rounded-xl text-[10px] outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64 font-semibold"
+                     className="pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-64 font-semibold"
                    />
                  </div>
               </div>
               <div className="overflow-x-auto custom-scrollbar">
                  <table className="w-full text-left text-[10px]">
-                    <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 font-bold uppercase tracking-widest text-[8px]">
+                    <thead className="bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold uppercase tracking-widest text-[9px]">
                        <tr>
                           <th className="p-4">Identity</th>
                           <th className="p-4">Tier</th>
@@ -239,28 +239,28 @@ const MissionControl: React.FC = () => {
                           <th className="p-4 text-right">Ops</th>
                        </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-50 dark:divide-white/5">
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                        {users.filter(u => u.email.toLowerCase().includes(searchTerm.toLowerCase())).map((user) => (
-                          <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">
+                          <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                              <td className="p-4">
-                                <p className="font-semibold text-slate-900 dark:text-white truncate max-w-[120px]">{user.email}</p>
-                                <p className="text-[7px] text-slate-400 font-medium uppercase">{new Date(user.created_at).toLocaleDateString()}</p>
+                                <p className="font-semibold text-slate-900 dark:text-white truncate max-w-[160px]">{user.email}</p>
+                                <p className="text-[9px] text-slate-600 dark:text-slate-400 font-medium uppercase">{new Date(user.created_at).toLocaleDateString()}</p>
                              </td>
                              <td className="p-4">
-                                <span className={`px-2 py-0.5 rounded-full font-bold text-[7px] uppercase tracking-widest ${
-                                  user.plan === 'pro' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
-                                  user.plan === 'enterprise' ? 'bg-purple-50 text-purple-600 border border-purple-100' : 'bg-slate-50 text-slate-500'
+                                <span className={`px-2 py-0.5 rounded-full font-bold text-[9px] uppercase tracking-widest ${
+                                  user.plan === 'pro' ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' : 
+                                  user.plan === 'enterprise' ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                                 }`}>
                                    {user.plan}
                                 </span>
                              </td>
                              <td className="p-4">
                                 {user.stakeholder_role ? (
-                                  <div className="flex items-center gap-1.5 text-[7px] font-bold text-indigo-600 uppercase">
+                                  <div className="flex items-center gap-1.5 text-[9px] font-bold text-indigo-700 dark:text-indigo-300 uppercase">
                                      <Eye size={10}/> Lens Active
                                   </div>
                                 ) : (
-                                  <span className="text-[7px] text-slate-400 font-medium uppercase italic">User</span>
+                                  <span className="text-[9px] text-slate-600 dark:text-slate-400 font-medium uppercase italic">User</span>
                                 )}
                              </td>
                              <td className="p-4 text-right">
@@ -268,14 +268,14 @@ const MissionControl: React.FC = () => {
                                    <button 
                                      disabled={isUpdating === user.id}
                                      onClick={() => handleStakeholderAssign(user.id, user.stakeholder_role === StakeholderRole.INST_LEAD ? null : StakeholderRole.INST_LEAD)}
-                                     className={`p-1.5 rounded-lg transition-all ${user.stakeholder_role === StakeholderRole.INST_LEAD ? 'bg-purple-600 text-white shadow-md' : 'bg-purple-50 text-purple-600 hover:bg-purple-100'}`}
+                                     className={`p-1.5 rounded-lg transition-all ${user.stakeholder_role === StakeholderRole.INST_LEAD ? 'bg-purple-600 text-white shadow-md' : 'bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60'}`}
                                    >
                                       <Building size={12} />
                                    </button>
                                    <button 
                                      disabled={isUpdating === user.id}
                                      onClick={() => handleManualUpgrade(user.id, user.plan === 'pro' ? SubscriptionPlan.FREE : SubscriptionPlan.PRO)}
-                                     className={`p-1.5 rounded-lg transition-all ${user.plan === 'pro' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 text-slate-400 hover:text-indigo-600'}`}
+                                     className={`p-1.5 rounded-lg transition-all ${user.plan === 'pro' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300'}`}
                                    >
                                       <Zap size={12} />
                                    </button>
@@ -296,7 +296,7 @@ const MissionControl: React.FC = () => {
               <h2 className="text-lg font-black text-slate-900 dark:text-white tracking-tight">
                 Public Pilot Analytics &amp; Educator Micro-Feedback
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
                 Real-time aggregated usage across free educators (30-day rolling window)
               </p>
             </div>
@@ -304,7 +304,7 @@ const MissionControl: React.FC = () => {
               type="button"
               onClick={() => fetchAnalytics(true)}
               disabled={loadingAnalytics}
-              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-white/5 whitespace-nowrap"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 whitespace-nowrap"
             >
               <RefreshCcw size={13} className={loadingAnalytics ? 'animate-spin' : ''} />
               Refresh
@@ -312,127 +312,127 @@ const MissionControl: React.FC = () => {
           </div>
 
           {loadingAnalytics && !analyticsData ? (
-            <div className="p-12 text-center text-slate-400 text-xs font-bold uppercase tracking-widest">
+            <div className="p-12 text-center text-slate-600 dark:text-slate-300 text-xs font-bold uppercase tracking-widest">
               Aggregating Telemetry Signals...
             </div>
           ) : analyticsData ? (
             <>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Active (7d / 24h)</p>
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Active (7d / 24h)</p>
                   <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white tabular-nums">
                     {analyticsData.users?.active7d ?? 0}
-                    <span className="text-sm font-bold text-slate-400 ml-1">/ {analyticsData.users?.active24h ?? 0}</span>
+                    <span className="text-sm font-bold text-slate-600 dark:text-slate-300 ml-1">/ {analyticsData.users?.active24h ?? 0}</span>
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 tabular-nums">
                     {analyticsData.users?.new7d ?? 0} new educators this week
                   </p>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">AI Syntheses (30d)</p>
-                  <p className="mt-2 text-2xl font-black text-indigo-600 dark:text-indigo-400 tabular-nums">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">AI Syntheses (30d)</p>
+                  <p className="mt-2 text-2xl font-black text-indigo-700 dark:text-indigo-400 tabular-nums">
                     {analyticsData.usage?.syntheses30d ?? 0}
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 tabular-nums">
                     {analyticsData.usage?.syntheses24h ?? 0} in last 24h
                   </p>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1">
                     <Languages size={12} /> Translations (30d)
                   </p>
                   <p className="mt-2 text-2xl font-black text-slate-900 dark:text-white tabular-nums">
                     {analyticsData.usage?.translations?.total ?? 0}
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 tabular-nums">
                     Urdu: {analyticsData.usage?.translations?.urdu ?? 0} • Sindhi: {analyticsData.usage?.translations?.sindhi ?? 0}
                   </p>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Output Satisfaction</p>
-                  <p className="mt-2 text-2xl font-black text-emerald-600 dark:text-emerald-400 tabular-nums">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Output Satisfaction</p>
+                  <p className="mt-2 text-2xl font-black text-emerald-700 dark:text-emerald-400 tabular-nums">
                     {analyticsData.feedback?.micro?.satisfactionRate !== null && analyticsData.feedback?.micro?.satisfactionRate !== undefined
                       ? `${analyticsData.feedback.micro.satisfactionRate}%`
                       : '—'}
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 tabular-nums">
                     👍 {analyticsData.feedback?.micro?.helpful ?? 0} • 👎 {analyticsData.feedback?.micro?.needsWork ?? 0}
                   </p>
                 </div>
 
-                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                <div className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1">
                     <Bell size={12} /> Paid Waitlist
                   </p>
-                  <p className="mt-2 text-2xl font-black text-amber-600 dark:text-amber-400 tabular-nums">
+                  <p className="mt-2 text-2xl font-black text-amber-700 dark:text-amber-400 tabular-nums">
                     {(analyticsData.waitlist?.proInterested ?? 0) + (analyticsData.waitlist?.enterpriseInterested ?? 0)}
                   </p>
-                  <p className="text-[11px] text-slate-500 mt-1 tabular-nums">
+                  <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 tabular-nums">
                     Pro (~$9): {analyticsData.waitlist?.proInterested ?? 0} • Inst (~$29): {analyticsData.waitlist?.enterpriseInterested ?? 0}
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Top Tools &amp; Routes</h3>
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">Top Tools &amp; Routes</h3>
                   {analyticsData.usage?.topTools?.length > 0 ? (
                     <div className="space-y-2.5">
                       {analyticsData.usage.topTools.map((item: any) => (
-                        <div key={item.tool} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 dark:border-white/5 last:border-0">
-                          <span className="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">{item.tool}</span>
-                          <span className="font-black text-indigo-600 dark:text-indigo-400 tabular-nums">{item.count}</span>
+                        <div key={item.tool} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100 dark:border-slate-800 last:border-0">
+                          <span className="font-bold text-slate-800 dark:text-slate-100 uppercase tracking-tight">{item.tool}</span>
+                          <span className="font-black text-indigo-700 dark:text-indigo-400 tabular-nums">{item.count}</span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 py-4">No tool runs recorded yet.</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 py-4">No tool runs recorded yet.</p>
                   )}
                 </div>
 
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500">Micro-Feedback Tags</h3>
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">Micro-Feedback Tags</h3>
                   {analyticsData.feedback?.micro?.topTags?.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {analyticsData.feedback.micro.topTags.map((t: any) => (
-                        <span key={t.tag} className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums">
+                        <span key={t.tag} className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-800 dark:text-slate-100 tabular-nums">
                           {t.tag}: {t.count}
                         </span>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 py-4">No micro-feedback tags submitted yet.</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 py-4">No micro-feedback tags submitted yet.</p>
                   )}
                 </div>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                    <ThumbsUp size={13} className="text-emerald-500" /> Recent Output Micro-Feedback
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                    <ThumbsUp size={13} className="text-emerald-600 dark:text-emerald-400" /> Recent Output Micro-Feedback
                   </h3>
                   {analyticsData.feedback?.micro?.recent?.length > 0 ? (
                     <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
                       {analyticsData.feedback.micro.recent.map((fb: any) => (
-                        <div key={fb.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 space-y-1.5 text-xs">
+                        <div key={fb.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-1.5 text-xs">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="inline-flex items-center gap-1.5 font-bold uppercase text-[10px]">
+                            <span className="inline-flex items-center gap-1.5 font-bold uppercase text-[10px] text-slate-800 dark:text-slate-100">
                               {fb.rating === 'up' ? (
-                                <ThumbsUp size={12} className="text-emerald-600" />
+                                <ThumbsUp size={12} className="text-emerald-600 dark:text-emerald-400" />
                               ) : (
-                                <ThumbsDown size={12} className="text-rose-600" />
+                                <ThumbsDown size={12} className="text-rose-600 dark:text-rose-400" />
                               )}
                               {fb.toolType} ({fb.language})
                             </span>
-                            <span className="text-[10px] text-slate-400 tabular-nums">
+                            <span className="text-[10px] text-slate-600 dark:text-slate-300 tabular-nums">
                               {new Date(fb.createdAt).toLocaleDateString()}
                             </span>
                           </div>
                           {fb.tags?.length > 0 && (
-                            <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                            <p className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
                               {fb.tags.join(' • ')}
                             </p>
                           )}
@@ -441,23 +441,23 @@ const MissionControl: React.FC = () => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 py-4">Waiting for first output ratings from educators.</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 py-4">Waiting for first output ratings from educators.</p>
                   )}
                 </div>
 
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 space-y-4">
-                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                    <MessageSquare size={13} className="text-indigo-500" /> Educator Feedback Notes
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                    <MessageSquare size={13} className="text-indigo-600 dark:text-indigo-400" /> Educator Feedback Notes
                   </h3>
                   {analyticsData.feedback?.pilot?.length > 0 ? (
                     <div className="space-y-3 max-h-80 overflow-y-auto custom-scrollbar">
                       {analyticsData.feedback.pilot.map((note: any) => (
-                        <div key={note.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5 space-y-1 text-xs">
+                        <div key={note.id} className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-bold text-indigo-600 dark:text-indigo-400 uppercase text-[10px]">
+                            <span className="font-bold text-indigo-700 dark:text-indigo-300 uppercase text-[10px]">
                               {note.category}{note.rating ? ` • ${note.rating}/5` : ''}
                             </span>
-                            <span className="text-[10px] text-slate-400 tabular-nums">
+                            <span className="text-[10px] text-slate-600 dark:text-slate-300 tabular-nums">
                               {note.view} • {new Date(note.createdAt).toLocaleDateString()}
                             </span>
                           </div>
@@ -466,13 +466,13 @@ const MissionControl: React.FC = () => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-xs text-slate-400 py-4">No pilot feedback notes submitted yet.</p>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 py-4">No pilot feedback notes submitted yet.</p>
                   )}
                 </div>
               </div>
             </>
           ) : (
-            <div className="p-8 text-center text-xs text-slate-400">Unable to load analytics.</div>
+            <div className="p-8 text-center text-xs text-slate-600 dark:text-slate-300">Unable to load analytics.</div>
           )}
         </div>
       ) : (
@@ -514,31 +514,31 @@ const MissionControl: React.FC = () => {
                     {recipeData.sqlSchema}
                   </pre>
                 </div>
-                <div className="p-4 bg-slate-50 dark:bg-white/5 border-t border-slate-100 dark:border-white/5 text-[10px] text-slate-500 font-medium">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
                   Copy this schema and run it manually in your Supabase SQL Editor.
                 </div>
               </div>
 
               {/* Master Prompt Section */}
-              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-100 dark:border-white/5 shadow-sm overflow-hidden flex flex-col">
-                <div className="p-6 border-b border-slate-100 dark:border-white/5 flex items-center justify-between bg-slate-50 dark:bg-white/5">
+              <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/70">
                   <h3 className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-widest flex items-center gap-2">
-                    <Zap size={14} className="text-amber-600" />
+                    <Zap size={14} className="text-amber-600 dark:text-amber-400" />
                     Brain Master Prompt
                   </h3>
                   <button 
                     onClick={() => navigator.clipboard.writeText(recipeData.masterPrompt)}
-                    className="text-[9px] font-bold text-amber-600 uppercase hover:underline flex items-center gap-1"
+                    className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase hover:underline flex items-center gap-1"
                   >
                     Copy Prompt
                   </button>
                 </div>
-                <div className="p-6 bg-slate-900 flex-1">
-                  <pre className="text-[10px] text-amber-400 font-mono whitespace-pre-wrap overflow-x-auto custom-scrollbar">
+                <div className="p-6 bg-slate-900 dark:bg-slate-950 flex-1">
+                  <pre className="text-[11px] text-amber-300 font-mono whitespace-pre-wrap overflow-x-auto custom-scrollbar">
                     {recipeData.masterPrompt}
                   </pre>
                 </div>
-                <div className="p-4 bg-slate-50 dark:bg-white/5 border-t border-slate-100 dark:border-white/5 text-[10px] text-slate-500 font-medium">
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/70 border-t border-slate-200 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300 font-medium">
                   This is your core AI instruction set. Keep it secure.
                 </div>
               </div>

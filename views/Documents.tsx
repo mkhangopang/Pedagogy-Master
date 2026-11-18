@@ -241,12 +241,12 @@ const Documents: React.FC<DocumentsProps> = ({
 
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
-          <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight uppercase flex items-center gap-4">
+          <h1 className="text-4xl font-black text-slate-900 dark:text-slate-100 tracking-tight uppercase flex items-center gap-4">
             Library
             {isAdmin && <span className="px-3 py-1 bg-rose-600 text-white rounded-full text-[10px] uppercase font-black tracking-widest shadow-lg">System Founder</span>}
           </h1>
-          <p className="text-slate-500 mt-2 flex items-center gap-3 font-medium italic text-sm">
-            <Database size={18} className="text-indigo-500" />
+          <p className="text-slate-600 dark:text-slate-300 mt-2 flex items-center gap-3 font-medium italic text-sm">
+            <Database size={18} className="text-indigo-600 dark:text-indigo-400" />
             Curriculum Quota: {documents.length} / {isAdmin ? '∞' : limits.docs} Active Segments
           </p>
         </div>
@@ -254,7 +254,7 @@ const Documents: React.FC<DocumentsProps> = ({
           onClick={() => setShowUploader(true)}
           disabled={!isAdmin && (limitReached || !isConnected)}
           className={`flex items-center gap-4 px-12 py-5 rounded-[2.5rem] font-black shadow-2xl transition-all active:scale-95 ${
-            (!isAdmin && limitReached) ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            (!isAdmin && limitReached) ? 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 cursor-not-allowed' : 'bg-indigo-600 text-white hover:bg-indigo-700'
           }`}
         >
           <Plus size={20} />
@@ -270,22 +270,22 @@ const Documents: React.FC<DocumentsProps> = ({
           const showDelete = canDeleteNode(doc);
 
           return (
-            <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-100 dark:border-white/5 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group">
+            <div key={doc.id} className="bg-white dark:bg-slate-900 p-8 rounded-[3rem] border border-slate-200 dark:border-slate-800 hover:border-indigo-400 transition-all shadow-sm hover:shadow-2xl relative overflow-hidden group">
                <div className="flex justify-between items-start mb-6">
                   <div className={`p-5 rounded-[2rem] transition-all ${
-                    isProcessing ? 'bg-slate-100 animate-pulse text-slate-400' : 
-                    isFailed ? 'bg-rose-50 text-rose-400' :
-                    'bg-slate-50 dark:bg-slate-800 text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
+                    isProcessing ? 'bg-slate-100 dark:bg-slate-800 animate-pulse text-slate-600 dark:text-slate-300' : 
+                    isFailed ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-300' :
+                    'bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white'
                   }`}>
                     {isProcessing ? <BrainCircuit size={32} className="animate-spin" /> : isFailed ? <AlertTriangle size={32}/> : <FileText size={32}/>}
                   </div>
                   <div className="flex flex-col gap-3">
-                    {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform shadow-lg"><BookOpen size={16} /></button>}
+                    {isReady && <button onClick={() => setReadingDoc(doc)} className="p-2.5 bg-indigo-600 text-white rounded-full hover:scale-110 transition-transform shadow-lg" aria-label="Read document"><BookOpen size={16} /></button>}
                     
                     {(isFailed || isAdmin) && !isProcessing && (
                       <button 
                         onClick={() => handleReprocess(doc.id)}
-                        className="p-2.5 bg-amber-50 text-amber-600 rounded-full opacity-0 group-hover:opacity-100 hover:bg-amber-600 hover:text-white transition-all shadow-sm"
+                        className="p-2.5 bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 rounded-full opacity-75 group-hover:opacity-100 hover:bg-amber-600 hover:text-white transition-all shadow-sm"
                         title="Re-trigger Neural Ingestion"
                       >
                         <RefreshCw size={16} />
@@ -296,7 +296,7 @@ const Documents: React.FC<DocumentsProps> = ({
                       <button 
                         onClick={() => handleDelete(doc.id)} 
                         disabled={deletingId === doc.id}
-                        className="p-2.5 bg-rose-50 text-rose-500 rounded-full opacity-0 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50 shadow-sm"
+                        className="p-2.5 bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-300 rounded-full opacity-75 group-hover:opacity-100 hover:bg-rose-500 hover:text-white transition-all disabled:opacity-50 shadow-sm"
                         title={isAdmin ? "FOUNDER OVERRIDE: Purge Record" : "Remove failed document"}
                       >
                         {deletingId === doc.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -304,7 +304,7 @@ const Documents: React.FC<DocumentsProps> = ({
                     )}
 
                     {!showDelete && isReady && (
-                      <div className="p-2.5 bg-slate-50 text-slate-300 rounded-full cursor-not-allowed opacity-0 group-hover:opacity-100 transition-all" title="Verified records are permanent to protect curriculum integrity.">
+                      <div className="p-2.5 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full cursor-not-allowed opacity-75 group-hover:opacity-100 transition-all" title="Verified records are permanent to protect curriculum integrity.">
                         <Lock size={16} />
                       </div>
                     )}
@@ -312,31 +312,31 @@ const Documents: React.FC<DocumentsProps> = ({
                </div>
                
               <div className="space-y-4">
-                 <h3 className="font-bold text-slate-900 dark:text-white truncate text-lg uppercase tracking-tight">{doc.name}</h3>
+                 <h3 className="font-bold text-slate-900 dark:text-slate-100 truncate text-lg uppercase tracking-tight">{doc.name}</h3>
                  <div className="flex flex-wrap gap-2">
-                    {isReady && <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Standard Anchored</span>}
-                    {isProcessing && <span className="px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
-                    {isFailed && <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
+                    {isReady && <span className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"><Sparkles size={10}/> Standard Anchored</span>}
+                    {isProcessing && <span className="px-3 py-1 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"><RefreshCw size={10} className="animate-spin"/> Syncing...</span>}
+                    {isFailed && <span className="px-3 py-1 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5"><AlertTriangle size={10}/> Extraction Fault</span>}
                   </div>
 
                  {/* Realtime Progress UI for processing documents */}
                  {isProcessing && ingestionProgressMap[doc.id] && (
-                   <div className="mt-4 pt-4 border-t border-slate-100 dark:border-white/5">
+                   <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
                      <div className="flex justify-between items-center mb-2">
-                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">
                          {ingestionProgressMap[doc.id].step || 'Processing'}
                        </span>
-                       <span className="text-[10px] font-bold text-indigo-500">
+                       <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
                          {ingestionProgressMap[doc.id].progress}%
                        </span>
                      </div>
-                     <div className="w-full h-1.5 bg-slate-100 dark:bg-white/5 rounded-full overflow-hidden">
+                     <div className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
                        <div 
                          className="h-full bg-indigo-500 rounded-full transition-all duration-500 ease-out" 
                          style={{ width: `${ingestionProgressMap[doc.id].progress || 5}%` }}
                        />
                      </div>
-                     <p className="text-[10px] text-slate-400 italic mt-2 line-clamp-1">
+                     <p className="text-[11px] text-slate-600 dark:text-slate-300 italic mt-2 line-clamp-1">
                        {ingestionProgressMap[doc.id].message || 'Waking neural node...'}
                      </p>
                    </div>
@@ -344,7 +344,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
                  {/* Default status message for non-processing docs, or processing docs without realtime data yet */}
                  {!(isProcessing && ingestionProgressMap[doc.id]) && (
-                   <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-3 leading-relaxed italic mt-2">
+                   <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-3 leading-relaxed italic mt-2">
                      {isFailed ? (doc.documentSummary || "Critical fault during extraction. Remove this item and try again.") : 
                       isProcessing ? (doc.documentSummary || "Master MD extraction in progress...") :
                       (doc.documentSummary || "Ready for Synthesis")}
@@ -352,7 +352,7 @@ const Documents: React.FC<DocumentsProps> = ({
                  )}
 
                  {isFailed && isAdmin && (
-                   <p className="text-[9px] font-bold text-rose-500 bg-rose-50 p-2 rounded-xl border border-rose-100 mt-2 line-clamp-2">
+                   <p className="text-[10px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 p-2.5 rounded-xl border border-rose-200 dark:border-rose-800/60 mt-2 line-clamp-2">
                      <b>DIAGNOSTIC:</b> {doc.errorMessage || "Unknown Neural Bottleneck"}
                    </p>
                  )}
@@ -362,9 +362,9 @@ const Documents: React.FC<DocumentsProps> = ({
         })}
 
         {documents.length === 0 && (
-          <div className="col-span-full py-40 text-center border-2 border-dashed border-slate-100 dark:border-white/5 rounded-[4rem] opacity-30">
-            <FileText size={64} className="mx-auto mb-6 text-slate-300" />
-            <p className="text-xl font-black uppercase tracking-widest text-slate-400">Library Empty</p>
+          <div className="col-span-full py-40 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[4rem]">
+            <FileText size={64} className="mx-auto mb-6 text-slate-400 dark:text-slate-500" />
+            <p className="text-xl font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Library Empty</p>
           </div>
         )}
       </div>

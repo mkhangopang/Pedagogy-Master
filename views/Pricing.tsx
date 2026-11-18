@@ -124,10 +124,10 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
           <span>Public Free Access Open • No Payment Needed</span>
         </div>
 
-        <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-white tracking-tight">
+        <h1 className="text-3xl md:text-5xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
           Workspace Plans &amp; Upcoming Tiers
         </h1>
-        <p className="text-slate-600 dark:text-slate-400 text-base md:text-lg font-medium">
+        <p className="text-slate-700 dark:text-slate-300 text-base md:text-lg font-medium">
           Every educator starts immediately on the active <strong>Free Plan ($0/mo)</strong> with fair daily limits so the platform runs smoothly for everyone. Paid plans below preview upcoming features with approximate USD pricing and will be <strong>available soon</strong>.
         </p>
       </div>
@@ -145,21 +145,21 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
               key={tier.id}
               className={`relative rounded-3xl p-7 md:p-8 border transition-all flex flex-col ${
                 isComingSoon
-                  ? 'bg-slate-50/70 dark:bg-slate-900/60 border-slate-200 dark:border-white/10'
+                  ? 'bg-slate-50 dark:bg-slate-900/70 border-slate-200 dark:border-slate-800'
                   : 'bg-white dark:bg-slate-900 border-indigo-500 shadow-xl ring-1 ring-indigo-500/20'
               }`}
             >
               <div className="flex items-center justify-between gap-2 mb-6">
-                <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100 dark:bg-white/5 text-indigo-600 dark:text-indigo-400 shrink-0">
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 shrink-0">
                   {tier.icon}
                 </div>
                 {isComingSoon ? (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-700/50 text-amber-800 dark:text-amber-300 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
                     <Clock size={12} />
                     Available Soon
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-700/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-700/50 text-emerald-800 dark:text-emerald-300 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap">
                     <CheckCircle2 size={12} />
                     Active Free Plan
                   </span>
@@ -167,23 +167,23 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
               </div>
 
               <div className="mb-6">
-                <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                <h2 className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
                   {tier.name}
                 </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 font-medium">
                   {tier.subtitle}
                 </p>
 
                 <div className="mt-5 flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-slate-900 dark:text-white tabular-nums">
+                  <span className="text-4xl font-black text-slate-900 dark:text-slate-100 tabular-nums">
                     {limits.price}
                   </span>
-                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
                     {isComingSoon ? 'USD approx. / mo' : 'USD / month'}
                   </span>
                 </div>
                 {isComingSoon && (
-                  <p className="mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  <p className="mt-1 text-[11px] font-medium text-slate-600 dark:text-slate-300">
                     Placeholder preview — billing is not active yet
                   </p>
                 )}
@@ -192,10 +192,10 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
               <div className="space-y-3.5 mb-8 flex-1">
                 {limits.features.map((feature: string, i: number) => (
                   <div key={i} className="flex items-start gap-2.5">
-                    <div className="mt-0.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full p-0.5 shrink-0">
-                      <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
+                    <div className="mt-0.5 bg-emerald-100 dark:bg-emerald-950/60 rounded-full p-0.5 shrink-0">
+                      <Check size={12} className="text-emerald-700 dark:text-emerald-400" />
                     </div>
-                    <span className="text-slate-700 dark:text-slate-300 text-sm font-medium leading-snug">
+                    <span className="text-slate-700 dark:text-slate-200 text-sm font-medium leading-snug">
                       {feature}
                     </span>
                   </div>
@@ -215,8 +215,8 @@ const Pricing: React.FC<PricingProps> = ({ currentPlan, onUpgrade, onShowPolicy 
                   }
                   className={`w-full py-3.5 px-4 rounded-2xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 whitespace-nowrap ${
                     isNotified
-                      ? 'bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-700/40 text-emerald-700 dark:text-emerald-300'
-                      : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-700/50 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-950 hover:opacity-90'
                   }`}
                 >
                   {isNotified ? (
