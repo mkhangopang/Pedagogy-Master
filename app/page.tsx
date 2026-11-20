@@ -11,6 +11,7 @@ import { Loader2, Menu, MessageSquarePlus, Share2, Check } from 'lucide-react';
 import { PilotFeedbackDrawer } from '../components/PilotFeedbackDrawer';
 import { trackProductEvent } from '../lib/analytics';
 import { normalizeAuthEntryMode } from '../lib/auth/auth-mode';
+import { formatAuthError } from '../lib/auth/auth-error';
 import { BlinkingRobot } from '../components/BlinkingRobot';
 
 // Code-split heavy views to keep the landing page bundle minimal
@@ -87,7 +88,7 @@ export default function App() {
         if (combined.includes('error=')) {
           const errMatch = combined.match(/error_description=([^&]+)/);
           const rawErr = errMatch ? errMatch[1] : (params.get('error_description') || params.get('error') || 'Authentication link failed');
-          const desc = decodeURIComponent(rawErr.replace(/\+/g, ' '));
+          const desc = formatAuthError(decodeURIComponent(rawErr.replace(/\+/g, ' ')), 'Authentication link failed.');
           setUrlAuthError(desc);
           setCurrentView('login');
         }
@@ -153,7 +154,7 @@ export default function App() {
                 }
               } else if (exchangeErr) {
                 console.warn("Code exchange notice:", exchangeErr.message);
-                setUrlAuthError(exchangeErr.message || 'Verification link expired or already used.');
+                setUrlAuthError(formatAuthError(exchangeErr, 'Verification link expired or already used.'));
                 setCurrentView('login');
               }
             } catch (e: any) {
@@ -186,7 +187,7 @@ export default function App() {
               }
             } else if (error) {
               console.warn("Token hash notice:", error.message);
-              setUrlAuthError(error.message || 'Email verification link is invalid or expired.');
+              setUrlAuthError(formatAuthError(error, 'Email verification link is invalid or expired.'));
               setCurrentView('login');
             }
           }).catch(e => console.warn("Token hash error:", e));

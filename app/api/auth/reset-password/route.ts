@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdminClient, getCredentials, isSupabaseConfigured } from '../../../../lib/supabase';
 import { kv } from '../../../../lib/kv';
 import { createClient } from '@supabase/supabase-js';
+import { formatAuthError } from '../../../../lib/auth/auth-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -208,7 +209,7 @@ export async function POST(req: NextRequest) {
 
       if (updateError) {
         console.error('❌ [Auth Recovery] Admin updateUserById error:', updateError);
-        return NextResponse.json({ error: updateError.message || 'Failed to update password.' }, { status: 500 });
+        return NextResponse.json({ error: formatAuthError(updateError, 'Failed to update password.') }, { status: 500 });
       }
 
       return NextResponse.json({
@@ -243,7 +244,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (resendError) {
-        return NextResponse.json({ error: resendError.message || 'Failed to resend confirmation email.' }, { status: 400 });
+        return NextResponse.json({ error: formatAuthError(resendError, 'Failed to resend confirmation email.') }, { status: 400 });
       }
 
       return NextResponse.json({
@@ -256,6 +257,9 @@ export async function POST(req: NextRequest) {
 
   } catch (error: any) {
     console.error('❌ [Auth Recovery Exception]:', error);
-    return NextResponse.json({ error: error.message || 'Authentication recovery service failed.' }, { status: 500 });
+    return NextResponse.json(
+      { error: formatAuthError(error, 'Authentication recovery service failed.') },
+      { status: 500 }
+    );
   }
 }

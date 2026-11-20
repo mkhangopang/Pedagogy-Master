@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured, getURL } from '../lib/supabase';
 import { normalizeAuthEntryMode } from '../lib/auth/auth-mode';
+import { formatAuthError, isRetryableAuthError } from '../lib/auth/auth-error';
 import { 
   GraduationCap, Loader2, Mail, Lock, ArrowRight, ArrowLeft, 
   CheckCircle2, AlertCircle, Eye, EyeOff, ShieldCheck, KeyRound,
@@ -42,7 +43,7 @@ const Login: React.FC<LoginProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<{ message: string, code?: string } | null>(
-    initialError ? { message: initialError } : null
+    initialError ? { message: formatAuthError(initialError) } : null
   );
 
   // Recovery & confirmation dispatch state
@@ -72,7 +73,7 @@ const Login: React.FC<LoginProps> = ({
 
   useEffect(() => {
     if (initialError) {
-      setError({ message: initialError });
+      setError({ message: formatAuthError(initialError) });
     }
   }, [initialError]);
 
@@ -92,7 +93,7 @@ const Login: React.FC<LoginProps> = ({
       const searchErr = params.get('error_description') || params.get('error');
       if (hashErrMatch || searchErr) {
         const rawErr = hashErrMatch ? hashErrMatch[1] : searchErr!;
-        const decoded = decodeURIComponent(rawErr.replace(/\+/g, ' '));
+        const decoded = formatAuthError(decodeURIComponent(rawErr.replace(/\+/g, ' ')));
         if (isMounted) {
           setError({ message: decoded });
           if (decoded.toLowerCase().includes('expired') || decoded.toLowerCase().includes('invalid')) {
@@ -280,14 +281,14 @@ const Login: React.FC<LoginProps> = ({
 
         if (authError) {
           console.error("Auth Sign-In Error:", authError);
-          if (authError.message.includes('Invalid login credentials')) {
-            throw new Error("Invalid email or password. Please verify your credentials or use 'Forgot?' to reset your password.");
-          }
-          if (authError.message.toLowerCase().includes('email not confirmed')) {
+          const friendlyMsg = formatAuthError(
+            authError,
+            "Unable to sign in right now. Please check your connection and try again."
+          );
+          if (friendlyMsg.toLowerCase().includes('email is not confirmed')) {
             setNeedsConfirmationEmail(cleanEmail);
-            throw new Error("Verification Pending: Your email is not confirmed yet. Check your inbox or click below to resend the activation link.");
           }
-          throw authError;
+          throw new Error(friendlyMsg);
         }
 
         if (data.session) {
@@ -303,31 +304,88 @@ const Login: React.FC<LoginProps> = ({
         if (password.length < 8) throw new Error("Password must be at least 8 characters long.");
         if (password !== confirmPassword) throw new Error("Passwords do not match. Please verify your entries.");
         
-        const { data, error: authError } = await supabase.auth.signUp({ 
-          email: cleanEmail, 
-          password,
-          options: { 
-            data: { role: 'teacher', plan: 'free' },
-            emailRedirectTo: getURL(),
-            ...(captchaToken && captchaToken !== 'verified' ? { captchaToken } : {})
-          }
-        });
+        let signupData: any = null;
+        let signupError: any = null;
 
-        if (authError) {
-          if (authError.message.includes('User already registered') || authError.message.includes('already registered')) {
-            setExistingAccountPrompt(true);
-            throw new Error("An account with this email already exists. Please Sign In or reset your password.");
-          }
-          throw authError;
+        try {
+          const res = await supabase.auth.signUp({ 
+            email: cleanEmail, 
+            password,
+            options: { 
+              data: { role: 'teacher', plan: 'free' },
+              emailRedirectTo: getURL(),
+              ...(captchaToken && captchaToken !== 'verified' ? { captchaToken } : {})
+            }
+          });
+          signupData = res.data;
+          signupError = res.error;
+        } catch (clientErr) {
+          signupError = clientErr;
         }
 
-        if (data.session) {
-          onSession(data.session);
-        } else if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        // Same-origin fallback if browser/in-app WebView blocked direct Supabase fetch or returned "{}"
+        if (signupError && isRetryableAuthError(signupError)) {
+          const fallbackRes = await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: cleanEmail,
+              password,
+              origin: typeof window !== 'undefined' ? window.location.origin : '',
+              ...(captchaToken && captchaToken !== 'verified' ? { captchaToken } : {}),
+            }),
+          });
+          const fallbackJson = await fallbackRes.json().catch(() => ({}));
+          if (!fallbackRes.ok) {
+            if (fallbackRes.status === 409 || fallbackJson?.code === 'user_already_exists') {
+              setExistingAccountPrompt(true);
+            }
+            throw new Error(
+              formatAuthError(
+                fallbackJson?.error || { status: fallbackRes.status },
+                "Unable to create your account right now. Please try again in a moment or use Continue with Google."
+              )
+            );
+          }
+
+          if (fallbackJson?.session?.access_token) {
+            try {
+              await supabase.auth.setSession({
+                access_token: fallbackJson.session.access_token,
+                refresh_token: fallbackJson.session.refresh_token || '',
+              });
+            } catch {
+              // proceed with returned session
+            }
+            onSession(fallbackJson.session);
+            return;
+          }
+
+          setView('signup-success');
+          return;
+        }
+
+        if (signupError) {
+          const friendlyMsg = formatAuthError(
+            signupError,
+            "Unable to create your account right now. Please try again in a moment or use Continue with Google."
+          );
+          if (
+            friendlyMsg.toLowerCase().includes('already exists') ||
+            friendlyMsg.toLowerCase().includes('already registered')
+          ) {
+            setExistingAccountPrompt(true);
+          }
+          throw new Error(friendlyMsg);
+        }
+
+        if (signupData?.session) {
+          onSession(signupData.session);
+        } else if (signupData?.user && Array.isArray(signupData.user.identities) && signupData.user.identities.length === 0) {
           // Supabase returns an empty identities array without sending an email when email already exists & is confirmed
           setExistingAccountPrompt(true);
           throw new Error("An account with this email is already registered. Please Sign In or use Forgot Password.");
-        } else if (data.user) {
+        } else if (signupData?.user) {
           setView('signup-success');
         }
       } 
@@ -448,7 +506,9 @@ const Login: React.FC<LoginProps> = ({
         }
       }
     } catch (err: any) {
-      setError({ message: err.message || "Authentication service failed to respond." });
+      setError({
+        message: formatAuthError(err, "Authentication service failed to respond. Please try again.")
+      });
     } finally {
       setLoading(false);
     }
@@ -471,10 +531,10 @@ const Login: React.FC<LoginProps> = ({
       if (res.ok) {
         setResendMessage(json.message || 'Confirmation email resent! Please check your inbox and spam folder.');
       } else {
-        setError({ message: json.error || 'Failed to resend confirmation email.' });
+        setError({ message: formatAuthError(json.error, 'Failed to resend confirmation email.') });
       }
     } catch (e: any) {
-      setError({ message: e.message || 'Network error while resending confirmation.' });
+      setError({ message: formatAuthError(e, 'Network error while resending confirmation.') });
     } finally {
       setResendLoading(false);
     }
@@ -503,8 +563,8 @@ const Login: React.FC<LoginProps> = ({
     } catch (err: any) {
       console.error("OAuth Error:", err);
       setError({ 
-        message: err.message || "Google authentication failed.",
-        code: err.status === 400 ? 'CONFIG_ERROR' : undefined
+        message: formatAuthError(err, "Google authentication failed. Please try again."),
+        code: err?.status === 400 ? 'CONFIG_ERROR' : undefined
       });
       setGoogleLoading(false);
     }
@@ -534,7 +594,7 @@ const Login: React.FC<LoginProps> = ({
           {error && (
             <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 rounded-xl mb-4 text-xs text-rose-700 dark:text-rose-300 text-left flex items-start gap-2">
               <AlertCircle size={14} className="shrink-0 mt-0.5" />
-              <span>{error.message}</span>
+              <span>{formatAuthError(error.message)}</span>
             </div>
           )}
 
@@ -878,7 +938,7 @@ const Login: React.FC<LoginProps> = ({
               <div className="p-4 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-700 dark:text-rose-300 rounded-xl space-y-2.5 animate-in fade-in">
                 <div className="flex items-start gap-2 text-xs font-semibold">
                   <AlertCircle size={15} className="shrink-0 mt-0.5" /> 
-                  <span>{error.message}</span>
+                  <span>{formatAuthError(error.message)}</span>
                 </div>
                 {needsConfirmationEmail && (
                   <button

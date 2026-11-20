@@ -5,6 +5,7 @@ import { normalizeAuthEntryMode } from './auth-mode';
 const mockExchangeCodeForSession = vi.fn();
 const mockVerifyOtp = vi.fn();
 const mockResend = vi.fn();
+const mockSignUp = vi.fn();
 const kvCounts = new Map<string, number>();
 
 vi.mock('../../lib/kv', () => ({
@@ -23,6 +24,7 @@ vi.mock('@supabase/supabase-js', () => ({
       exchangeCodeForSession: mockExchangeCodeForSession,
       verifyOtp: mockVerifyOtp,
       resend: mockResend,
+      signUp: mockSignUp,
       resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
     },
   })),
@@ -54,6 +56,76 @@ describe('Sign-Up / Sign-In / Callback Auth Flows', () => {
     expect(normalizeAuthEntryMode(syntheticMouseEvent)).toBe('login');
     expect(normalizeAuthEntryMode(undefined)).toBe('login');
     expect(normalizeAuthEntryMode('unknown-mode', 'signup')).toBe('signup');
+  });
+
+  it('formatAuthError never exposes raw "{}" or "[object Object]" and humanizes Supabase fetch/5xx errors', async () => {
+    const { formatAuthError, isRetryableAuthError } = await import('./auth-error');
+
+    expect(formatAuthError('{}')).not.toContain('{}');
+    expect(formatAuthError('[object Object]')).not.toContain('object Object');
+    expect(formatAuthError({ name: 'AuthRetryableFetchError', message: '{}', status: 0 })).toContain(
+      'Could not connect'
+    );
+    expect(formatAuthError({ name: 'AuthRetryableFetchError', message: '{}', status: 504 })).toContain(
+      'temporary'
+    );
+    expect(formatAuthError({ message: 'User already registered', status: 422 })).toContain(
+      'already exists'
+    );
+    expect(isRetryableAuthError({ name: 'AuthRetryableFetchError', message: '{}', status: 0 })).toBe(true);
+    expect(isRetryableAuthError({ message: '{}' })).toBe(true);
+    expect(isRetryableAuthError({ message: 'Invalid login credentials', status: 400 })).toBe(false);
+  });
+
+  it('POST /api/auth/signup handles success, existing accounts, and never leaks "{}" on Supabase 5xx', async () => {
+    const { POST } = await import('../../app/api/auth/signup/route');
+
+    // 1. Success with email confirmation pending
+    mockSignUp.mockResolvedValueOnce({
+      data: { user: { id: 'u-1', identities: [{ id: 'i-1' }] }, session: null },
+      error: null,
+    });
+    const okReq = new NextRequest('https://pedagogy-master.vercel.app/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.10' },
+      body: JSON.stringify({
+        email: 'Teacher@School.Edu',
+        password: 'StrongPassword123',
+        origin: 'https://evil.example.com',
+      }),
+    });
+    const okRes = await POST(okReq);
+    const okJson = await okRes.json();
+    expect(okRes.status).toBe(200);
+    expect(okJson.success).toBe(true);
+    expect(okJson.needsEmailConfirmation).toBe(true);
+    expect(mockSignUp).toHaveBeenCalledWith({
+      email: 'teacher@school.edu',
+      password: 'StrongPassword123',
+      options: {
+        data: { role: 'teacher', plan: 'free' },
+        emailRedirectTo: 'https://pedagogy-master.vercel.app/',
+      },
+    });
+
+    // 2. Supabase AuthRetryableFetchError with "{}" message turns into clear human message
+    mockSignUp.mockResolvedValueOnce({
+      data: { user: null, session: null },
+      error: { name: 'AuthRetryableFetchError', message: '{}', status: 500 },
+    });
+    const errReq = new NextRequest('https://pedagogy-master.vercel.app/api/auth/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-forwarded-for': '198.51.100.11' },
+      body: JSON.stringify({
+        email: 'another@school.edu',
+        password: 'StrongPassword123',
+      }),
+    });
+    const errRes = await POST(errReq);
+    const errJson = await errRes.json();
+    expect(errRes.status).toBe(500);
+    expect(errJson.error).not.toBe('{}');
+    expect(errJson.error.length).toBeGreaterThan(15);
   });
 
   it('POST /api/auth/reset-password resend-signup sanitizes origin and calls supabase resend', async () => {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCredentials, isSupabaseConfigured } from '../../../lib/supabase';
 import { createClient } from '@supabase/supabase-js';
+import { formatAuthError } from '../../../lib/auth/auth-error';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   // Handle errors reported by Supabase Auth in redirect
   if (error || errorDescription) {
-    const errorMsg = errorDescription || error || 'Authentication link failed';
+    const errorMsg = formatAuthError(errorDescription || error, 'Authentication link failed');
     const destination = type === 'recovery' ? '/reset-password' : '/';
     return NextResponse.redirect(`${origin}${destination}?error=${encodeURIComponent(errorMsg)}`);
   }
@@ -38,14 +39,14 @@ export async function GET(req: NextRequest) {
         if (exchangeError) {
           const destination = type === 'recovery' ? '/reset-password' : '/';
           return NextResponse.redirect(
-            `${origin}${destination}?error=${encodeURIComponent(exchangeError.message || 'Verification link expired or already used')}`
+            `${origin}${destination}?error=${encodeURIComponent(formatAuthError(exchangeError, 'Verification link expired or already used'))}`
           );
         }
       } catch (e: any) {
         console.warn('⚠️ [Callback Route] Code exchange notice:', e);
         const destination = type === 'recovery' ? '/reset-password' : '/';
         return NextResponse.redirect(
-          `${origin}${destination}?error=${encodeURIComponent(e?.message || 'Unable to verify authentication code')}`
+          `${origin}${destination}?error=${encodeURIComponent(formatAuthError(e, 'Unable to verify authentication code'))}`
         );
       }
     }
@@ -65,14 +66,14 @@ export async function GET(req: NextRequest) {
         if (verifyError) {
           const destination = type === 'recovery' ? '/reset-password' : '/';
           return NextResponse.redirect(
-            `${origin}${destination}?error=${encodeURIComponent(verifyError.message || 'Verification link expired or invalid')}`
+            `${origin}${destination}?error=${encodeURIComponent(formatAuthError(verifyError, 'Verification link expired or invalid'))}`
           );
         }
       } catch (e: any) {
         console.warn('⚠️ [Callback Route] Token hash verification notice:', e);
         const destination = type === 'recovery' ? '/reset-password' : '/';
         return NextResponse.redirect(
-          `${origin}${destination}?error=${encodeURIComponent(e?.message || 'Unable to verify email token')}`
+          `${origin}${destination}?error=${encodeURIComponent(formatAuthError(e, 'Unable to verify email token'))}`
         );
       }
     }
