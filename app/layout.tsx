@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
+import { Analytics } from '@vercel/analytics/next';
 import './globals.css';
 import 'katex/dist/katex.min.css';
 
@@ -63,6 +64,7 @@ export default function RootLayout({
         <div id="root" className="min-h-full">
           {children}
         </div>
+        <Analytics />
       </body>
     </html>
   );
