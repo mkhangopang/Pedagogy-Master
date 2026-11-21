@@ -41,11 +41,12 @@ interface ToolsProps {
   canQuery: boolean;
   user: UserProfile;
   onViewChange?: (view: string) => void;
+  onUpgradeFromGuest?: () => void;
 }
 
 type PersonaMode = 'architect' | 'creative' | 'auditor';
 
-const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user, onViewChange }) => {
+const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user, onViewChange, onUpgradeFromGuest }) => {
   const [activeTool, setActiveTool] = useState<ToolType | null>(null);
   const [persona, setPersona] = useState<PersonaMode>('architect');
   const [messages, setMessages] = useState<any[]>([]);
@@ -74,8 +75,9 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeDoc = localDocs.find(d => d.isSelected);
-  const isDev = isAdminUser(user);
-  const isPro = user.plan !== SubscriptionPlan.FREE || isDev;
+  const isGuest = Boolean(user.isGuest);
+  const isDev = !isGuest && isAdminUser(user);
+  const isPro = !isGuest && (user.plan !== SubscriptionPlan.FREE || isDev);
 
   // -- Inject print styles ----------------------------------------------------
   useEffect(() => {
@@ -93,6 +95,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   }, [documents]);
 
   useEffect(() => {
+    if (isGuest) return;
     let active = true;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -103,7 +106,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
     return () => {
       active = false;
     };
-  }, [user.id, user.plan]);
+  }, [user.id, user.plan, isGuest]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -128,6 +131,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
   }, [canvasContent, isGenerating]);
 
   const toggleDocContext = async (docId: string) => {
+    if (isGuest) return;
     const updated = localDocs.map(d => ({ ...d, isSelected: d.id === docId ? !d.isSelected : false }));
     setLocalDocs(updated);
     setIsSwitchingContext(true);
@@ -213,10 +217,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
       setMessages(prev => prev.map(m => m.id === aiMsgId ? { ...m, content: fullContent } : m));
       setCanvasContent(fullContent);
 
-      void adaptiveService.captureGeneration(
-        user.id, effectiveTool, fullContent,
-        { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled }
-      );
+      if (!isGuest) {
+        void adaptiveService.captureGeneration(
+          user.id, effectiveTool, fullContent,
+          { tool: effectiveTool, document_id: activeDoc?.id, persona, isGlobalEnabled }
+        );
+      }
 
       logActivity({
         category: 'query_completion',
@@ -233,14 +239,16 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           artifactLength: fullContent.length
         }
       });
-      trackProductEvent({
-        action: 'tool_synthesis_completed',
-        category: 'synthesis',
-        label: effectiveTool,
-        value: fullContent.length,
-        toolType: effectiveTool,
-        metadata: { persona, grounded: Boolean(isCurriculumEnabled && activeDoc) },
-      });
+      if (!isGuest) {
+        trackProductEvent({
+          action: 'tool_synthesis_completed',
+          category: 'synthesis',
+          label: effectiveTool,
+          value: fullContent.length,
+          toolType: effectiveTool,
+          metadata: { persona, grounded: Boolean(isCurriculumEnabled && activeDoc) },
+        });
+      }
 
     } catch (err: any) {
       setMessages(prev => prev.map(m =>
@@ -370,6 +378,12 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
 
     if (lang === 'en') {
       setSelectedLang('en');
+      return;
+    }
+
+    if (isGuest) {
+      setQuotaUpgradePrompt(true);
+      setTranslationError('Urdu & Sindhi translations unlock with a free educator account.');
       return;
     }
 
@@ -605,13 +619,17 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
           <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
             {!canQuery && (
               <div className="px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-[11px] font-semibold flex items-center justify-between gap-2">
-                <span>Daily free synthesis limit reached ({user.queriesUsed}/{user.queriesLimit}). Resets tomorrow (UTC).</span>
+                <span>
+                  {isGuest
+                    ? `Guest preview limit reached (${user.queriesUsed}/${user.queriesLimit}). Create a free account for 25 runs/day.`
+                    : `Daily free synthesis limit reached (${user.queriesUsed}/${user.queriesLimit}). Resets tomorrow (UTC).`}
+                </span>
                 <button
                   type="button"
-                  onClick={() => onViewChange?.('pricing')}
+                  onClick={() => (isGuest && onUpgradeFromGuest ? onUpgradeFromGuest() : onViewChange?.('pricing'))}
                   className="text-indigo-700 dark:text-indigo-300 font-bold underline whitespace-nowrap"
                 >
-                  Upcoming Plans
+                  {isGuest ? 'Create Free Account' : 'Upcoming Plans'}
                 </button>
               </div>
             )}
@@ -741,21 +759,25 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
               </div>
            </div>
 
-           {(translationError || exportError || showUpgradeHint) && (
+            {(translationError || exportError || showUpgradeHint) && (
              <div className="px-4 md:px-8 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 flex flex-wrap items-center justify-between gap-3 text-xs no-print">
                {showUpgradeHint ? (
                    <>
                      <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-medium">
                        <Lock size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                       <span>Free users can copy &amp; paste translated Urdu/Sindhi content anytime. Paid plans (~$9/mo USD) with DOCX &amp; PDF downloads will be available soon.</span>
+                       <span>
+                         {isGuest
+                           ? 'Guest Preview supports English copy & paste. Create a free educator account to save curriculum assets and unlock Pro DOCX/PDF exports.'
+                           : 'Free users can copy & paste translated Urdu/Sindhi content anytime. Paid plans (~$9/mo USD) with DOCX & PDF downloads will be available soon.'}
+                       </span>
                      </div>
                      <div className="flex items-center gap-2 shrink-0">
                        <button
                          type="button"
-                         onClick={() => onViewChange?.('pricing')}
+                         onClick={() => (isGuest && onUpgradeFromGuest ? onUpgradeFromGuest() : onViewChange?.('pricing'))}
                          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
                        >
-                         View Upcoming Plans
+                         {isGuest ? 'Create Free Account' : 'View Upcoming Plans'}
                        </button>
                        <button
                          type="button"
@@ -774,13 +796,13 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                        <span>{translationError || exportError}</span>
                      </div>
                      <div className="flex items-center gap-2 shrink-0">
-                       {quotaUpgradePrompt && onViewChange && (
+                       {quotaUpgradePrompt && (
                          <button
                            type="button"
-                           onClick={() => onViewChange('pricing')}
+                           onClick={() => (isGuest && onUpgradeFromGuest ? onUpgradeFromGuest() : onViewChange?.('pricing'))}
                            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black uppercase tracking-widest whitespace-nowrap"
                          >
-                           Upcoming Plans
+                           {isGuest ? 'Create Free Account' : 'Upcoming Plans'}
                          </button>
                        )}
                      <button
@@ -845,7 +867,7 @@ const Tools: React.FC<ToolsProps> = ({ brain, documents, onQuery, canQuery, user
                       className={`prose pm-prose max-w-full text-sm md:text-base leading-relaxed animate-in fade-in duration-500 ${rtlFontClass}`}
                       dangerouslySetInnerHTML={{ __html: markdownToHtml(displayedContent, isRtl ? 'rtl' : 'ltr') }}
                     />
-                    {!isGenerating && (
+                    {!isGenerating && !isGuest && (
                       <MicroFeedbackBar
                         key={`${activeTool}-${cleanEnglishContent.length}`}
                         toolType={activeTool || 'master_plan'}

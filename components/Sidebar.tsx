@@ -38,6 +38,7 @@ interface SidebarProps {
   onClose?: () => void;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
+  onExitGuest?: (targetMode?: 'login' | 'signup') => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -48,11 +49,13 @@ const Sidebar: React.FC<SidebarProps> = ({
   setIsCollapsed,
   onClose,
   theme,
-  toggleTheme
+  toggleTheme,
+  onExitGuest
 }) => {
   if (!userProfile) return null;
 
-  const isDev = userProfile.role === UserRole.APP_ADMIN;
+  const isGuest = Boolean(userProfile.isGuest);
+  const isDev = !isGuest && userProfile.role === UserRole.APP_ADMIN;
   const isStakeholder = !!userProfile.stakeholderRole;
 
   const navItems = [
@@ -84,6 +87,10 @@ const Sidebar: React.FC<SidebarProps> = ({
   }
 
   const handleSignOut = async () => {
+    if (isGuest) {
+      onExitGuest?.('login');
+      return;
+    }
     try {
       await supabase.auth.signOut();
     } catch (e) {
@@ -92,6 +99,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const getRoleDisplay = () => {
+    if (isGuest) return { icon: <Eye size={18} />, color: 'bg-teal-600', label: 'Guest Preview' };
     if (userProfile.stakeholderRole === StakeholderRole.GOVT_AUDITOR) return { icon: <Scale size={18} />, color: 'bg-blue-600', label: 'Govt Auditor' };
     if (userProfile.stakeholderRole === StakeholderRole.NGO_OBSERVER) return { icon: <Eye size={18} />, color: 'bg-emerald-600', label: 'NGO Observer' };
     
@@ -142,14 +150,27 @@ const Sidebar: React.FC<SidebarProps> = ({
           {!isCollapsed && (
             <div className="overflow-hidden">
               <p className="text-[10px] font-black uppercase tracking-tighter text-indigo-200">{roleInfo.label}</p>
-              <p className="text-[11px] font-medium truncate text-indigo-100/90">{userProfile.email}</p>
+              <p className="text-[11px] font-medium truncate text-indigo-100/90">
+                {isGuest ? 'Limited Sandbox' : userProfile.email}
+              </p>
             </div>
           )}
         </div>
+
+        {isGuest && !isCollapsed && (
+          <button
+            type="button"
+            onClick={() => onExitGuest?.('signup')}
+            className="w-full mb-2 py-2.5 px-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition-colors flex items-center justify-center gap-2 whitespace-nowrap"
+          >
+            <Zap size={14} />
+            Create Free Account
+          </button>
+        )}
         
         <button onClick={handleSignOut} className={`w-full flex items-center gap-3 px-4 py-3 text-rose-300 hover:bg-rose-500/15 hover:text-rose-200 rounded-xl transition-colors ${isCollapsed ? 'justify-center' : ''}`}>
           <LogOut size={18} />
-          {!isCollapsed && <span className="text-xs font-black uppercase tracking-widest">Sign Out</span>}
+          {!isCollapsed && <span className="text-xs font-black uppercase tracking-widest">{isGuest ? 'Exit Preview' : 'Sign Out'}</span>}
         </button>
       </div>
     </aside>

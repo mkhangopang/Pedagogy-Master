@@ -13,6 +13,7 @@ import {
 interface LoginProps {
   onSession: (user: any) => void;
   onBack?: () => void;
+  onTryGuest?: () => void;
   initialMode?: 'login' | 'signup' | 'forgot-password' | 'update-password';
   initialError?: string | null;
 }
@@ -29,6 +30,7 @@ type AuthView =
 const Login: React.FC<LoginProps> = ({ 
   onBack, 
   onSession, 
+  onTryGuest,
   initialMode = 'login',
   initialError = null 
 }) => {
@@ -1025,6 +1027,18 @@ const Login: React.FC<LoginProps> = ({
                 className="text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
               >
                 Need a new reset code? Send again
+              </button>
+            </div>
+          )}
+
+          {onTryGuest && (view === 'login' || view === 'signup') && (
+            <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 text-center">
+              <button
+                type="button"
+                onClick={onTryGuest}
+                className="w-full py-2.5 px-4 rounded-xl border border-teal-300 dark:border-teal-700 bg-teal-50/70 dark:bg-teal-950/30 text-teal-800 dark:text-teal-200 hover:bg-teal-100/80 dark:hover:bg-teal-950/60 text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap"
+              >
+                Or Try Guest Preview (5 Free Runs)
               </button>
             </div>
           )}

@@ -31,9 +31,11 @@ interface ChatProps {
   canQuery: boolean;
   user: UserProfile;
   onViewChange?: (view: string) => void;
+  onUpgradeFromGuest?: () => void;
 }
 
-const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, onViewChange }) => {
+const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, onViewChange, onUpgradeFromGuest }) => {
+  const isGuest = Boolean(user.isGuest);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [localDocs, setLocalDocs] = useState<Document[]>(documents);
   const [isLoading, setIsLoading] = useState(false);
@@ -50,6 +52,10 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
   const [translationQuota, setTranslationQuota] = useState<TranslationQuotaStatus | null>(null);
 
   const handleSaveAssessment = async (assessment: Assessment) => {
+    if (isGuest) {
+      onUpgradeFromGuest?.();
+      return;
+    }
     try {
       const id = await adaptiveService.captureGeneration(
         user.id, 
@@ -86,6 +92,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
   }, [documents]);
 
   useEffect(() => {
+    if (isGuest) return;
     let active = true;
     (async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -96,7 +103,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
     return () => {
       active = false;
     };
-  }, [user.id, user.plan]);
+  }, [user.id, user.plan, isGuest]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -108,6 +115,7 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
   }, [messages, isLoading, currentValidation]);
 
   const toggleDocContext = async (docId: string) => {
+    if (isGuest) return;
     const updated = localDocs.map(d => ({ 
       ...d, 
       isSelected: d.id === docId ? !d.isSelected : false 
@@ -279,7 +287,9 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
       if (activeTool === 'validate') {
         setCurrentValidation(validateLessonStructure(fullContent));
       }
-      void adaptiveService.captureGeneration(user.id, 'chat', fullContent, { query: msgContent });
+      if (!isGuest) {
+        void adaptiveService.captureGeneration(user.id, 'chat', fullContent, { query: msgContent });
+      }
 
       logActivity({
         category: 'query_completion',
@@ -294,13 +304,15 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
           model: 'gemini-3.8-flash'
         }
       });
-      trackProductEvent({
-        action: 'chat_query_completed',
-        category: 'synthesis',
-        label: focusedDocId ? 'grounded' : 'general',
-        value: fullContent.length,
-        toolType: 'neural_chat',
-      });
+      if (!isGuest) {
+        trackProductEvent({
+          action: 'chat_query_completed',
+          category: 'synthesis',
+          label: focusedDocId ? 'grounded' : 'general',
+          value: fullContent.length,
+          toolType: 'neural_chat',
+        });
+      }
     } catch (err: any) {
       setMessages(prev => prev.map(m => m.id === aiMessageId ? { ...m, content: "Synthesis gate timed out. The neural grid is currently under high load." } : m));
       logActivity({
@@ -440,11 +452,12 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
                     isLatest={idx === arr.length - 1}
                     isStreaming={isLoading && idx === arr.length - 1}
                     enableTranslateExport={!isLoading || idx !== arr.length - 1}
-                    canExport={user.plan !== SubscriptionPlan.FREE || isAdminUser(user)}
+                    canExport={!isGuest && (user.plan !== SubscriptionPlan.FREE || isAdminUser(user))}
+                    isGuest={isGuest}
                     userName={user.name}
                     translationQuota={translationQuota}
                     onQuotaUpdate={setTranslationQuota}
-                    onUpgradeClick={() => onViewChange?.('pricing')}
+                    onUpgradeClick={() => (isGuest && onUpgradeFromGuest ? onUpgradeFromGuest() : onViewChange?.('pricing'))}
                   />
                 ))}
                 
@@ -485,15 +498,19 @@ const Chat: React.FC<ChatProps> = ({ brain, documents, onQuery, canQuery, user, 
             <div className="max-w-2xl mx-auto mb-2 px-4 py-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/40 rounded-2xl flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200 text-xs font-bold animate-in slide-in-from-bottom-2">
               <div className="flex items-center gap-2">
                 <AlertCircle size={16} className="shrink-0" />
-                <span>Daily free synthesis limit reached ({user.queriesUsed}/{user.queriesLimit}). Your quota resets tomorrow (UTC).</span>
+                <span>
+                  {isGuest
+                    ? `Guest preview limit reached (${user.queriesUsed}/${user.queriesLimit}). Create a free educator account for 25 daily runs.`
+                    : `Daily free synthesis limit reached (${user.queriesUsed}/${user.queriesLimit}). Your quota resets tomorrow (UTC).`}
+                </span>
               </div>
-              {onViewChange && (
+              {(onViewChange || onUpgradeFromGuest) && (
                 <button
                   type="button"
-                  onClick={() => onViewChange('pricing')}
+                  onClick={() => (isGuest && onUpgradeFromGuest ? onUpgradeFromGuest() : onViewChange?.('pricing'))}
                   className="text-indigo-600 dark:text-indigo-400 underline whitespace-nowrap shrink-0"
                 >
-                  Upcoming Plans
+                  {isGuest ? 'Create Free Account' : 'Upcoming Plans'}
                 </button>
               )}
             </div>

@@ -41,6 +41,7 @@ export interface UserProfile {
     examplesCount: number;
     structureModifications: number;
   };
+  isGuest?: boolean;
 }
 
 export interface NeuralBrain {

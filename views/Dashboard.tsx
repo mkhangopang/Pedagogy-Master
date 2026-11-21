@@ -16,9 +16,10 @@ interface DashboardProps {
   health: { status: string, message: string };
   onCheckHealth: () => Promise<boolean>;
   onViewChange: (view: string) => void;
+  onExitGuest?: (targetMode?: 'login' | 'signup') => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth, onViewChange, onProfileUpdate }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckHealth, onViewChange, onProfileUpdate, onExitGuest }) => {
   const [latency, setLatency] = useState('110ms');
   const [isEditingBranding, setIsEditingBranding] = useState(false);
   const [tempWorkspaceName, setTempWorkspaceName] = useState(user.workspaceName || '');
@@ -56,7 +57,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
     } finally { setIsSavingBranding(false); }
   };
 
-  const displayName = user.name || user.email.split('@')[0];
+  const displayName = user.isGuest ? 'Guest Preview' : (user.name || user.email.split('@')[0]);
   const isConnected = health.status === 'connected';
 
   return (
@@ -80,13 +81,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
             <span className="text-[10px] font-bold uppercase tracking-widest">Activity Log</span>
           </button>
 
-          <button 
-            onClick={() => setIsEditingBranding(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:scale-[1.02] transition-all shadow-sm"
-          >
-            <Settings size={14} />
-            <span className="text-[10px] font-bold uppercase tracking-widest">Settings</span>
-          </button>
+          {!user.isGuest && (
+            <button 
+              onClick={() => setIsEditingBranding(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:scale-[1.02] transition-all shadow-sm"
+            >
+              <Settings size={14} />
+              <span className="text-[10px] font-bold uppercase tracking-widest">Settings</span>
+            </button>
+          )}
+
+          {user.isGuest && onExitGuest && (
+            <button
+              type="button"
+              onClick={() => onExitGuest('signup')}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white transition-all shadow-sm"
+            >
+              <span className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Create Free Account</span>
+            </button>
+          )}
 
           <button 
             onClick={() => onCheckHealth()}
@@ -97,7 +110,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, documents, health, onCheckH
             }`}
           >
             {isConnected ? <Cloud size={14} /> : <CloudOff size={14} />}
-            <span className="text-[10px] font-bold uppercase tracking-widest">{isConnected ? 'Grid Online' : 'Grid Offline'}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest">{user.isGuest ? 'Preview Active' : isConnected ? 'Grid Online' : 'Grid Offline'}</span>
           </button>
         </div>
       </header>

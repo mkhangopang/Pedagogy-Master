@@ -5,6 +5,15 @@ import { supabase } from "../lib/supabase";
 
 // Local cooldown to prevent hammering the server after a rate limit
 let globalCooldownUntil = 0;
+let inMemoryGuestToken: string | null = null;
+
+export function setGuestAuthToken(token: string | null) {
+  inMemoryGuestToken = token;
+}
+
+export function getGuestAuthToken(): string | null {
+  return inMemoryGuestToken;
+}
 
 function parseAIError(errorData: any): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
@@ -119,7 +128,7 @@ async function* parseSSEStream(
 export const geminiService = {
   async getAuthToken(): Promise<string | undefined> {
     const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token;
+    return session?.access_token || inMemoryGuestToken || undefined;
   },
 
   checkCooldown() {
@@ -141,8 +150,9 @@ export const geminiService = {
       return;
     }
 
+    const skipAdaptive = !user || user.isGuest || user.id.startsWith('guest_');
     const [adaptiveContext, token] = await Promise.all([
-      user ? adaptiveService.buildFullContext(user.id, 'chat').catch(() => "") : Promise.resolve(""),
+      skipAdaptive ? Promise.resolve("") : adaptiveService.buildFullContext(user.id, 'chat').catch(() => ""),
       this.getAuthToken(),
     ]);
 
@@ -214,8 +224,9 @@ export const geminiService = {
     // FIX BUG 4: Build adaptiveContext here (persona, modes, workflow context) so it
     // stays in the system prompt layer — NOT injected into userInput which
     // pollutes the RAG embedding query.
+    const skipAdaptive = !user || user.isGuest || user.id.startsWith('guest_');
     const [baseAdaptiveContext, token] = await Promise.all([
-      user ? adaptiveService.buildFullContext(user.id, toolType).catch(() => "") : Promise.resolve(""),
+      skipAdaptive ? Promise.resolve("") : adaptiveService.buildFullContext(user.id, toolType).catch(() => ""),
       this.getAuthToken(),
     ]);
     const adaptiveContext = adaptiveContextOverride

@@ -311,11 +311,14 @@ export async function* generateAIResponseStream(
   toolType?: string,
   customSystem?: string,
   priorityDocumentId?: string,
-  options?: { skipQuotaCheck?: boolean; authEmail?: string | null }
+  options?: { skipQuotaCheck?: boolean; authEmail?: string | null; isGuest?: boolean }
 ): AsyncGenerator<string> {
 
+  const isGuestUser = Boolean(options?.isGuest || userId.startsWith('guest_'));
+  const safePriorityDocumentId = isGuestUser ? undefined : priorityDocumentId;
+
   // 1. Atomic Quota Enforcement with Developer Bypass (if not already enforced by caller route)
-  if (!options?.skipQuotaCheck) {
+  if (!options?.skipQuotaCheck && !isGuestUser) {
     const { checkAndConsumeAiQuota, buildAiQuotaExceededMessage } = await import('../rate-limit/free-tier-guard');
     const quota = await checkAndConsumeAiQuota({
       supabase,
@@ -335,15 +338,17 @@ export async function* generateAIResponseStream(
 
   // 3. Document Retrieval
   let effectiveDocumentIds: string[] = [];
-  if (priorityDocumentId) {
-    effectiveDocumentIds = [priorityDocumentId];
+  if (safePriorityDocumentId) {
+    effectiveDocumentIds = [safePriorityDocumentId];
   } else {
-    const { data: availableDocs } = await supabase
+    const docsQuery = supabase
       .from('documents')
       .select('id')
-      .eq('status', 'ready')
-      .or(`user_id.eq.${userId},is_public.eq.true`)
-      .limit(20);
+      .eq('status', 'ready');
+    const { data: availableDocs } = await (isGuestUser
+      ? docsQuery.eq('is_public', true)
+      : docsQuery.or(`user_id.eq.${userId},is_public.eq.true`)
+    ).limit(20);
     if (availableDocs && availableDocs.length > 0) {
       effectiveDocumentIds = availableDocs.map(d => d.id);
     }
@@ -351,7 +356,7 @@ export async function* generateAIResponseStream(
 
   const { vaultContent, isGrounded, topChunkIds, sourceDocName, activeDoc } = await buildGroundedVaultContext({
     userPrompt,
-    priorityDocumentId,
+    priorityDocumentId: safePriorityDocumentId,
     effectiveDocumentIds,
     supabase
   });
@@ -359,7 +364,7 @@ export async function* generateAIResponseStream(
   // 4. Neural Synthesis Stream
   let systemInstruction = customSystem || 'You are the Pedagogy Master AI.';
   let docContext = '';
-  if (priorityDocumentId) {
+  if (safePriorityDocumentId) {
     docContext = `[DOCUMENT SELECTED: ${sourceDocName || 'Specific Curriculum'}]`;
     systemInstruction = `GROUNDED_RESPONSE_ENFORCED.
 You are generating content FOR THE SELECTED CURRICULUM: ${sourceDocName || 'Specific Curriculum'}.
@@ -386,7 +391,7 @@ Status: Document active in institutional vault.`;
   const finalPrompt = `
 <GROUNDING_STATUS>
 IS_GROUNDED: ${isGrounded ? 'YES' : 'NO'}
-VAULT_SOURCE: ${priorityDocumentId || 'NONE'}
+VAULT_SOURCE: ${safePriorityDocumentId || 'NONE'}
 ${docContext}
 </GROUNDING_STATUS>
 

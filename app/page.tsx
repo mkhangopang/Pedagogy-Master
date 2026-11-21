@@ -13,6 +13,8 @@ import { trackProductEvent } from '../lib/analytics';
 import { normalizeAuthEntryMode } from '../lib/auth/auth-mode';
 import { formatAuthError } from '../lib/auth/auth-error';
 import { BlinkingRobot } from '../components/BlinkingRobot';
+import { GuestCaptchaModal, VerifiedGuestSession } from '../components/GuestCaptchaModal';
+import { setGuestAuthToken } from '../services/geminiService';
 
 // Code-split heavy views to keep the landing page bundle minimal
 const Sidebar = lazy(() => import('../components/Sidebar'));
@@ -57,8 +59,60 @@ export default function App() {
   const [urlAuthError, setUrlAuthError] = useState<string | null>(null);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
+  const [guestSession, setGuestSession] = useState<VerifiedGuestSession | null>(null);
+  const [showGuestModal, setShowGuestModal] = useState(false);
   const authModeRef = useRef(authMode);
   authModeRef.current = authMode;
+
+  const GUEST_STORAGE_KEY = 'pm_guest_session_v1';
+
+  const clearGuestSession = useCallback(() => {
+    setGuestAuthToken(null);
+    setGuestSession(null);
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem(GUEST_STORAGE_KEY);
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, []);
+
+  const handleGuestVerified = useCallback((verified: VerifiedGuestSession) => {
+    setGuestAuthToken(verified.guestToken);
+    setGuestSession(verified);
+    setUserProfile({
+      id: verified.guestId,
+      email: 'guest@preview',
+      name: 'Guest Educator',
+      role: UserRole.TEACHER,
+      plan: SubscriptionPlan.FREE,
+      queriesUsed: verified.used,
+      queriesLimit: verified.limit,
+      generationCount: 0,
+      successRate: 0,
+      isGuest: true,
+    });
+    setHealthStatus({ status: 'connected', message: 'Preview Node' });
+    setShowGuestModal(false);
+    setCurrentView('tools');
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(verified));
+      } catch {
+        // ignore storage errors
+      }
+    }
+  }, []);
+
+  const handleExitGuest = useCallback((targetMode: 'login' | 'signup' = 'signup') => {
+    clearGuestSession();
+    setUserProfile(null);
+    setAuthMode(targetMode);
+    authModeRef.current = targetMode;
+    setUrlAuthError(null);
+    setCurrentView('login');
+  }, [clearGuestSession]);
 
   useEffect(() => {
     // Consolidated client-side hydration for theme, saved view, and auth URL parameters
@@ -204,10 +258,44 @@ export default function App() {
       if (saved && saved !== 'login' && saved !== 'landing' && authModeRef.current !== 'update-password') {
         setCurrentView(saved);
       }
+
+      // Restore ephemeral guest preview session if unexpired and verified by backend
+      if (typeof window !== 'undefined') {
+        const rawGuest = sessionStorage.getItem(GUEST_STORAGE_KEY);
+        if (rawGuest) {
+          const parsed = JSON.parse(rawGuest) as VerifiedGuestSession;
+          if (parsed?.guestToken && typeof parsed.expiresAt === 'number' && parsed.expiresAt > Date.now()) {
+            setGuestAuthToken(parsed.guestToken);
+            setGuestSession(parsed);
+            fetch('/api/quota', {
+              headers: { Authorization: `Bearer ${parsed.guestToken}` },
+            })
+              .then(async (res) => {
+                if (!res.ok) {
+                  clearGuestSession();
+                  return;
+                }
+                const data = await res.json().catch(() => null);
+                if (data?.quota) {
+                  const synced: VerifiedGuestSession = {
+                    ...parsed,
+                    used: data.quota.used ?? parsed.used,
+                    limit: data.quota.limit ?? parsed.limit,
+                  };
+                  setGuestSession(synced);
+                  sessionStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(synced));
+                }
+              })
+              .catch(() => {});
+          } else {
+            sessionStorage.removeItem(GUEST_STORAGE_KEY);
+          }
+        }
+      }
     } catch (e) {}
 
     setIsViewHydrated(true);
-  }, []);
+  }, [clearGuestSession]);
 
   useEffect(() => {
     if (isViewHydrated && currentView !== 'login' && currentView !== 'landing') {
@@ -361,6 +449,7 @@ export default function App() {
           }
 
           if (currentSession) {
+            clearGuestSession();
             setSession(currentSession);
             fetchAppData(currentSession.user.id, currentSession.user.email, currentSession);
             // If in password recovery flow, do not auto-route to dashboard
@@ -384,6 +473,7 @@ export default function App() {
         const { data: { session: existingSession } } = await supabase.auth.getSession();
         if (existingSession) {
           console.log("📡 [Auth] Existing session found via getSession");
+          clearGuestSession();
           setSession(existingSession);
           fetchAppData(existingSession.user.id, existingSession.user.email, existingSession);
           setCurrentView(prev => {
@@ -440,48 +530,111 @@ export default function App() {
     </div>
   );
   
-  if (!session || authMode === 'update-password' || currentView === 'login') {
+  if ((!session && !guestSession) || authMode === 'update-password' || currentView === 'login') {
     if (currentView === 'login' || authMode === 'update-password') {
       return (
-        <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
-          <Login 
-            initialMode={authMode} 
-            initialError={urlAuthError}
-            onSession={(newSession) => {
-              setSession(newSession);
-              setAuthMode('login');
-              authModeRef.current = 'login';
-              setUrlAuthError(null);
-              fetchAppData(newSession.user.id, newSession.user.email, newSession);
-              setCurrentView('dashboard');
-            }} 
-            onBack={() => {
-              setAuthMode('login');
-              authModeRef.current = 'login';
-              setUrlAuthError(null);
-              setCurrentView(session ? 'dashboard' : 'landing');
-            }} 
+        <>
+          <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
+            <Login 
+              initialMode={authMode} 
+              initialError={urlAuthError}
+              onTryGuest={() => setShowGuestModal(true)}
+              onSession={(newSession) => {
+                clearGuestSession();
+                setSession(newSession);
+                setAuthMode('login');
+                authModeRef.current = 'login';
+                setUrlAuthError(null);
+                fetchAppData(newSession.user.id, newSession.user.email, newSession);
+                setCurrentView('dashboard');
+              }} 
+              onBack={() => {
+                setAuthMode('login');
+                authModeRef.current = 'login';
+                setUrlAuthError(null);
+                setCurrentView(session ? 'dashboard' : guestSession ? 'tools' : 'landing');
+              }} 
+            />
+          </Suspense>
+          <GuestCaptchaModal
+            isOpen={showGuestModal}
+            onClose={() => setShowGuestModal(false)}
+            onVerified={handleGuestVerified}
+            onSwitchToSignup={() => {
+              setAuthMode('signup');
+              authModeRef.current = 'signup';
+              setCurrentView('login');
+            }}
           />
-        </Suspense>
+        </>
       );
     }
     return (
-      <Landing 
-        onStart={(mode?: 'login' | 'signup') => { 
-          const safeMode = normalizeAuthEntryMode(mode, 'login');
-          setAuthMode(safeMode); 
-          authModeRef.current = safeMode;
-          setUrlAuthError(null);
-          setCurrentView('login'); 
-        }} 
-      />
+      <>
+        <Landing 
+          onStart={(mode?: 'login' | 'signup') => { 
+            const safeMode = normalizeAuthEntryMode(mode, 'login');
+            setAuthMode(safeMode); 
+            authModeRef.current = safeMode;
+            setUrlAuthError(null);
+            setCurrentView('login'); 
+          }}
+          onTryGuest={() => setShowGuestModal(true)}
+        />
+        <GuestCaptchaModal
+          isOpen={showGuestModal}
+          onClose={() => setShowGuestModal(false)}
+          onVerified={handleGuestVerified}
+          onSwitchToSignup={() => {
+            setAuthMode('signup');
+            authModeRef.current = 'signup';
+            setCurrentView('login');
+          }}
+        />
+      </>
     );
   }
 
-  const safeProfile = userProfile || {
-    id: session.user.id, email: session.user.email || '', name: 'Educator',
-    role: UserRole.TEACHER, plan: SubscriptionPlan.FREE, queriesUsed: 0, queriesLimit: 30,
-    generationCount: 0, successRate: 0
+  const isGuestMode = !session && Boolean(guestSession);
+  const safeProfile: UserProfile = isGuestMode
+    ? {
+        id: guestSession!.guestId,
+        email: 'guest@preview',
+        name: 'Guest Educator',
+        role: UserRole.TEACHER,
+        plan: SubscriptionPlan.FREE,
+        queriesUsed: guestSession!.used,
+        queriesLimit: guestSession!.limit,
+        generationCount: 0,
+        successRate: 0,
+        isGuest: true,
+      }
+    : (userProfile || {
+        id: session.user.id,
+        email: session.user.email || '',
+        name: 'Educator',
+        role: UserRole.TEACHER,
+        plan: SubscriptionPlan.FREE,
+        queriesUsed: 0,
+        queriesLimit: 30,
+        generationCount: 0,
+        successRate: 0,
+      });
+
+  const handleRecordQueryUsage = () => {
+    if (isGuestMode && guestSession) {
+      const nextUsed = guestSession.used + 1;
+      const updated = { ...guestSession, used: nextUsed };
+      setGuestSession(updated);
+      try {
+        sessionStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(updated));
+      } catch {
+        // ignore storage errors
+      }
+      setUserProfile(p => (p ? { ...p, queriesUsed: nextUsed } : null));
+      return;
+    }
+    setUserProfile(p => (p ? { ...p, queriesUsed: p.queriesUsed + 1 } : null));
   };
 
   return (
@@ -489,11 +642,11 @@ export default function App() {
       {isSidebarOpen && <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[90] lg:hidden" onClick={() => setIsSidebarOpen(false)} />}
       <div className={`fixed inset-y-0 left-0 z-[100] transform lg:relative lg:translate-x-0 transition-all duration-300 ease-in-out no-print ${isSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'} ${isCollapsed ? 'lg:w-20' : 'lg:w-64'}`}>
         <Suspense fallback={<div className="w-64 h-full bg-white dark:bg-slate-900 border-r dark:border-slate-800" />}>
-          <Sidebar currentView={currentView} onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} />
+          <Sidebar currentView={currentView} onViewChange={v => { setCurrentView(v); setIsSidebarOpen(false); }} userProfile={safeProfile} isCollapsed={isCollapsed} setIsCollapsed={setIsCollapsed} theme={theme} toggleTheme={toggleTheme} onExitGuest={handleExitGuest} />
         </Suspense>
       </div>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden print:overflow-visible">
-        {safeProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
+        {!isGuestMode && safeProfile.role === UserRole.APP_ADMIN && <ProviderStatusBar />}
         <header className="flex items-center justify-between gap-3 px-4 py-3 bg-white dark:bg-slate-900 border-b dark:border-slate-800 shadow-sm z-40 no-print">
           <div className="flex items-center gap-3 min-w-0">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-white/5 rounded-xl"><Menu size={22} /></button>
@@ -502,7 +655,9 @@ export default function App() {
           <div className="flex items-center gap-2 shrink-0">
             {safeProfile.role !== UserRole.APP_ADMIN && (
               <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-200 tabular-nums whitespace-nowrap">
-                {Math.max(0, safeProfile.queriesLimit - safeProfile.queriesUsed)}/{safeProfile.queriesLimit} free today
+                {isGuestMode
+                  ? `Guest Preview: ${Math.max(0, safeProfile.queriesLimit - safeProfile.queriesUsed)}/${safeProfile.queriesLimit} left`
+                  : `${Math.max(0, safeProfile.queriesLimit - safeProfile.queriesUsed)}/${safeProfile.queriesLimit} free today`}
               </span>
             )}
             <button
@@ -513,12 +668,14 @@ export default function App() {
                   await navigator.clipboard.writeText(window.location.origin);
                   setShareCopied(true);
                   setTimeout(() => setShareCopied(false), 2200);
-                  trackProductEvent({
-                    action: 'share_link_copied',
-                    category: 'growth',
-                    label: currentView,
-                    toolType: currentView,
-                  });
+                  if (!isGuestMode) {
+                    trackProductEvent({
+                      action: 'share_link_copied',
+                      category: 'growth',
+                      label: currentView,
+                      toolType: currentView,
+                    });
+                  }
                 } catch {
                   // ignore clipboard restriction
                 }
@@ -529,14 +686,24 @@ export default function App() {
               {shareCopied ? <Check size={14} className="text-emerald-600 dark:text-emerald-400" /> : <Share2 size={14} />}
               <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
             </button>
-            <button
-              type="button"
-              onClick={() => setIsFeedbackOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold whitespace-nowrap shadow-sm"
-            >
-              <MessageSquarePlus size={14} />
-              <span>Feedback</span>
-            </button>
+            {isGuestMode ? (
+              <button
+                type="button"
+                onClick={() => handleExitGuest('signup')}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold whitespace-nowrap shadow-sm"
+              >
+                <span>Create Free Account</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsFeedbackOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold whitespace-nowrap shadow-sm"
+              >
+                <MessageSquarePlus size={14} />
+                <span>Feedback</span>
+              </button>
+            )}
           </div>
         </header>
         <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar print:overflow-visible print:p-0">
@@ -544,35 +711,37 @@ export default function App() {
             <Suspense fallback={<div className="flex justify-center p-20"><Loader2 className="animate-spin text-indigo-600" size={32} /></div>}>
               {(() => {
                 const props = { 
-                  user: safeProfile, documents, onProfileUpdate: setUserProfile, health: healthStatus as any, 
-                  onCheckHealth: () => getSupabaseHealth().then(setHealthStatus).then(() => true), onViewChange: setCurrentView 
+                  user: safeProfile, documents: isGuestMode ? [] : documents, onProfileUpdate: setUserProfile, health: healthStatus as any, 
+                  onCheckHealth: () => isGuestMode ? Promise.resolve(true) : getSupabaseHealth().then(setHealthStatus).then(() => true), onViewChange: setCurrentView 
                 };
                 switch (currentView) {
-                  case 'dashboard': return <Dashboard {...props} />;
-                  case 'chat': return <ChatView user={safeProfile} brain={brain} documents={documents} onQuery={() => setUserProfile(p => p ? {...p, queriesUsed: p.queriesUsed + 1} : null)} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} onViewChange={setCurrentView} />;
-                  case 'documents': return <DocumentsView documents={documents} userProfile={safeProfile} onAddDocument={async () => fetchAppData(safeProfile.id, safeProfile.email)} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={healthStatus.status === 'connected'} />;
-                  case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={documents} onQuery={() => setUserProfile(p => p ? {...p, queriesUsed: p.queriesUsed + 1} : null)} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} onViewChange={setCurrentView} />;
-                  case 'tracker': return <TrackerView user={safeProfile} documents={documents} />;
-                  case 'standards': return <StandardsBrowserView user={safeProfile} documents={documents} />;
-                  case 'activity_log': return <ActivityLogView user={safeProfile} documents={documents} onViewChange={setCurrentView} />;
-                  case 'onboarding': return <OnboardingView user={safeProfile} onComplete={(p) => { setUserProfile(p); setCurrentView('dashboard'); }} />;
-                  case 'brain': return safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} />;
-                  case 'audit': return safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} />;
-                  case 'mission': return safeProfile.role === UserRole.APP_ADMIN ? <MissionView /> : <Dashboard {...props} />;
-                  case 'pricing': return <PricingView currentPlan={safeProfile.plan} onUpgrade={() => setCurrentView('dashboard')} />;
+                  case 'dashboard': return <Dashboard {...props} onExitGuest={handleExitGuest} />;
+                  case 'chat': return <ChatView user={safeProfile} brain={brain} documents={isGuestMode ? [] : documents} onQuery={handleRecordQueryUsage} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} onViewChange={setCurrentView} onUpgradeFromGuest={() => handleExitGuest('signup')} />;
+                  case 'documents': return <DocumentsView documents={isGuestMode ? [] : documents} userProfile={safeProfile} onAddDocument={async () => { if (!isGuestMode) await fetchAppData(safeProfile.id, safeProfile.email); }} onUpdateDocument={async(id, u) => setDocuments(d => d.map(x => x.id === id ? {...x,...u}:x))} onDeleteDocument={async (id) => setDocuments(d => d.filter(x => x.id !== id))} isConnected={healthStatus.status === 'connected'} onUpgradeFromGuest={() => handleExitGuest('signup')} />;
+                  case 'tools': return <ToolsView user={safeProfile} brain={brain} documents={isGuestMode ? [] : documents} onQuery={handleRecordQueryUsage} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} onViewChange={setCurrentView} onUpgradeFromGuest={() => handleExitGuest('signup')} />;
+                  case 'tracker': return <TrackerView user={safeProfile} documents={isGuestMode ? [] : documents} onUpgradeFromGuest={() => handleExitGuest('signup')} />;
+                  case 'standards': return <StandardsBrowserView user={safeProfile} documents={isGuestMode ? [] : documents} />;
+                  case 'activity_log': return <ActivityLogView user={safeProfile} documents={isGuestMode ? [] : documents} onViewChange={setCurrentView} />;
+                  case 'onboarding': return isGuestMode ? <ToolsView user={safeProfile} brain={brain} documents={[]} onQuery={handleRecordQueryUsage} canQuery={safeProfile.queriesUsed < safeProfile.queriesLimit} onViewChange={setCurrentView} onUpgradeFromGuest={() => handleExitGuest('signup')} /> : <OnboardingView user={safeProfile} onComplete={(p) => { setUserProfile(p); setCurrentView('dashboard'); }} />;
+                  case 'brain': return !isGuestMode && safeProfile.role === UserRole.APP_ADMIN ? <BrainControlView brain={brain} onUpdate={setBrain} /> : <Dashboard {...props} onExitGuest={handleExitGuest} />;
+                  case 'audit': return !isGuestMode && safeProfile.role === UserRole.APP_ADMIN ? <AuditView user={safeProfile} /> : <Dashboard {...props} onExitGuest={handleExitGuest} />;
+                  case 'mission': return !isGuestMode && safeProfile.role === UserRole.APP_ADMIN ? <MissionView /> : <Dashboard {...props} onExitGuest={handleExitGuest} />;
+                  case 'pricing': return <PricingView currentPlan={safeProfile.plan} onUpgrade={() => isGuestMode ? handleExitGuest('signup') : setCurrentView('dashboard')} />;
                   case 'policy': return <Policy onBack={() => setCurrentView('pricing')} />;
-                  default: return <Dashboard {...props} />;
+                  default: return <Dashboard {...props} onExitGuest={handleExitGuest} />;
                 }
               })()}
             </Suspense>
           </div>
         </main>
       </div>
-      <PilotFeedbackDrawer
-        isOpen={isFeedbackOpen}
-        onClose={() => setIsFeedbackOpen(false)}
-        currentView={currentView}
-      />
+      {!isGuestMode && (
+        <PilotFeedbackDrawer
+          isOpen={isFeedbackOpen}
+          onClose={() => setIsFeedbackOpen(false)}
+          currentView={currentView}
+        />
+      )}
     </div>
   );
 }

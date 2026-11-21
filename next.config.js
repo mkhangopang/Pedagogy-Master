@@ -3,6 +3,7 @@ const nextConfig = {
   reactStrictMode: true,
   compress: true,
   poweredByHeader: false,
+  productionBrowserSourceMaps: false,
   // Explicitly inline environment variables at build time
   env: {
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -11,6 +12,7 @@ const nextConfig = {
   },
   serverExternalPackages: ['pdf-parse', 'pdfjs-dist'],
   experimental: {
+    webpackMemoryOptimizations: true,
     optimizePackageImports: ['@supabase/supabase-js', 'lucide-react', 'recharts', 'katex', 'clsx', 'tailwind-merge'],
     serverActions: {
       bodySizeLimit: '10mb'

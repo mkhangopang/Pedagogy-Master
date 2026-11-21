@@ -47,8 +47,8 @@ export async function logActivity(
   // Asynchronously sync to Supabase improvement_signals for cloud audit resilience
   try {
     const { data: { session } } = await supabase.auth.getSession();
-    const effectiveUserId = entry.userId || session?.user?.id;
-    if (effectiveUserId) {
+    const effectiveUserId = session?.user?.id || (entry.userId && !entry.userId.startsWith('guest_') ? entry.userId : undefined);
+    if (session?.access_token && effectiveUserId) {
       await supabase.from('improvement_signals').insert({
         user_id: effectiveUserId,
         signal_type: `activity:${entry.category}`,

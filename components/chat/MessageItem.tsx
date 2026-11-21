@@ -42,6 +42,7 @@ interface MessageItemProps {
   metadata?: any;
   enableTranslateExport?: boolean;
   canExport?: boolean;
+  isGuest?: boolean;
   userName?: string;
   translationQuota?: TranslationQuotaStatus | null;
   onQuotaUpdate?: (quota: TranslationQuotaStatus) => void;
@@ -56,6 +57,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
   metadata,
   enableTranslateExport = false,
   canExport = false,
+  isGuest = false,
   userName,
   translationQuota,
   onQuotaUpdate,
@@ -92,6 +94,12 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
 
     if (lang === 'en') {
       setSelectedLang('en');
+      return;
+    }
+
+    if (isGuest) {
+      setQuotaUpgradePrompt(true);
+      setTranslationError('Urdu & Sindhi translations unlock with a free educator account.');
       return;
     }
 
@@ -339,7 +347,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                       onClick={onUpgradeClick}
                       className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
                     >
-                      View Upcoming Plans
+                      {isGuest ? 'Create Free Account' : 'View Upcoming Plans'}
                     </button>
                   )}
                   <button type="button" onClick={() => setShowUpgradeHint(false)} className="text-slate-400 hover:text-slate-700">
@@ -357,7 +365,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                       onClick={onUpgradeClick}
                       className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg text-[10px] font-black uppercase tracking-wider whitespace-nowrap"
                     >
-                      Upcoming Plans
+                      {isGuest ? 'Create Free Account' : 'Upcoming Plans'}
                     </button>
                   )}
                   <button type="button" onClick={() => { setTranslationError(null); setQuotaUpgradePrompt(false); }} className="text-slate-400 hover:text-slate-700">
@@ -471,7 +479,7 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
           </span>
         </div>
 
-        {isAi && enableTranslateExport && cleanEnglish && !isGlitch && (
+        {isAi && enableTranslateExport && !isGuest && cleanEnglish && !isGlitch && (
           <MicroFeedbackBar
             toolType="neural_chat"
             language={selectedLang}

@@ -19,6 +19,7 @@ interface DocumentsProps {
   onUpdateDocument: (id: string, updates: Partial<Document>) => Promise<void>;
   onDeleteDocument: (id: string) => Promise<void>;
   isConnected: boolean;
+  onUpgradeFromGuest?: () => void;
 }
 
 const Documents: React.FC<DocumentsProps> = ({ 
@@ -27,7 +28,8 @@ const Documents: React.FC<DocumentsProps> = ({
   onAddDocument,
   onUpdateDocument,
   onDeleteDocument,
-  isConnected
+  isConnected,
+  onUpgradeFromGuest
 }) => {
   const [showUploader, setShowUploader] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -57,6 +59,7 @@ const Documents: React.FC<DocumentsProps> = ({
 
   // Auto-resume any pending or interrupted processing on page refresh/mount
   useEffect(() => {
+    if (userProfile.isGuest) return;
     const unfinalized = documents.filter(d => d.status === 'processing' || d.status === 'pending');
     if (unfinalized.length > 0) {
       supabase.auth.getSession().then(({ data: { session } }) => {
@@ -73,7 +76,36 @@ const Documents: React.FC<DocumentsProps> = ({
         });
       });
     }
-  }, []);
+  }, [userProfile.isGuest]);
+
+  if (userProfile.isGuest) {
+    return (
+      <div className="max-w-3xl mx-auto py-16 px-4 text-center animate-in fade-in">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-10 md:p-14 shadow-xl space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-700/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+            <Lock size={28} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight uppercase">
+              Curriculum Vault Locked in Guest Preview
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 max-w-lg mx-auto leading-relaxed">
+              Uploading your own syllabus PDFs, extracting SLO hierarchies, and grounding AI lessons in institutional documents requires a free educator account.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => onUpgradeFromGuest?.()}
+              className="px-7 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg whitespace-nowrap shrink-0"
+            >
+              Create Free Account
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     // We only need to subscribe if we have processing documents

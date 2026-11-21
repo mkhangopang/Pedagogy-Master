@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseServerClient } from '../../../lib/supabase';
-import { generateAIResponse, generateAIResponseStream } from '../../../lib/ai/multi-provider-router';
+import { supabase as anonClient, getSupabaseServerClient } from '../../../lib/supabase';
+import { generateAIResponseStream } from '../../../lib/ai/multi-provider-router';
 import { detectToolIntent, getToolDisplayName } from '../../../lib/ai/tool-router';
 import { getFullPrompt } from '../../../lib/ai/prompt-manager';
 import { DEFAULT_MASTER_PROMPT } from '../../../constants';
 import { selfImprovementEngine } from '../../../lib/ai/self-improvement-engine';
-import { GoogleGenAI } from '@google/genai';
-import { resolveApiKey } from '../../../lib/env-server';
 
 import { checkAndConsumeAiQuota, buildAiQuotaExceededMessage } from '../../../lib/rate-limit/free-tier-guard';
+import {
+  buildGuestQuotaExceededMessage,
+  consumeGuestQuota,
+  extractRequestIp,
+  isGuestToken,
+  verifyGuestToken,
+} from '../../../lib/auth/guest-token';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,62 +39,105 @@ async function getCachedBrainPrompt(supabase: any): Promise<string> {
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get('Authorization');
-    const token = authHeader?.split(' ')[1];
+    const token = authHeader?.replace(/^Bearer\s+/i, '').trim();
     if (!token || token === 'undefined' || token.length < 10) {
       return NextResponse.json({ error: 'Auth Required' }, { status: 401 });
     }
 
-    const supabase = getSupabaseServerClient(token);
-    const [{ data: { user } }, body] = await Promise.all([
-      supabase.auth.getUser(token),
-      req.json(),
-    ]);
-    if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
-
+    const body = await req.json();
     const { message, history = [], priorityDocumentId, adaptiveContext } = body;
     if (!message) return NextResponse.json({ error: 'Message required' }, { status: 400 });
 
-    const [quota, profileRes, activeMasterPrompt] = await Promise.all([
-      checkAndConsumeAiQuota({
-        supabase,
-        userId: user.id,
-        authEmail: user.email,
-        routeName: 'chat_tutor',
-      }),
-      supabase.from('profiles').select('workspace_name').eq('id', user.id).maybeSingle(),
-      getCachedBrainPrompt(supabase),
-    ]);
+    let userId: string;
+    let userEmail: string | null = null;
+    let isGuest = false;
+    let supabase: any;
+    let brandName = 'Pedagogy Master AI';
+    let activeMasterPrompt = DEFAULT_MASTER_PROMPT;
 
-    if (!quota.allowed) {
-      return NextResponse.json(
-        {
-          error: buildAiQuotaExceededMessage(quota),
-          code: 'QUOTA_EXCEEDED',
-          quota,
-        },
-        { status: 429 }
-      );
+    if (isGuestToken(token)) {
+      const guestPayload = verifyGuestToken(token);
+      if (!guestPayload) {
+        return NextResponse.json(
+          { error: 'Guest preview session expired. Please verify again or create a free account.' },
+          { status: 401 }
+        );
+      }
+
+      const clientIp = extractRequestIp(req.headers);
+      const guestQuota = await consumeGuestQuota({ guestId: guestPayload.sub, clientIp });
+      if (!guestQuota.allowed) {
+        return NextResponse.json(
+          {
+            error: buildGuestQuotaExceededMessage(guestQuota),
+            code: 'QUOTA_EXCEEDED',
+            isGuest: true,
+            quota: guestQuota,
+          },
+          { status: 429 }
+        );
+      }
+
+      isGuest = true;
+      userId = guestPayload.sub;
+      brandName = 'Guest Preview Node';
+      supabase = anonClient;
+    } else {
+      const authSupabase = getSupabaseServerClient(token);
+      const { data: { user } } = await authSupabase.auth.getUser(token);
+      if (!user) return NextResponse.json({ error: 'Invalid Session' }, { status: 401 });
+
+      userId = user.id;
+      userEmail = user.email ?? null;
+      supabase = authSupabase;
+
+      const [quota, profileRes, brainPrompt] = await Promise.all([
+        checkAndConsumeAiQuota({
+          supabase,
+          userId: user.id,
+          authEmail: user.email,
+          routeName: 'chat_tutor',
+        }),
+        supabase.from('profiles').select('workspace_name').eq('id', user.id).maybeSingle(),
+        getCachedBrainPrompt(supabase),
+      ]);
+
+      if (!quota.allowed) {
+        return NextResponse.json(
+          {
+            error: buildAiQuotaExceededMessage(quota),
+            code: 'QUOTA_EXCEEDED',
+            quota,
+          },
+          { status: 429 }
+        );
+      }
+
+      brandName = profileRes?.data?.workspace_name || 'Pedagogy Master AI';
+      activeMasterPrompt = brainPrompt;
     }
 
-    const brandName = profileRes?.data?.workspace_name || 'Pedagogy Master AI';
+    const safeMessage = String(message).slice(0, isGuest ? 2000 : 12000);
+    const safePriorityDocId = isGuest ? undefined : priorityDocumentId;
+    const safeHistory = Array.isArray(history) ? history.slice(isGuest ? -4 : -8) : [];
 
-    const routeInfo = detectToolIntent(message);
+    const routeInfo = detectToolIntent(safeMessage);
     const expertTitle = getToolDisplayName(routeInfo.tool);
     const customContext = `[CHAT_MODE: ACTIVE]\n[INSTITUTION: ${brandName}]\n[ROLE: Pedagogical Consultant]`;
     const assembledSystemPrompt = await getFullPrompt(routeInfo.tool, customContext, activeMasterPrompt);
 
     try {
       const stream = generateAIResponseStream(
-        message,
-        history,
-        user.id,
+        safeMessage,
+        safeHistory,
+        userId,
         supabase,
         adaptiveContext,
         undefined,
         'chat_tutor',
         assembledSystemPrompt,
-        priorityDocumentId,
-        { skipQuotaCheck: true, authEmail: user.email }
+        safePriorityDocId,
+        { skipQuotaCheck: true, authEmail: userEmail, isGuest }
       );
 
       const encoder = new TextEncoder();
@@ -116,14 +164,16 @@ export async function POST(req: NextRequest) {
             
             controller.enqueue(encoder.encode('data: [DONE]\n\n'));
 
-            // Async Self-Improvement
-            selfImprovementEngine.learn({
-              userId: user.id,
-              input: message,
-              output: fullCollectedText,
-              tool: routeInfo.tool,
-              supabase
-            }).catch(() => {});
+            // Async Self-Improvement only for authenticated accounts
+            if (!isGuest) {
+              selfImprovementEngine.learn({
+                userId,
+                input: safeMessage,
+                output: fullCollectedText,
+                tool: routeInfo.tool,
+                supabase
+              }).catch(() => {});
+            }
           } catch (err: any) {
              console.error("Chat Stream Error:", err);
              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ error: err.message })}\n\n`));

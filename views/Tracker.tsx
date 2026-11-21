@@ -5,7 +5,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ClipboardCheck, Target, BarChart3, 
   ChevronRight, Search, CheckCircle2, 
-  Clock, BookOpen, Loader2, ChevronDown, Layers, Filter, Bookmark, Hash, Edit2, Check, X
+  Clock, BookOpen, Loader2, ChevronDown, Layers, Filter, Bookmark, Hash, Edit2, Check, X, Lock
 } from 'lucide-react';
 import { UserProfile, Document, TeacherProgress } from '../types';
 import { curriculumService } from '../lib/curriculum-service';
@@ -15,6 +15,7 @@ import { parseSLOCode } from '../lib/rag/slo-parser';
 interface TrackerProps {
   user: UserProfile;
   documents: Document[];
+  onUpgradeFromGuest?: () => void;
 }
 
 interface SloRecord {
@@ -37,10 +38,10 @@ interface GroupedSLOs {
   };
 }
 
-const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
+const Tracker: React.FC<TrackerProps> = ({ user, documents, onUpgradeFromGuest }) => {
   const [slos, setSlos] = useState<SloRecord[]>([]);
   const [progress, setProgress] = useState<Record<string, TeacherProgress>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!user.isGuest);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'planning' | 'teaching' | 'completed'>('all');
   const [isSaving, setIsSaving] = useState<string | null>(null);
@@ -51,6 +52,10 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   useEffect(() => {
+    if (user.isGuest) {
+      setIsLoading(false);
+      return;
+    }
     const fetchData = async () => {
       setIsLoading(true);
       try {
@@ -88,7 +93,36 @@ const Tracker: React.FC<TrackerProps> = ({ user, documents }) => {
       }
     };
     fetchData();
-  }, [user.id]);
+  }, [user.id, user.isGuest]);
+
+  if (user.isGuest) {
+    return (
+      <div className="max-w-3xl mx-auto py-16 px-4 text-center animate-in fade-in">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2.5rem] p-10 md:p-14 shadow-xl space-y-6">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-700/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+            <Lock size={28} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight uppercase">
+              Progress Tracker Locked in Guest Preview
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300 max-w-lg mx-auto leading-relaxed">
+              Saving SLO mastery statuses, taught dates, and classroom progress requires a free educator account so your records stay backed up securely.
+            </p>
+          </div>
+          <div className="flex justify-center pt-2">
+            <button
+              type="button"
+              onClick={() => onUpgradeFromGuest?.()}
+              className="px-7 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg whitespace-nowrap shrink-0"
+            >
+              Create Free Account
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleUpdateStatus = async (sloCode: string, status: TeacherProgress['status']) => {
     setIsSaving(sloCode);
