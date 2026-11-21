@@ -7,10 +7,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const grade = searchParams.get('grade') || '';
-  const subject = searchParams.get('subject') || '';
-  const query = searchParams.get('q') || '';
-  const page = parseInt(searchParams.get('page') || '1', 10);
+  const grade = (searchParams.get('grade') || '').trim().slice(0, 32);
+  const subject = (searchParams.get('subject') || '').trim().slice(0, 64);
+  const query = (searchParams.get('q') || '').trim().slice(0, 120);
+  const parsedPage = Number.parseInt(searchParams.get('page') || '1', 10);
+  const page = Number.isFinite(parsedPage) ? Math.min(1000, Math.max(1, parsedPage)) : 1;
   const limit = 20;
   const offset = (page - 1) * limit;
 
@@ -40,7 +41,10 @@ export async function GET(req: NextRequest) {
     .order('slo_code', { ascending: true })
     .range(offset, offset + limit - 1);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[Explore GET] Query error:', error);
+    return NextResponse.json({ error: 'Failed to load curriculum standards' }, { status: 500 });
+  }
 
   const { data: filterOptions } = await supabase
     .from('documents')

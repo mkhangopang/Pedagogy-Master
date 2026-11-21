@@ -58,7 +58,7 @@ export function markdownToHtml(md: string, dir: 'ltr' | 'rtl' = 'ltr'): string {
         displayMode: true,
         throwOnError: false,
         output: 'html',
-        trust: true
+        trust: false
       });
       return pushMath(`<div dir="ltr" style="margin: 1.25rem 0; overflow-x: auto; text-align: center; unicode-bidi: isolate;">${rendered}</div>`);
     } catch {
@@ -99,7 +99,7 @@ export function markdownToHtml(md: string, dir: 'ltr' | 'rtl' = 'ltr'): string {
         displayMode: false,
         throwOnError: false,
         output: 'html',
-        trust: true
+        trust: false
       });
       return pushMath(`<span dir="ltr" style="unicode-bidi:isolate">${rendered}</span>`);
     } catch {

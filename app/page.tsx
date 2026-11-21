@@ -262,27 +262,7 @@ export default function App() {
 
     const currentSession = providedSession || (await supabase.auth.getSession()).data.session;
 
-    // 1. Fetch Brain, Profile, Quota, and Documents in parallel
-    if (currentSession) {
-      fetch('/api/brain/get', {
-        headers: { 'Authorization': `Bearer ${currentSession.access_token}` }
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.brain) {
-          setBrain({
-            id: data.brain.id,
-            masterPrompt: data.brain.master_prompt,
-            bloomRules: DEFAULT_BLOOM_RULES,
-            version: data.brain.version || 1,
-            isActive: data.brain.is_active,
-            updatedAt: data.brain.updated_at
-          });
-        }
-      })
-      .catch(e => console.error("Neural Brain Fetch Error:", e));
-    }
-
+    // 1. Fetch Profile, Quota, and Documents in parallel (Brain config loaded only for APP_ADMIN)
     const quotaPromise = currentSession?.access_token
       ? fetch('/api/quota', {
           headers: { Authorization: `Bearer ${currentSession.access_token}` },
@@ -310,6 +290,25 @@ export default function App() {
           onboarding_completed: profile.onboarding_completed
         };
         setUserProfile(mappedProfile);
+        if (mappedProfile.role === UserRole.APP_ADMIN && currentSession?.access_token) {
+          fetch('/api/brain/get', {
+            headers: { 'Authorization': `Bearer ${currentSession.access_token}` }
+          })
+          .then(res => (res.ok ? res.json() : null))
+          .then(data => {
+            if (data?.brain) {
+              setBrain({
+                id: data.brain.id,
+                masterPrompt: data.brain.master_prompt,
+                bloomRules: DEFAULT_BLOOM_RULES,
+                version: data.brain.version || 1,
+                isActive: data.brain.is_active,
+                updatedAt: data.brain.updated_at
+              });
+            }
+          })
+          .catch(e => console.error("Neural Brain Fetch Error:", e));
+        }
         if (typeof window !== 'undefined') {
           try {
             sessionStorage.setItem(`pm_profile_v1_${userId}`, JSON.stringify(mappedProfile));

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, ShieldCheck, Zap, Server, Cpu, Layers, AlertCircle } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export const ProviderStatusBar: React.FC = () => {
   const [status, setStatus] = useState<any[]>([]);
@@ -7,10 +8,17 @@ export const ProviderStatusBar: React.FC = () => {
 
   const fetchStatus = async () => {
     try {
-      const res = await fetch('/api/ai-status');
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+      const res = await fetch('/api/ai-status', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) return;
       const data = await res.json();
-      setStatus(data.providers);
-    } catch (e) {}
+      if (Array.isArray(data.providers)) {
+        setStatus(data.providers);
+      }
+    } catch {}
   };
 
   useEffect(() => {

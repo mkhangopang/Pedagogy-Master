@@ -72,7 +72,7 @@ const mathExtension: any = {
         displayMode: token.displayMode,
         throwOnError: false,
         output: 'html',
-        trust: true,
+        trust: false,
         errorColor: '#f43f5e'
       });
     } catch {
@@ -81,7 +81,60 @@ const mathExtension: any = {
   }
 };
 
-marked.use({ extensions: [mathExtension] });
+function escapeRawHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function isSafeLinkHref(href?: string | null): boolean {
+  if (!href) return false;
+  const trimmed = href.trim();
+  if (trimmed.startsWith('#') || (trimmed.startsWith('/') && !trimmed.startsWith('//'))) {
+    return true;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:';
+  } catch {
+    return false;
+  }
+}
+
+marked.use({
+  gfm: true,
+  breaks: true,
+  extensions: [mathExtension],
+  renderer: {
+    html(token: any) {
+      const raw = typeof token === 'string' ? token : (token?.raw ?? token?.text ?? '');
+      if (/^\s*<br\s*\/?>\s*$/i.test(raw)) {
+        return '<br/>';
+      }
+      return escapeRawHtml(raw);
+    },
+    link(token: any) {
+      const href = token?.href;
+      const text = this.parser.parseInline(token?.tokens || []);
+      if (!isSafeLinkHref(href)) {
+        return text;
+      }
+      const titleAttr = token?.title ? ` title="${escapeRawHtml(token.title)}"` : '';
+      return `<a href="${escapeRawHtml(href)}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
+    },
+    image(token: any) {
+      const href = token?.href;
+      const alt = escapeRawHtml(token?.text || '');
+      if (!isSafeLinkHref(href)) {
+        return alt;
+      }
+      return `<img src="${escapeRawHtml(href)}" alt="${alt}" loading="lazy" />`;
+    }
+  }
+});
 
 export function renderSTEM(text: string): string {
   if (!text) return '';
@@ -108,11 +161,9 @@ export function renderSTEM(text: string): string {
     // 5. Restore literal dollar signs
     processed = processed.replace(/___ESC_DOLLAR___/g, '$');
 
-    // Use marked.use for options as setOptions is deprecated
-    marked.use({ gfm: true, breaks: true });
     return marked.parse(processed) as string;
   } catch {
-    return text;
+    return escapeRawHtml(text);
   }
 }
 

@@ -410,28 +410,42 @@ const MessageItemComponent: React.FC<MessageItemProps> = ({
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Teacher Reference Pack</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {metadata.sources.map((source: any, i: number) => (
-                    <a
-                      key={i}
-                      href={source.uri}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex flex-col p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all hover:bg-indigo-600 group"
-                    >
-                      <span className="text-[10px] font-black text-slate-900 dark:text-white group-hover:text-white line-clamp-1 mb-1 uppercase tracking-tight">
-                        {source.title}
-                      </span>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <Search size={10} className="text-slate-400 group-hover:text-indigo-200" />
-                          <span className="text-[8px] font-bold text-slate-400 group-hover:text-indigo-100 truncate max-w-[85%]">
-                            {new URL(source.uri).hostname}
-                          </span>
+                  {metadata.sources.map((source: any, i: number) => {
+                    let safeHref: string | null = null;
+                    let hostLabel = 'Reference';
+                    try {
+                      const parsed = new URL(String(source?.uri || ''));
+                      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                        safeHref = parsed.toString();
+                        hostLabel = parsed.hostname || 'Reference';
+                      }
+                    } catch {
+                      safeHref = null;
+                    }
+                    if (!safeHref) return null;
+                    return (
+                      <a
+                        key={i}
+                        href={safeHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex flex-col p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl transition-all hover:bg-indigo-600 group"
+                      >
+                        <span className="text-[10px] font-black text-slate-900 dark:text-white group-hover:text-white line-clamp-1 mb-1 uppercase tracking-tight">
+                          {source.title}
+                        </span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <Search size={10} className="text-slate-400 group-hover:text-indigo-200" />
+                            <span className="text-[8px] font-bold text-slate-400 group-hover:text-indigo-100 truncate max-w-[85%]">
+                              {hostLabel}
+                            </span>
+                          </div>
+                          <ExternalLink size={10} className="text-slate-400 group-hover:text-white" />
                         </div>
-                        <ExternalLink size={10} className="text-slate-400 group-hover:text-white" />
-                      </div>
-                    </a>
-                  ))}
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             )}

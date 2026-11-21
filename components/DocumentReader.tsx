@@ -47,7 +47,7 @@ export const DocumentReader: React.FC<DocumentReaderProps> = ({ document: active
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       
-      const res = await fetch(`/api/docs/status/${activeDoc.id}`, {
+      const res = await fetch(`/api/docs/status/${activeDoc.id}?includeText=1`, {
         headers: { 'Authorization': `Bearer ${session.access_token}` }
       });
       

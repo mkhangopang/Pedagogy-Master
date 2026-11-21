@@ -618,8 +618,16 @@ export async function exportArtifactAsPdf(
   container.style.zIndex = '-1';
   if (fontClass) container.className = fontClass;
 
-  const metaLeft = `${toolName} • ${documentName || 'General Mode'} • ${LANGUAGE_LABELS[language]}`;
-  const metaRight = `${userName || 'Educator'} • ${new Date().toLocaleDateString()}`;
+  const escapePdfText = (value: string) =>
+    value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+  const metaLeft = escapePdfText(`${toolName} • ${documentName || 'General Mode'} • ${LANGUAGE_LABELS[language]}`);
+  const metaRight = escapePdfText(`${userName || 'Educator'} • ${new Date().toLocaleDateString()}`);
 
   const bodyHtml = markdownToHtml(markdown, isRtl ? 'rtl' : 'ltr');
 

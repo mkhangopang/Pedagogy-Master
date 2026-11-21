@@ -18,6 +18,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createHash, timingSafeEqual } from 'crypto';
 import { getSupabaseAdminClient } from '../../../../lib/supabase';
 
 export const runtime = 'nodejs';
@@ -29,9 +30,23 @@ const STALE_PROCESSING_MS = 10 * 60 * 1000; // 10 minutes
 // A job is "abandoned pending" if it hasn't started in more than 30 minutes
 const STALE_PENDING_MS = 30 * 60 * 1000; // 30 minutes
 
+function isAuthorizedCron(req: NextRequest): boolean {
+  const expectedSecret = process.env.CRON_SECRET?.trim();
+  if (!expectedSecret) return false;
+
+  const headerSecret = req.headers.get('x-cron-secret')?.trim();
+  const authHeader = req.headers.get('authorization')?.trim();
+  const bearerSecret = authHeader?.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  const provided = headerSecret || bearerSecret;
+  if (!provided) return false;
+
+  const a = createHash('sha256').update(provided).digest();
+  const b = createHash('sha256').update(expectedSecret).digest();
+  return timingSafeEqual(a, b);
+}
+
 export async function POST(req: NextRequest) {
-  const cronSecret = req.headers.get('x-cron-secret');
-  if (cronSecret !== process.env.CRON_SECRET) {
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -10,22 +10,26 @@ const PLAN_LIMITS: Record<string, { plan: string; queriesLimit: number }> = {
   'enterprise': { plan: 'enterprise', queriesLimit: 99999 }
 };
 
-const VARIANT_TO_PLAN: Record<string, string> = {
-  [process.env.LS_VARIANT_PRO || '']: 'pro',
-  [process.env.LS_VARIANT_ENTERPRISE || '']: 'enterprise'
-};
+function getVariantToPlanMap(): Record<string, string> {
+  const map: Record<string, string> = {};
+  const proVariant = process.env.LS_VARIANT_PRO?.trim();
+  const entVariant = process.env.LS_VARIANT_ENTERPRISE?.trim();
+  if (proVariant) map[proVariant] = 'pro';
+  if (entVariant) map[entVariant] = 'enterprise';
+  return map;
+}
 
 function verifySignature(rawBody: string, signature: string): boolean {
   const secret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
-  if (!secret) return false;
-  
+  const trimmedSig = signature.trim();
+  if (!secret || !/^[0-9a-f]{64}$/i.test(trimmedSig)) return false;
+
   const hmac = createHmac('sha256', secret);
-  const digest = hmac.update(rawBody).digest(); 
-  
-  const signatureBuffer = Buffer.from(signature, 'hex'); 
-  
+  const digest = hmac.update(rawBody).digest();
+  const signatureBuffer = Buffer.from(trimmedSig, 'hex');
+
   if (digest.length !== signatureBuffer.length) return false;
-  
+
   return timingSafeEqual(digest, signatureBuffer);
 }
 
@@ -44,31 +48,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const eventId = event?.meta?.event_id || '';
+  const eventId = String(event?.meta?.event_id ?? '').trim();
+  if (!eventId) {
+    return NextResponse.json({ error: 'Missing event_id' }, { status: 400 });
+  }
+
+  const supabase = getSupabaseAdminClient();
 
   // Idempotency check
-  const { data: existingEvent } = await getSupabaseAdminClient()
+  const { data: existingEvent } = await supabase
     .from('webhook_events')
     .select('id')
     .eq('event_id', eventId)
-    .single();
+    .maybeSingle();
 
   if (existingEvent) {
     return NextResponse.json({ received: true });
   }
 
-  await getSupabaseAdminClient()
+  await supabase
     .from('webhook_events')
     .insert({ event_id: eventId, event_type: event?.meta?.event_name });
 
   const eventName = event?.meta?.event_name || '';
   const attrs = event?.data?.attributes || {};
-  const userEmail = attrs.user_email || '';
-  const variantId = String(attrs.variant_id || '');
-  const planName = VARIANT_TO_PLAN[variantId];
+  const userEmail = String(attrs.user_email || '').trim().toLowerCase();
+  const variantId = String(attrs.variant_id ?? '').trim();
+  const variantToPlan = getVariantToPlanMap();
+  const planName = variantId ? variantToPlan[variantId] : undefined;
   const planConfig = planName ? PLAN_LIMITS[planName] : null;
-
-  const supabase = getSupabaseAdminClient();
 
   switch (eventName) {
     case 'subscription_created':
@@ -84,31 +92,35 @@ export async function POST(req: NextRequest) {
             subscription_status: attrs.status || 'active',
             updated_at: new Date().toISOString()
           })
-          .eq('email', userEmail.toLowerCase());
+          .eq('email', userEmail);
       }
       break;
 
     case 'subscription_cancelled':
-      await supabase
-        .from('profiles')
-        .update({
-          subscription_status: 'cancelled',
-          subscription_ends_at: attrs.ends_at || attrs.renews_at,
-          updated_at: new Date().toISOString()
-        })
-        .eq('email', userEmail.toLowerCase());
+      if (userEmail) {
+        await supabase
+          .from('profiles')
+          .update({
+            subscription_status: 'cancelled',
+            subscription_ends_at: attrs.ends_at || attrs.renews_at,
+            updated_at: new Date().toISOString()
+          })
+          .eq('email', userEmail);
+      }
       break;
 
     case 'subscription_expired':
-      await supabase
-        .from('profiles')
-        .update({
-          plan: 'free',
-          queries_limit: 20,
-          subscription_status: 'expired',
-          updated_at: new Date().toISOString()
-        })
-        .eq('email', userEmail.toLowerCase());
+      if (userEmail) {
+        await supabase
+          .from('profiles')
+          .update({
+            plan: 'free',
+            queries_limit: 20,
+            subscription_status: 'expired',
+            updated_at: new Date().toISOString()
+          })
+          .eq('email', userEmail);
+      }
       break;
   }
 

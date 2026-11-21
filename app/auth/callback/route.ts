@@ -6,12 +6,27 @@ import { formatAuthError } from '../../../lib/auth/auth-error';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+function sanitizeRedirectPath(nextParam: string | null): string {
+  if (!nextParam) return '/';
+  const trimmed = nextParam.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
+    return '/';
+  }
+  try {
+    const parsed = new URL(trimmed, 'http://localhost');
+    if (parsed.origin !== 'http://localhost') return '/';
+    return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/';
+  } catch {
+    return '/';
+  }
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams, origin } = req.nextUrl;
   const code = searchParams.get('code');
   const tokenHash = searchParams.get('token_hash') || searchParams.get('token');
   const type = searchParams.get('type');
-  const next = searchParams.get('next');
+  const safeNext = sanitizeRedirectPath(searchParams.get('next'));
   const error = searchParams.get('error');
   const errorDescription = searchParams.get('error_description');
 
@@ -31,7 +46,7 @@ export async function GET(req: NextRequest) {
       try {
         const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
         if (!exchangeError && data?.session) {
-          const redirectUrl = new URL(type === 'recovery' ? '/reset-password' : (next || '/'), origin);
+          const redirectUrl = new URL(type === 'recovery' ? '/reset-password' : safeNext, origin);
           // Append session info to hash so client picks it up immediately
           redirectUrl.hash = `access_token=${data.session.access_token}&refresh_token=${data.session.refresh_token}&type=${type || 'bearer'}`;
           return NextResponse.redirect(redirectUrl.toString());
@@ -59,7 +74,7 @@ export async function GET(req: NextRequest) {
           type: type as any
         });
         if (!verifyError && data?.session) {
-          const redirectUrl = new URL(type === 'recovery' ? '/reset-password' : (next || '/'), origin);
+          const redirectUrl = new URL(type === 'recovery' ? '/reset-password' : safeNext, origin);
           redirectUrl.hash = `access_token=${data.session.access_token}&refresh_token=${data.session.refresh_token}&type=${type}`;
           return NextResponse.redirect(redirectUrl.toString());
         }
@@ -79,7 +94,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Fallback: redirect to target destination forwarding original search params
-  const targetPath = type === 'recovery' ? '/reset-password' : (next || '/');
-  return NextResponse.redirect(`${origin}${targetPath}${req.nextUrl.search}`);
+  // Fallback: redirect to safe same-origin destination without forwarding unsafe next values
+  const targetPath = type === 'recovery' ? '/reset-password' : safeNext;
+  const fallbackParams = new URLSearchParams(searchParams.toString());
+  if (fallbackParams.has('next') && safeNext === '/') {
+    fallbackParams.delete('next');
+  }
+  const queryString = fallbackParams.toString();
+  const redirectUrl = new URL(targetPath, origin);
+  if (queryString && !redirectUrl.search) {
+    redirectUrl.search = `?${queryString}`;
+  }
+  return NextResponse.redirect(redirectUrl.toString());
 }
