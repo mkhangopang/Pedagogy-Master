@@ -69,6 +69,9 @@ describe('Sign-Up / Sign-In / Callback Auth Flows', () => {
     expect(formatAuthError({ name: 'AuthRetryableFetchError', message: '{}', status: 504 })).toContain(
       'temporary'
     );
+    expect(
+      formatAuthError({ message: 'Database error saving new user', code: 'unexpected_failure', status: 500 })
+    ).toContain('Database error saving new user');
     expect(formatAuthError({ message: 'User already registered', status: 422 })).toContain(
       'already exists'
     );

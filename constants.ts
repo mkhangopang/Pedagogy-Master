@@ -105,6 +105,96 @@ export const LATEST_SQL_BLUEPRINT = `-- ========================================
 -- ==========================================
 
 
+-- 0. PROFILES TABLE, PERMISSIONS & SAFE AUTH TRIGGER (Fixes "Database error saving new user")
+GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role, supabase_auth_admin;
+
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id                   uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email                text DEFAULT '',
+  name                 text DEFAULT 'Educator',
+  role                 text NOT NULL DEFAULT 'teacher',
+  plan                 text NOT NULL DEFAULT 'free',
+  queries_used         int  NOT NULL DEFAULT 0,
+  queries_limit        int  NOT NULL DEFAULT 25,
+  generation_count     int  NOT NULL DEFAULT 0,
+  success_rate         float DEFAULT 0,
+  onboarding_completed boolean NOT NULL DEFAULT false,
+  workspace_name       text,
+  grade_level          text,
+  subject_area         text,
+  active_doc_id        uuid,
+  subscription_status  text,
+  subscription_ends_at timestamp with time zone,
+  lemon_squeezy_id     text,
+  created_at           timestamp with time zone DEFAULT NOW(),
+  updated_at           timestamp with time zone DEFAULT NOW()
+);
+
+GRANT ALL ON public.profiles TO postgres, service_role, supabase_auth_admin;
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
+CREATE POLICY "Users can view own profile"
+  ON public.profiles FOR SELECT
+  USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile"
+  ON public.profiles FOR INSERT
+  WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
+CREATE POLICY "Users can update own profile"
+  ON public.profiles FOR UPDATE
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  user_name text;
+  is_admin boolean;
+BEGIN
+  is_admin := LOWER(COALESCE(NEW.email, '')) = 'mkgopang@gmail.com';
+  user_name := COALESCE(
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'full_name'), ''),
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'name'), ''),
+    NULLIF(SPLIT_PART(COALESCE(NEW.email, ''), '@', 1), ''),
+    'Educator'
+  );
+
+  INSERT INTO public.profiles (id, email, name, role, plan, queries_limit)
+  VALUES (
+    NEW.id,
+    LOWER(COALESCE(NEW.email, '')),
+    user_name,
+    CASE WHEN is_admin THEN 'app_admin' ELSE 'teacher' END,
+    CASE WHEN is_admin THEN 'enterprise' ELSE 'free' END,
+    CASE WHEN is_admin THEN 999999 ELSE 25 END
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    updated_at = NOW();
+
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
+  RAISE WARNING 'handle_new_user skipped profile insert for %: %', NEW.id, SQLERRM;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
 -- 1. EXTENSIONS
 -- CRITICAL-1 FIX: uuid-ossp was missing — uuid_generate_v4() would throw
 -- "function uuid_generate_v4() does not exist"

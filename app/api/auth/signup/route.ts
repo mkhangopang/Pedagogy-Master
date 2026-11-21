@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { getCredentials, isSupabaseConfigured } from '../../../../lib/supabase';
+import { getCredentials, getSupabaseAdminClient, isSupabaseConfigured } from '../../../../lib/supabase';
 import { kv } from '../../../../lib/kv';
 import { formatAuthError } from '../../../../lib/auth/auth-error';
 
@@ -53,6 +53,32 @@ function resolveSafeOrigin(requestedOrigin: unknown, reqOrigin: string): string 
   return reqOrigin && reqOrigin.startsWith('http') ? new URL(reqOrigin).origin : 'http://localhost:3000';
 }
 
+async function cleanupOrphanedProfileByEmail(email: string): Promise<boolean> {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return false;
+  try {
+    const admin = getSupabaseAdminClient();
+    const { data: rows } = await admin
+      .from('profiles')
+      .select('id')
+      .eq('email', email)
+      .limit(3);
+
+    if (!rows || rows.length === 0) return false;
+
+    let removedAny = false;
+    for (const row of rows) {
+      const { data: userRes, error: lookupErr } = await admin.auth.admin.getUserById(row.id);
+      if (lookupErr || !userRes?.user) {
+        await admin.from('profiles').delete().eq('id', row.id);
+        removedAny = true;
+      }
+    }
+    return removedAny;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Same-origin signup fallback for restricted in-app browsers (e.g. Facebook/Instagram WebView)
  * and clean error normalization.
@@ -95,8 +121,7 @@ export async function POST(req: NextRequest) {
 
     const { url, key } = getCredentials();
     const anonClient = createClient(url, key, { auth: { persistSession: false } });
-
-    const { data, error: authError } = await anonClient.auth.signUp({
+    const signUpPayload = {
       email: cleanEmail,
       password,
       options: {
@@ -104,9 +129,26 @@ export async function POST(req: NextRequest) {
         emailRedirectTo: `${origin}/`,
         ...(captchaToken && captchaToken !== 'verified' ? { captchaToken } : {}),
       },
-    });
+    };
+
+    let { data, error: authError } = await anonClient.auth.signUp(signUpPayload);
+
+    const errMsg = String((authError as any)?.message || (authError as any)?.msg || '').toLowerCase();
+    if (authError && (errMsg.includes('database error saving new user') || (authError as any)?.code === 'unexpected_failure')) {
+      const cleaned = await cleanupOrphanedProfileByEmail(cleanEmail);
+      if (cleaned) {
+        const retry = await anonClient.auth.signUp(signUpPayload);
+        data = retry.data;
+        authError = retry.error;
+      }
+    }
 
     if (authError) {
+      console.error('[Auth Signup] Supabase signUp error:', {
+        code: (authError as any)?.code,
+        status: (authError as any)?.status,
+        message: (authError as any)?.message,
+      });
       const message = formatAuthError(
         authError,
         'Unable to create your account right now. Please try again in a moment or use Continue with Google.'

@@ -155,6 +155,15 @@ export function formatAuthError(
     return 'New email sign-ups are temporarily paused. Please try Continue with Google or check back shortly.';
   }
 
+  if (
+    lower.includes('database error saving new user') ||
+    lower.includes('database error finding user') ||
+    lower.includes('permission denied for table profiles') ||
+    code === 'unexpected_failure'
+  ) {
+    return 'Account creation failed because the database profile trigger needs repair ("Database error saving new user"). Please ask the admin to run the Profiles & Auth Trigger SQL repair in Supabase, or Sign In if you already have an account.';
+  }
+
   // Server 5xx / Cloudflare / SMTP timeout (often serialized by auth-js as "{}")
   if (status !== undefined && status >= 500) {
     return 'The authentication service could not complete this request right now (temporary server or email delay). Please try again in a moment or use Continue with Google.';

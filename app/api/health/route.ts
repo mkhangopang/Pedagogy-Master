@@ -1,26 +1,25 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '../../../lib/supabase';
+import { getSupabaseAdminClient, supabase } from '../../../lib/supabase';
 import { r2Client, R2_BUCKET, isR2Configured } from '../../../lib/r2';
 import { ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { SchemaManager } from '../../../lib/cache/schema-manager';
-import { orchestrator } from '../../../lib/ai/model-orchestrator';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Global Health Monitor (v2.0 - RALPH EDITION)
+ * Global Health Monitor (v2.1)
  * Diagnoses critical infrastructure dependencies:
  * 1. Schema Sync (FP-01)
- * 2. Orchestrator Stats
- * 3. Supabase & R2 status
+ * 2. Supabase & R2 status
  */
 export async function GET() {
   const timestamp = new Date().toISOString();
-  const schemaManager = new SchemaManager(supabase);
+  const dbClient = process.env.SUPABASE_SERVICE_ROLE_KEY ? getSupabaseAdminClient() : supabase;
+  const schemaManager = new SchemaManager(dbClient);
   
   const [syncState, supabaseRes, r2Res] = await Promise.all([
     schemaManager.validateSyncState(),
-    supabase.from('profiles').select('id').limit(1),
+    dbClient.from('profiles').select('id').limit(1),
     isR2Configured() && r2Client ? r2Client.send(new ListObjectsV2Command({ Bucket: R2_BUCKET, MaxKeys: 1 })) : Promise.resolve(null)
   ]);
 
