@@ -9,15 +9,43 @@ export const CAPTCHA_MIN_SOLVE_MS = 400;
 export const GUEST_SESSION_QUERY_LIMIT = 5;
 export const GUEST_IP_DAILY_LIMIT = 8;
 
-const fallbackSecret = randomBytes(32).toString('hex');
+const globalForGuest = globalThis as typeof globalThis & {
+  __pmGuestFallbackSecret?: string;
+};
 
 function getGuestSigningSecret(): string {
-  return (
+  const explicit =
     process.env.GUEST_TOKEN_SECRET ||
     process.env.SESSION_SECRET ||
-    process.env.CRON_SECRET ||
-    fallbackSecret
-  );
+    process.env.CRON_SECRET;
+  if (explicit && explicit.trim().length > 0) {
+    return explicit.trim();
+  }
+
+  // Derive a stable server-only HMAC secret from configured backend credentials so
+  // separate Next.js route chunks and serverless invocations verify each other's tokens.
+  const serverSeed =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GEMINI_API_KEY_1 ||
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+    process.env.API_KEY ||
+    process.env.GROQ_API_KEY ||
+    process.env.OPENAI_API_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    process.env.UPSTASH_REDIS_REST_TOKEN ||
+    process.env.DATABASE_URL;
+
+  if (serverSeed && serverSeed.trim().length > 0) {
+    return createHash('sha256')
+      .update(`pm-guest-hmac-v1:${serverSeed.trim()}`)
+      .digest('hex');
+  }
+
+  if (!globalForGuest.__pmGuestFallbackSecret) {
+    globalForGuest.__pmGuestFallbackSecret = randomBytes(32).toString('hex');
+  }
+  return globalForGuest.__pmGuestFallbackSecret;
 }
 
 function toBase64Url(input: Buffer | string): string {

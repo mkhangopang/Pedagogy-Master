@@ -341,16 +341,20 @@ export async function* generateAIResponseStream(
   if (safePriorityDocumentId) {
     effectiveDocumentIds = [safePriorityDocumentId];
   } else {
-    const docsQuery = supabase
-      .from('documents')
-      .select('id')
-      .eq('status', 'ready');
-    const { data: availableDocs } = await (isGuestUser
-      ? docsQuery.eq('is_public', true)
-      : docsQuery.or(`user_id.eq.${userId},is_public.eq.true`)
-    ).limit(20);
-    if (availableDocs && availableDocs.length > 0) {
-      effectiveDocumentIds = availableDocs.map(d => d.id);
+    try {
+      const docsQuery = supabase
+        .from('documents')
+        .select('id')
+        .eq('status', 'ready');
+      const { data: availableDocs } = await (isGuestUser
+        ? docsQuery.eq('is_public', true)
+        : docsQuery.or(`user_id.eq.${userId},is_public.eq.true`)
+      ).limit(20);
+      if (availableDocs && availableDocs.length > 0) {
+        effectiveDocumentIds = availableDocs.map(d => d.id);
+      }
+    } catch (docErr: any) {
+      console.warn('[Router] Skipping document lookup fallback:', docErr?.message || docErr);
     }
   }
 

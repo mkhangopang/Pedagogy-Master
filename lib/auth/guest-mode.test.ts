@@ -289,4 +289,30 @@ describe('Guest Mode & Human Security CAPTCHA', () => {
     expect(depletedJson.code).toBe('QUOTA_EXCEEDED');
     expect(depletedJson.isGuest).toBe(true);
   });
+
+  it('keeps signing secret consistent across isolated route module reloads even when GUEST_TOKEN_SECRET is unset', async () => {
+    delete process.env.GUEST_TOKEN_SECRET;
+    delete process.env.SESSION_SECRET;
+    delete process.env.CRON_SECRET;
+    process.env.GEMINI_API_KEY = 'test-gemini-server-key-for-hmac-derivation';
+
+    vi.resetModules();
+    const modA = await import('./guest-token');
+    const minted = modA.mintGuestToken();
+    const challenge = modA.createCaptchaChallenge(Date.now() - 2000);
+
+    vi.resetModules();
+    const modB = await import('./guest-token');
+    expect(modB.verifyGuestToken(minted.guestToken)?.sub).toBe(minted.guestId);
+
+    // Extract answer and verify across fresh module instance
+    const ans = decodeAnswerFromChallenge(challenge.imageDataUrl);
+    const verifyRes = await modB.verifyCaptchaChallenge({
+      challengeToken: challenge.challengeToken,
+      answer: String(ans),
+      honeypot: '',
+    });
+    expect(verifyRes.ok).toBe(true);
+    delete process.env.GEMINI_API_KEY;
+  });
 });

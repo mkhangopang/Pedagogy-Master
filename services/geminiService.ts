@@ -7,15 +7,32 @@ import { supabase } from "../lib/supabase";
 let globalCooldownUntil = 0;
 let inMemoryGuestToken: string | null = null;
 
+const GUEST_STORAGE_KEY = 'pm_guest_session_v1';
+
 export function setGuestAuthToken(token: string | null) {
   inMemoryGuestToken = token;
 }
 
 export function getGuestAuthToken(): string | null {
-  return inMemoryGuestToken;
+  if (inMemoryGuestToken) return inMemoryGuestToken;
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = sessionStorage.getItem(GUEST_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { guestToken?: string; expiresAt?: number };
+        if (parsed?.guestToken && typeof parsed.expiresAt === 'number' && parsed.expiresAt > Date.now()) {
+          inMemoryGuestToken = parsed.guestToken;
+          return parsed.guestToken;
+        }
+      }
+    } catch {
+      // ignore storage access issues
+    }
+  }
+  return null;
 }
 
-function parseAIError(errorData: any): string {
+function parseAIError(errorData: any, status?: number): string {
   const msg = typeof errorData === 'string' ? errorData : (errorData?.error || errorData?.message || "");
   
   if (msg.startsWith('AI Alert:')) return msg;
@@ -25,6 +42,16 @@ function parseAIError(errorData: any): string {
 
   const lowerMsg = msg.toLowerCase();
   
+  if (
+    status === 401 ||
+    lowerMsg.includes('guest preview session expired') ||
+    lowerMsg.includes('invalid session') ||
+    lowerMsg.includes('auth required')
+  ) {
+    return msg
+      ? `AI Alert: ${msg}`
+      : "AI Alert: Guest preview session expired. Please verify Guest Preview again or create a free account.";
+  }
   if (errorData?.retryAfter || lowerMsg.includes('rate limit exceeded')) {
     const waitSec = errorData?.retryAfter ? `${errorData.retryAfter}s` : '15s';
     return `AI Alert: High demand right now. Please wait ${waitSec} and try again so the workspace stays smooth for everyone.`;
@@ -40,6 +67,9 @@ function parseAIError(errorData: any): string {
   }
   if (lowerMsg.includes('quota') || lowerMsg.includes('exhausted') || lowerMsg.includes('limit reached')) {
     return msg ? `AI Alert: ${msg}` : "AI Alert: Daily free synthesis limit reached. Resets tomorrow (UTC).";
+  }
+  if (msg) {
+    return `AI Alert: ${msg}`;
   }
 
   return "AI Alert: Temporary connection issue. Please try again in a moment.";
@@ -127,8 +157,13 @@ async function* parseSSEStream(
 
 export const geminiService = {
   async getAuthToken(): Promise<string | undefined> {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || inMemoryGuestToken || undefined;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) return session.access_token;
+    } catch {
+      // fall through to guest token lookup
+    }
+    return getGuestAuthToken() || undefined;
   },
 
   checkCooldown() {
@@ -156,6 +191,11 @@ export const geminiService = {
       this.getAuthToken(),
     ]);
 
+    if (!token) {
+      yield "AI Alert: Active session not found. Please verify Guest Preview again or sign in.";
+      return;
+    }
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -180,7 +220,7 @@ export const geminiService = {
           const waitSec = Math.min(30, Math.max(5, Number(errorData?.retryAfter || 15)));
           globalCooldownUntil = Date.now() + waitSec * 1000;
         }
-        yield parseAIError(errorData);
+        yield parseAIError(errorData, response.status);
         return;
       }
 
@@ -233,6 +273,11 @@ export const geminiService = {
       ? `${baseAdaptiveContext}\n${adaptiveContextOverride}`
       : baseAdaptiveContext;
 
+    if (!token) {
+      yield "AI Alert: Active session not found. Please verify Guest Preview again or sign in.";
+      return;
+    }
+
     try {
       const response = await fetch('/api/ai', {
         method: 'POST',
@@ -256,7 +301,7 @@ export const geminiService = {
           const waitSec = Math.min(30, Math.max(5, Number(errorData?.retryAfter || 15)));
           globalCooldownUntil = Date.now() + waitSec * 1000;
         }
-        yield parseAIError(errorData);
+        yield parseAIError(errorData, response.status);
         return;
       }
 

@@ -243,6 +243,7 @@ export class SynthesizerCore {
       return;
     }
 
+    let hasAnyKey = false;
     for (const provider of candidates) {
       this.selectionIndices.set(provider.tier, (this.selectionIndices.get(provider.tier) || 0) + 1);
 
@@ -256,6 +257,7 @@ export class SynthesizerCore {
         }
 
         if (!apiKey) continue;
+        hasAnyKey = true;
 
         if (provider.endpoint === 'native') {
           const ai = new GoogleGenAI({ apiKey });
@@ -337,6 +339,7 @@ export class SynthesizerCore {
     try {
       const apiKey = resolveApiKey();
       if (apiKey) {
+        hasAnyKey = true;
         const ai = new GoogleGenAI({ apiKey });
         const fallbackStream = await ai.models.generateContentStream({
           model: 'gemini-3.6-flash',
@@ -352,6 +355,10 @@ export class SynthesizerCore {
         for await (const chunk of fallbackStream) {
           if (chunk.text) yield chunk.text;
         }
+        return;
+      }
+      if (!hasAnyKey) {
+        yield "⚠️ AI synthesis provider key is not configured on the server yet. Please configure GEMINI_API_KEY (or a fallback provider key) in your server environment.";
         return;
       }
     } catch (finalErr: any) {

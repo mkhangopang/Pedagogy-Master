@@ -3,9 +3,17 @@
  * Unified storage for Rate Limits and Vector Caching.
  * AUDIT IMPLEMENTATION: Cache Leasing to prevent thundering herds.
  */
+const globalForKv = globalThis as typeof globalThis & {
+  __pmKvMemory?: Map<string, { value: any; expiry: number }>;
+  __pmKvLeases?: Set<string>;
+};
+
 class KVStore {
-  private memory = new Map<string, { value: any; expiry: number }>();
-  private leases = new Set<string>(); // Active fetch locks
+  private memory =
+    globalForKv.__pmKvMemory ??
+    (globalForKv.__pmKvMemory = new Map<string, { value: any; expiry: number }>());
+  private leases =
+    globalForKv.__pmKvLeases ?? (globalForKv.__pmKvLeases = new Set<string>()); // Active fetch locks
   private redisUrl = process.env.UPSTASH_REDIS_REST_URL;
   private redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
 
